@@ -6,7 +6,8 @@
   "exports": {
     "./c5": "./src/c5.mjs",
     "./c4": "./src/c4.mjs",
-    "./c6": "./src/c6.mjs"
+    "./c6": "./src/c6.mjs",
+    "./mobile": "./src/mobile.mjs"
   },
   "scripts": {
     "lint": "node --check message-model/index.mjs && node --check message-model/message-model.test.mjs && node --check scripts/verify-auth-contract.mjs && find src test -name '*.mjs' -print0 | xargs -0 -n1 node --check",

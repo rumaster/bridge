@@ -1,0 +1,146 @@
+{
+  "contract": "MOBILE.ConsumerContracts",
+  "version": "1.0.0",
+  "stage": "M0",
+  "owner": "SVC-MOB",
+  "description": "M0 consumer-driven contract stubs for mobile app <-> SVC-MOB and for SVC-MOB consumption of C3/C7/C9/C10.",
+  "interactions": [
+    {
+      "id": "mobile-app-svc-mob-auth-session",
+      "consumer": "mobile-app",
+      "provider": "SVC-MOB",
+      "contract_ref": "packages/contracts/openapi/mobile/mobile.v1.openapi.json",
+      "request": {
+        "method": "GET",
+        "path": "/mobile/v1/auth/session"
+      },
+      "response": {
+        "status": 200,
+        "schema": "#/components/schemas/AuthSessionResponse"
+      }
+    },
+    {
+      "id": "mobile-app-svc-mob-dialog-list",
+      "consumer": "mobile-app",
+      "provider": "SVC-MOB",
+      "contract_ref": "packages/contracts/openapi/mobile/mobile.v1.openapi.json",
+      "request": {
+        "method": "GET",
+        "path": "/mobile/v1/dialogs"
+      },
+      "response": {
+        "status": 200,
+        "schema": "#/components/schemas/DialogListResponse"
+      }
+    },
+    {
+      "id": "mobile-app-svc-mob-message-send",
+      "consumer": "mobile-app",
+      "provider": "SVC-MOB",
+      "contract_ref": "packages/contracts/openapi/mobile/mobile.v1.openapi.json",
+      "request": {
+        "method": "POST",
+        "path": "/mobile/v1/messages",
+        "body_schema": "#/components/schemas/SendMessageRequest"
+      },
+      "response": {
+        "status": 202,
+        "schema": "#/components/schemas/SendMessageResponse"
+      }
+    },
+    {
+      "id": "mobile-app-svc-mob-sync",
+      "consumer": "mobile-app",
+      "provider": "SVC-MOB",
+      "contract_ref": "packages/contracts/openapi/mobile/mobile.v1.openapi.json",
+      "request": {
+        "method": "GET",
+        "path": "/mobile/v1/sync",
+        "query": {
+          "cursor": "optional",
+          "device_id": "optional",
+          "limit": "optional"
+        }
+      },
+      "response": {
+        "status": 200,
+        "schema": "#/components/schemas/SyncResponse"
+      }
+    },
+    {
+      "id": "mobile-app-svc-mob-device-register",
+      "consumer": "mobile-app",
+      "provider": "SVC-MOB",
+      "contract_ref": "packages/contracts/openapi/mobile/mobile.v1.openapi.json",
+      "request": {
+        "method": "POST",
+        "path": "/mobile/v1/devices",
+        "body_schema": "#/components/schemas/DeviceRegistrationRequest"
+      },
+      "response": {
+        "status": 201,
+        "schema": "#/components/schemas/DeviceRegistrationResponse"
+      }
+    },
+    {
+      "id": "svc-mob-consumes-c3-auth",
+      "consumer": "SVC-MOB",
+      "provider": "SVC-IDN",
+      "upstream_contract": "C3.auth",
+      "contract_ref": "packages/contracts/openapi/auth/c3.auth.openapi.json",
+      "expectations": [
+        "POST /auth/login/telegram/start",
+        "POST /auth/login/telegram/verify",
+        "POST /auth/logout",
+        "GET /auth/session"
+      ]
+    },
+    {
+      "id": "svc-mob-consumes-c3-conversations-messages-clients",
+      "consumer": "SVC-MOB",
+      "provider": "SVC-CORE",
+      "upstream_contract": "C3.conversations+C3.messages+C3.clients",
+      "expectations": [
+        "GET /conversations",
+        "GET /conversations/{id}/messages",
+        "POST /messages",
+        "GET /clients/{id}"
+      ]
+    },
+    {
+      "id": "svc-mob-consumes-c7-realtime-events",
+      "consumer": "SVC-MOB",
+      "provider": "SVC-CORE",
+      "upstream_contract": "C7",
+      "expectations": [
+        "message.created",
+        "message.status_changed",
+        "notification.created",
+        "typing.started",
+        "typing.stopped"
+      ]
+    },
+    {
+      "id": "svc-mob-consumes-c9-edge-app-tunnel",
+      "consumer": "SVC-MOB",
+      "provider": "SVC-EDGE",
+      "upstream_contract": "C9",
+      "expectations": [
+        "sequence_number",
+        "idempotency_key",
+        "edge buffered reconnect handoff"
+      ]
+    },
+    {
+      "id": "svc-mob-consumes-c10-notifications",
+      "consumer": "SVC-MOB",
+      "provider": "SVC-NOTIF",
+      "upstream_contract": "C10.notifications",
+      "expectations": [
+        "GET /notifications",
+        "notification.created",
+        "notification -> push payload mapping"
+      ]
+    }
+  ]
+}
