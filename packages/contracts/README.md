@@ -47,6 +47,16 @@
 - `src/c4.mjs` содержит M0-константы и легковесный валидатор JSON Schema для
   contract/unit smoke-тестов без дополнительных зависимостей.
 
+## M0-12: C10 для Notification Platform
+
+- `openapi/notifications/c10.notifications.openapi.json` фиксирует C10 v1:
+  `GET /notifications`, `POST /notifications/{id}:read`,
+  `GET/PUT /notifications/settings`.
+- `events/notification-created.schema.json` описывает WS-событие C7
+  `notification.created` для SVC-MWS/SVC-ADMIN.
+- `events/notification-trigger.schema.json` фиксирует M0-заготовку события
+  producer -> SVC-NOTIF для CORE/BCAST/AI/FBP.
+- `src/c10.mjs` содержит константы, фабрики и легковесные валидаторы C10/C7.
 ## M0-13: C7/C9 для Edge & WebSocket Gateway
 
 - `openapi/edge/c7.websocket.openapi.json` фиксирует C7 `GET /ws` как WebSocket

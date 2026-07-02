@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "node ../../scripts/workspace-command.mjs lint",
-    "test": "node ../../scripts/workspace-command.mjs test",
-    "build": "node ../../scripts/workspace-command.mjs build"
+    "lint": "find src test -name '*.mjs' -print0 | xargs -0 -r -n 1 node --check",
+    "test": "node --test test/unit/*.test.mjs test/integration/*.test.mjs",
+    "build": "find src -name '*.mjs' -print0 | xargs -0 -r -n 1 node --check",
+    "start": "node src/main.mjs"
   }
 }
