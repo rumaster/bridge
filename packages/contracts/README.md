@@ -37,6 +37,16 @@
   `voice`, `video`, `buttons`, `reactions`, `typing_indicator`,
   `read_receipt`, `delete`, `edit`.
 
+## M0-09: C4 для AI Platform
+
+- `openapi/ai/c4.ai.openapi.json` фиксирует C4 v1 для Backend API ↔ SVC-AI:
+  `POST /ai/assistant:suggest` и `POST /ai/onboarding:command`.
+- `json-schema/c4-ai-onboarding-command.schema.json` описывает структурированную
+  команду AI Onboarding. Команда является только описанием действия; применять
+  ее может только Backend после валидации структуры, полномочий и состояния.
+- `src/c4.mjs` содержит M0-константы и легковесный валидатор JSON Schema для
+  contract/unit smoke-тестов без дополнительных зависимостей.
+
 ## Ownership
 
 Каждый контракт имеет владельца из мастер-плана:
