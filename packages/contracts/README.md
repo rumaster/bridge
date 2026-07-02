@@ -11,6 +11,19 @@
 - `events/` - WebSocket-события, outbox-события и внутренние события.
 - `json-schema/` - схемы структурированных команд AI и вспомогательных DTO.
 
+## M0 C1/C2
+
+- `message-model/message.schema.json` - C1 Canonical Message v1.0.0:
+  `id` равен `idempotency_key`, обязательны `organization_id`,
+  `conversation_id`, `endpoint_id`, `channel`, `direction`, `sender_type`,
+  `sequence_number`, `type`, `content`, `status`, `created_at`, `updated_at`.
+- `message-model/status-machine.v1.json` - минимальный автомат статусов:
+  `received -> routed -> sent`, с терминальными `delivered` и `failed`.
+- `openapi/communication-core-c2.openapi.json` - C2 Ingress
+  `POST /internal/ingress/messages` и Egress
+  `POST /internal/egress/messages` для mock handoff Core -> Adapter без реальной
+  доставки.
+
 ## M0-05: C2/C6 для Integration Platform
 
 - `openapi/c2-internal-api.yaml` фиксирует mock C2: Adapter вызывает Core
