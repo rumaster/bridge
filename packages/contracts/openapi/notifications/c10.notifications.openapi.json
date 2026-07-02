@@ -1,0 +1,556 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Bridge C10 Notification API",
+    "version": "1.0.0",
+    "description": "Frozen M0 Notification contract for listing current-user notifications, marking them read and managing notification settings. Real generation and delivery are out of scope for M0."
+  },
+  "x-contract-id": "C10",
+  "x-owner": "SVC-NOTIF",
+  "x-stage": "M0",
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "tags": [
+    {
+      "name": "notifications",
+      "description": "Current-user internal notifications for administrators and managers."
+    }
+  ],
+  "paths": {
+    "/notifications": {
+      "get": {
+        "tags": ["notifications"],
+        "operationId": "listNotifications",
+        "summary": "List notifications for the current user",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/OrganizationId"
+          },
+          {
+            "$ref": "#/components/parameters/UserId"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/NotificationStatus"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/NotificationCategory"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Page of notifications visible to the current user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListNotificationsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    },
+    "/notifications/{id}:read": {
+      "post": {
+        "tags": ["notifications"],
+        "operationId": "markNotificationRead",
+        "summary": "Mark a notification as read",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/NotificationId"
+          },
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/OrganizationId"
+          },
+          {
+            "$ref": "#/components/parameters/UserId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notification read state was updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarkNotificationReadResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/notifications/settings": {
+      "get": {
+        "tags": ["notifications"],
+        "operationId": "getNotificationSettings",
+        "summary": "Get current-user notification settings",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/OrganizationId"
+          },
+          {
+            "$ref": "#/components/parameters/UserId"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notification settings for the current user.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSettingsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": ["notifications"],
+        "operationId": "updateNotificationSettings",
+        "summary": "Update current-user notification settings",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/RequestId"
+          },
+          {
+            "$ref": "#/components/parameters/OrganizationId"
+          },
+          {
+            "$ref": "#/components/parameters/UserId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNotificationSettingsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated notification settings.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationSettingsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "NotificationId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "RequestId": {
+        "name": "x-request-id",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "OrganizationId": {
+        "name": "x-bridge-organization-id",
+        "in": "header",
+        "required": false,
+        "description": "M0 mock context header. Production implementations resolve this from the authenticated session.",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "default": "org-1"
+        }
+      },
+      "UserId": {
+        "name": "x-bridge-user-id",
+        "in": "header",
+        "required": false,
+        "description": "M0 mock context header. Production implementations resolve this from the authenticated session.",
+        "schema": {
+          "type": "string",
+          "minLength": 1,
+          "default": "manager-1"
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "DTO validation failed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Notification is not visible to the current user.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "NotificationCategory": {
+        "type": "string",
+        "enum": ["info", "warning", "error", "critical", "admin"]
+      },
+      "NotificationChannel": {
+        "type": "string",
+        "enum": ["web", "telegram", "email", "push"]
+      },
+      "NotificationStatus": {
+        "type": "string",
+        "enum": ["new", "read"]
+      },
+      "Notification": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "id",
+          "organization_id",
+          "recipient_user_id",
+          "category",
+          "title",
+          "body",
+          "payload",
+          "status",
+          "channels",
+          "created_at",
+          "read_at"
+        ],
+        "properties": {
+          "contract": {
+            "const": "C10.Notification"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "recipient_user_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "category": {
+            "$ref": "#/components/schemas/NotificationCategory"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "body": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/NotificationStatus"
+          },
+          "channels": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/NotificationChannel"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "read_at": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "dedupe_key": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "ListNotificationsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "recipient_user_id",
+          "items",
+          "page"
+        ],
+        "properties": {
+          "contract": {
+            "const": "C10.ListNotificationsResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "recipient_user_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Notification"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/PageInfo"
+          }
+        }
+      },
+      "MarkNotificationReadResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "notification"
+        ],
+        "properties": {
+          "contract": {
+            "const": "C10.MarkNotificationReadResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "notification": {
+            "$ref": "#/components/schemas/Notification"
+          }
+        }
+      },
+      "NotificationSetting": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["category", "channel", "enabled"],
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/NotificationCategory"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/NotificationChannel"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
+      },
+      "UpdateNotificationSettingsRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "user_id",
+          "settings"
+        ],
+        "properties": {
+          "contract": {
+            "const": "C10.UpdateNotificationSettingsRequest"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "user_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "settings": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/components/schemas/NotificationSetting"
+            }
+          }
+        }
+      },
+      "NotificationSettingsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "user_id",
+          "settings"
+        ],
+        "properties": {
+          "contract": {
+            "const": "C10.NotificationSettingsResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "user_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "settings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NotificationSetting"
+            }
+          }
+        }
+      },
+      "PageInfo": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["limit", "next_cursor"],
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "next_cursor": {
+            "type": ["string", "null"]
+          }
+        }
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "required": ["type", "title", "status", "detail", "errors"],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      }
+    }
+  }
+}

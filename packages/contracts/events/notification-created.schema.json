@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bridge.local/contracts/events/notification-created.schema.json",
+  "title": "C7 notification.created event",
+  "x-contract-id": "C7.notification.created",
+  "x-owner": "SVC-NOTIF",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "event",
+    "event_id",
+    "organization_id",
+    "recipient_user_id",
+    "notification",
+    "occurred_at"
+  ],
+  "properties": {
+    "contract": {
+      "const": "C7.NotificationCreatedEvent"
+    },
+    "version": {
+      "const": "1.0.0"
+    },
+    "event": {
+      "const": "notification.created"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "organization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "recipient_user_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "notification": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract",
+        "version",
+        "id",
+        "organization_id",
+        "recipient_user_id",
+        "category",
+        "title",
+        "body",
+        "payload",
+        "status",
+        "channels",
+        "created_at",
+        "read_at"
+      ],
+      "properties": {
+        "contract": {
+          "const": "C10.Notification"
+        },
+        "version": {
+          "const": "1.0.0"
+        },
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "organization_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "recipient_user_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "category": {
+          "type": "string",
+          "enum": ["info", "warning", "error", "critical", "admin"]
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "body": {
+          "type": "string"
+        },
+        "payload": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "status": {
+          "type": "string",
+          "enum": ["new", "read"]
+        },
+        "channels": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": ["web", "telegram", "email", "push"]
+          }
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "read_at": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "dedupe_key": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
