@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bridge.local/contracts/events/workflow-state-changed.schema.json",
+  "title": "C7 workflow.state_changed event",
+  "x-contract-id": "C7.workflow.state_changed",
+  "x-owner": "SVC-FBP",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "event",
+    "event_id",
+    "organization_id",
+    "workflow_id",
+    "workflow_version_id",
+    "instance_id",
+    "previous_status",
+    "status",
+    "changed_at"
+  ],
+  "properties": {
+    "contract": {
+      "const": "C7.WorkflowStateChangedEvent"
+    },
+    "version": {
+      "const": "1.0.0"
+    },
+    "event": {
+      "const": "workflow.state_changed"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "organization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workflow_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "workflow_version_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "instance_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "previous_status": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "created",
+        "started",
+        "running",
+        "waiting",
+        "callback_recorded",
+        "completed",
+        "failed",
+        "cancelled",
+        "degraded",
+        null
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "created",
+        "started",
+        "running",
+        "waiting",
+        "callback_recorded",
+        "completed",
+        "failed",
+        "cancelled",
+        "degraded"
+      ]
+    },
+    "changed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

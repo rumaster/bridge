@@ -1,0 +1,533 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Bridge C5 FBP API",
+    "version": "1.0.0",
+    "description": "Frozen M0 API <-> FBP contract. It covers Backend-started workflow instances and the Backend API node callback DTO used by FBP. M0 responses are deterministic mock responses; the real fbp-engine fork is out of scope until M3."
+  },
+  "x-contract-id": "C5",
+  "x-owner": "SVC-FBP",
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "tags": [
+    {
+      "name": "fbp"
+    }
+  ],
+  "paths": {
+    "/workflows/{id}/instances": {
+      "post": {
+        "tags": [
+          "fbp"
+        ],
+        "operationId": "startWorkflowInstance",
+        "summary": "Start a workflow instance",
+        "description": "Backend starts a workflow instance. The DTO pins a concrete immutable workflow version and carries the tenant/user context for any later Backend API node calls.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkflowId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartWorkflowInstanceRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Workflow instance was accepted by the deterministic M0 mock.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartWorkflowInstanceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "DTO validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/workflows/{id}/instances/{instance_id}/backend-api-callbacks": {
+      "post": {
+        "tags": [
+          "fbp"
+        ],
+        "operationId": "recordBackendApiNodeCallback",
+        "summary": "Record a Backend API node callback",
+        "description": "M0 callback stub for the FBP Backend API node DTO. The real engine will call Backend C3 endpoints directly; this endpoint freezes and validates the callback payload shape for API <-> FBP contract smoke tests.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/WorkflowId"
+          },
+          {
+            "$ref": "#/components/parameters/InstanceId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackendApiNodeCallbackRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Callback DTO was accepted by the deterministic M0 stub.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackendApiNodeCallbackResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "DTO validation failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "WorkflowId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "InstanceId": {
+        "name": "instance_id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "schemas": {
+      "StartWorkflowInstanceRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "workflow_version_id",
+          "context"
+        ],
+        "properties": {
+          "contract": {
+            "const": "C5.StartWorkflowInstanceRequest"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workflow_version_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Immutable workflow version pinned for this instance."
+          },
+          "input": {
+            "type": "object",
+            "additionalProperties": true,
+            "default": {}
+          },
+          "context": {
+            "$ref": "#/components/schemas/WorkflowExecutionContext"
+          }
+        }
+      },
+      "StartWorkflowInstanceResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "workflow_id",
+          "workflow_version_id",
+          "instance_id",
+          "status",
+          "degraded",
+          "fallback_reason",
+          "state",
+          "state_changed_event",
+          "created_at"
+        ],
+        "properties": {
+          "contract": {
+            "const": "C5.StartWorkflowInstanceResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workflow_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workflow_version_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "instance_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "started",
+              "completed",
+              "failed",
+              "degraded"
+            ]
+          },
+          "degraded": {
+            "type": "boolean"
+          },
+          "fallback_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "timeout",
+              "unavailable",
+              null
+            ]
+          },
+          "state": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "state_changed_event": {
+            "anyOf": [
+              {
+                "$ref": "../../events/workflow-state-changed.schema.json"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "WorkflowExecutionContext": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organization_id",
+          "actor_user_id",
+          "trigger"
+        ],
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "actor_user_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "trigger": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "message",
+              "system",
+              "workflow"
+            ]
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "default": []
+          },
+          "correlation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "locale": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "BackendApiNodeCallbackRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "workflow_id",
+          "workflow_version_id",
+          "instance_id",
+          "node_id",
+          "context",
+          "backend_request"
+        ],
+        "properties": {
+          "contract": {
+            "const": "C5.BackendApiNodeCallbackRequest"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workflow_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workflow_version_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "instance_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "node_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "context": {
+            "$ref": "#/components/schemas/WorkflowExecutionContext"
+          },
+          "backend_request": {
+            "$ref": "#/components/schemas/BackendApiRequest"
+          }
+        }
+      },
+      "BackendApiRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "method",
+          "path"
+        ],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "pattern": "^/api/v1(/|$)",
+            "description": "Backend C3 path. Direct DB URLs or service-internal URLs are forbidden."
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {}
+          },
+          "query": {
+            "type": "object",
+            "additionalProperties": true,
+            "default": {}
+          },
+          "body": true,
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30000,
+            "default": 250
+          }
+        }
+      },
+      "BackendApiNodeCallbackResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "workflow_id",
+          "workflow_version_id",
+          "instance_id",
+          "node_id",
+          "accepted",
+          "backend_response",
+          "state",
+          "created_at"
+        ],
+        "properties": {
+          "contract": {
+            "const": "C5.BackendApiNodeCallbackResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workflow_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "workflow_version_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "instance_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "node_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "accepted": {
+            "type": "boolean"
+          },
+          "backend_response": {
+            "$ref": "#/components/schemas/BackendApiResponse"
+          },
+          "state": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BackendApiResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status_code",
+          "headers",
+          "body"
+        ],
+        "properties": {
+          "status_code": {
+            "type": "integer",
+            "minimum": 100,
+            "maximum": 599
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "body": true
+        }
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "errors"
+        ],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      }
+    }
+  }
+}
