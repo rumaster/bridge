@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Manager Workspace">
+  <rect width="64" height="64" rx="12" fill="#243447" />
+  <path d="M17 20h30v8H17zM17 34h18v8H17z" fill="#f4c95d" />
+  <circle cx="45" cy="38" r="6" fill="#7cc6a4" />
+</svg>

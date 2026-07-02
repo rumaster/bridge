@@ -7,7 +7,7 @@ import "./presentation/styles.css";
 async function enableMocks() {
   if (import.meta.env.DEV && import.meta.env.VITE_MWS_MOCKS === "true") {
     const { worker } = await import("./api/mocks/browser");
-    await worker.start({ onUnhandledRequest: "bypass" });
+    await worker.start({ onUnhandledRequest: "bypass", quiet: true });
   }
 }
 
