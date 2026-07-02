@@ -20,8 +20,8 @@
     "build": "npm run build --workspaces --if-present",
     "smoke": "node --test tests/smoke/*.test.mjs",
     "test:unit": "npm test",
-    "test:integration": "node scripts/ci-placeholder.mjs integration",
-    "test:contract": "node scripts/ci-placeholder.mjs contract",
+    "test:integration": "npm run test:integration --workspace @bridge/integration-platform",
+    "test:contract": "node --test tests/contract/*.test.mjs",
     "test:e2e": "node scripts/ci-placeholder.mjs e2e",
     "ci": "npm run lint && npm test && npm run build"
   }
