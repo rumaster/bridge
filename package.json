@@ -5,7 +5,7 @@
   "description": "MessengerBridge monorepo scaffold.",
   "type": "module",
   "engines": {
-    "node": ">=20.0.0",
+    "node": ">=20.18.1",
     "npm": ">=10.0.0"
   },
   "workspaces": [
@@ -15,14 +15,22 @@
     "packages/*"
   ],
   "scripts": {
-    "lint": "npm run lint --workspaces --if-present && node --check scripts/ci-placeholder.mjs && node --check scripts/workspace-command.mjs && node --check tests/smoke/workspace-structure.test.mjs",
+    "lint": "npm run lint --workspaces --if-present && node --check scripts/ci-placeholder.mjs && node --check scripts/workspace-command.mjs && node --check scripts/db-migrate.mjs && node --check scripts/db-seed.mjs && node --check db/seeds/000001_m0_seed.mjs && node --check tests/smoke/workspace-structure.test.mjs && node --check tests/integration/data-platform.test.mjs",
     "test": "npm run test --workspaces --if-present && node --test tests/smoke/*.test.mjs",
     "build": "npm run build --workspaces --if-present",
     "smoke": "node --test tests/smoke/*.test.mjs",
     "test:unit": "npm test",
-    "test:integration": "node scripts/ci-placeholder.mjs integration",
+    "test:integration": "node --test tests/integration/*.test.mjs",
     "test:contract": "node scripts/ci-placeholder.mjs contract",
     "test:e2e": "node scripts/ci-placeholder.mjs e2e",
+    "db:migrate:up": "node scripts/db-migrate.mjs up",
+    "db:migrate:down": "node scripts/db-migrate.mjs down",
+    "db:seed": "node scripts/db-seed.mjs",
     "ci": "npm run lint && npm test && npm run build"
+  },
+  "devDependencies": {
+    "node-pg-migrate": "^8.0.4",
+    "pg": "^8.22.0",
+    "testcontainers": "^11.14.0"
   }
 }
