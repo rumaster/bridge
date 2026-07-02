@@ -189,6 +189,13 @@ SVC-MWS **не владеет таблицами** (мастер-план §4.11
 
 **DoD.** Зелёный CI (lint→unit→build); скелет собирается; моки контрактов подняты.
 
+**Статус реализации.** Каркас `apps/manager-workspace` добавлен: React + Vite +
+TypeScript, слои Presentation/API Client/State/Routing/Shared, ленивые маршруты
+`login`/`queue`/`dialog`/`notifications`, временные типизированные заглушки
+ui-kit/api-client, auth-заглушка C3.auth, MSW-моки C3.auth/C3.conversations/
+C3.messages/C3.clients/C10.notifications и mock C7. Проверки этапа покрывают shell,
+routing, smoke ui-kit, старт MSW-моков и frontend build.
+
 ### M1 — Очередь диалогов + история + отправка ответа (CP-1)
 
 **Цель.** Базовый цикл менеджера «очередь → выбор диалога → история → ответ» против
