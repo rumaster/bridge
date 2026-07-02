@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "node --check src/modules/communication-core/index.mjs && node --check src/modules/communication-core/mock-ingress-egress.mjs && node --check test/unit/communication-core.mock.test.mjs",
-    "test": "node --test test/unit/*.test.mjs",
-    "build": "node --check src/modules/communication-core/index.mjs && node --check src/modules/communication-core/mock-ingress-egress.mjs"
+    "lint": "find src test -name '*.mjs' -print0 | xargs -0 -n 1 node --check",
+    "test": "node --test test/",
+    "build": "find src -name '*.mjs' -print0 | xargs -0 -n 1 node --check"
   }
 }
