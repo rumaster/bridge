@@ -24,5 +24,10 @@
     "test:contract": "node scripts/ci-placeholder.mjs contract",
     "test:e2e": "node scripts/ci-placeholder.mjs e2e",
     "ci": "npm run lint && npm test && npm run build"
+  },
+  "msw": {
+    "workerDirectory": [
+      "apps/web-chat/public"
+    ]
   }
 }
