@@ -1,0 +1,28 @@
+{
+  "name": "bridge",
+  "version": "0.0.0",
+  "private": true,
+  "description": "MessengerBridge monorepo scaffold.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "clients/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "lint": "npm run lint --workspaces --if-present && node --check scripts/ci-placeholder.mjs && node --check scripts/workspace-command.mjs && node --check tests/smoke/workspace-structure.test.mjs",
+    "test": "npm run test --workspaces --if-present && node --test tests/smoke/*.test.mjs",
+    "build": "npm run build --workspaces --if-present",
+    "smoke": "node --test tests/smoke/*.test.mjs",
+    "test:unit": "npm test",
+    "test:integration": "node scripts/ci-placeholder.mjs integration",
+    "test:contract": "node scripts/ci-placeholder.mjs contract",
+    "test:e2e": "node scripts/ci-placeholder.mjs e2e",
+    "ci": "npm run lint && npm test && npm run build"
+  }
+}
