@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bridge.local/contracts/json-schema/c9-edge-tunnel-ack.schema.json",
+  "title": "C9 Edge/App tunnel acknowledgement",
+  "x-contract-id": "C9.EdgeTunnelAck",
+  "x-owner": "SVC-EDGE",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "accepted",
+    "duplicate",
+    "endpoint_id",
+    "sequence_number",
+    "idempotency_key",
+    "received_at"
+  ],
+  "properties": {
+    "contract": {
+      "const": "C9.EdgeTunnelAck"
+    },
+    "version": {
+      "const": "1.0.0"
+    },
+    "accepted": {
+      "type": "boolean"
+    },
+    "duplicate": {
+      "type": "boolean"
+    },
+    "message_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "endpoint_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sequence_number": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "core_status": {
+      "type": "string",
+      "minLength": 1
+    },
+    "received_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

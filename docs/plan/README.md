@@ -555,7 +555,12 @@ JSON/UUID/ISO-8601 (ТЗ §11.9), единый формат ошибок (ТЗ �
 
 `message.created`, `message.status_changed`, `typing.started`, `typing.stopped`,
 `client.status_changed`, `notification.created`, `broadcast.state_changed`,
-`workflow.state_changed`. Соединение восстанавливается автоматически (ТЗ §11.7).
+`workflow.state_changed`. Общий envelope C7 v1 содержит `event_id`,
+`organization_id`, `sequence_number`, `payload`, `occurred_at`; endpoint
+`GET /ws` выполняет WebSocket upgrade. Соединение восстанавливается автоматически
+через resume cursor `last_event_id`: клиент отбрасывает уже виденные `event_id`,
+а сервер досылает события после указанного cursor без повторной доставки уже
+подтверждённой клиентом части потока (ТЗ §11.7).
 
 ## 7.4 Правила версионирования и совместимости
 

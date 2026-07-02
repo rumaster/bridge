@@ -100,8 +100,11 @@ SVC-EDGE — **владелец** контракта **C9** (Edge↔App Tunnel, 
   `message.status_changed`, `typing.started`/`typing.stopped`,
   `client.status_changed`, `notification.created`, `broadcast.state_changed`,
   `workflow.state_changed`;
+- общий envelope C7 v1: `event_id`, `organization_id`, `sequence_number`,
+  `payload`, `occurred_at`; `sequence_number` монотонен внутри одной WS-подписки;
 - **автоматическое восстановление соединения** после временной потери связи
-  (ТЗ §11.7) — без дублирующей доставки уже полученных клиентом событий;
+  (ТЗ §11.7): клиент переподключается с `last_event_id`, сервер досылает события
+  после этого cursor, клиент отбрасывает уже виденные `event_id`;
 - фактическое содержимое событий формирует Backend (SVC-CORE/SVC-API); SVC-EDGE
   отвечает за транспорт и переподключение (мастер §7.3).
 
@@ -109,8 +112,10 @@ SVC-EDGE — **владелец** контракта **C9** (Edge↔App Tunnel, 
 
 - передача сообщений **Edge → Application Cluster** (Communication Core) через VPN
   Tunnel Service (ТЗ §7.8);
-- каждое сообщение переносит **`sequence_number`** (порядок в рамках Endpoint,
-  ТЗ §7.10) и сквозной **`idempotency_key`** (= `message_id`, ТЗ §11.12);
+- каждое tunnel-сообщение C9 v1 переносит **`sequence_number`** (порядок в рамках
+  Endpoint, ТЗ §7.10), сквозной **`idempotency_key`** (= `message_id`, ТЗ §11.12),
+  **`endpoint_id`**, C1 **`payload`** и timestamps `received_at`, `buffered_at`,
+  `forwarded_at`;
 - семантика **at-least-once** с дедупликацией на приёмнике: повторная передача из
   буфера (ТЗ §7.9) с уже обработанным `idempotency_key` отбрасывается ядром;
 - восстановление порядка ядром по `sequence_number` в рамках `endpoint_id`.

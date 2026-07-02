@@ -1,0 +1,47 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "C9 Edge/App Tunnel",
+    "version": "1.0.0"
+  },
+  "x-contract-id": "C9",
+  "x-owner": "SVC-EDGE",
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "paths": {
+    "/internal/edge/tunnel/messages": {
+      "post": {
+        "summary": "Forward an Edge-buffered C1 message to Communication Core",
+        "operationId": "acceptEdgeTunnelMessage",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "../../json-schema/c9-edge-tunnel-message.schema.json"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Tunnel message accepted or deduplicated by the receiver.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "../../json-schema/c9-edge-tunnel-ack.schema.json"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid C9 envelope or embedded C1 payload."
+          }
+        }
+      }
+    }
+  }
+}
