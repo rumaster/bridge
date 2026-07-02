@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "lint": "find src test -name '*.mjs' -print0 | xargs -0 -n 1 node --check",
-    "test": "node --test test/**/*.test.mjs",
+    "test": "node --test test/",
     "build": "find src -name '*.mjs' -print0 | xargs -0 -n 1 node --check"
   }
 }

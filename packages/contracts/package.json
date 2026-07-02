@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "node --check scripts/verify-auth-contract.mjs && find test -name '*.mjs' -print0 | xargs -0 -n 1 node --check",
-    "test": "node --test test/*.test.mjs",
-    "build": "node scripts/verify-auth-contract.mjs"
+    "lint": "node --check message-model/index.mjs && node --check message-model/message-model.test.mjs && node --check scripts/verify-auth-contract.mjs && find test -name '*.mjs' -print0 | xargs -0 -n 1 node --check",
+    "test": "node --test message-model/*.test.mjs test/*.test.mjs",
+    "build": "node --check message-model/index.mjs && node scripts/verify-auth-contract.mjs"
   }
 }
