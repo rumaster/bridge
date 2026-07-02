@@ -1,0 +1,11 @@
+{
+  "name": "@bridge/edge-gateway",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "node ../../scripts/workspace-command.mjs lint",
+    "test": "node ../../scripts/workspace-command.mjs test",
+    "build": "node ../../scripts/workspace-command.mjs build"
+  }
+}
