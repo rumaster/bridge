@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bridge.local/contracts/c2-egress-delivery.schema.json",
+  "title": "C2 Egress Delivery v1 M0 Mock",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "idempotency_key",
+    "channel_id",
+    "message"
+  ],
+  "properties": {
+    "contract": {
+      "const": "C2.EgressDelivery"
+    },
+    "version": {
+      "const": "1.0.0"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "channel_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "message": {
+      "$ref": "../message-model/c1-message.mock.schema.json"
+    }
+  }
+}

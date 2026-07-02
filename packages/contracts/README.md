@@ -24,6 +24,19 @@
   `POST /internal/egress/messages` для mock handoff Core -> Adapter без реальной
   доставки.
 
+## M0-05: C2/C6 для Integration Platform
+
+- `openapi/c2-internal-api.yaml` фиксирует mock C2: Adapter вызывает Core
+  через `POST /internal/ingress/messages`, Core вызывает Adapter через
+  `POST /internal/egress/deliveries`.
+- `json-schema/c2-ingress-message.schema.json` и
+  `json-schema/c2-egress-delivery.schema.json` описывают M0-обёртки вокруг
+  mock C1 сообщения.
+- `json-schema/c6-capability-descriptor.schema.json` и `src/c6.mjs`
+  фиксируют C6 v1. Обязательный набор возможностей: `text`, `image`, `file`,
+  `voice`, `video`, `buttons`, `reactions`, `typing_indicator`,
+  `read_receipt`, `delete`, `edit`.
+
 ## Ownership
 
 Каждый контракт имеет владельца из мастер-плана:
