@@ -1,0 +1,684 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Bridge C8 Broadcast API",
+    "version": "1.0.0",
+    "description": "Frozen M0 C8 contract for Broadcast Platform campaign management. M0 responses are deterministic mock responses; planning, recipient materialization and real delivery are out of scope until M3/M4."
+  },
+  "x-contract-id": "C8",
+  "x-owner": "SVC-BCAST",
+  "x-stage": "M0",
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "tags": [
+    {
+      "name": "broadcasts",
+      "description": "Broadcast campaign M0 contract endpoints."
+    }
+  ],
+  "paths": {
+    "/broadcasts": {
+      "get": {
+        "tags": ["broadcasts"],
+        "operationId": "listBroadcasts",
+        "summary": "List broadcast campaigns",
+        "parameters": [
+          {
+            "name": "organization_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deterministic list of campaigns for the organization.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListBroadcastsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["broadcasts"],
+        "operationId": "createBroadcast",
+        "summary": "Create a broadcast campaign draft",
+        "description": "Creates an M0 deterministic campaign draft. Segment materialization, scheduling and delivery are deliberately not implemented in M0.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBroadcastRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Broadcast campaign draft was accepted by the deterministic mock.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateBroadcastResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    },
+    "/broadcasts/{id}:start": {
+      "post": {
+        "tags": ["broadcasts"],
+        "operationId": "startBroadcast",
+        "summary": "Start a broadcast campaign",
+        "description": "Starts or schedules a campaign in the deterministic M0 mock and returns a BCAST -> CORE delivery draft that explicitly goes through C1/C2.",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/BroadcastId"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartBroadcastRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Broadcast campaign was accepted for deterministic M0 start.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartBroadcastResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    },
+    "/broadcasts/{id}/stats": {
+      "get": {
+        "tags": ["broadcasts"],
+        "operationId": "getBroadcastStats",
+        "summary": "Get broadcast execution stats",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/BroadcastId"
+          },
+          {
+            "name": "organization_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "name": "request_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deterministic M0 stats for the campaign.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BroadcastStatsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "BroadcastId": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "DTO validation failed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "CreateBroadcastRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "created_by",
+          "name",
+          "template",
+          "filter",
+          "schedule",
+          "rate_limit"
+        ],
+        "properties": {
+          "contract": {
+            "const": "C8.CreateBroadcastRequest"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "created_by": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "template": {
+            "$ref": "#/components/schemas/BroadcastTemplate"
+          },
+          "filter": {
+            "$ref": "#/components/schemas/BroadcastFilter"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/BroadcastSchedule"
+          },
+          "rate_limit": {
+            "$ref": "#/components/schemas/BroadcastRateLimit"
+          }
+        }
+      },
+      "StartBroadcastRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "started_by",
+          "mode"
+        ],
+        "properties": {
+          "contract": {
+            "const": "C8.StartBroadcastRequest"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "started_by": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["immediate", "scheduled"]
+          },
+          "scheduled_for": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "BroadcastTemplate": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "body"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["text"]
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1
+          },
+          "locale": {
+            "type": "string",
+            "minLength": 1
+          },
+          "variables": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "default": []
+          }
+        }
+      },
+      "BroadcastFilter": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["mode"],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["all", "tags", "segment", "custom"]
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "default": []
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "default": []
+          },
+          "segment_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "default": []
+          },
+          "criteria": {
+            "type": "object",
+            "additionalProperties": true,
+            "default": {}
+          }
+        }
+      },
+      "BroadcastSchedule": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["mode"],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["manual", "immediate", "scheduled", "event", "workflow"]
+          },
+          "scheduled_for": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "timezone": {
+            "type": "string",
+            "minLength": 1
+          },
+          "trigger": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "BroadcastRateLimit": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["messages_per_minute"],
+        "properties": {
+          "messages_per_minute": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "burst": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "strategy": {
+            "type": "string",
+            "enum": ["fixed", "channel_capability"],
+            "default": "fixed"
+          }
+        }
+      },
+      "BroadcastCampaign": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "organization_id",
+          "name",
+          "status",
+          "template",
+          "filter",
+          "schedule",
+          "rate_limit",
+          "created_by",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "$ref": "#/components/schemas/BroadcastStatus"
+          },
+          "template": {
+            "$ref": "#/components/schemas/BroadcastTemplate"
+          },
+          "filter": {
+            "$ref": "#/components/schemas/BroadcastFilter"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/BroadcastSchedule"
+          },
+          "rate_limit": {
+            "$ref": "#/components/schemas/BroadcastRateLimit"
+          },
+          "created_by": {
+            "type": "string",
+            "minLength": 1
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BroadcastStats": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["prepared", "sent", "delivered", "failed", "updated_at"],
+        "properties": {
+          "prepared": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sent": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "delivered": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "failed": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BroadcastStatus": {
+        "type": "string",
+        "enum": ["draft", "scheduled", "running", "done", "failed"]
+      },
+      "ListBroadcastsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contract", "version", "organization_id", "items", "page"],
+        "properties": {
+          "contract": {
+            "const": "C8.ListBroadcastsResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BroadcastCampaign"
+            }
+          },
+          "page": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["limit", "offset", "total"],
+            "properties": {
+              "limit": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "offset": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "total": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          }
+        }
+      },
+      "CreateBroadcastResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contract", "version", "request_id", "organization_id", "broadcast"],
+        "properties": {
+          "contract": {
+            "const": "C8.CreateBroadcastResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "broadcast": {
+            "$ref": "#/components/schemas/BroadcastCampaign"
+          }
+        }
+      },
+      "StartBroadcastResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "broadcast",
+          "degraded",
+          "fallback_reason",
+          "core_delivery_draft",
+          "state_changed_event",
+          "created_at"
+        ],
+        "properties": {
+          "contract": {
+            "const": "C8.StartBroadcastResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "broadcast": {
+            "$ref": "#/components/schemas/BroadcastCampaign"
+          },
+          "degraded": {
+            "type": "boolean"
+          },
+          "fallback_reason": {
+            "type": ["string", "null"],
+            "enum": ["timeout", "unavailable", null]
+          },
+          "core_delivery_draft": {
+            "$ref": "../../json-schema/c8-core-delivery-draft.schema.json"
+          },
+          "state_changed_event": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BroadcastStatsResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "broadcast_id",
+          "status",
+          "stats"
+        ],
+        "properties": {
+          "contract": {
+            "const": "C8.BroadcastStatsResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "broadcast_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "$ref": "#/components/schemas/BroadcastStatus"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/BroadcastStats"
+          }
+        }
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "title", "status", "detail", "errors"],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      }
+    }
+  }
+}
