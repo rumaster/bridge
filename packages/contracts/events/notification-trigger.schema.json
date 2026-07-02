@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bridge.local/contracts/events/notification-trigger.schema.json",
+  "title": "C10 producer notification trigger event",
+  "x-contract-id": "C10.notification.triggered",
+  "x-owner": "SVC-NOTIF",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "event",
+    "event_id",
+    "producer_service_id",
+    "producer_event_id",
+    "organization_id",
+    "recipient_user_id",
+    "category",
+    "title",
+    "body",
+    "payload",
+    "dedupe_key",
+    "occurred_at"
+  ],
+  "properties": {
+    "contract": {
+      "const": "C10.NotificationTriggerEvent"
+    },
+    "version": {
+      "const": "1.0.0"
+    },
+    "event": {
+      "const": "notification.triggered"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "producer_service_id": {
+      "type": "string",
+      "enum": ["SVC-CORE", "SVC-BCAST", "SVC-AI", "SVC-FBP", "SVC-API", "SVC-IDN", "SVC-DATA"]
+    },
+    "producer_event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "organization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "recipient_user_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "category": {
+      "type": "string",
+      "enum": ["info", "warning", "error", "critical", "admin"]
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "body": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "dedupe_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
