@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bridge.local/contracts/c2-ingress-message.schema.json",
+  "title": "C2 Ingress Message v1 M0 Mock",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "idempotency_key",
+    "received_at",
+    "message"
+  ],
+  "properties": {
+    "contract": {
+      "const": "C2.IngressMessage"
+    },
+    "version": {
+      "const": "1.0.0"
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "received_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "message": {
+      "$ref": "../message-model/c1-message.mock.schema.json"
+    }
+  }
+}

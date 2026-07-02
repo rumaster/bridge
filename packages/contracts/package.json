@@ -3,9 +3,12 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./c6": "./src/c6.mjs"
+  },
   "scripts": {
-    "lint": "node ../../scripts/workspace-command.mjs lint",
-    "test": "node ../../scripts/workspace-command.mjs test",
-    "build": "node ../../scripts/workspace-command.mjs build"
+    "lint": "node --check message-model/index.mjs && node --check message-model/message-model.test.mjs && node --check scripts/verify-auth-contract.mjs && find src test -name '*.mjs' -print0 | xargs -0 -n1 node --check",
+    "test": "node --test message-model/*.test.mjs test/*.test.mjs test/unit/*.test.mjs",
+    "build": "node --check message-model/index.mjs && node scripts/verify-auth-contract.mjs && find src -name '*.mjs' -print0 | xargs -0 -n1 node --check"
   }
 }
