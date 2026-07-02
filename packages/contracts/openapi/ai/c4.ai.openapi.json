@@ -1,0 +1,449 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Bridge C4 AI Contract",
+    "version": "1.0.0",
+    "description": "Frozen M0 contract for Backend API to call SVC-AI deterministic mock endpoints. Real LLM and RAG are out of scope for M0."
+  },
+  "x-contract-id": "C4",
+  "x-owner": "SVC-AI",
+  "x-stage": "M0",
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "tags": [
+    {
+      "name": "ai",
+      "description": "AI Assistant and AI Onboarding C4 endpoints."
+    }
+  ],
+  "paths": {
+    "/ai/assistant:suggest": {
+      "post": {
+        "tags": [
+          "ai"
+        ],
+        "operationId": "suggestAssistantReply",
+        "summary": "Suggest assistant reply",
+        "description": "Returns an M0 deterministic assistant suggestion. The response contains either KB sources or an explicit source_status explaining why sources are absent.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssistantSuggestRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Deterministic assistant suggestion or controlled fallback.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantSuggestResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    },
+    "/ai/onboarding:command": {
+      "post": {
+        "tags": [
+          "ai"
+        ],
+        "operationId": "createOnboardingCommand",
+        "summary": "Create onboarding structured command",
+        "description": "Converts an administrator natural-language request into an M0 structured command. SVC-AI never applies the command directly.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnboardingCommandRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Structured command for Backend validation and application.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingCommandResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "responses": {
+      "BadRequest": {
+        "description": "DTO validation failed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "AssistantSuggestRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "query"
+        ],
+        "properties": {
+          "contract": {
+            "const": "C4.AssistantSuggestRequest"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "conversation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "requester_user_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "query": {
+            "type": "string",
+            "minLength": 1
+          },
+          "context": {
+            "$ref": "#/components/schemas/AssistantContext"
+          }
+        }
+      },
+      "AssistantContext": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DialogMessageContext"
+            }
+          }
+        }
+      },
+      "DialogMessageContext": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "message_id",
+          "sender_type",
+          "text",
+          "occurred_at"
+        ],
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sender_type": {
+            "type": "string",
+            "enum": [
+              "client",
+              "manager",
+              "system",
+              "ai"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AssistantSuggestResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "degraded",
+          "fallback_reason",
+          "suggestion",
+          "source_status",
+          "sources",
+          "created_at"
+        ],
+        "properties": {
+          "contract": {
+            "const": "C4.AssistantSuggestResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "degraded": {
+            "type": "boolean"
+          },
+          "fallback_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "timeout",
+              "unavailable",
+              null
+            ]
+          },
+          "suggestion": {
+            "$ref": "#/components/schemas/AssistantSuggestion"
+          },
+          "source_status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "not_available_m0",
+              "unavailable"
+            ]
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssistantSource"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "AssistantSuggestion": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "mode",
+          "text",
+          "confidence"
+        ],
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "deterministic_mock",
+              "fallback"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          }
+        }
+      },
+      "AssistantSource": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_type",
+          "title"
+        ],
+        "properties": {
+          "source_type": {
+            "type": "string",
+            "enum": [
+              "knowledge_chunk",
+              "none"
+            ]
+          },
+          "document_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "chunk_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string"
+          },
+          "excerpt": {
+            "type": "string"
+          }
+        }
+      },
+      "OnboardingCommandRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "actor_user_id",
+          "prompt"
+        ],
+        "properties": {
+          "contract": {
+            "const": "C4.OnboardingCommandRequest"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "actor_user_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "prompt": {
+            "type": "string",
+            "minLength": 1
+          },
+          "context": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "OnboardingCommandResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "degraded",
+          "fallback_reason",
+          "command"
+        ],
+        "properties": {
+          "contract": {
+            "const": "C4.OnboardingCommandResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "degraded": {
+            "type": "boolean"
+          },
+          "fallback_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "timeout",
+              "unavailable",
+              null
+            ]
+          },
+          "command": {
+            "$ref": "../../json-schema/c4-ai-onboarding-command.schema.json"
+          }
+        }
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail"
+        ],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "field",
+                "message"
+              ],
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
