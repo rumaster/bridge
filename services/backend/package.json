@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "node ../../scripts/workspace-command.mjs lint",
-    "test": "node ../../scripts/workspace-command.mjs test",
-    "build": "node ../../scripts/workspace-command.mjs build"
+    "lint": "node --check src/modules/communication-core/index.mjs && node --check src/modules/communication-core/mock-ingress-egress.mjs && node --check test/unit/communication-core.mock.test.mjs",
+    "test": "node --test test/unit/*.test.mjs",
+    "build": "node --check src/modules/communication-core/index.mjs && node --check src/modules/communication-core/mock-ingress-egress.mjs"
   }
 }
