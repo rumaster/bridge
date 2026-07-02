@@ -1,0 +1,273 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Communication Core C2 Ingress/Egress",
+    "version": "1.0.0",
+    "description": "Internal INT <-> CORE contract for adapter ingress and mock egress handoff."
+  },
+  "paths": {
+    "/internal/ingress/messages": {
+      "post": {
+        "operationId": "acceptIngressMessage",
+        "summary": "Adapter -> Core ingress for canonical C1 messages.",
+        "tags": ["C2 Ingress"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IngressMessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Message accepted by the M0 mock.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngressAcceptedResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid C1/C2 message DTO.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/internal/egress/messages": {
+      "post": {
+        "operationId": "handoffEgressMessage",
+        "summary": "Core -> Adapter egress handoff without real delivery.",
+        "tags": ["C2 Egress"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EgressHandoffRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Egress handoff recorded by the mock.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EgressHandoffResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid egress DTO.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CanonicalMessage": {
+        "$ref": "../message-model/message.schema.json"
+      },
+      "IngressMessageRequest": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CanonicalMessage"
+          }
+        ],
+        "description": "Canonical C1 message with direction=inbound and status=received."
+      },
+      "IngressAcceptedResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "accepted",
+          "mock",
+          "message_id",
+          "idempotency_key",
+          "organization_id",
+          "conversation_id",
+          "endpoint_id",
+          "sequence_number",
+          "status",
+          "received_at"
+        ],
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "const": true
+          },
+          "mock": {
+            "type": "boolean",
+            "const": true
+          },
+          "duplicate": {
+            "type": "boolean"
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organization_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "conversation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "endpoint_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sequence_number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "const": "received"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "EgressHandoffRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["message", "delivery_target"],
+        "properties": {
+          "message": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CanonicalMessage"
+              }
+            ],
+            "description": "Canonical C1 message with direction=outbound and status=routed."
+          },
+          "delivery_target": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["adapter", "adapter_endpoint_id"],
+            "properties": {
+              "adapter": {
+                "type": "string"
+              },
+              "adapter_endpoint_id": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "EgressHandoffResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "accepted",
+          "mock_delivery",
+          "message_id",
+          "idempotency_key",
+          "organization_id",
+          "endpoint_id",
+          "channel",
+          "sequence_number",
+          "adapter",
+          "adapter_endpoint_id",
+          "delivery_status",
+          "sent_at"
+        ],
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "const": true
+          },
+          "mock_delivery": {
+            "type": "boolean",
+            "const": true
+          },
+          "message_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organization_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "endpoint_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "sequence_number": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "adapter": {
+            "type": "string"
+          },
+          "adapter_endpoint_id": {
+            "type": "string"
+          },
+          "delivery_status": {
+            "type": "string",
+            "const": "sent"
+          },
+          "sent_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ValidationError": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["message", "errors"],
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}

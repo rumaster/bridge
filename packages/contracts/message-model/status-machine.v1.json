@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge.local/c1/message-status-machine.v1.json",
+  "contract_id": "C1",
+  "version": "1.0.0",
+  "initial_status": "received",
+  "terminal_statuses": ["delivered", "failed"],
+  "statuses": ["received", "routed", "sent", "delivered", "failed"],
+  "transitions": {
+    "received": ["routed", "failed"],
+    "routed": ["sent", "failed"],
+    "sent": ["delivered", "failed"],
+    "delivered": [],
+    "failed": []
+  }
+}
