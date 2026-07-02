@@ -1,0 +1,56 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "C7 WebSocket Events",
+    "version": "1.0.0"
+  },
+  "x-contract-id": "C7",
+  "x-owner": "SVC-CORE/SVC-API/SVC-EDGE",
+  "x-reconnect": {
+    "mode": "client_auto_reconnect",
+    "resume_cursor": "last_event_id",
+    "delivery": "at_least_once_with_client_dedup",
+    "duplicate_rule": "drop events with event_id already observed by the client",
+    "ordering": "sequence_number is monotonic inside one WebSocket subscription"
+  },
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "paths": {
+    "/ws": {
+      "get": {
+        "summary": "Upgrade client connection to C7 WebSocket event stream",
+        "operationId": "connectC7WebSocket",
+        "x-upgrade": "websocket",
+        "parameters": [
+          {
+            "name": "last_event_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Last C7 event observed by the client. Used to resume without redelivering already observed events."
+          }
+        ],
+        "responses": {
+          "101": {
+            "description": "WebSocket upgrade accepted. Text frames contain C7.WebSocketEvent JSON envelopes."
+          },
+          "426": {
+            "description": "Upgrade Required when called as a regular HTTP request."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "C7WebSocketEvent": {
+        "$ref": "../../events/c7-websocket-event.schema.json"
+      }
+    }
+  }
+}

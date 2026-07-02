@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bridge.local/contracts/json-schema/c9-edge-tunnel-message.schema.json",
+  "title": "C9 Edge/App tunnel message",
+  "x-contract-id": "C9.EdgeTunnelMessage",
+  "x-owner": "SVC-EDGE",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "endpoint_id",
+    "sequence_number",
+    "idempotency_key",
+    "payload",
+    "timestamps"
+  ],
+  "properties": {
+    "contract": {
+      "const": "C9.EdgeTunnelMessage"
+    },
+    "version": {
+      "const": "1.0.0"
+    },
+    "endpoint_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sequence_number": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "idempotency_key": {
+      "type": "string",
+      "minLength": 1
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "timestamps": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "received_at",
+        "buffered_at",
+        "forwarded_at"
+      ],
+      "properties": {
+        "received_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "buffered_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "forwarded_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    }
+  }
+}

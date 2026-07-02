@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bridge.local/contracts/events/c7-websocket-event.schema.json",
+  "title": "C7 WebSocket event envelope",
+  "x-contract-id": "C7",
+  "x-owner": "SVC-CORE/SVC-API/SVC-EDGE",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "event",
+    "event_id",
+    "organization_id",
+    "sequence_number",
+    "payload",
+    "occurred_at"
+  ],
+  "properties": {
+    "contract": {
+      "const": "C7.WebSocketEvent"
+    },
+    "version": {
+      "const": "1.0.0"
+    },
+    "event": {
+      "type": "string",
+      "enum": [
+        "message.created",
+        "message.status_changed",
+        "typing.started",
+        "typing.stopped",
+        "client.status_changed",
+        "notification.created",
+        "broadcast.state_changed",
+        "workflow.state_changed"
+      ]
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "organization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "subscription_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sequence_number": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}
