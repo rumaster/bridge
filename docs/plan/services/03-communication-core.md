@@ -173,6 +173,12 @@ Endpoint (ТЗ §8.5); (2) `sequence_number` монотонен в предел�
   модуля `communication-core` в NestJS.
 - **Тесты.** unit — валидация DTO C1, схема события; contract-заготовки INT↔CORE.
 - **DoD.** Контракты C1/C2 v1 заморожены (semver), моки в CI зелёные (мастер §9.4).
+- **Артефакты M0.** C1 v1.0.0 зафиксирован в
+  `packages/contracts/message-model`; C2 Ingress/Egress v1.0.0 — в
+  `packages/contracts/openapi/communication-core-c2.openapi.json`; mock
+  Ingress/Egress без БД и реальной доставки — в
+  `services/backend/src/modules/communication-core`; contract smoke INT↔CORE —
+  в `tests/contract`.
 
 ### M1 — Вертикальный срез «приём и ответ»
 

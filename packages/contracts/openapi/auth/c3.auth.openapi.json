@@ -1,0 +1,495 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Bridge C3.auth API",
+    "version": "1.0.0",
+    "description": "Frozen M0 contract for Identity Platform authentication and session endpoints. Real Telegram code_hash and server session verification are implemented in M1."
+  },
+  "x-contract-id": "C3.auth",
+  "x-owner": "SVC-IDN",
+  "x-stage": "M0",
+  "servers": [
+    {
+      "url": "/api/v1"
+    }
+  ],
+  "tags": [
+    {
+      "name": "auth",
+      "description": "Authentication and current-session endpoints."
+    }
+  ],
+  "paths": {
+    "/auth/login/telegram/start": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "startTelegramLogin",
+        "summary": "Start Telegram login",
+        "description": "Accepts a platform user Telegram username and schedules one-time code delivery through a mocked Telegram delivery channel in M0. Real user lookup, code generation and code_hash persistence are implemented in M1.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelegramLoginStartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Login challenge accepted by the M0 mock delivery flow.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramLoginStartResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    },
+    "/auth/login/telegram/verify": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "verifyTelegramLogin",
+        "summary": "Verify Telegram login code",
+        "description": "Accepts a Telegram username and one-time code DTO. M0 returns the seeded mock session context; real code_hash lookup, constant-time code comparison, login_codes consumption and auth session creation are implemented in M1.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelegramLoginVerifyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authenticated mock session context.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "logout",
+        "summary": "Logout current session",
+        "description": "M0 acknowledges logout for the mock AuthGuard context. Real server session revocation is implemented in M1.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Logout acknowledged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/auth/session": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "getCurrentSession",
+        "summary": "Get current session",
+        "description": "Returns the current user, organization and roles from the M0 mock AuthGuard. Real session lookup, expiration and revocation checks are implemented in M1.",
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionCookie": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current mock or real session context.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Opaque server session token. M0 uses mock AuthGuard; real tokens are M1."
+      },
+      "SessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "bridge_session",
+        "description": "HTTP-only server session cookie. M0 uses mock AuthGuard; real cookies are M1."
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "DTO validation failed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Authentication is required or the session is invalid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "TelegramLoginStartRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "telegramUsername"
+        ],
+        "properties": {
+          "telegramUsername": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 33,
+            "pattern": "^@?[A-Za-z0-9_]{5,32}$",
+            "description": "Telegram username with optional @ prefix. Backend normalizes it to lowercase without @."
+          }
+        }
+      },
+      "TelegramLoginStartResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "deliveryChannel",
+          "telegramUsername",
+          "expiresInSeconds",
+          "implementationStage"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "mock_code_delivery_scheduled"
+            ]
+          },
+          "deliveryChannel": {
+            "type": "string",
+            "enum": [
+              "telegram"
+            ]
+          },
+          "telegramUsername": {
+            "type": "string"
+          },
+          "expiresInSeconds": {
+            "type": "integer",
+            "minimum": 1,
+            "example": 300
+          },
+          "implementationStage": {
+            "type": "string",
+            "enum": [
+              "M0"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "description": "Human-readable note that real Telegram delivery and code_hash persistence belong to M1."
+          }
+        }
+      },
+      "TelegramLoginVerifyRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "telegramUsername",
+          "code"
+        ],
+        "properties": {
+          "telegramUsername": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 33,
+            "pattern": "^@?[A-Za-z0-9_]{5,32}$",
+            "description": "Telegram username with optional @ prefix. Backend normalizes it to lowercase without @."
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[0-9]{6}$",
+            "description": "Six-digit one-time code from Telegram. M0 validates DTO shape only; real verification is M1."
+          }
+        }
+      },
+      "AuthSessionResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "authenticated",
+          "user",
+          "organization",
+          "roles",
+          "session",
+          "implementationStage"
+        ],
+        "properties": {
+          "authenticated": {
+            "type": "boolean"
+          },
+          "user": {
+            "$ref": "#/components/schemas/AuthUser"
+          },
+          "organization": {
+            "$ref": "#/components/schemas/AuthOrganization"
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuthRoleCode"
+            },
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "session": {
+            "$ref": "#/components/schemas/AuthSession"
+          },
+          "implementationStage": {
+            "type": "string",
+            "enum": [
+              "M0"
+            ]
+          }
+        }
+      },
+      "AuthUser": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "organizationId",
+          "telegramUsername",
+          "displayName",
+          "status"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "organizationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "telegramUsername": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "blocked"
+            ]
+          }
+        }
+      },
+      "AuthOrganization": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "slug",
+          "name"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "AuthRoleCode": {
+        "type": "string",
+        "enum": [
+          "platform_operator",
+          "administrator",
+          "manager"
+        ]
+      },
+      "AuthSession": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "mode",
+          "issuedAt",
+          "expiresAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "mock"
+            ]
+          },
+          "issuedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "LogoutResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "loggedOut",
+          "sessionMode",
+          "implementationStage"
+        ],
+        "properties": {
+          "loggedOut": {
+            "type": "boolean",
+            "const": true
+          },
+          "sessionMode": {
+            "type": "string",
+            "enum": [
+              "mock"
+            ]
+          },
+          "implementationStage": {
+            "type": "string",
+            "enum": [
+              "M0"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "description": "Real auth_sessions revocation is implemented in M1."
+          }
+        }
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "format": "uri-reference"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "detail": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "field",
+                "message"
+              ],
+              "properties": {
+                "field": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

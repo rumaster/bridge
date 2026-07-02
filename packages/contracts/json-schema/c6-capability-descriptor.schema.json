@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bridge.local/contracts/c6-capability-descriptor.schema.json",
+  "title": "C6 Capability Descriptor v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "channel_type",
+    "adapter",
+    "capabilities",
+    "generated_at"
+  ],
+  "properties": {
+    "contract": {
+      "const": "C6.CapabilityDescriptor"
+    },
+    "version": {
+      "const": "1.0.0"
+    },
+    "channel_type": {
+      "type": "string",
+      "minLength": 1
+    },
+    "channel_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "text",
+        "image",
+        "file",
+        "voice",
+        "video",
+        "buttons",
+        "reactions",
+        "typing_indicator",
+        "read_receipt",
+        "delete",
+        "edit"
+      ],
+      "properties": {
+        "text": {
+          "$ref": "#/$defs/capability"
+        },
+        "image": {
+          "$ref": "#/$defs/capability"
+        },
+        "file": {
+          "$ref": "#/$defs/capability"
+        },
+        "voice": {
+          "$ref": "#/$defs/capability"
+        },
+        "video": {
+          "$ref": "#/$defs/capability"
+        },
+        "buttons": {
+          "$ref": "#/$defs/capability"
+        },
+        "reactions": {
+          "$ref": "#/$defs/capability"
+        },
+        "typing_indicator": {
+          "$ref": "#/$defs/capability"
+        },
+        "read_receipt": {
+          "$ref": "#/$defs/capability"
+        },
+        "delete": {
+          "$ref": "#/$defs/capability"
+        },
+        "edit": {
+          "$ref": "#/$defs/capability"
+        }
+      }
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "capability": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["supported"],
+      "properties": {
+        "supported": {
+          "type": "boolean"
+        },
+        "constraints": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
