@@ -28,6 +28,11 @@
     "db:seed": "node scripts/db-seed.mjs",
     "ci": "npm run lint && npm test && npm run build"
   },
+  "msw": {
+    "workerDirectory": [
+      "apps/web-chat/public"
+    ]
+  },
   "devDependencies": {
     "node-pg-migrate": "^8.0.4",
     "pg": "^8.22.0",
