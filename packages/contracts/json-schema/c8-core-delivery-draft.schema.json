@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bridge.local/contracts/c8-core-delivery-draft.schema.json",
+  "title": "C8 Broadcast Core Delivery Draft v1 M0",
+  "description": "BCAST -> CORE M0 contract skeleton. Broadcast prepares a canonical C1 outbound message and hands it to CORE for C2 delivery; SVC-BCAST never delivers directly to adapters.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "broadcast_id",
+    "organization_id",
+    "delivery_path",
+    "core_contracts",
+    "sender_type",
+    "message"
+  ],
+  "properties": {
+    "contract": {
+      "const": "C8.BroadcastCoreDeliveryDraft"
+    },
+    "version": {
+      "const": "1.0.0"
+    },
+    "broadcast_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "organization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "delivery_path": {
+      "const": "C1/C2"
+    },
+    "core_contracts": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "const": "C1"
+        },
+        {
+          "const": "C2"
+        }
+      ],
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "sender_type": {
+      "const": "broadcast"
+    },
+    "message": {
+      "$ref": "../message-model/message.schema.json"
+    }
+  }
+}
