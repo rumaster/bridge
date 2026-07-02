@@ -1,0 +1,1559 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Bridge Mobile API",
+    "version": "1.0.0",
+    "description": "Frozen M0 independent Mobile API contract for mobile clients. SVC-MOB is a BFF mock in M0: it aggregates or proxies C3/C7/C9/C10 contracts without owning domain business logic."
+  },
+  "x-contract-id": "MOBILE.v1",
+  "x-owner": "SVC-MOB",
+  "x-stage": "M0",
+  "x-api-semver": "1.0.0",
+  "x-consumes": [
+    "C3.auth",
+    "C3.conversations",
+    "C3.messages",
+    "C3.clients",
+    "C7",
+    "C9",
+    "C10.notifications"
+  ],
+  "servers": [
+    {
+      "url": "/mobile/v1"
+    }
+  ],
+  "tags": [
+    {
+      "name": "auth",
+      "description": "Mobile auth proxy over C3.auth."
+    },
+    {
+      "name": "dialogs",
+      "description": "Aggregated mobile dialog views built from C3.conversations, C3.messages and C3.clients."
+    },
+    {
+      "name": "messages",
+      "description": "Mobile message history and idempotent sending."
+    },
+    {
+      "name": "notifications",
+      "description": "Aggregated mobile notification views from C10."
+    },
+    {
+      "name": "sync",
+      "description": "Cursor-based delta sync for future offline support."
+    },
+    {
+      "name": "devices",
+      "description": "Device and push-token registration."
+    }
+  ],
+  "paths": {
+    "/auth/login/telegram/start": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "mobileStartTelegramLogin",
+        "summary": "Start Telegram login through C3.auth",
+        "description": "M0 proxy stub for POST /auth/login/telegram/start. Real Telegram login verification remains in SVC-IDN.",
+        "x-proxies": "C3.auth",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthProxyStartRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Login start accepted by the auth proxy mock.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthProxyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          }
+        }
+      }
+    },
+    "/auth/login/telegram/verify": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "mobileVerifyTelegramLogin",
+        "summary": "Verify Telegram login through C3.auth",
+        "description": "M0 proxy stub for POST /auth/login/telegram/verify. Response is a mobile-shaped session DTO.",
+        "x-proxies": "C3.auth",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthProxyVerifyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authenticated mobile session.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/auth/logout": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "mobileLogout",
+        "summary": "Logout through C3.auth",
+        "x-proxies": "C3.auth",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Logout acknowledged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/auth/session": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "operationId": "mobileGetSession",
+        "summary": "Get current mobile session through C3.auth",
+        "x-proxies": "C3.auth",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Current session shaped for mobile clients.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuthSessionResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/dialogs": {
+      "get": {
+        "tags": [
+          "dialogs"
+        ],
+        "operationId": "mobileListDialogs",
+        "summary": "List aggregated mobile dialogs",
+        "description": "Returns a compact dialog list for mobile screens. M0 is a deterministic mock; M4 will aggregate C3.conversations, C3.messages and C3.clients.",
+        "x-source-contracts": [
+          "C3.conversations",
+          "C3.messages",
+          "C3.clients"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Aggregated dialog page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DialogListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/dialogs/{dialog_id}/messages": {
+      "get": {
+        "tags": [
+          "messages"
+        ],
+        "operationId": "mobileListDialogMessages",
+        "summary": "List messages for a mobile dialog",
+        "description": "Returns cursor-paginated message history for a mobile dialog. M0 is backed by deterministic fixtures.",
+        "x-source-contracts": [
+          "C3.conversations",
+          "C3.messages"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "dialog_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Message page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DialogMessagesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/messages": {
+      "post": {
+        "tags": [
+          "messages"
+        ],
+        "operationId": "mobileSendMessage",
+        "summary": "Send a message idempotently through C3.messages",
+        "description": "Mobile clients send with idempotency_key equal to message_id. M0 accepts and echoes the proxy target; real storage and routing are in SVC-CORE.",
+        "x-proxies": "C3.messages",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendMessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Message accepted by the mobile mock and ready to proxy to C3.messages.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendMessageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/notifications": {
+      "get": {
+        "tags": [
+          "notifications"
+        ],
+        "operationId": "mobileListNotifications",
+        "summary": "List aggregated mobile notifications",
+        "description": "Returns mobile notification views from C10. Real read-state and push delivery are out of scope for M0.",
+        "x-source-contracts": [
+          "C10.notifications"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Cursor"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Notification page.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/sync": {
+      "get": {
+        "tags": [
+          "sync"
+        ],
+        "operationId": "mobileSync",
+        "summary": "Return mobile deltas after a cursor",
+        "description": "M0 freezes the cursor shape and response envelope. Real offline delta collection is planned for M4.",
+        "x-source-contracts": [
+          "C3.conversations",
+          "C3.messages",
+          "C7",
+          "C10.notifications"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/SyncCursor"
+          },
+          {
+            "$ref": "#/components/parameters/DeviceId"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Delta sync response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/devices": {
+      "post": {
+        "tags": [
+          "devices"
+        ],
+        "operationId": "mobileRegisterDevice",
+        "summary": "Register a mobile device and push token",
+        "description": "M0 validates the DTO and returns a push-payload mapping stub. Real token persistence and provider delivery are planned for M4.",
+        "x-consumes": [
+          "C10.notifications"
+        ],
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceRegistrationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Device registered in the M0 mock.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceRegistrationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      }
+    },
+    "/devices/{device_id}": {
+      "delete": {
+        "tags": [
+          "devices"
+        ],
+        "operationId": "mobileRevokeDevice",
+        "summary": "Revoke a registered device",
+        "description": "M0 marks a device as revoked in the deterministic mock.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Device revocation acknowledged.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeDeviceResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Opaque C3.auth session token. M0 accepts mock context."
+      }
+    },
+    "parameters": {
+      "Cursor": {
+        "name": "cursor",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "SyncCursor": {
+        "name": "cursor",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "$ref": "#/components/schemas/SyncCursor"
+        }
+      },
+      "DeviceId": {
+        "name": "device_id",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "default": 100
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "DTO validation failed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
+        }
+      },
+      "Unauthorized": {
+        "description": "Authentication is required or the session is invalid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Resource was not found.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
+        }
+      }
+    },
+    "schemas": {
+      "SyncCursor": {
+        "type": "string",
+        "pattern": "^mob1\\.[A-Za-z0-9_-]+$",
+        "description": "Mobile sync cursor: mob1.<base64url JSON with v, organization_id, user_id, device_id, sequence, issued_at>."
+      },
+      "AuthProxyStartRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "request_id",
+          "telegram_username"
+        ],
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "telegram_username": {
+            "type": "string",
+            "minLength": 5
+          },
+          "device_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "AuthProxyVerifyRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "request_id",
+          "telegram_username",
+          "code"
+        ],
+        "properties": {
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "telegram_username": {
+            "type": "string",
+            "minLength": 5
+          },
+          "code": {
+            "type": "string",
+            "minLength": 1
+          },
+          "device_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "AuthProxyResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "proxied_to",
+          "upstream_operation",
+          "status",
+          "mock"
+        ],
+        "properties": {
+          "contract": {
+            "const": "MOBILE.AuthProxyResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "proxied_to": {
+            "const": "C3.auth"
+          },
+          "upstream_operation": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "ok"
+            ]
+          },
+          "mock": {
+            "const": true
+          }
+        }
+      },
+      "AuthSessionResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "proxied_to",
+          "authenticated",
+          "session",
+          "mock"
+        ],
+        "properties": {
+          "contract": {
+            "const": "MOBILE.AuthSessionResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "proxied_to": {
+            "const": "C3.auth"
+          },
+          "authenticated": {
+            "type": "boolean"
+          },
+          "session": {
+            "$ref": "#/components/schemas/MobileSession"
+          },
+          "mock": {
+            "const": true
+          }
+        }
+      },
+      "LogoutResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "proxied_to",
+          "status",
+          "mock"
+        ],
+        "properties": {
+          "contract": {
+            "const": "MOBILE.LogoutResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "proxied_to": {
+            "const": "C3.auth"
+          },
+          "status": {
+            "const": "ok"
+          },
+          "mock": {
+            "const": true
+          }
+        }
+      },
+      "MobileSession": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organization_id",
+          "user_id",
+          "roles",
+          "issued_at"
+        ],
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "user_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "roles": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "locale": {
+            "type": "string"
+          },
+          "issued_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DialogListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "source_contracts",
+          "items",
+          "next_cursor",
+          "mock"
+        ],
+        "properties": {
+          "contract": {
+            "const": "MOBILE.DialogListResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "source_contracts": {
+            "$ref": "#/components/schemas/SourceContracts"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MobileDialog"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mock": {
+            "const": true
+          }
+        }
+      },
+      "MobileDialog": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dialog_id",
+          "conversation_id",
+          "organization_id",
+          "client",
+          "last_message",
+          "unread_count",
+          "updated_at"
+        ],
+        "properties": {
+          "dialog_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "conversation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "client": {
+            "$ref": "#/components/schemas/MobileClientPreview"
+          },
+          "last_message": {
+            "$ref": "#/components/schemas/MobileMessagePreview"
+          },
+          "unread_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "MobileClientPreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "client_id",
+          "display_name"
+        ],
+        "properties": {
+          "client_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "display_name": {
+            "type": "string"
+          }
+        }
+      },
+      "MobileMessagePreview": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "message_id",
+          "sender_type",
+          "text",
+          "occurred_at"
+        ],
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sender_type": {
+            "$ref": "#/components/schemas/SenderType"
+          },
+          "text": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DialogMessagesResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "dialog_id",
+          "source_contracts",
+          "items",
+          "next_cursor",
+          "mock"
+        ],
+        "properties": {
+          "contract": {
+            "const": "MOBILE.DialogMessagesResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "dialog_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "source_contracts": {
+            "$ref": "#/components/schemas/SourceContracts"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MobileMessage"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mock": {
+            "const": true
+          }
+        }
+      },
+      "MobileMessage": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "message_id",
+          "dialog_id",
+          "conversation_id",
+          "sender_type",
+          "text",
+          "sequence_number",
+          "status",
+          "occurred_at"
+        ],
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "dialog_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "conversation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sender_type": {
+            "$ref": "#/components/schemas/SenderType"
+          },
+          "text": {
+            "type": "string"
+          },
+          "sequence_number": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "status": {
+            "type": "string"
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SendMessageRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "conversation_id",
+          "message_id",
+          "idempotency_key",
+          "sender_user_id",
+          "text"
+        ],
+        "properties": {
+          "contract": {
+            "const": "MOBILE.SendMessageRequest"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "conversation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "message_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Client-generated message id. Must equal idempotency_key."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Must equal message_id for mobile sends."
+          },
+          "sender_user_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1
+          },
+          "client_generated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SendMessageResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "message_id",
+          "idempotency_key",
+          "proxied_to",
+          "upstream_operation",
+          "status",
+          "accepted_at",
+          "mock"
+        ],
+        "properties": {
+          "contract": {
+            "const": "MOBILE.SendMessageResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "organization_id": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
+          },
+          "idempotency_key": {
+            "type": "string"
+          },
+          "proxied_to": {
+            "const": "C3.messages"
+          },
+          "upstream_operation": {
+            "const": "POST /messages"
+          },
+          "status": {
+            "const": "accepted"
+          },
+          "accepted_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "mock": {
+            "const": true
+          }
+        }
+      },
+      "NotificationListResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "source_contracts",
+          "items",
+          "next_cursor",
+          "mock"
+        ],
+        "properties": {
+          "contract": {
+            "const": "MOBILE.NotificationListResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "source_contracts": {
+            "$ref": "#/components/schemas/SourceContracts"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MobileNotification"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "mock": {
+            "const": true
+          }
+        }
+      },
+      "MobileNotification": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "notification_id",
+          "organization_id",
+          "user_id",
+          "title",
+          "body",
+          "severity",
+          "created_at"
+        ],
+        "properties": {
+          "notification_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "user_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warning",
+              "critical"
+            ]
+          },
+          "data": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "read_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "SyncResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "previous_cursor",
+          "cursor",
+          "has_more",
+          "limit",
+          "source_contracts",
+          "deltas",
+          "mock"
+        ],
+        "properties": {
+          "contract": {
+            "const": "MOBILE.SyncResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "previous_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cursor": {
+            "$ref": "#/components/schemas/SyncCursor"
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "limit": {
+            "type": "integer"
+          },
+          "source_contracts": {
+            "$ref": "#/components/schemas/SourceContracts"
+          },
+          "deltas": {
+            "$ref": "#/components/schemas/SyncDeltas"
+          },
+          "mock": {
+            "const": true
+          }
+        }
+      },
+      "SyncDeltas": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dialogs",
+          "messages",
+          "notifications",
+          "statuses"
+        ],
+        "properties": {
+          "dialogs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MobileDialog"
+            }
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MobileMessage"
+            }
+          },
+          "notifications": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MobileNotification"
+            }
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      },
+      "DeviceRegistrationRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "user_id",
+          "device_id",
+          "platform",
+          "push_provider",
+          "push_token"
+        ],
+        "properties": {
+          "contract": {
+            "const": "MOBILE.RegisterDeviceRequest"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "organization_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "user_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "device_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "ios",
+              "android"
+            ]
+          },
+          "push_provider": {
+            "type": "string",
+            "enum": [
+              "apns",
+              "fcm"
+            ]
+          },
+          "push_token": {
+            "type": "string",
+            "minLength": 1
+          },
+          "app_version": {
+            "type": "string"
+          },
+          "locale": {
+            "type": "string"
+          }
+        }
+      },
+      "DeviceRegistrationResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "device",
+          "push_payload_stub",
+          "mock"
+        ],
+        "properties": {
+          "contract": {
+            "const": "MOBILE.RegisterDeviceResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "device": {
+            "$ref": "#/components/schemas/MobileDevice"
+          },
+          "push_payload_stub": {
+            "$ref": "#/components/schemas/PushPayloadStub"
+          },
+          "mock": {
+            "const": true
+          }
+        }
+      },
+      "MobileDevice": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "organization_id",
+          "user_id",
+          "device_id",
+          "platform",
+          "push_provider",
+          "push_token",
+          "created_at",
+          "last_seen_at",
+          "revoked_at"
+        ],
+        "properties": {
+          "organization_id": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "platform": {
+            "type": "string"
+          },
+          "push_provider": {
+            "type": "string"
+          },
+          "push_token": {
+            "type": "string"
+          },
+          "app_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "locale": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_seen_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revoked_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "PushPayloadStub": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "contract",
+          "version",
+          "provider",
+          "device_id",
+          "notification_id",
+          "ttl_seconds",
+          "payload"
+        ],
+        "properties": {
+          "contract": {
+            "const": "MOBILE.PushPayloadStub"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "provider": {
+            "type": "string",
+            "enum": [
+              "fcm",
+              "apns"
+            ]
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "notification_id": {
+            "type": "string"
+          },
+          "ttl_seconds": {
+            "type": "integer"
+          },
+          "payload": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "RevokeDeviceResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "contract",
+          "version",
+          "device_id",
+          "status",
+          "revoked_at",
+          "mock"
+        ],
+        "properties": {
+          "contract": {
+            "const": "MOBILE.RevokeDeviceResponse"
+          },
+          "version": {
+            "const": "1.0.0"
+          },
+          "device_id": {
+            "type": "string"
+          },
+          "status": {
+            "const": "revoked"
+          },
+          "revoked_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "mock": {
+            "const": true
+          }
+        }
+      },
+      "SourceContracts": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "minItems": 1
+      },
+      "SenderType": {
+        "type": "string",
+        "enum": [
+          "client",
+          "manager",
+          "system",
+          "ai"
+        ]
+      },
+      "ProblemDetails": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail",
+          "errors"
+        ],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "integer"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          }
+        }
+      }
+    }
+  }
+}

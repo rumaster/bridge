@@ -74,6 +74,17 @@
 - `src/c7.mjs` и `src/c9.mjs` содержат M0-константы и лёгкие валидаторы для unit
   и contract smoke-тестов.
 
+## M0-14: MOBILE.v1 для Mobile API
+
+- `openapi/mobile/mobile.v1.openapi.json` фиксирует независимый мобильный API
+  v1.0.0 под `/mobile/v1`: auth proxy, aggregated dialogs/messages/
+  notifications, `GET /sync`, `POST /devices` и отзыв устройства.
+- `mobile/consumer-contracts.v1.json` содержит M0-заготовки consumer-driven
+  контрактов для mobile app ↔ SVC-MOB и потребления SVC-MOB контрактов
+  C3.auth, C3.conversations/messages/clients, C7, C9 и C10.notifications.
+- `src/mobile.mjs` содержит semver, base path, contract id и проверку формы
+  sync cursor `mob1.<base64url-json>`.
+
 ## Ownership
 
 Каждый контракт имеет владельца из мастер-плана:
@@ -88,6 +99,7 @@
 - C8 Broadcast - SVC-BCAST.
 - C9 Edge/App Tunnel - SVC-EDGE.
 - C10 Notification - SVC-NOTIF.
+- MOBILE.v1 Mobile API - SVC-MOB.
 - C-OUT Outbox/Events - SVC-DATA.
 
 Изменение контракта требует участия владельца и затронутых потребителей. Для
