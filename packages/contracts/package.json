@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "node ../../scripts/workspace-command.mjs lint",
-    "test": "node ../../scripts/workspace-command.mjs test",
-    "build": "node ../../scripts/workspace-command.mjs build"
+    "lint": "node --check message-model/index.mjs && node --check message-model/message-model.test.mjs",
+    "test": "node --test message-model/*.test.mjs",
+    "build": "node --check message-model/index.mjs"
   }
 }

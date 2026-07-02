@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge.local/c1/message.schema.json",
+  "title": "C1 Canonical Message",
+  "description": "Canonical Communication Core message. id is the message_id and must be equal to idempotency_key.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "idempotency_key",
+    "organization_id",
+    "conversation_id",
+    "endpoint_id",
+    "channel",
+    "direction",
+    "sender_type",
+    "sequence_number",
+    "type",
+    "content",
+    "status",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Canonical message_id. Also the cross-service idempotency key."
+    },
+    "idempotency_key": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Must be equal to id."
+    },
+    "organization_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "conversation_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "client_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "endpoint_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "channel": {
+      "type": "string",
+      "enum": ["telegram", "max", "vk", "whatsapp", "web_chat", "email", "sms"]
+    },
+    "direction": {
+      "type": "string",
+      "enum": ["inbound", "outbound"]
+    },
+    "sender_type": {
+      "type": "string",
+      "enum": ["client", "manager", "ai", "broadcast", "system"]
+    },
+    "sequence_number": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Monotonic order inside endpoint_id."
+    },
+    "type": {
+      "type": "string",
+      "enum": ["text", "image", "file", "audio", "video", "location", "command", "event", "system"]
+    },
+    "content": {
+      "type": "object",
+      "description": "Channel-independent canonical payload.",
+      "additionalProperties": true
+    },
+    "attachments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "storage_ref", "mime", "size"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "storage_ref": {
+            "type": "string"
+          },
+          "mime": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["received", "routed", "sent", "delivered", "failed"]
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "received_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "routed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sent_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "delivered_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "failed_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}
