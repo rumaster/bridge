@@ -19,3 +19,59 @@
 
 Итог M0 integration gate и список входных задач M1 описаны в
 [`docs/plan/m0-readiness.md`](docs/plan/m0-readiness.md).
+
+## Docker Compose
+
+Dockerfile каждого сервиса лежат в `deploy/docker/<service>/Dockerfile`,
+docker-compose файлы — в `deploy/compose/` (соглашение мастер-плана,
+[`docs/plan/README.md`](docs/plan/README.md)). Инфраструктура разделена на
+два независимых кластера, которые поднимаются отдельно.
+
+### Application Cluster (SaaS)
+
+Backend, все деградируемые сервисы (`ai-platform`, `integration-platform`,
+`broadcast-platform`, `notification-platform`, `mobile-api`, `fbp-engine`),
+фронтенды (`saas-admin`, `manager-workspace`, `web-chat`) и PostgreSQL 16 +
+pgvector с джобами `migrate`/`seed`:
+
+```bash
+cp .env.example .env
+docker compose --env-file .env -f deploy/compose/docker-compose.yml up --build
+```
+
+Флаг `--env-file .env` обязателен: без него docker compose ищет `.env`
+рядом с самим compose-файлом (`deploy/compose/`), а не в корне репозитория.
+
+Разовый прогон детерминированных M0-сидов после того, как `migrate`
+завершится успешно:
+
+```bash
+docker compose --env-file .env -f deploy/compose/docker-compose.yml --profile seed up seed
+```
+
+Консольный клиент `telegram-console` — одноразовый скрипт, поднимается по
+требованию через профиль `tools`:
+
+```bash
+docker compose --env-file .env -f deploy/compose/docker-compose.yml --profile tools run --rm telegram-console
+```
+
+Полный перечень переменных окружения и их назначение описаны в
+[`.env.example`](.env.example).
+
+### Edge Cluster (РФ)
+
+Для серверов, физически размещённых в России (152-ФЗ), Edge-кластер
+(`edge-gateway` + резидентный PostgreSQL для буфера) поднимается отдельно,
+независимо от Application Cluster:
+
+```bash
+cp .env.rf.example .env.rf
+docker compose --env-file .env.rf -f deploy/compose/docker-compose.rf.yml up --build
+```
+
+VPN Tunnel Service, который в целевой архитектуре соединяет Edge Cluster с
+Application Cluster, — компонент этапа M4 и пока отсутствует в коде, поэтому
+в compose-файл не включён (подробности — в комментарии в начале
+`docker-compose.rf.yml`). Полный перечень переменных — в
+[`.env.rf.example`](.env.rf.example).
