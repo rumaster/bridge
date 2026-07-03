@@ -5,7 +5,7 @@ import {
 
 import { assertAssistantSuggestRequest } from "./c4-dto.mjs";
 import { createDeterministicMockLlm } from "./llm.mjs";
-import { createDeterministicAiMock } from "./deterministic-ai.mjs";
+import { createOnboardingCommander } from "./onboarding.mjs";
 import { buildPrompt, buildSources, rankChunks } from "./rag-pipeline.mjs";
 
 const DEFAULT_TOP_K = 5;
@@ -20,15 +20,16 @@ const DEFAULT_TOP_K = 5;
  * response is still a valid C4 payload, just `degraded: true` with `mode:
  * "fallback"` and `source_status: "unavailable"`.
  *
- * AI Onboarding / structured commands remain the M0 deterministic mock (M3 scope)
- * and are delegated unchanged.
+ * AI Onboarding / structured commands (CP-5) are delegated to the onboarding
+ * commander, which interprets the request through the same swappable LLM
+ * abstraction and validates the resulting §12.6 command before it leaves SVC-AI.
  */
 export function createRagAssistant({
   llm = createDeterministicMockLlm(),
   kbSearch,
-  onboarding = createDeterministicAiMock({ now: () => new Date().toISOString() }),
   topK = DEFAULT_TOP_K,
   now = () => new Date().toISOString(),
+  onboarding = createOnboardingCommander({ llm, now }),
 } = {}) {
   if (!kbSearch || typeof kbSearch.search !== "function") {
     throw new TypeError("createRagAssistant requires a kbSearch with a search() method");
@@ -124,8 +125,8 @@ export function createRagAssistant({
   return {
     suggestAssistant,
 
-    createOnboardingCommand(payload) {
-      const command = onboarding.createOnboardingCommand(payload);
+    async createOnboardingCommand(payload) {
+      const command = await onboarding.createOnboardingCommand(payload);
       metrics.onboarding_command_total += 1;
       return command;
     },
