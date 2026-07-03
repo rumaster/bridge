@@ -1,16 +1,18 @@
 import { randomUUID } from "node:crypto";
 
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 
 import { PgDatabase } from "../../common/database/database.service";
 import type { Queryable } from "../../common/database/database.service";
 import { isUuidV4 } from "../../common/request-context";
 import { AuditService } from "../audit/audit.service";
-import { mapClientEndpoint } from "../client/client.dto";
+import { mapClientEndpoint, mapClientIdentityLink } from "../client/client.dto";
 import type {
   AddClientEndpointDto,
   ClientEndpointResponseDto,
   ClientEndpointRow,
+  ClientIdentityLinkResponseDto,
+  ClientIdentityLinkRow,
   ClientMergeResponseDto,
   MergeClientsDto,
 } from "../client/client.dto";
@@ -32,6 +34,14 @@ export interface CoreMutationContext {
   actorUserId?: string;
   idempotencyKey?: string;
   requestId?: string;
+}
+
+interface CreateIdentityLinkParams {
+  actorUserId?: string;
+  endpointId: string;
+  evidence: Record<string, unknown>;
+  linkType: "automatic" | "link_code" | "manual" | "verified_email" | "verified_phone";
+  targetClientId: string;
 }
 
 @Injectable()
@@ -151,9 +161,10 @@ export class CommunicationCoreProxyService {
     return this.database.withTenant(organizationId, async (client) => {
       await this.requireConversation(client, organizationId, payload.conversationId);
       const endpoint = await this.requireEndpoint(client, organizationId, payload.endpointId);
+      await this.lockEndpointPartition(client, organizationId, payload.endpointId);
       const sequenceNumber =
         payload.sequenceNumber ??
-        (await this.nextSequenceNumber(client, organizationId, payload.conversationId));
+        (await this.nextSequenceNumber(client, organizationId, payload.endpointId));
       const messageId =
         payload.id ??
         (context.idempotencyKey && isUuidV4(context.idempotencyKey)
@@ -269,18 +280,284 @@ export class CommunicationCoreProxyService {
   async mergeClients(
     organizationId: string,
     payload: MergeClientsDto,
+    context: CoreMutationContext = {},
   ): Promise<ClientMergeResponseDto> {
     return this.database.withTenant(organizationId, async (client) => {
+      if (payload.sourceClientId === payload.targetClientId) {
+        throw badRequest("sourceClientId and targetClientId must be different");
+      }
+
       await this.requireClient(client, organizationId, payload.sourceClientId);
       await this.requireClient(client, organizationId, payload.targetClientId);
 
+      const targetConversation = await this.resolveConversation(
+        client,
+        organizationId,
+        payload.targetClientId,
+      );
+      const endpoints = await client.query<ClientEndpointRow>(
+        `
+          SELECT id, client_id, channel, external_id, verified, metadata, created_at
+          FROM communication_endpoints
+          WHERE organization_id = $1 AND client_id = $2
+          ORDER BY created_at ASC
+          FOR UPDATE
+        `,
+        [organizationId, payload.sourceClientId],
+      );
+      const links: ClientMergeResponseDto["links"] = [];
+      const movedEndpointCount = endpoints.rowCount ?? endpoints.rows.length;
+      let movedMessageCount = 0;
+
+      for (const endpoint of endpoints.rows) {
+        const previousConversation = await this.findConversationForEndpoint(
+          client,
+          organizationId,
+          endpoint.id,
+          payload.sourceClientId,
+        );
+        const link = await this.createIdentityLink(client, organizationId, {
+          actorUserId: context.actorUserId,
+          endpointId: endpoint.id,
+          evidence: {
+            previous_client_id: payload.sourceClientId,
+            previous_conversation_id: previousConversation?.id ?? null,
+            reason: payload.reason ?? null,
+            target_client_id: payload.targetClientId,
+            target_conversation_id: targetConversation.id,
+          },
+          linkType: "manual",
+          targetClientId: payload.targetClientId,
+        });
+        links.push(link);
+
+        await client.query(
+          `
+            UPDATE communication_endpoints
+            SET client_id = $3
+            WHERE organization_id = $1 AND id = $2
+          `,
+          [organizationId, endpoint.id, payload.targetClientId],
+        );
+        const moved = await client.query(
+          `
+            UPDATE messages
+            SET conversation_id = $3
+            WHERE organization_id = $1
+              AND endpoint_id = $2
+              AND conversation_id <> $3
+          `,
+          [organizationId, endpoint.id, targetConversation.id],
+        );
+        movedMessageCount += moved.rowCount ?? 0;
+
+        if (previousConversation) {
+          await client.query(
+            `
+              UPDATE conversations
+              SET status = 'closed',
+                  updated_at = now()
+              WHERE organization_id = $1 AND id = $2
+            `,
+            [organizationId, previousConversation.id],
+          );
+          await this.recalculateConversationLastMessage(
+            client,
+            organizationId,
+            previousConversation.id,
+          );
+        }
+      }
+
+      await this.recalculateConversationLastMessage(client, organizationId, targetConversation.id);
+      await this.audit.record(client, {
+        action: "client.merge",
+        actorUserId: context.actorUserId,
+        metadata: {
+          movedEndpointCount,
+          movedMessageCount,
+          reason: payload.reason ?? null,
+          sourceClientId: payload.sourceClientId,
+        },
+        objectId: payload.targetClientId,
+        objectType: "client",
+        organizationId,
+        requestId: context.requestId,
+      });
+
       return {
         accepted: true,
-        mode: "mock-core",
+        links,
+        mode: "core-m2",
+        movedEndpointCount,
+        movedMessageCount,
         sourceClientId: payload.sourceClientId,
         targetClientId: payload.targetClientId,
       };
     });
+  }
+
+  private async resolveConversation(
+    queryable: Queryable,
+    organizationId: string,
+    clientId: string,
+  ): Promise<ConversationRow> {
+    const existing = await queryable.query<ConversationRow>(
+      `
+        SELECT id, organization_id, client_id, status, last_message_at, created_at, updated_at
+        FROM conversations
+        WHERE organization_id = $1
+          AND client_id = $2
+          AND status = 'open'
+        ORDER BY COALESCE(last_message_at, created_at) DESC, id
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [organizationId, clientId],
+    );
+
+    if (existing.rowCount && existing.rowCount > 0) {
+      return existing.rows[0];
+    }
+
+    const created = await queryable.query<ConversationRow>(
+      `
+        INSERT INTO conversations (id, organization_id, client_id, status)
+        VALUES ($1, $2, $3, 'open')
+        RETURNING id, organization_id, client_id, status, last_message_at, created_at, updated_at
+      `,
+      [randomUUID(), organizationId, clientId],
+    );
+
+    return created.rows[0];
+  }
+
+  private async findConversationForEndpoint(
+    queryable: Queryable,
+    organizationId: string,
+    endpointId: string,
+    clientId: string,
+  ): Promise<ConversationRow | null> {
+    const fromMessages = await queryable.query<ConversationRow>(
+      `
+        SELECT
+          c.id,
+          c.organization_id,
+          c.client_id,
+          c.status,
+          c.last_message_at,
+          c.created_at,
+          c.updated_at
+        FROM messages m
+        JOIN conversations c
+          ON c.organization_id = m.organization_id
+         AND c.id = m.conversation_id
+        WHERE m.organization_id = $1
+          AND m.endpoint_id = $2
+          AND c.client_id = $3
+        ORDER BY m.created_at ASC, m.sequence_number ASC, c.id
+        LIMIT 1
+        FOR UPDATE OF c
+      `,
+      [organizationId, endpointId, clientId],
+    );
+
+    if (fromMessages.rowCount && fromMessages.rowCount > 0) {
+      return fromMessages.rows[0];
+    }
+
+    const fallback = await queryable.query<ConversationRow>(
+      `
+        SELECT id, organization_id, client_id, status, last_message_at, created_at, updated_at
+        FROM conversations
+        WHERE organization_id = $1
+          AND client_id = $2
+          AND status = 'open'
+        ORDER BY COALESCE(last_message_at, created_at) DESC, id
+        LIMIT 1
+        FOR UPDATE
+      `,
+      [organizationId, clientId],
+    );
+
+    return fallback.rowCount && fallback.rowCount > 0 ? fallback.rows[0] : null;
+  }
+
+  private async createIdentityLink(
+    queryable: Queryable,
+    organizationId: string,
+    params: CreateIdentityLinkParams,
+  ): Promise<ClientIdentityLinkResponseDto> {
+    const actorType = params.actorUserId ? "user" : "system";
+
+    await queryable.query(
+      `
+        UPDATE client_identity_links
+        SET reverted_at = now(),
+            reverted_by = $3,
+            reverted_by_actor_type = $4,
+            reverted_reason = $5
+        WHERE organization_id = $1
+          AND endpoint_id = $2
+          AND reverted_at IS NULL
+      `,
+      [
+        organizationId,
+        params.endpointId,
+        params.actorUserId ?? null,
+        actorType,
+        "Superseded by manual client merge.",
+      ],
+    );
+
+    const result = await queryable.query<ClientIdentityLinkRow>(
+      `
+        INSERT INTO client_identity_links (
+          id,
+          organization_id,
+          client_id,
+          endpoint_id,
+          link_type,
+          evidence,
+          created_by,
+          created_by_actor_type
+        )
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
+        RETURNING id, client_id, endpoint_id, link_type, evidence, created_at, reverted_at
+      `,
+      [
+        randomUUID(),
+        organizationId,
+        params.targetClientId,
+        params.endpointId,
+        params.linkType,
+        JSON.stringify(params.evidence),
+        params.actorUserId ?? null,
+        actorType,
+      ],
+    );
+
+    return mapClientIdentityLink(result.rows[0]);
+  }
+
+  private async recalculateConversationLastMessage(
+    queryable: Queryable,
+    organizationId: string,
+    conversationId: string,
+  ): Promise<void> {
+    await queryable.query(
+      `
+        UPDATE conversations
+        SET last_message_at = (
+              SELECT MAX(created_at)
+              FROM messages
+              WHERE organization_id = $1 AND conversation_id = $2
+            ),
+            updated_at = now()
+        WHERE organization_id = $1 AND id = $2
+      `,
+      [organizationId, conversationId],
+    );
   }
 
   private async requireConversation(
@@ -339,18 +616,34 @@ export class CommunicationCoreProxyService {
   private async nextSequenceNumber(
     queryable: Queryable,
     organizationId: string,
-    conversationId: string,
+    endpointId: string,
   ): Promise<number> {
     const result = await queryable.query<{ next_sequence_number: string }>(
       `
         SELECT COALESCE(MAX(sequence_number), 0) + 1 AS next_sequence_number
         FROM messages
-        WHERE organization_id = $1 AND conversation_id = $2
+        WHERE organization_id = $1 AND endpoint_id = $2
       `,
-      [organizationId, conversationId],
+      [organizationId, endpointId],
     );
 
     return Number(result.rows[0].next_sequence_number);
+  }
+
+  private async lockEndpointPartition(
+    queryable: Queryable,
+    organizationId: string,
+    endpointId: string,
+  ): Promise<void> {
+    await queryable.query(
+      `
+        SELECT id
+        FROM communication_endpoints
+        WHERE organization_id = $1 AND id = $2
+        FOR UPDATE
+      `,
+      [organizationId, endpointId],
+    );
   }
 }
 
@@ -359,5 +652,13 @@ function notFound(objectType: string, id: string): NotFoundException {
     code: "RESOURCE_NOT_FOUND",
     description: `${objectType} ${id} was not found`,
     humanMessage: "Ресурс не найден.",
+  });
+}
+
+function badRequest(description: string): BadRequestException {
+  return new BadRequestException({
+    code: "VALIDATION_FAILED",
+    description,
+    humanMessage: "Некорректный запрос.",
   });
 }

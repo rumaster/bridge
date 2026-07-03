@@ -9,6 +9,7 @@ export {
   assertStatusTransition,
   createCommunicationCoreM1Service,
   createHttpC2EgressAdapter,
+  createInMemoryC7EventPublisher,
   createMockC2EgressAdapter,
   createPostgresCommunicationCoreStore,
 } from "./communication-core-m1.mjs";

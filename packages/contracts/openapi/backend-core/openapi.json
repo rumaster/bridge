@@ -1534,6 +1534,47 @@
           "targetClientId"
         ]
       },
+      "ClientIdentityLinkResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000701"
+          },
+          "clientId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000302"
+          },
+          "endpointId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000401"
+          },
+          "linkType": {
+            "type": "string",
+            "example": "manual"
+          },
+          "evidence": {
+            "type": "object"
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "revertedAt": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "clientId",
+          "endpointId",
+          "linkType",
+          "evidence",
+          "createdAt"
+        ]
+      },
       "ClientMergeResponseDto": {
         "type": "object",
         "properties": {
@@ -1549,15 +1590,32 @@
             "type": "string",
             "example": "00000000-0000-4000-8000-000000000302"
           },
+          "movedEndpointCount": {
+            "type": "number",
+            "example": 1
+          },
+          "movedMessageCount": {
+            "type": "number",
+            "example": 3
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClientIdentityLinkResponseDto"
+            }
+          },
           "mode": {
             "type": "string",
-            "example": "mock-core"
+            "example": "core-m2"
           }
         },
         "required": [
           "accepted",
           "sourceClientId",
           "targetClientId",
+          "movedEndpointCount",
+          "movedMessageCount",
+          "links",
           "mode"
         ]
       },
