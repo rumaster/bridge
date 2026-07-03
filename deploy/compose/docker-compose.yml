@@ -1,0 +1,205 @@
+# Bridge SaaS — Application Cluster.
+#
+# Поднимает основную инфраструктуру Bridge SaaS: ядро backend, деградируемые
+# сервисы, фронтенды и служебные джобы БД (migrate/seed). Edge-кластер РФ
+# (edge-gateway + отдельный резидентный Postgres) поднимается независимо через
+# docker-compose.rf.yml — намеренно не входит в этот файл, см. README рядом.
+#
+# Запуск из корня репозитория (--env-file обязателен: без него docker compose
+# ищет .env рядом с этим файлом, в deploy/compose/, а не в корне репозитория):
+#   cp .env.example .env
+#   docker compose --env-file .env -f deploy/compose/docker-compose.yml up --build
+#
+# Разовый прогон сидов (после того как migrate завершится успешно):
+#   docker compose --env-file .env -f deploy/compose/docker-compose.yml --profile seed up seed
+#
+# ВАЖНО: переменные *_INGRESS_URL/*_KB_URL/BACKEND_INTERNAL_URL и DATABASE_URL
+# ниже заданы как самостоятельные (не вложенные) значения, а не через
+# подстановку вида ${BACKEND_PORT}, потому что docker compose ненадёжно
+# разворачивает вложенные ${VAR:-${OTHER}}. Если меняете BACKEND_PORT или
+# POSTGRES_*, обновите такие URL вручную и в .env.
+
+name: bridge-saas
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bridge}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bridge}
+      POSTGRES_DB: ${POSTGRES_DB:-bridge}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - bridge-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bridge} -d ${POSTGRES_DB:-bridge}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/db-tools/Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://bridge:bridge@postgres:5432/bridge}
+      DB_MIGRATE_VERBOSE: ${DB_MIGRATE_VERBOSE:-0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["node", "scripts/db-migrate.mjs", "up"]
+
+  seed:
+    profiles: ["seed"]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/db-tools/Dockerfile
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgres://bridge:bridge@postgres:5432/bridge}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    command: ["node", "scripts/db-seed.mjs"]
+
+  backend:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: ${BACKEND_PORT:-3000}
+      DATABASE_URL: ${DATABASE_URL:-postgres://bridge:bridge@postgres:5432/bridge}
+      BRIDGE_AUTH_SECRET: ${BRIDGE_AUTH_SECRET:?укажите BRIDGE_AUTH_SECRET в .env, см. .env.example}
+    ports:
+      - "${BACKEND_PORT:-3000}:${BACKEND_PORT:-3000}"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  ai-platform:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/ai-platform/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: ${AI_PLATFORM_PORT:-3006}
+      AI_BACKEND_KB_URL: ${AI_BACKEND_KB_URL:-http://backend:3000}
+    ports:
+      - "${AI_PLATFORM_PORT:-3006}:${AI_PLATFORM_PORT:-3006}"
+    depends_on:
+      backend:
+        condition: service_started
+
+  integration-platform:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/integration-platform/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: ${INTEGRATION_PLATFORM_PORT:-3005}
+      CORE_INGRESS_URL: ${CORE_INGRESS_URL:-http://backend:3000/internal/ingress/messages}
+    ports:
+      - "${INTEGRATION_PLATFORM_PORT:-3005}:${INTEGRATION_PLATFORM_PORT:-3005}"
+    depends_on:
+      backend:
+        condition: service_started
+
+  broadcast-platform:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/broadcast-platform/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: ${BROADCAST_PLATFORM_PORT:-3008}
+    ports:
+      - "${BROADCAST_PLATFORM_PORT:-3008}:${BROADCAST_PLATFORM_PORT:-3008}"
+    depends_on:
+      backend:
+        condition: service_started
+
+  notification-platform:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/notification-platform/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: ${NOTIFICATION_PLATFORM_PORT:-3010}
+    ports:
+      - "${NOTIFICATION_PLATFORM_PORT:-3010}:${NOTIFICATION_PLATFORM_PORT:-3010}"
+    depends_on:
+      backend:
+        condition: service_started
+
+  mobile-api:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/mobile-api/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: ${MOBILE_API_PORT:-3015}
+    ports:
+      - "${MOBILE_API_PORT:-3015}:${MOBILE_API_PORT:-3015}"
+    depends_on:
+      backend:
+        condition: service_started
+
+  fbp-engine:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/fbp-engine/Dockerfile
+    restart: unless-stopped
+    environment:
+      PORT: ${FBP_ENGINE_PORT:-3095}
+    ports:
+      - "${FBP_ENGINE_PORT:-3095}:${FBP_ENGINE_PORT:-3095}"
+    depends_on:
+      backend:
+        condition: service_started
+
+  saas-admin:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/saas-admin/Dockerfile
+    restart: unless-stopped
+    environment:
+      BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://backend:3000}
+    ports:
+      - "${SAAS_ADMIN_PORT:-8081}:4173"
+    depends_on:
+      backend:
+        condition: service_started
+
+  manager-workspace:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/manager-workspace/Dockerfile
+    restart: unless-stopped
+    environment:
+      BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://backend:3000}
+    ports:
+      - "${MANAGER_WORKSPACE_PORT:-8082}:4173"
+    depends_on:
+      backend:
+        condition: service_started
+
+  web-chat:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/web-chat/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${WEB_CHAT_PORT:-8083}:4173"
+
+  telegram-console:
+    profiles: ["tools"]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/telegram-console/Dockerfile
+    depends_on:
+      backend:
+        condition: service_started
+
+volumes:
+  bridge-postgres-data:
