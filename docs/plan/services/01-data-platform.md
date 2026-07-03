@@ -189,6 +189,11 @@ Data Platform **не отдаёт REST наружу** и не имеет соб�
   - *e2e:* CP-1 — БД как зависимость сценария «Web Chat: приём и ответ».
 - **DoD.** § 9.4 + обратимость; изоляция арендаторов подтверждена тестом.
 
+**Статус реализации CP-1.** M1-схема Data Platform завершена для gate CP-1:
+миграции, сиды, RLS-изоляция двух арендаторов, уникальность/idempotency `messages.id`,
+порядок `(endpoint_id, sequence_number)`, append-only `audit_events` и
+`configuration_history` покрыты `tests/integration/data-platform.test.mjs`.
+
 ### 5.3 M2 — pgvector, Knowledge Base, identity links
 
 - **Цель.** Поддержать AI Assistant из KB (CP-3) и identity resolution (CP-2).

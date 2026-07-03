@@ -210,6 +210,12 @@ SVC-DATA). Ниже — ключевые поля и этап появления
   зелёный; C3.auth заморожен; аудит входов/ошибок аутентификации пишется
   (ТЗ §9.9) — базовый минимум, полный аудит управления доступом — M3.
 
+**Статус реализации CP-1.** M1 Identity завершён: C3.auth опубликован в
+`packages/contracts/openapi/auth/c3.auth.openapi.json`, одноразовые коды и
+серверные сессии покрыты `services/backend/test/unit/identity-service.test.mjs`
+и `services/backend/test/integration/identity-postgres.test.mjs`, а e2e
+«Авторизация» закреплён в `apps/saas-admin/test/e2e/saas-admin.auth.spec.ts`.
+
 ### M2 — Полноценный RBAC по ролям §9.3
 
 - **Цель.** Ввести проверку полномочий по ролям Platform Operator/Administrator/

@@ -481,7 +481,7 @@ edge_message_buffer(                        -- буфер Edge Cluster в RF-к�
 
 | CP | Веха | Участники | Что должно быть готово | Замораживаемый контракт | Добавляемые межсервисные тесты |
 |----|------|-----------|------------------------|-------------------------|--------------------------------|
-| **CP-1** | M1 | SVC-INT(Web Chat), SVC-CORE, SVC-API, SVC-IDN, SVC-MWS | приём входящего, сохранение, отдача менеджеру, ответ | C1 (Message Model), C2 (Ingress/Egress), C3 (Backend REST core), C7 (WS events) | e2e «Web Chat: приём и ответ»; contract INT↔CORE |
+| **CP-1** | M1 | SVC-CHAT, SVC-INT(Web Chat), SVC-CORE, SVC-API, SVC-IDN, SVC-MWS, SVC-ADMIN | приём входящего, сохранение, отдача менеджеру, ответ, авторизация | C1 (Message Model), C2 (Ingress/Egress), C3 (Backend REST core), C7 (WS events) | e2e «Web Chat: приём и ответ»; e2e «Авторизация»; e2e «Работа менеджера»; contract INT↔CORE |
 | **CP-2** | M2 | SVC-INT(Telegram…), SVC-CORE | входящее из внешнего мессенджера → менеджер → ответ; Capability Model | C2 + C6 (Capability descriptor) | e2e «Telegram: приём и ответ»; contract per-adapter |
 | **CP-3** | M2 | SVC-API(AI-Integration), SVC-AI, SVC-DATA(KB), SVC-MWS/CHAT | AI Assistant отвечает из Knowledge Base | C4 (AI request/response, KB search) | e2e «AI Assistant из KB»; contract API↔AI |
 | **CP-4** | M3 | SVC-API(FBP-Integration), SVC-FBP | запуск Workflow; узел Backend API вызывает Backend с контекстом пользователя | C5 (FBP start + Backend API node) | e2e «Workflow вызывает Backend API»; contract API↔FBP |
@@ -490,6 +490,17 @@ edge_message_buffer(                        -- буфер Edge Cluster в RF-к�
 | **CP-7** | M4 | SVC-EDGE, SVC-CORE, SVC-CHAT/MOB | трафик РФ через Edge+VPN; буферизация при разрыве; порядок и дедупликация | C9 (Edge↔App tunnel), C1 | e2e «Потеря соединения» (ТЗ §26.6); contract EDGE↔CORE |
 | **CP-8** | M4 | SVC-NOTIF, продюсеры (CORE/BCAST/AI/FBP), SVC-MWS, SVC-TGC | уведомление сгенерировано и доставлено в Web и Telegram Console | C10 (Notification) | e2e «Notification в Web + Telegram» |
 | **CP-9** | M5 | все | полный набор сценариев ТЗ §26.6, приёмка (§29) | все контракты (v1, заморожены) | полный e2e-набор, регрессия, нагрузочные |
+
+**Статус CP-1 (M1-99, 2026-07-03).** Gate M1 выполнен: добавлен
+машинно-читаемый freeze-артефакт `packages/contracts/cp1-freeze.v1.json`,
+заморожены C1/C2/C3/C7 как `stable_for_m2`, а сервисные планы M1 для SVC-DATA,
+SVC-IDN, SVC-CORE, SVC-API, SVC-INT(Web Chat), SVC-ADMIN, SVC-MWS и SVC-CHAT
+помечены завершёнными. Проверки CP-1 покрывают e2e «Web Chat: приём и ответ»,
+e2e «Авторизация», e2e «Работа менеджера», contract INT↔CORE и consumer contracts
+C3 для SVC-MWS/SVC-ADMIN. Инварианты gate: RLS-изоляция арендаторов,
+идемпотентный `POST /messages`, переходы статусов `received -> routed -> sent` и
+аудит изменяющих операций. Готовность M2: стабильные C1/C2/C3/C7; следующий scope
+M2 — adapters, realtime, AI Assistant, identity resolution.
 
 ## 6.1 Граф зависимостей вех (упрощённо)
 

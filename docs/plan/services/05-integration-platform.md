@@ -186,6 +186,12 @@ adapter_capabilities(                       -- Capability Model (ТЗ §10.6), �
   Chat: приём и ответ» (ТЗ §26.6, § 8.2).
 - **DoD.** § 9.4 + добавлены contract-тест **INT↔CORE** и e2e CP-1 (§ 6).
 
+**Статус реализации CP-1.** M1 Integration Platform завершён: Web Chat adapter
+нормализует inbound в C2 Ingress, принимает C2 Egress с обязательным
+`conversation_ref`, публикует C6 capabilities и проверен unit/integration-тестами
+`services/integration-platform/test/**`, contract-тестом
+`tests/contract/int-core-c2-c6.test.mjs` и e2e `tests/e2e/web-chat-cp1.test.mjs`.
+
 ### 5.3 M2 — адаптеры Telegram/Email/SMS/VK/MAX/WhatsApp + наполнение Capability Model
 
 - **Цель.** **Омниканальность**: сообщение из внешнего мессенджера доходит до

@@ -1,12 +1,20 @@
 import assert from "node:assert/strict";
-import { createServer } from "node:http";
 import { after, before, describe, it } from "node:test";
 
+import { createBackendServer } from "../../services/backend/src/main.mjs";
+import {
+  InMemoryCommunicationCoreStore,
+  createCommunicationCoreM1Service,
+  createCommunicationCoreModule,
+} from "../../services/backend/src/modules/communication-core/index.mjs";
 import { createWebChatAdapter } from "../../services/integration-platform/src/adapters/web-chat/web-chat-adapter.mjs";
 import { createIntegrationPlatformServer } from "../../services/integration-platform/src/server.mjs";
 
 const JSON_HEADERS = { "content-type": "application/json" };
 const fixedNow = () => "2026-07-03T09:00:00.000Z";
+const ORGANIZATION_ID = "10000000-0000-4000-8000-000000000101";
+const INBOUND_MESSAGE_ID = "10000000-0000-4000-8000-000000000621";
+const OUTBOUND_MESSAGE_ID = "10000000-0000-4000-8000-000000000622";
 
 function listen(server) {
   return new Promise((resolve) => {
@@ -29,16 +37,7 @@ async function close(server) {
   });
 }
 
-async function readJson(request) {
-  const chunks = [];
-  for await (const chunk of request) {
-    chunks.push(chunk);
-  }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-}
-
 describe("CP-1 Web Chat: receive and reply", () => {
-  const ingressMessages = [];
   let coreServer;
   let coreBaseUrl;
   let integrationServer;
@@ -46,21 +45,35 @@ describe("CP-1 Web Chat: receive and reply", () => {
   let webChatAdapter;
 
   before(async () => {
-    coreServer = createServer(async (request, response) => {
-      if (request.method === "POST" && request.url === "/internal/ingress/messages") {
-        ingressMessages.push(await readJson(request));
-        response.writeHead(202, JSON_HEADERS);
-        response.end(JSON.stringify({ accepted: true }));
-        return;
-      }
+    const store = new InMemoryCommunicationCoreStore();
+    const core = createCommunicationCoreM1Service({
+      store,
+      clock: fixedNow,
+      egressAdapter: {
+        async deliver(delivery) {
+          const response = await fetch(`${integrationBaseUrl}/internal/egress/deliveries`, {
+            method: "POST",
+            headers: JSON_HEADERS,
+            body: JSON.stringify(delivery),
+          });
+          const body = await response.json();
 
-      response.writeHead(404, JSON_HEADERS);
-      response.end(JSON.stringify({ error: "not_found" }));
+          return {
+            accepted: response.ok && body.accepted,
+            duplicate: body.duplicate,
+            status: response.ok ? "sent" : "failed",
+            error: body.errors?.join("; "),
+          };
+        },
+      },
+    });
+    coreServer = createBackendServer({
+      modules: [createCommunicationCoreModule({ core })],
     });
     coreBaseUrl = await listen(coreServer);
 
     webChatAdapter = createWebChatAdapter({
-      coreIngressUrl: `${coreBaseUrl}/internal/ingress/messages`,
+      coreIngressUrl: `${coreBaseUrl}/api/v1/internal/ingress/messages`,
       now: fixedNow,
     });
     integrationServer = createIntegrationPlatformServer({ webChatAdapter });
@@ -77,9 +90,9 @@ describe("CP-1 Web Chat: receive and reply", () => {
       method: "POST",
       headers: JSON_HEADERS,
       body: JSON.stringify({
-        organization_id: "org-1",
+        organization_id: ORGANIZATION_ID,
         channel_id: "channel-web",
-        message_id: "web-in-1",
+        message_id: INBOUND_MESSAGE_ID,
         session_id: "session-1",
         sender_ref: "visitor-1",
         text: "Нужна помощь",
@@ -87,40 +100,60 @@ describe("CP-1 Web Chat: receive and reply", () => {
     });
 
     assert.equal(incoming.status, 202);
-    assert.equal(ingressMessages.length, 1);
-    assert.equal(ingressMessages[0].idempotency_key, "web-in-1");
-    assert.equal(ingressMessages[0].message.message_id, "web-in-1");
-    assert.equal(ingressMessages[0].message.conversation_ref, "session-1");
+    const incomingBody = await incoming.json();
+    assert.equal(incomingBody.accepted, true);
+    assert.equal(incomingBody.ingress.idempotency_key, INBOUND_MESSAGE_ID);
+    assert.equal(incomingBody.ingress.message.conversation_ref, "session-1");
 
-    const reply = await fetch(`${integrationBaseUrl}/internal/egress/deliveries`, {
+    const conversationsResponse = await fetch(`${coreBaseUrl}/api/v1/conversations`, {
+      headers: {
+        "x-organization-id": ORGANIZATION_ID,
+      },
+    });
+
+    assert.equal(conversationsResponse.status, 200);
+    const conversations = await conversationsResponse.json();
+    assert.equal(conversations.data.length, 1);
+    assert.equal(conversations.data[0].status, "open");
+
+    const messagesResponse = await fetch(
+      `${coreBaseUrl}/api/v1/conversations/${conversations.data[0].id}/messages`,
+      {
+        headers: {
+          "x-organization-id": ORGANIZATION_ID,
+        },
+      },
+    );
+
+    assert.equal(messagesResponse.status, 200);
+    const messages = await messagesResponse.json();
+    assert.equal(messages.data.length, 1);
+    assert.equal(messages.data[0].id, INBOUND_MESSAGE_ID);
+    assert.equal(messages.data[0].status, "routed");
+
+    const reply = await fetch(`${coreBaseUrl}/api/v1/messages`, {
       method: "POST",
       headers: JSON_HEADERS,
       body: JSON.stringify({
-        contract: "C2.EgressDelivery",
-        version: "1.0.0",
-        idempotency_key: "web-out-1",
-        channel_id: "channel-web",
-        message: {
-          message_id: "web-out-1",
-          organization_id: "org-1",
-          channel_id: "channel-web",
-          channel_type: "web_chat",
-          conversation_ref: "session-1",
-          direction: "outbound",
-          content: {
-            type: "text",
-            text: "Здравствуйте, чем помочь?",
-          },
+        idempotency_key: OUTBOUND_MESSAGE_ID,
+        organization_id: ORGANIZATION_ID,
+        conversation_id: conversations.data[0].id,
+        sender_type: "manager",
+        type: "text",
+        content: {
+          text: "Здравствуйте, чем помочь?",
         },
       }),
     });
 
     assert.equal(reply.status, 202);
+    const replyBody = await reply.json();
+    assert.equal(replyBody.status, "sent");
     assert.deepEqual(webChatAdapter.getChannelDeliveries(), [
       {
-        idempotency_key: "web-out-1",
-        message_id: "web-out-1",
-        organization_id: "org-1",
+        idempotency_key: OUTBOUND_MESSAGE_ID,
+        message_id: OUTBOUND_MESSAGE_ID,
+        organization_id: ORGANIZATION_ID,
         channel_id: "channel-web",
         session_id: "session-1",
         type: "text",

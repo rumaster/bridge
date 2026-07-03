@@ -129,6 +129,8 @@ describe("INT <-> CORE M1 contract", () => {
         message_id: OUTBOUND_MESSAGE_ID,
         organization_id: ORGANIZATION_ID,
         channel_id: "web-chat-channel",
+        channel_type: "web_chat",
+        conversation_ref: "room-1",
         direction: "outbound",
         content: { type: "text", text: "manager reply" },
       },
