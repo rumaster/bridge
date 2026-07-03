@@ -725,6 +725,10 @@ M1, точка согласования CP-1) — в документе
 M2, точки согласования CP-2 и CP-3) — в документе
 [parallel-stage-3-prompts.md](./parallel-stage-3-prompts.md).
 
+Четвёртая серия параллельных задач для программируемости — Workflow, узел Backend
+API и AI Onboarding (веха M3, точки согласования CP-4 и CP-5) — в документе
+[parallel-stage-4-prompts.md](./parallel-stage-4-prompts.md).
+
 | Сервис | План | Точки согласования |
 |--------|------|--------------------|
 | Data Platform | [01-data-platform.md](./services/01-data-platform.md) | все (поставщик схемы) |
