@@ -18,6 +18,7 @@ describe("C7 WebSocket event schema", () => {
       "typing.started",
       "typing.stopped",
       "client.status_changed",
+      "channel.status_changed",
       "notification.created",
       "broadcast.state_changed",
       "workflow.state_changed",

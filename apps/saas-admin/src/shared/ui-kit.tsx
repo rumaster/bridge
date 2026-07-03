@@ -80,15 +80,15 @@ export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(function T
   const errorId = error ? `${inputId}-error` : undefined;
 
   return (
-    <label className={`text-input ${className ?? ""}`} htmlFor={inputId}>
-      <span>{label}</span>
+    <div className={`text-input ${className ?? ""}`}>
+      <label htmlFor={inputId}>{label}</label>
       <input aria-describedby={errorId} aria-invalid={Boolean(error)} id={inputId} ref={ref} {...props} />
       {error ? (
         <span className="field-error" id={errorId}>
           {error}
         </span>
       ) : null}
-    </label>
+    </div>
   );
 });
 
@@ -103,8 +103,8 @@ export const TextAreaInput = forwardRef<HTMLTextAreaElement, TextAreaInputProps>
     const errorId = error ? `${inputId}-error` : undefined;
 
     return (
-      <label className={`text-input ${className ?? ""}`} htmlFor={inputId}>
-        <span>{label}</span>
+      <div className={`text-input ${className ?? ""}`}>
+        <label htmlFor={inputId}>{label}</label>
         <textarea
           aria-describedby={errorId}
           aria-invalid={Boolean(error)}
@@ -117,7 +117,7 @@ export const TextAreaInput = forwardRef<HTMLTextAreaElement, TextAreaInputProps>
             {error}
           </span>
         ) : null}
-      </label>
+      </div>
     );
   }
 );

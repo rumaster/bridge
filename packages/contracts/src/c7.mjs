@@ -13,6 +13,7 @@ export const C7_EVENT_TYPES = Object.freeze([
   "typing.started",
   "typing.stopped",
   "client.status_changed",
+  "channel.status_changed",
   "notification.created",
   "broadcast.state_changed",
   "workflow.state_changed",

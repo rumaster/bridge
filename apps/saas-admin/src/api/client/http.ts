@@ -1,13 +1,23 @@
 import { createJsonApiClient } from "@bridge/api-client";
 import type {
   AdminSession,
+  Channel,
+  ChannelCapabilityDescriptor,
+  ChannelTestResult,
+  ConnectChannelRequest,
+  ConnectChannelResponse,
+  CreateKnowledgeDocumentRequest,
+  DeleteKnowledgeDocumentResponse,
+  KnowledgeDocument,
   LogoutResponse,
   Organization,
   OrganizationConfiguration,
+  ReindexKnowledgeDocumentResponse,
   SaasAdminApiClient,
   TelegramLoginStartRequest,
   TelegramLoginStartResponse,
   TelegramLoginVerifyRequest,
+  UpdateKnowledgeDocumentRequest,
   UpdateOrganizationConfigurationRequest,
   UpdateOrganizationRequest
 } from "./types";
@@ -60,6 +70,43 @@ export function createSaasAdminApiClient(options: SaasAdminApiClientOptions = {}
         requestJson<OrganizationConfiguration>(`/organizations/${organizationId}/configuration`, {
           method: "PUT",
           body: JSON.stringify(request)
+        })
+    },
+    channels: {
+      listChannels: () => requestJson<Channel[]>("/channels"),
+      createChannel: (request: ConnectChannelRequest) =>
+        requestJson<ConnectChannelResponse>("/channels", {
+          method: "POST",
+          body: JSON.stringify(request)
+        }),
+      getCapabilities: (channelId: string) =>
+        requestJson<ChannelCapabilityDescriptor>(`/channels/${channelId}/capabilities`),
+      testChannel: (channelId: string) =>
+        requestJson<ChannelTestResult>(`/channels/${channelId}:test`, {
+          method: "POST",
+          body: JSON.stringify({})
+        })
+    },
+    knowledge: {
+      listDocuments: () => requestJson<KnowledgeDocument[]>("/knowledge/documents"),
+      createDocument: (request: CreateKnowledgeDocumentRequest) =>
+        requestJson<KnowledgeDocument>("/knowledge/documents", {
+          method: "POST",
+          body: JSON.stringify(request)
+        }),
+      updateDocument: (documentId: string, request: UpdateKnowledgeDocumentRequest) =>
+        requestJson<KnowledgeDocument>(`/knowledge/documents/${documentId}`, {
+          method: "PATCH",
+          body: JSON.stringify(request)
+        }),
+      reindexDocument: (documentId: string) =>
+        requestJson<ReindexKnowledgeDocumentResponse>(`/knowledge/documents/${documentId}:reindex`, {
+          method: "POST",
+          body: JSON.stringify({})
+        }),
+      deleteDocument: (documentId: string) =>
+        requestJson<DeleteKnowledgeDocumentResponse>(`/knowledge/documents/${documentId}`, {
+          method: "DELETE"
         })
     }
   };

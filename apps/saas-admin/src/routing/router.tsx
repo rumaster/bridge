@@ -11,7 +11,7 @@ import type { Location, RouteObject } from "react-router-dom";
 import { AppShell } from "../presentation/shell/AppShell";
 import { useAuth } from "../state/auth";
 import { SaasAdminProviders } from "../state/admin";
-import type { SaasAdminServices } from "../state/admin";
+import type { SaasAdminServiceOverrides } from "../state/admin";
 
 const LoginPage = lazy(() => import("../presentation/pages/LoginPage"));
 const OverviewPage = lazy(() => import("../presentation/pages/OverviewPage"));
@@ -25,7 +25,7 @@ const NotificationsPage = lazy(() => import("../presentation/pages/Notifications
 
 export interface CreateSaasAdminRouterOptions {
   initialEntries?: string[];
-  services?: SaasAdminServices;
+  services?: SaasAdminServiceOverrides;
 }
 
 export interface LoginLocationState {
@@ -44,7 +44,7 @@ export function createSaasAdminRouter(options: CreateSaasAdminRouterOptions = {}
   return createBrowserRouter(routes);
 }
 
-function createRoutes(services?: SaasAdminServices): RouteObject[] {
+function createRoutes(services?: SaasAdminServiceOverrides): RouteObject[] {
   return [
     {
       element: (
