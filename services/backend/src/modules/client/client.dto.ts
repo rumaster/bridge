@@ -167,6 +167,29 @@ export class ClientEndpointResponseDto {
   createdAt!: string;
 }
 
+export class ClientIdentityLinkResponseDto {
+  @ApiProperty({ example: "00000000-0000-4000-8000-000000000701" })
+  id!: string;
+
+  @ApiProperty({ example: "00000000-0000-4000-8000-000000000302" })
+  clientId!: string;
+
+  @ApiProperty({ example: "00000000-0000-4000-8000-000000000401" })
+  endpointId!: string;
+
+  @ApiProperty({ example: "manual" })
+  linkType!: string;
+
+  @ApiProperty({ type: Object })
+  evidence!: Record<string, unknown>;
+
+  @ApiProperty({ example: "2026-01-01T00:00:00.000Z" })
+  createdAt!: string;
+
+  @ApiPropertyOptional({ example: null, nullable: true, type: String })
+  revertedAt!: null | string;
+}
+
 export class ClientMergeResponseDto {
   @ApiProperty({ example: true })
   accepted!: boolean;
@@ -177,7 +200,16 @@ export class ClientMergeResponseDto {
   @ApiProperty({ example: "00000000-0000-4000-8000-000000000302" })
   targetClientId!: string;
 
-  @ApiProperty({ example: "mock-core" })
+  @ApiProperty({ example: 1 })
+  movedEndpointCount!: number;
+
+  @ApiProperty({ example: 3 })
+  movedMessageCount!: number;
+
+  @ApiProperty({ type: [ClientIdentityLinkResponseDto] })
+  links!: ClientIdentityLinkResponseDto[];
+
+  @ApiProperty({ example: "core-m2" })
   mode!: string;
 }
 
@@ -214,6 +246,16 @@ export interface ClientEndpointRow {
   id: string;
   metadata: Record<string, unknown>;
   verified: boolean;
+}
+
+export interface ClientIdentityLinkRow {
+  client_id: string;
+  created_at: Date | string;
+  endpoint_id: string;
+  evidence: Record<string, unknown>;
+  id: string;
+  link_type: string;
+  reverted_at: Date | null | string;
 }
 
 export function mapClient(row: ClientRow): ClientResponseDto {
@@ -256,6 +298,18 @@ export function mapClientEndpoint(row: ClientEndpointRow): ClientEndpointRespons
     id: row.id,
     metadata: row.metadata,
     verified: row.verified,
+  };
+}
+
+export function mapClientIdentityLink(row: ClientIdentityLinkRow): ClientIdentityLinkResponseDto {
+  return {
+    clientId: row.client_id,
+    createdAt: toIso(row.created_at),
+    endpointId: row.endpoint_id,
+    evidence: row.evidence,
+    id: row.id,
+    linkType: row.link_type,
+    revertedAt: nullableIso(row.reverted_at),
   };
 }
 

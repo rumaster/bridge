@@ -132,6 +132,9 @@ CREATE UNIQUE INDEX client_identity_links_active_endpoint_unique
   ON client_identity_links (organization_id, endpoint_id)
   WHERE reverted_at IS NULL;
 
+CREATE UNIQUE INDEX messages_endpoint_sequence_number_unique
+  ON messages (organization_id, endpoint_id, sequence_number);
+
 CREATE TABLE channels (
   id uuid PRIMARY KEY,
   organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
@@ -252,6 +255,8 @@ DROP TABLE IF EXISTS channels;
 DROP POLICY IF EXISTS client_identity_links_tenant_isolation ON client_identity_links;
 ALTER TABLE IF EXISTS client_identity_links DISABLE ROW LEVEL SECURITY;
 DROP TABLE IF EXISTS client_identity_links;
+
+DROP INDEX IF EXISTS messages_endpoint_sequence_number_unique;
 
 DROP POLICY IF EXISTS knowledge_chunks_tenant_isolation ON knowledge_chunks;
 ALTER TABLE IF EXISTS knowledge_chunks DISABLE ROW LEVEL SECURITY;

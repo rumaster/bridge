@@ -7,6 +7,7 @@ import {
   assertMessageStatusTransition,
   validateCanonicalMessage,
 } from "../../../../../packages/contracts/message-model/index.mjs";
+import { createWebSocketEvent } from "../../../../../packages/contracts/src/c7.mjs";
 
 const C2_VERSION = "1.0.0";
 const UUID_PATTERN =
@@ -31,6 +32,8 @@ const VALID_MESSAGE_TYPES = new Set([
   "event",
   "system",
 ]);
+const AUTO_IDENTITY_LINK_TYPES = new Set(["verified_phone", "verified_email", "link_code"]);
+const CLIENT_STATUS_VALUES = new Set(["anonymous", "identified", "offline", "online"]);
 
 export class CommunicationCoreM1ValidationError extends Error {
   constructor(message, errors = [message]) {
@@ -53,17 +56,76 @@ export function assertStatusTransition(fromStatus, toStatus) {
   return assertMessageStatusTransition(fromStatus, toStatus);
 }
 
+export function createInMemoryC7EventPublisher({
+  clock = () => new Date().toISOString(),
+} = {}) {
+  const events = [];
+  const sequenceNumbers = new Map();
+
+  return {
+    async publish(event) {
+      const organizationId = event.organizationId ?? event.organization_id;
+      const nextSequenceNumber = (sequenceNumbers.get(organizationId) ?? 0) + 1;
+      sequenceNumbers.set(organizationId, nextSequenceNumber);
+
+      const envelope = event.contract
+        ? event
+        : createWebSocketEvent({
+            event: event.event,
+            eventId: event.eventId ?? randomUUID(),
+            organizationId,
+            payload: event.payload ?? {},
+            sequenceNumber: event.sequenceNumber ?? nextSequenceNumber,
+            occurredAt: event.occurredAt ?? clock(),
+            subscriptionId: event.subscriptionId,
+          });
+
+      events.push(structuredClone(envelope));
+      return envelope;
+    },
+
+    getEvents() {
+      return events.map((event) => structuredClone(event));
+    },
+  };
+}
+
+function createNoopC7EventPublisher() {
+  return {
+    async publish() {},
+  };
+}
+
 export function createCommunicationCoreM1Service({
   store = new InMemoryCommunicationCoreStore(),
   clock = () => new Date().toISOString(),
   egressAdapter = createMockC2EgressAdapter({ clock }),
+  realtimePublisher = createNoopC7EventPublisher(),
 } = {}) {
+  async function publishRealtime(event) {
+    if (!realtimePublisher || typeof realtimePublisher.publish !== "function") {
+      return;
+    }
+
+    await realtimePublisher.publish({
+      occurredAt: clock(),
+      ...event,
+    });
+  }
+
   return {
     async acceptIngressMessage(payload) {
       const ingress = normalizeIngressPayload(payload, clock);
       assertInboundCanBeRouted(ingress.message);
 
       const result = await store.recordInboundMessage(ingress);
+      if (!result.duplicate) {
+        await publishRealtime(messageCreatedEvent(result.message));
+        await publishRealtime(messageStatusChangedEvent({
+          message: result.message,
+          previousStatus: MESSAGE_STATUS.RECEIVED,
+        }));
+      }
 
       return {
         accepted: true,
@@ -71,9 +133,11 @@ export function createCommunicationCoreM1Service({
         message_id: result.message.id,
         idempotency_key: ingress.idempotencyKey,
         organization_id: result.message.organization_id,
+        client_id: result.endpoint.client_id,
         conversation_id: result.conversation.id,
         endpoint_id: result.endpoint.id,
         sequence_number: result.message.sequence_number,
+        sequence_gap: result.sequenceGap ?? null,
         status: result.message.status,
         routed_to: "manager",
         received_at: result.message.created_at,
@@ -160,6 +224,7 @@ export function createCommunicationCoreM1Service({
           deliveryAttempt: prepared.deliveryAttempt,
         });
       }
+      await publishRealtime(messageCreatedEvent(prepared.message));
 
       const delivery = buildC2EgressDelivery({
         message: prepared.message,
@@ -189,6 +254,10 @@ export function createCommunicationCoreM1Service({
         error: deliveryResult.error ?? null,
         occurredAt: clock(),
       });
+      await publishRealtime(messageStatusChangedEvent({
+        message: delivered.message,
+        previousStatus: MESSAGE_STATUS.ROUTED,
+      }));
 
       return outboundResponse({
         duplicate: false,
@@ -197,6 +266,84 @@ export function createCommunicationCoreM1Service({
         endpoint: prepared.endpoint,
         deliveryAttempt: delivered.deliveryAttempt,
       });
+    },
+
+    async mergeClients(payload) {
+      const result = await store.mergeClients({
+        actorType: "user",
+        occurredAt: clock(),
+        ...payload,
+      });
+      await publishRealtime({
+        event: "client.status_changed",
+        organizationId: payload.organizationId,
+        payload: {
+          client_id: payload.targetClientId,
+          merged_source_client_id: payload.sourceClientId,
+          status: "identified",
+        },
+      });
+
+      return result;
+    },
+
+    async revertIdentityLink(payload) {
+      const result = await store.revertIdentityLink({
+        actorType: "user",
+        occurredAt: clock(),
+        ...payload,
+      });
+      await publishRealtime({
+        event: "client.status_changed",
+        organizationId: payload.organizationId,
+        payload: {
+          client_id: result.previous_client_id,
+          reverted_link_id: result.reverted_link.id,
+          status: "identified",
+        },
+      });
+
+      return result;
+    },
+
+    async detectSequenceGaps(payload) {
+      return store.detectSequenceGaps(payload);
+    },
+
+    async publishTypingEvent(payload) {
+      const event = payload.typing === false ? "typing.stopped" : "typing.started";
+      await publishRealtime({
+        event,
+        organizationId: payload.organizationId,
+        payload: {
+          actor_type: payload.actorType,
+          conversation_id: payload.conversationId,
+          endpoint_id: payload.endpointId,
+        },
+      });
+
+      return { published: true, event };
+    },
+
+    async publishClientStatusChanged(payload) {
+      if (!CLIENT_STATUS_VALUES.has(payload.status)) {
+        throw new CommunicationCoreM1ValidationError(`Unsupported client status: ${payload.status}`);
+      }
+
+      await publishRealtime({
+        event: "client.status_changed",
+        organizationId: payload.organizationId,
+        payload: {
+          client_id: payload.clientId,
+          status: payload.status,
+        },
+      });
+
+      return { published: true, event: "client.status_changed" };
+    },
+
+    async selectDeliveryChannel(payload) {
+      return store.selectDeliveryChannel(payload);
     },
   };
 }
@@ -226,6 +373,37 @@ function outboundResponse({
           error: deliveryAttempt.error,
         }
       : null,
+  };
+}
+
+function messageCreatedEvent(message) {
+  return {
+    event: "message.created",
+    organizationId: message.organization_id,
+    payload: {
+      message_id: message.id,
+      conversation_id: message.conversation_id,
+      endpoint_id: message.endpoint_id,
+      client_id: message.client_id,
+      direction: message.direction,
+      sequence_number: message.sequence_number,
+      status: message.status,
+    },
+    occurredAt: message.created_at,
+  };
+}
+
+function messageStatusChangedEvent({ message, previousStatus }) {
+  return {
+    event: "message.status_changed",
+    organizationId: message.organization_id,
+    payload: {
+      message_id: message.id,
+      conversation_id: message.conversation_id,
+      endpoint_id: message.endpoint_id,
+      previous_status: previousStatus,
+      status: message.status,
+    },
   };
 }
 
@@ -297,6 +475,8 @@ export class InMemoryCommunicationCoreStore {
     this.messages = new Map();
     this.attachments = new Map();
     this.deliveryAttempts = new Map();
+    this.identityLinks = new Map();
+    this.channels = new Map();
   }
 
   async recordInboundMessage(ingress) {
@@ -315,8 +495,17 @@ export class InMemoryCommunicationCoreStore {
     });
     const sequenceNumber =
       ingress.message.sequence_number ?? this.nextSequenceNumber(ingress.organizationId, endpoint.id);
+    const sequenceGap =
+      ingress.message.sequence_number == null
+        ? null
+        : this.sequenceGapForInsert({
+            organizationId: ingress.organizationId,
+            endpointId: endpoint.id,
+            receivedSequenceNumber: ingress.message.sequence_number,
+          });
     const received = {
       ...ingress.message,
+      client_id: endpoint.client_id,
       conversation_id: conversation.id,
       endpoint_id: endpoint.id,
       sequence_number: sequenceNumber,
@@ -341,6 +530,7 @@ export class InMemoryCommunicationCoreStore {
       message: clone(routed),
       conversation: clone(conversation),
       endpoint: clone(endpoint),
+      sequenceGap,
       routedAt,
     };
   }
@@ -370,6 +560,7 @@ export class InMemoryCommunicationCoreStore {
     const message = {
       ...outbound.message,
       organization_id: outbound.organizationId,
+      client_id: endpoint.client_id,
       conversation_id: conversation.id,
       endpoint_id: endpoint.id,
       channel: endpoint.channel,
@@ -487,10 +678,15 @@ export class InMemoryCommunicationCoreStore {
     );
 
     if (existing) {
-      return existing;
+      return this.applyVerifiedIdentityToEndpoint(existing, ingress);
     }
 
+    const linkedClientId = this.findClientIdByVerifiedIdentity(
+      ingress.organizationId,
+      ingress.identity,
+    );
     const clientId =
+      linkedClientId ??
       ingress.clientId ??
       uuidFromText(
         `${ingress.organizationId}:client:${ingress.channel}:${ingress.endpointExternalId}`,
@@ -519,15 +715,100 @@ export class InMemoryCommunicationCoreStore {
       metadata: {
         channel_id: ingress.channelId,
         conversation_ref: ingress.conversationRef,
+        identity: ingress.identity?.evidence ?? null,
         sender_ref: ingress.senderRef,
       },
       created_at: ingress.occurredAt,
     };
 
-    this.clients.set(clientKey(ingress.organizationId, clientId), client);
+    if (!this.clients.has(clientKey(ingress.organizationId, clientId))) {
+      this.clients.set(clientKey(ingress.organizationId, clientId), client);
+    }
     this.endpoints.set(endpointKey(ingress.organizationId, endpointId), endpoint);
+    this.ensureVerifiedIdentityLink({
+      clientId,
+      endpointId,
+      identity: ingress.identity,
+      occurredAt: ingress.occurredAt,
+      organizationId: ingress.organizationId,
+    });
 
     return endpoint;
+  }
+
+  applyVerifiedIdentityToEndpoint(endpoint, ingress) {
+    const linkedClientId = this.findClientIdByVerifiedIdentity(
+      ingress.organizationId,
+      ingress.identity,
+    );
+    if (linkedClientId && linkedClientId !== endpoint.client_id) {
+      this.moveEndpointToClient({
+        endpointId: endpoint.id,
+        organizationId: ingress.organizationId,
+        targetClientId: linkedClientId,
+        occurredAt: ingress.occurredAt,
+      });
+      endpoint.client_id = linkedClientId;
+    }
+
+    this.ensureVerifiedIdentityLink({
+      clientId: endpoint.client_id,
+      endpointId: endpoint.id,
+      identity: ingress.identity,
+      occurredAt: ingress.occurredAt,
+      organizationId: ingress.organizationId,
+    });
+
+    return endpoint;
+  }
+
+  findClientIdByVerifiedIdentity(organizationId, identity) {
+    if (!isVerifiedIdentity(identity)) {
+      return null;
+    }
+
+    const activeLink = Array.from(this.identityLinks.values()).find(
+      (link) =>
+        link.organization_id === organizationId &&
+        link.reverted_at === null &&
+        link.link_type === identity.link_type &&
+        link.evidence?.identity_value === identity.value,
+    );
+
+    return activeLink?.client_id ?? null;
+  }
+
+  ensureVerifiedIdentityLink({
+    clientId,
+    endpointId,
+    identity,
+    occurredAt,
+    organizationId,
+  }) {
+    if (!isVerifiedIdentity(identity)) {
+      return null;
+    }
+
+    const activeEndpointLink = Array.from(this.identityLinks.values()).find(
+      (link) =>
+        link.organization_id === organizationId &&
+        link.endpoint_id === endpointId &&
+        link.reverted_at === null,
+    );
+    if (activeEndpointLink) {
+      return activeEndpointLink;
+    }
+
+    return this.createIdentityLink({
+      clientId,
+      endpointId,
+      linkType: identity.link_type,
+      evidence: identity.evidence,
+      createdBy: null,
+      createdByActorType: "system",
+      createdAt: occurredAt,
+      organizationId,
+    });
   }
 
   resolveConversation({
@@ -588,6 +869,378 @@ export class InMemoryCommunicationCoreStore {
     );
   }
 
+  async mergeClients({
+    organizationId,
+    sourceClientId,
+    targetClientId,
+    actorUserId = null,
+    actorType = "user",
+    reason = null,
+    occurredAt,
+  }) {
+    assertUuid(organizationId, "organization_id");
+    assertUuid(sourceClientId, "source_client_id");
+    assertUuid(targetClientId, "target_client_id");
+    if (sourceClientId === targetClientId) {
+      throw new CommunicationCoreM1ValidationError("source_client_id and target_client_id must differ.");
+    }
+    this.requireClient(organizationId, sourceClientId);
+    this.requireClient(organizationId, targetClientId);
+
+    const targetConversation = this.resolveConversation({
+      organizationId,
+      clientId: targetClientId,
+      occurredAt,
+    });
+    const sourceEndpoints = Array.from(this.endpoints.values()).filter(
+      (endpoint) =>
+        endpoint.organization_id === organizationId &&
+        endpoint.client_id === sourceClientId,
+    );
+    const links = [];
+    let movedMessageCount = 0;
+
+    for (const endpoint of sourceEndpoints) {
+      const previousConversation = this.findConversationForEndpoint({
+        endpointId: endpoint.id,
+        organizationId,
+        clientId: sourceClientId,
+      });
+      const link = this.createIdentityLink({
+        clientId: targetClientId,
+        endpointId: endpoint.id,
+        linkType: "manual",
+        evidence: {
+          previous_client_id: sourceClientId,
+          previous_conversation_id: previousConversation?.id ?? null,
+          reason,
+          target_client_id: targetClientId,
+          target_conversation_id: targetConversation.id,
+        },
+        createdBy: actorUserId,
+        createdByActorType: actorType,
+        createdAt: occurredAt,
+        organizationId,
+      });
+
+      endpoint.client_id = targetClientId;
+      this.endpoints.set(endpointKey(organizationId, endpoint.id), endpoint);
+      for (const message of this.messages.values()) {
+        if (
+          message.organization_id === organizationId &&
+          message.endpoint_id === endpoint.id &&
+          message.conversation_id !== targetConversation.id
+        ) {
+          message.conversation_id = targetConversation.id;
+          movedMessageCount += 1;
+        }
+      }
+      if (previousConversation) {
+        previousConversation.status = "closed";
+        previousConversation.updated_at = occurredAt;
+        this.conversations.set(
+          conversationKey(organizationId, previousConversation.id),
+          previousConversation,
+        );
+        this.recalculateConversationLastMessage(
+          organizationId,
+          previousConversation.id,
+          occurredAt,
+        );
+      }
+      links.push(link);
+    }
+
+    this.recalculateConversationLastMessage(organizationId, targetConversation.id, occurredAt);
+
+    return {
+      accepted: true,
+      mode: "core-m2",
+      sourceClientId,
+      targetClientId,
+      moved_endpoint_count: sourceEndpoints.length,
+      moved_message_count: movedMessageCount,
+      links: links.map(clone),
+    };
+  }
+
+  async revertIdentityLink({
+    organizationId,
+    linkId,
+    actorUserId = null,
+    actorType = "user",
+    reason,
+    occurredAt,
+  }) {
+    assertUuid(organizationId, "organization_id");
+    assertUuid(linkId, "link_id");
+    const link = this.identityLinks.get(identityLinkKey(organizationId, linkId));
+    if (!link || link.organization_id !== organizationId) {
+      throw new CommunicationCoreM1NotFoundError("Identity link was not found.");
+    }
+    if (link.reverted_at) {
+      return {
+        reverted: false,
+        reverted_link: clone(link),
+        previous_client_id: link.evidence?.previous_client_id ?? null,
+      };
+    }
+
+    const previousClientId = link.evidence?.previous_client_id;
+    const previousConversationId = link.evidence?.previous_conversation_id;
+    const targetConversationId = link.evidence?.target_conversation_id;
+    if (!previousClientId || !previousConversationId || !targetConversationId) {
+      throw new CommunicationCoreM1ValidationError(
+        "Only reversible manual links with previous conversation evidence can be reverted.",
+      );
+    }
+
+    const endpoint = this.endpoints.get(endpointKey(organizationId, link.endpoint_id));
+    if (!endpoint) {
+      throw new CommunicationCoreM1NotFoundError("Communication endpoint was not found.");
+    }
+    endpoint.client_id = previousClientId;
+    this.endpoints.set(endpointKey(organizationId, endpoint.id), endpoint);
+
+    for (const message of this.messages.values()) {
+      if (
+        message.organization_id === organizationId &&
+        message.endpoint_id === endpoint.id &&
+        message.conversation_id === targetConversationId
+      ) {
+        message.conversation_id = previousConversationId;
+      }
+    }
+
+    const previousConversation = this.conversations.get(
+      conversationKey(organizationId, previousConversationId),
+    );
+    if (previousConversation) {
+      previousConversation.status = "open";
+      previousConversation.updated_at = occurredAt;
+      this.conversations.set(conversationKey(organizationId, previousConversation.id), previousConversation);
+      this.recalculateConversationLastMessage(organizationId, previousConversation.id, occurredAt);
+    }
+    this.recalculateConversationLastMessage(organizationId, targetConversationId, occurredAt);
+
+    link.reverted_at = occurredAt;
+    link.reverted_by = actorUserId;
+    link.reverted_by_actor_type = actorType;
+    link.reverted_reason = reason;
+    this.identityLinks.set(identityLinkKey(organizationId, link.id), link);
+
+    return {
+      reverted: true,
+      reverted_link: clone(link),
+      previous_client_id: previousClientId,
+    };
+  }
+
+  requireClient(organizationId, clientId) {
+    const client = this.clients.get(clientKey(organizationId, clientId));
+    if (!client) {
+      throw new CommunicationCoreM1NotFoundError("Client was not found.");
+    }
+
+    return client;
+  }
+
+  findConversationForEndpoint({ organizationId, endpointId, clientId }) {
+    const message = Array.from(this.messages.values())
+      .filter(
+        (item) =>
+          item.organization_id === organizationId &&
+          item.endpoint_id === endpointId,
+      )
+      .sort(compareMessages)[0];
+    if (message) {
+      return this.conversations.get(conversationKey(organizationId, message.conversation_id));
+    }
+
+    return Array.from(this.conversations.values()).find(
+      (conversation) =>
+        conversation.organization_id === organizationId &&
+        conversation.client_id === clientId &&
+        conversation.status !== "closed",
+    );
+  }
+
+  moveEndpointToClient({ organizationId, endpointId, targetClientId, occurredAt }) {
+    const endpoint = this.endpoints.get(endpointKey(organizationId, endpointId));
+    if (!endpoint || endpoint.client_id === targetClientId) {
+      return;
+    }
+    const previousConversation = this.findConversationForEndpoint({
+      organizationId,
+      endpointId,
+      clientId: endpoint.client_id,
+    });
+
+    const targetConversation = this.resolveConversation({
+      organizationId,
+      clientId: targetClientId,
+      occurredAt,
+    });
+    endpoint.client_id = targetClientId;
+    this.endpoints.set(endpointKey(organizationId, endpointId), endpoint);
+
+    for (const message of this.messages.values()) {
+      if (message.organization_id === organizationId && message.endpoint_id === endpointId) {
+        message.conversation_id = targetConversation.id;
+      }
+    }
+    if (previousConversation && previousConversation.id !== targetConversation.id) {
+      previousConversation.status = "closed";
+      previousConversation.updated_at = occurredAt;
+      this.conversations.set(
+        conversationKey(organizationId, previousConversation.id),
+        previousConversation,
+      );
+      this.recalculateConversationLastMessage(
+        organizationId,
+        previousConversation.id,
+        occurredAt,
+      );
+    }
+    this.recalculateConversationLastMessage(organizationId, targetConversation.id, occurredAt);
+  }
+
+  createIdentityLink({
+    organizationId,
+    clientId,
+    endpointId,
+    linkType,
+    evidence = {},
+    createdBy,
+    createdByActorType = "system",
+    createdAt,
+  }) {
+    const activeEndpointLink = Array.from(this.identityLinks.values()).find(
+      (link) =>
+        link.organization_id === organizationId &&
+        link.endpoint_id === endpointId &&
+        link.reverted_at === null,
+    );
+    if (activeEndpointLink) {
+      activeEndpointLink.reverted_at = createdAt;
+      activeEndpointLink.reverted_by = createdBy ?? null;
+      activeEndpointLink.reverted_by_actor_type = createdByActorType;
+      activeEndpointLink.reverted_reason = "Superseded by a newer identity link.";
+    }
+
+    const link = {
+      id: randomUUID(),
+      organization_id: organizationId,
+      client_id: clientId,
+      endpoint_id: endpointId,
+      link_type: linkType,
+      evidence,
+      created_by: createdBy ?? null,
+      created_by_actor_type: createdByActorType,
+      created_at: createdAt,
+      reverted_at: null,
+      reverted_by: null,
+      reverted_by_actor_type: null,
+      reverted_reason: null,
+    };
+    this.identityLinks.set(identityLinkKey(organizationId, link.id), link);
+
+    return link;
+  }
+
+  getIdentityLinks() {
+    return Array.from(this.identityLinks.values()).map(clone);
+  }
+
+  sequenceGapForInsert({ organizationId, endpointId, receivedSequenceNumber }) {
+    const missing = this.detectMissingSequences(organizationId, endpointId);
+    const expected = missing[0] ?? this.nextSequenceNumber(organizationId, endpointId);
+
+    if (receivedSequenceNumber > expected) {
+      return {
+        endpoint_id: endpointId,
+        expected_sequence_number: expected,
+        received_sequence_number: receivedSequenceNumber,
+      };
+    }
+
+    return null;
+  }
+
+  async detectSequenceGaps({ organizationId, endpointId }) {
+    assertUuid(organizationId, "organization_id");
+    assertUuid(endpointId, "endpoint_id");
+    const sequences = this.sequencesForEndpoint(organizationId, endpointId);
+    const gaps = [];
+
+    for (let index = 0; index < sequences.length - 1; index += 1) {
+      const current = sequences[index];
+      const next = sequences[index + 1];
+      if (next > current + 1) {
+        gaps.push({
+          after_sequence_number: current,
+          expected_sequence_number: current + 1,
+          received_sequence_number: next,
+        });
+      }
+    }
+
+    return gaps;
+  }
+
+  detectMissingSequences(organizationId, endpointId) {
+    const sequences = this.sequencesForEndpoint(organizationId, endpointId);
+    const missing = [];
+    for (let expected = 1; expected <= Math.max(0, ...sequences); expected += 1) {
+      if (!sequences.includes(expected)) {
+        missing.push(expected);
+      }
+    }
+
+    return missing;
+  }
+
+  sequencesForEndpoint(organizationId, endpointId) {
+    return Array.from(this.messages.values())
+      .filter(
+        (message) =>
+          message.organization_id === organizationId && message.endpoint_id === endpointId,
+      )
+      .map((message) => message.sequence_number)
+      .sort((left, right) => left - right);
+  }
+
+  upsertChannelCapabilities({
+    organizationId,
+    channelId,
+    channelType,
+    capabilities,
+    status = "connected",
+  }) {
+    this.channels.set(channelKey(organizationId, channelId), {
+      organization_id: organizationId,
+      channel_id: channelId,
+      channel_type: channelType,
+      capabilities: { ...capabilities },
+      status,
+    });
+  }
+
+  async selectDeliveryChannel({ organizationId, requiredCapabilities }) {
+    const selected = Array.from(this.channels.values()).find(
+      (channel) =>
+        channel.organization_id === organizationId &&
+        channel.status === "connected" &&
+        requiredCapabilities.every((capability) => channel.capabilities[capability] === true),
+    );
+
+    if (!selected) {
+      throw new CommunicationCoreM1NotFoundError("Delivery channel with required capabilities was not found.");
+    }
+
+    return clone(selected);
+  }
+
   nextSequenceNumber(organizationId, endpointId) {
     return (
       Math.max(
@@ -606,6 +1259,24 @@ export class InMemoryCommunicationCoreStore {
     conversation.last_message_at = lastMessageAt;
     conversation.updated_at = updatedAt;
     this.conversations.set(conversationKey(conversation.organization_id, conversation.id), conversation);
+  }
+
+  recalculateConversationLastMessage(organizationId, conversationId, updatedAt) {
+    const conversation = this.conversations.get(conversationKey(organizationId, conversationId));
+    if (!conversation) {
+      return;
+    }
+
+    const lastMessage = Array.from(this.messages.values())
+      .filter(
+        (message) =>
+          message.organization_id === organizationId &&
+          message.conversation_id === conversationId,
+      )
+      .sort((left, right) => right.created_at.localeCompare(left.created_at))[0];
+    conversation.last_message_at = lastMessage?.created_at ?? null;
+    conversation.updated_at = updatedAt;
+    this.conversations.set(conversationKey(organizationId, conversationId), conversation);
   }
 }
 
@@ -663,6 +1334,210 @@ export function createPostgresCommunicationCoreStore({ client }) {
     };
   }
 
+  async function applyVerifiedIdentityToEndpoint(endpoint, ingress) {
+    const linkedClientId = await findClientIdByVerifiedIdentity(
+      ingress.organizationId,
+      ingress.identity,
+    );
+    if (linkedClientId && linkedClientId !== endpoint.client_id) {
+      await moveEndpointToClient({
+        endpointId: endpoint.id,
+        organizationId: ingress.organizationId,
+        targetClientId: linkedClientId,
+        occurredAt: ingress.occurredAt,
+      });
+      endpoint.client_id = linkedClientId;
+    }
+
+    await ensureVerifiedIdentityLink({
+      clientId: endpoint.client_id,
+      endpointId: endpoint.id,
+      identity: ingress.identity,
+      occurredAt: ingress.occurredAt,
+      organizationId: ingress.organizationId,
+    });
+
+    return endpoint;
+  }
+
+  async function findClientIdByVerifiedIdentity(organizationId, identity) {
+    if (!isVerifiedIdentity(identity)) {
+      return null;
+    }
+
+    const result = await client.query(
+      `
+        SELECT client_id
+        FROM client_identity_links
+        WHERE organization_id = $1
+          AND link_type = $2
+          AND evidence ->> 'identity_value' = $3
+          AND reverted_at IS NULL
+        ORDER BY created_at ASC
+        LIMIT 1
+      `,
+      [organizationId, identity.link_type, identity.value],
+    );
+
+    return result.rowCount === 0 ? null : result.rows[0].client_id;
+  }
+
+  async function ensureVerifiedIdentityLink({
+    clientId,
+    endpointId,
+    identity,
+    occurredAt,
+    organizationId,
+  }) {
+    if (!isVerifiedIdentity(identity)) {
+      return null;
+    }
+
+    const existing = await client.query(
+      `
+        SELECT *
+        FROM client_identity_links
+        WHERE organization_id = $1
+          AND endpoint_id = $2
+          AND reverted_at IS NULL
+        LIMIT 1
+      `,
+      [organizationId, endpointId],
+    );
+    if (existing.rowCount > 0) {
+      return rowToIdentityLink(existing.rows[0]);
+    }
+
+    return createIdentityLink({
+      clientId,
+      endpointId,
+      linkType: identity.link_type,
+      evidence: identity.evidence,
+      createdBy: null,
+      createdByActorType: "system",
+      createdAt: occurredAt,
+      organizationId,
+    });
+  }
+
+  async function createIdentityLink({
+    organizationId,
+    clientId,
+    endpointId,
+    linkType,
+    evidence,
+    createdBy,
+    createdByActorType,
+    createdAt,
+  }) {
+    await client.query(
+      `
+        UPDATE client_identity_links
+        SET reverted_at = $4::timestamptz,
+            reverted_by = $5,
+            reverted_by_actor_type = $6,
+            reverted_reason = 'Superseded by a newer identity link.'
+        WHERE organization_id = $1
+          AND endpoint_id = $2
+          AND reverted_at IS NULL
+          AND link_type <> $3
+      `,
+      [organizationId, endpointId, linkType, createdAt, createdBy ?? null, createdByActorType],
+    );
+    const result = await client.query(
+      `
+        INSERT INTO client_identity_links (
+          id,
+          organization_id,
+          client_id,
+          endpoint_id,
+          link_type,
+          evidence,
+          created_by,
+          created_by_actor_type,
+          created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9::timestamptz)
+        RETURNING *
+      `,
+      [
+        randomUUID(),
+        organizationId,
+        clientId,
+        endpointId,
+        linkType,
+        JSON.stringify(evidence ?? {}),
+        createdBy ?? null,
+        createdByActorType,
+        createdAt,
+      ],
+    );
+
+    return rowToIdentityLink(result.rows[0]);
+  }
+
+  async function moveEndpointToClient({
+    organizationId,
+    endpointId,
+    targetClientId,
+    occurredAt,
+  }) {
+    const endpoint = await getEndpointById(organizationId, endpointId);
+    if (!endpoint || endpoint.client_id === targetClientId) {
+      return;
+    }
+    const previousConversation = await findConversationForEndpoint({
+      organizationId,
+      endpointId,
+      clientId: endpoint.client_id,
+    });
+    const targetConversation = await resolveConversation({
+      organizationId,
+      clientId: targetClientId,
+      occurredAt,
+    });
+    await client.query(
+      `
+        UPDATE communication_endpoints
+        SET client_id = $3
+        WHERE organization_id = $1
+          AND id = $2
+      `,
+      [organizationId, endpointId, targetClientId],
+    );
+    await client.query(
+      `
+        UPDATE messages
+        SET conversation_id = $3
+        WHERE organization_id = $1
+          AND endpoint_id = $2
+      `,
+      [organizationId, endpointId, targetConversation.id],
+    );
+    if (previousConversation && previousConversation.id !== targetConversation.id) {
+      await client.query(
+        `
+          UPDATE conversations
+          SET status = 'closed',
+              updated_at = $3::timestamptz
+          WHERE organization_id = $1
+            AND id = $2
+        `,
+        [organizationId, previousConversation.id, occurredAt],
+      );
+      await recalculateConversationLastMessage(
+        organizationId,
+        previousConversation.id,
+        occurredAt,
+      );
+    }
+    await recalculateConversationLastMessage(
+      organizationId,
+      targetConversation.id,
+      occurredAt,
+    );
+  }
+
   async function resolveEndpoint(ingress) {
     const existing = await client.query(
       `
@@ -677,10 +1552,15 @@ export function createPostgresCommunicationCoreStore({ client }) {
     );
 
     if (existing.rowCount > 0) {
-      return rowToEndpoint(existing.rows[0]);
+      return applyVerifiedIdentityToEndpoint(rowToEndpoint(existing.rows[0]), ingress);
     }
 
+    const linkedClientId = await findClientIdByVerifiedIdentity(
+      ingress.organizationId,
+      ingress.identity,
+    );
     const clientId =
+      linkedClientId ??
       ingress.clientId ??
       uuidFromText(
         `${ingress.organizationId}:client:${ingress.channel}:${ingress.endpointExternalId}`,
@@ -714,6 +1594,7 @@ export function createPostgresCommunicationCoreStore({ client }) {
     const metadata = {
       channel_id: ingress.channelId,
       conversation_ref: ingress.conversationRef,
+      identity: ingress.identity?.evidence ?? null,
       sender_ref: ingress.senderRef,
     };
 
@@ -745,7 +1626,16 @@ export function createPostgresCommunicationCoreStore({ client }) {
       ],
     );
 
-    return rowToEndpoint(created.rows[0]);
+    const endpoint = rowToEndpoint(created.rows[0]);
+    await ensureVerifiedIdentityLink({
+      clientId,
+      endpointId: endpoint.id,
+      identity: ingress.identity,
+      occurredAt: ingress.occurredAt,
+      organizationId: ingress.organizationId,
+    });
+
+    return endpoint;
   }
 
   async function resolveConversation({
@@ -816,6 +1706,65 @@ export function createPostgresCommunicationCoreStore({ client }) {
     return result.rows[0].next_sequence_number;
   }
 
+  async function lockEndpointPartition(organizationId, endpointId) {
+    await client.query(
+      `
+        SELECT id
+        FROM communication_endpoints
+        WHERE organization_id = $1
+          AND id = $2
+        FOR UPDATE
+      `,
+      [organizationId, endpointId],
+    );
+  }
+
+  async function sequenceGapForInsert({
+    organizationId,
+    endpointId,
+    receivedSequenceNumber,
+  }) {
+    const missing = await detectMissingSequences(organizationId, endpointId);
+    const expected = missing[0] ?? Number(await nextSequenceNumber(organizationId, endpointId));
+
+    if (receivedSequenceNumber > expected) {
+      return {
+        endpoint_id: endpointId,
+        expected_sequence_number: expected,
+        received_sequence_number: receivedSequenceNumber,
+      };
+    }
+
+    return null;
+  }
+
+  async function detectMissingSequences(organizationId, endpointId) {
+    const sequences = await sequencesForEndpoint(organizationId, endpointId);
+    const missing = [];
+    for (let expected = 1; expected <= Math.max(0, ...sequences); expected += 1) {
+      if (!sequences.includes(expected)) {
+        missing.push(expected);
+      }
+    }
+
+    return missing;
+  }
+
+  async function sequencesForEndpoint(organizationId, endpointId) {
+    const result = await client.query(
+      `
+        SELECT sequence_number
+        FROM messages
+        WHERE organization_id = $1
+          AND endpoint_id = $2
+        ORDER BY sequence_number ASC
+      `,
+      [organizationId, endpointId],
+    );
+
+    return result.rows.map((row) => Number(row.sequence_number));
+  }
+
   async function getConversationById(organizationId, conversationId) {
     const result = await client.query(
       `
@@ -868,6 +1817,7 @@ export function createPostgresCommunicationCoreStore({ client }) {
         }
 
         const endpoint = await resolveEndpoint(ingress);
+        await lockEndpointPartition(ingress.organizationId, endpoint.id);
         const conversation = await resolveConversation({
           organizationId: ingress.organizationId,
           clientId: endpoint.client_id,
@@ -878,6 +1828,14 @@ export function createPostgresCommunicationCoreStore({ client }) {
         const sequenceNumber =
           ingress.message.sequence_number ??
           (await nextSequenceNumber(ingress.organizationId, endpoint.id));
+        const sequenceGap =
+          ingress.message.sequence_number == null
+            ? null
+            : await sequenceGapForInsert({
+                organizationId: ingress.organizationId,
+                endpointId: endpoint.id,
+                receivedSequenceNumber: ingress.message.sequence_number,
+              });
         const routedAt = ingress.routedAt;
 
         await client.query(
@@ -988,6 +1946,7 @@ export function createPostgresCommunicationCoreStore({ client }) {
           message,
           conversation: updatedConversation,
           endpoint,
+          sequenceGap,
           routedAt,
         };
       });
@@ -1020,6 +1979,7 @@ export function createPostgresCommunicationCoreStore({ client }) {
           throw new CommunicationCoreM1NotFoundError("Communication endpoint was not found.");
         }
 
+        await lockEndpointPartition(outbound.organizationId, endpoint.id);
         const sequenceNumber = await nextSequenceNumber(outbound.organizationId, endpoint.id);
 
         await client.query(
@@ -1225,6 +2185,284 @@ export function createPostgresCommunicationCoreStore({ client }) {
         return rows;
       });
     },
+
+    async mergeClients({
+      organizationId,
+      sourceClientId,
+      targetClientId,
+      actorUserId = null,
+      actorType = "user",
+      reason = null,
+      occurredAt,
+    }) {
+      return withTenantTransaction(organizationId, async () => {
+        if (sourceClientId === targetClientId) {
+          throw new CommunicationCoreM1ValidationError(
+            "source_client_id and target_client_id must differ.",
+          );
+        }
+        await requireClient(organizationId, sourceClientId);
+        await requireClient(organizationId, targetClientId);
+
+        const targetConversation = await resolveConversation({
+          organizationId,
+          clientId: targetClientId,
+          occurredAt,
+        });
+        const endpoints = await client.query(
+          `
+            SELECT *
+            FROM communication_endpoints
+            WHERE organization_id = $1
+              AND client_id = $2
+            ORDER BY created_at ASC
+            FOR UPDATE
+          `,
+          [organizationId, sourceClientId],
+        );
+        const links = [];
+        let movedMessageCount = 0;
+
+        for (const endpointRow of endpoints.rows) {
+          const endpoint = rowToEndpoint(endpointRow);
+          const previousConversation = await findConversationForEndpoint({
+            clientId: sourceClientId,
+            endpointId: endpoint.id,
+            organizationId,
+          });
+          const link = await createIdentityLink({
+            clientId: targetClientId,
+            endpointId: endpoint.id,
+            linkType: "manual",
+            evidence: {
+              previous_client_id: sourceClientId,
+              previous_conversation_id: previousConversation?.id ?? null,
+              reason,
+              target_client_id: targetClientId,
+              target_conversation_id: targetConversation.id,
+            },
+            createdBy: actorUserId,
+            createdByActorType: actorType,
+            createdAt: occurredAt,
+            organizationId,
+          });
+          links.push(link);
+
+          await client.query(
+            `
+              UPDATE communication_endpoints
+              SET client_id = $3
+              WHERE organization_id = $1
+                AND id = $2
+            `,
+            [organizationId, endpoint.id, targetClientId],
+          );
+          const moved = await client.query(
+            `
+              UPDATE messages
+              SET conversation_id = $3
+              WHERE organization_id = $1
+                AND endpoint_id = $2
+                AND conversation_id <> $3
+            `,
+            [organizationId, endpoint.id, targetConversation.id],
+          );
+          movedMessageCount += moved.rowCount ?? 0;
+          if (previousConversation) {
+            await client.query(
+              `
+                UPDATE conversations
+                SET status = 'closed',
+                    updated_at = $3::timestamptz
+                WHERE organization_id = $1
+                  AND id = $2
+              `,
+              [organizationId, previousConversation.id, occurredAt],
+            );
+            await recalculateConversationLastMessage(
+              organizationId,
+              previousConversation.id,
+              occurredAt,
+            );
+          }
+        }
+
+        await recalculateConversationLastMessage(
+          organizationId,
+          targetConversation.id,
+          occurredAt,
+        );
+
+        return {
+          accepted: true,
+          mode: "core-m2",
+          sourceClientId,
+          targetClientId,
+          moved_endpoint_count: endpoints.rowCount,
+          moved_message_count: movedMessageCount,
+          links,
+        };
+      });
+    },
+
+    async revertIdentityLink({
+      organizationId,
+      linkId,
+      actorUserId = null,
+      actorType = "user",
+      reason,
+      occurredAt,
+    }) {
+      return withTenantTransaction(organizationId, async () => {
+        const linkResult = await client.query(
+          `
+            SELECT *
+            FROM client_identity_links
+            WHERE organization_id = $1
+              AND id = $2
+            FOR UPDATE
+          `,
+          [organizationId, linkId],
+        );
+        if (linkResult.rowCount === 0) {
+          throw new CommunicationCoreM1NotFoundError("Identity link was not found.");
+        }
+        const link = rowToIdentityLink(linkResult.rows[0]);
+        if (link.reverted_at) {
+          return {
+            reverted: false,
+            reverted_link: link,
+            previous_client_id: link.evidence?.previous_client_id ?? null,
+          };
+        }
+
+        const previousClientId = link.evidence?.previous_client_id;
+        const previousConversationId = link.evidence?.previous_conversation_id;
+        const targetConversationId = link.evidence?.target_conversation_id;
+        if (!previousClientId || !previousConversationId || !targetConversationId) {
+          throw new CommunicationCoreM1ValidationError(
+            "Only reversible manual links with previous conversation evidence can be reverted.",
+          );
+        }
+
+        await client.query(
+          `
+            UPDATE communication_endpoints
+            SET client_id = $3
+            WHERE organization_id = $1
+              AND id = $2
+          `,
+          [organizationId, link.endpoint_id, previousClientId],
+        );
+        await client.query(
+          `
+            UPDATE messages
+            SET conversation_id = $4
+            WHERE organization_id = $1
+              AND endpoint_id = $2
+              AND conversation_id = $3
+          `,
+          [organizationId, link.endpoint_id, targetConversationId, previousConversationId],
+        );
+        await client.query(
+          `
+            UPDATE conversations
+            SET status = 'open',
+                updated_at = $3::timestamptz
+            WHERE organization_id = $1
+              AND id = $2
+          `,
+          [organizationId, previousConversationId, occurredAt],
+        );
+        const reverted = await client.query(
+          `
+            UPDATE client_identity_links
+            SET reverted_at = $3::timestamptz,
+                reverted_by = $4,
+                reverted_by_actor_type = $5,
+                reverted_reason = $6
+            WHERE organization_id = $1
+              AND id = $2
+            RETURNING *
+          `,
+          [organizationId, linkId, occurredAt, actorUserId, actorType, reason],
+        );
+
+        await recalculateConversationLastMessage(
+          organizationId,
+          previousConversationId,
+          occurredAt,
+        );
+        await recalculateConversationLastMessage(
+          organizationId,
+          targetConversationId,
+          occurredAt,
+        );
+
+        return {
+          reverted: true,
+          reverted_link: rowToIdentityLink(reverted.rows[0]),
+          previous_client_id: previousClientId,
+        };
+      });
+    },
+
+    async detectSequenceGaps({ organizationId, endpointId }) {
+      return withTenantTransaction(organizationId, async () => {
+        const sequences = await sequencesForEndpoint(organizationId, endpointId);
+        const gaps = [];
+        for (let index = 0; index < sequences.length - 1; index += 1) {
+          const current = sequences[index];
+          const next = sequences[index + 1];
+          if (next > current + 1) {
+            gaps.push({
+              after_sequence_number: current,
+              expected_sequence_number: current + 1,
+              received_sequence_number: next,
+            });
+          }
+        }
+
+        return gaps;
+      });
+    },
+
+    async selectDeliveryChannel({ organizationId, requiredCapabilities }) {
+      return withTenantTransaction(organizationId, async () => {
+        const result = await client.query(
+          `
+            SELECT
+              channels.id AS channel_id,
+              channels.channel_type,
+              channels.status,
+              jsonb_object_agg(
+                adapter_capabilities.capability,
+                adapter_capabilities.supported
+              ) AS capabilities
+            FROM channels
+            JOIN adapter_capabilities
+              ON adapter_capabilities.organization_id = channels.organization_id
+             AND adapter_capabilities.channel_id = channels.id
+            WHERE channels.organization_id = $1
+              AND channels.status = 'connected'
+              AND adapter_capabilities.capability = ANY($2::text[])
+            GROUP BY channels.id, channels.channel_type, channels.status
+            HAVING bool_and(adapter_capabilities.supported)
+               AND count(DISTINCT adapter_capabilities.capability) = $3
+            ORDER BY channels.created_at ASC
+            LIMIT 1
+          `,
+          [organizationId, requiredCapabilities, requiredCapabilities.length],
+        );
+        if (result.rowCount === 0) {
+          throw new CommunicationCoreM1NotFoundError(
+            "Delivery channel with required capabilities was not found.",
+          );
+        }
+
+        return result.rows[0];
+      });
+    },
   };
 
   async function findEndpointForClient({ organizationId, clientId, endpointId }) {
@@ -1248,6 +2486,71 @@ export function createPostgresCommunicationCoreStore({ client }) {
     );
 
     return result.rowCount === 0 ? null : rowToEndpoint(result.rows[0]);
+  }
+
+  async function requireClient(organizationId, clientId) {
+    const result = await client.query(
+      `
+        SELECT id
+        FROM clients
+        WHERE organization_id = $1
+          AND id = $2
+      `,
+      [organizationId, clientId],
+    );
+    if (result.rowCount === 0) {
+      throw new CommunicationCoreM1NotFoundError("Client was not found.");
+    }
+  }
+
+  async function findConversationForEndpoint({ organizationId, endpointId, clientId }) {
+    const message = await client.query(
+      `
+        SELECT conversation_id
+        FROM messages
+        WHERE organization_id = $1
+          AND endpoint_id = $2
+        ORDER BY created_at ASC, sequence_number ASC
+        LIMIT 1
+      `,
+      [organizationId, endpointId],
+    );
+    if (message.rowCount > 0) {
+      return getConversationById(organizationId, message.rows[0].conversation_id);
+    }
+
+    const conversation = await client.query(
+      `
+        SELECT *
+        FROM conversations
+        WHERE organization_id = $1
+          AND client_id = $2
+          AND status <> 'closed'
+        ORDER BY last_message_at DESC NULLS LAST, created_at DESC
+        LIMIT 1
+      `,
+      [organizationId, clientId],
+    );
+
+    return conversation.rowCount === 0 ? null : rowToConversation(conversation.rows[0]);
+  }
+
+  async function recalculateConversationLastMessage(organizationId, conversationId, updatedAt) {
+    await client.query(
+      `
+        UPDATE conversations
+        SET last_message_at = (
+              SELECT MAX(created_at)
+              FROM messages
+              WHERE organization_id = $1
+                AND conversation_id = $2
+            ),
+            updated_at = $3::timestamptz
+        WHERE organization_id = $1
+          AND id = $2
+      `,
+      [organizationId, conversationId, updatedAt],
+    );
   }
 }
 
@@ -1290,6 +2593,12 @@ function normalizeC2IngressEnvelope(payload, clock) {
   if (typeof message.message_id === "string" && !isUuid(message.message_id)) {
     errors.push("message.message_id must be a UUID string");
   }
+  if (
+    message.sequence_number !== undefined &&
+    (!Number.isSafeInteger(message.sequence_number) || message.sequence_number < 1)
+  ) {
+    errors.push("message.sequence_number must be a positive integer");
+  }
 
   if (errors.length > 0) {
     throw new CommunicationCoreM1ValidationError(
@@ -1305,6 +2614,7 @@ function normalizeC2IngressEnvelope(payload, clock) {
   const channel = normalizeChannel(message.channel_type);
   const type = normalizeMessageType(message.content.type);
   const endpointExternalId = `${message.channel_id}:${message.sender_ref ?? message.conversation_ref ?? "anonymous"}`;
+  const identity = normalizeIdentityEvidence(message.identity ?? message.verified_identity);
 
   return {
     idempotencyKey,
@@ -1313,6 +2623,7 @@ function normalizeC2IngressEnvelope(payload, clock) {
     channelId: String(message.channel_id),
     endpointExternalId,
     conversationRef: message.conversation_ref ?? null,
+    identity,
     senderRef: message.sender_ref ?? null,
     occurredAt,
     routedAt: clock(),
@@ -1324,7 +2635,7 @@ function normalizeC2IngressEnvelope(payload, clock) {
       channel,
       direction: MESSAGE_DIRECTION.INBOUND,
       sender_type: MESSAGE_SENDER_TYPE.CLIENT,
-      sequence_number: null,
+      sequence_number: message.sequence_number ?? null,
       type,
       content: normalizeContent(message.content, type),
       status: MESSAGE_STATUS.RECEIVED,
@@ -1358,6 +2669,7 @@ function normalizeCanonicalIngress(payload, clock) {
   const occurredAt = normalizeTimestamp(payload.created_at);
   const channel = normalizeChannel(payload.channel);
   const endpointExternalId = payload.metadata?.external_id ?? payload.endpoint_id;
+  const identity = normalizeIdentityEvidence(payload.identity ?? payload.metadata?.identity);
 
   return {
     idempotencyKey: payload.idempotency_key,
@@ -1366,6 +2678,7 @@ function normalizeCanonicalIngress(payload, clock) {
     channelId: payload.metadata?.channel_id ?? endpointExternalId,
     endpointExternalId,
     conversationRef: payload.metadata?.conversation_ref ?? payload.conversation_id,
+    identity,
     senderRef: payload.metadata?.sender_ref ?? null,
     clientId: payload.client_id ?? null,
     endpointId: payload.endpoint_id,
@@ -1590,6 +2903,50 @@ function normalizeContent(content, type) {
   };
 }
 
+function normalizeIdentityEvidence(identity) {
+  if (identity === undefined || identity === null) {
+    return null;
+  }
+  if (!isPlainObject(identity)) {
+    throw new CommunicationCoreM1ValidationError("identity must be an object.");
+  }
+
+  const linkType = identity.link_type ?? identity.type;
+  const value = identity.value ?? identity.identifier;
+  if (!AUTO_IDENTITY_LINK_TYPES.has(linkType)) {
+    throw new CommunicationCoreM1ValidationError(
+      "identity.link_type must be verified_phone, verified_email, or link_code.",
+    );
+  }
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new CommunicationCoreM1ValidationError("identity.value must be a non-empty string.");
+  }
+
+  const normalizedValue = value.trim().toLowerCase();
+  const verified = identity.verified === true;
+
+  return {
+    link_type: linkType,
+    value: normalizedValue,
+    verified,
+    evidence: {
+      identity_value: normalizedValue,
+      identity_verified: verified,
+      ...(identity.verified_at ? { verified_at: normalizeTimestamp(identity.verified_at) } : {}),
+      ...(identity.source ? { source: identity.source } : {}),
+    },
+  };
+}
+
+function isVerifiedIdentity(identity) {
+  return (
+    identity !== null &&
+    identity !== undefined &&
+    identity.verified === true &&
+    AUTO_IDENTITY_LINK_TYPES.has(identity.link_type)
+  );
+}
+
 function normalizeMessageType(type) {
   const normalized = type === "voice" ? "audio" : type;
 
@@ -1717,6 +3074,14 @@ function conversationKey(organizationId, conversationId) {
   return `${organizationId}:${conversationId}`;
 }
 
+function identityLinkKey(organizationId, linkId) {
+  return `${organizationId}:${linkId}`;
+}
+
+function channelKey(organizationId, channelId) {
+  return `${organizationId}:${channelId}`;
+}
+
 function compareConversations(left, right) {
   const leftTime = left.last_message_at ?? left.created_at;
   const rightTime = right.last_message_at ?? right.created_at;
@@ -1803,5 +3168,23 @@ function rowToDeliveryAttempt(row) {
     status: row.status,
     error: row.error,
     created_at: row.created_at?.toISOString?.() ?? row.created_at,
+  };
+}
+
+function rowToIdentityLink(row) {
+  return {
+    id: row.id,
+    organization_id: row.organization_id,
+    client_id: row.client_id,
+    endpoint_id: row.endpoint_id,
+    link_type: row.link_type,
+    evidence: row.evidence ?? {},
+    created_by: row.created_by ?? null,
+    created_by_actor_type: row.created_by_actor_type,
+    created_at: row.created_at?.toISOString?.() ?? row.created_at,
+    reverted_at: row.reverted_at?.toISOString?.() ?? row.reverted_at,
+    reverted_by: row.reverted_by ?? null,
+    reverted_by_actor_type: row.reverted_by_actor_type ?? null,
+    reverted_reason: row.reverted_reason ?? null,
   };
 }

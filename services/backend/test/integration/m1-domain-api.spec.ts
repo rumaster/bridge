@@ -224,7 +224,7 @@ describe("SVC-API M1 domain API", () => {
         expect(body.tag).toBe("vip");
       });
 
-    await request(app.getHttpServer())
+    const createdEndpoint = await request(app.getHttpServer())
       .post(`/api/v1/clients/${createdClient.id}/endpoints`)
       .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-organization-id", ORG_A)
@@ -234,7 +234,8 @@ describe("SVC-API M1 domain API", () => {
       .expect(({ body }) => {
         expect(body.channel).toBe("web_chat");
         expect(body.verified).toBe(true);
-      });
+      })
+      .then((response) => response.body as { id: string });
 
     await request(app.getHttpServer())
       .post("/api/v1/clients:merge")
@@ -249,11 +250,46 @@ describe("SVC-API M1 domain API", () => {
       .expect(201)
       .expect(({ body }) => {
         expect(body.accepted).toBe(true);
-        expect(body.mode).toBe("mock-core");
+        expect(body.mode).toBe("core-m2");
+        expect(body.movedEndpointCount).toBe(1);
+        expect(body.links).toHaveLength(1);
+        expect(body.links[0]).toMatchObject({
+          clientId: CLIENT_A,
+          endpointId: createdEndpoint.id,
+          linkType: "manual",
+        });
       });
 
     await withClient(databaseUrl, async (client) => {
       await setTenant(client, ORG_A);
+      const endpoint = await client.query<{ client_id: string }>(
+        "SELECT client_id FROM communication_endpoints WHERE organization_id = $1 AND id = $2",
+        [ORG_A, createdEndpoint.id],
+      );
+      expect(endpoint.rows[0].client_id).toBe(CLIENT_A);
+
+      const links = await client.query<{
+        client_id: string;
+        endpoint_id: string;
+        link_type: string;
+        reverted_at: null | string;
+      }>(
+        `
+          SELECT client_id, endpoint_id, link_type, reverted_at
+          FROM client_identity_links
+          WHERE organization_id = $1 AND endpoint_id = $2
+        `,
+        [ORG_A, createdEndpoint.id],
+      );
+      expect(links.rows).toEqual([
+        {
+          client_id: CLIENT_A,
+          endpoint_id: createdEndpoint.id,
+          link_type: "manual",
+          reverted_at: null,
+        },
+      ]);
+
       const audit = await client.query(
         "SELECT action FROM audit_events WHERE organization_id = $1 AND object_id = $2",
         [ORG_A, createdClient.id],

@@ -203,7 +203,7 @@ export class ClientService {
     payload: MergeClientsDto,
     context: ClientMutationContext,
   ): Promise<ClientMergeResponseDto> {
-    const response = await this.core.mergeClients(organizationId, payload);
+    const response = await this.core.mergeClients(organizationId, payload, context);
 
     await this.database.withTenant(organizationId, async (client) => {
       await this.audit.record(client, {
