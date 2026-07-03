@@ -7,9 +7,14 @@ import type {
   ConnectChannelRequest,
   ConnectChannelResponse,
   CreateKnowledgeDocumentRequest,
+  CreateWorkflowVersionRequest,
   DeleteKnowledgeDocumentResponse,
   KnowledgeDocument,
   LogoutResponse,
+  OnboardingApplyRequest,
+  OnboardingApplyResponse,
+  OnboardingCommandRequest,
+  OnboardingCommandResponse,
   Organization,
   OrganizationConfiguration,
   ReindexKnowledgeDocumentResponse,
@@ -19,7 +24,12 @@ import type {
   TelegramLoginVerifyRequest,
   UpdateKnowledgeDocumentRequest,
   UpdateOrganizationConfigurationRequest,
-  UpdateOrganizationRequest
+  UpdateOrganizationRequest,
+  UpdateWorkflowRequest,
+  Workflow,
+  WorkflowInstance,
+  WorkflowInstanceDetail,
+  WorkflowVersion
 } from "./types";
 
 export interface SaasAdminApiClientOptions {
@@ -107,6 +117,37 @@ export function createSaasAdminApiClient(options: SaasAdminApiClientOptions = {}
       deleteDocument: (documentId: string) =>
         requestJson<DeleteKnowledgeDocumentResponse>(`/knowledge/documents/${documentId}`, {
           method: "DELETE"
+        })
+    },
+    workflows: {
+      listWorkflows: () => requestJson<Workflow[]>("/workflows"),
+      listVersions: (workflowId: string) =>
+        requestJson<WorkflowVersion[]>(`/workflows/${workflowId}/versions`),
+      createVersion: (workflowId: string, request: CreateWorkflowVersionRequest) =>
+        requestJson<WorkflowVersion>(`/workflows/${workflowId}/versions`, {
+          method: "POST",
+          body: JSON.stringify(request)
+        }),
+      updateWorkflow: (workflowId: string, request: UpdateWorkflowRequest) =>
+        requestJson<Workflow>(`/workflows/${workflowId}`, {
+          method: "PATCH",
+          body: JSON.stringify(request)
+        }),
+      listInstances: (workflowId: string) =>
+        requestJson<WorkflowInstance[]>(`/workflows/${workflowId}/instances`),
+      getInstance: (workflowId: string, instanceId: string) =>
+        requestJson<WorkflowInstanceDetail>(`/workflows/${workflowId}/instances/${instanceId}`)
+    },
+    onboarding: {
+      createCommand: (request: OnboardingCommandRequest) =>
+        requestJson<OnboardingCommandResponse>("/ai/onboarding:command", {
+          method: "POST",
+          body: JSON.stringify(request)
+        }),
+      applyCommand: (request: OnboardingApplyRequest) =>
+        requestJson<OnboardingApplyResponse>("/ai/onboarding:apply", {
+          method: "POST",
+          body: JSON.stringify(request)
         })
     }
   };

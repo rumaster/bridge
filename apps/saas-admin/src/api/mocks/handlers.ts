@@ -1,26 +1,46 @@
 import { HttpResponse, http } from "msw";
 
 import {
+  applyOnboardingCommand,
+  cloneWorkflow,
+  cloneWorkflowInstance,
+  cloneWorkflowInstanceDetail,
+  cloneWorkflowSchema,
+  cloneWorkflowVersion,
   createMockCapabilityDescriptor,
+  deriveOnboardingCommand,
   mockChannels,
   mockConfiguration,
   mockKnowledgeDocuments,
   mockOrganization,
-  mockSession
+  mockSession,
+  mockWorkflowInstanceLogs,
+  mockWorkflowInstances,
+  mockWorkflowVersions,
+  mockWorkflows
 } from "./fixtures";
 import type {
   AdminSession,
   Channel,
   ConnectChannelRequest,
   CreateKnowledgeDocumentRequest,
+  CreateWorkflowVersionRequest,
   KnowledgeDocument,
+  OnboardingApplyRequest,
+  OnboardingCommandRequest,
   Organization,
   OrganizationConfiguration,
   ProblemDetails,
   UpdateKnowledgeDocumentRequest,
   UpdateOrganizationConfigurationRequest,
-  UpdateOrganizationRequest
+  UpdateOrganizationRequest,
+  UpdateWorkflowRequest,
+  Workflow,
+  WorkflowInstance,
+  WorkflowSchema,
+  WorkflowVersion
 } from "../client/types";
+import { validateWorkflowSchema } from "../../shared/workflow";
 
 const API_PREFIX = "*/api/v1";
 
@@ -29,8 +49,14 @@ let currentOrganization: Organization = { ...mockOrganization };
 let currentConfiguration: OrganizationConfiguration = { ...mockConfiguration };
 let currentChannels: Channel[] = cloneChannels(mockChannels);
 let currentDocuments: KnowledgeDocument[] = cloneDocuments(mockKnowledgeDocuments);
+let currentWorkflows: Workflow[] = mockWorkflows.map(cloneWorkflow);
+let currentVersions: WorkflowVersion[] = mockWorkflowVersions.map(cloneWorkflowVersion);
+let currentInstances: WorkflowInstance[] = mockWorkflowInstances.map(cloneWorkflowInstance);
 let nextChannelNumber = 1;
 let nextDocumentNumber = 1;
+let nextWorkflowVersionNumber = 1;
+let nextOnboardingNumber = 1;
+let nextConfigurationVersion = 2;
 
 export const handlers = [
   http.get(`${API_PREFIX}/auth/session`, () => {
@@ -325,6 +351,192 @@ export const handlers = [
       deleted: true,
       document_id: document.id
     });
+  }),
+
+  http.get(`${API_PREFIX}/workflows`, () => {
+    return HttpResponse.json(currentWorkflows.map(cloneWorkflow));
+  }),
+
+  http.get(`${API_PREFIX}/workflows/:workflowId/versions`, ({ params }) => {
+    if (!currentWorkflows.some((item) => item.id === params.workflowId)) {
+      return problem(404, "Not Found", "Workflow not found.");
+    }
+
+    return HttpResponse.json(
+      currentVersions
+        .filter((version) => version.workflow_id === params.workflowId)
+        .map(cloneWorkflowVersion)
+    );
+  }),
+
+  http.post(`${API_PREFIX}/workflows/:workflowId/versions`, async ({ params, request }) => {
+    const workflow = currentWorkflows.find((item) => item.id === params.workflowId);
+    if (!workflow) {
+      return problem(404, "Not Found", "Workflow not found.");
+    }
+
+    const body = (await request.json()) as Partial<CreateWorkflowVersionRequest>;
+    const errors = validateWorkflowVersionPayload(body.schema);
+    if (errors.length > 0) {
+      return validationProblem(errors, "Request payload does not match C5 workflow version DTO.");
+    }
+
+    const versionNo =
+      currentVersions
+        .filter((version) => version.workflow_id === workflow.id)
+        .reduce((max, version) => Math.max(max, version.version_no), 0) + 1;
+    const version: WorkflowVersion = {
+      id: `wfv-created-${nextWorkflowVersionNumber++}`,
+      organization_id: workflow.organization_id,
+      workflow_id: workflow.id,
+      version_no: versionNo,
+      schema: cloneWorkflowSchema(body.schema as WorkflowSchema),
+      created_by: mockSession.user.displayName,
+      created_at: "2026-07-03T11:15:00.000Z"
+    };
+
+    currentVersions = [...currentVersions, version];
+    if (body.activate) {
+      currentWorkflows = currentWorkflows.map((item) =>
+        item.id === workflow.id
+          ? {
+              ...item,
+              status: "active",
+              default_version_id: version.id,
+              updated_at: "2026-07-03T11:15:00.000Z"
+            }
+          : item
+      );
+    }
+
+    return HttpResponse.json(cloneWorkflowVersion(version), { status: 201 });
+  }),
+
+  http.get(`${API_PREFIX}/workflows/:workflowId/instances/:instanceId`, ({ params }) => {
+    const instance = currentInstances.find(
+      (item) => item.id === params.instanceId && item.workflow_id === params.workflowId
+    );
+    if (!instance) {
+      return problem(404, "Not Found", "Workflow instance not found.");
+    }
+
+    return HttpResponse.json(
+      cloneWorkflowInstanceDetail({
+        ...instance,
+        logs: mockWorkflowInstanceLogs[instance.id] ?? []
+      })
+    );
+  }),
+
+  http.get(`${API_PREFIX}/workflows/:workflowId/instances`, ({ params }) => {
+    if (!currentWorkflows.some((item) => item.id === params.workflowId)) {
+      return problem(404, "Not Found", "Workflow not found.");
+    }
+
+    return HttpResponse.json(
+      currentInstances
+        .filter((instance) => instance.workflow_id === params.workflowId)
+        .map(cloneWorkflowInstance)
+    );
+  }),
+
+  http.patch(`${API_PREFIX}/workflows/:workflowId`, async ({ params, request }) => {
+    const workflow = currentWorkflows.find((item) => item.id === params.workflowId);
+    if (!workflow) {
+      return problem(404, "Not Found", "Workflow not found.");
+    }
+
+    const body = (await request.json()) as Partial<UpdateWorkflowRequest>;
+    if (
+      body.default_version_id &&
+      !currentVersions.some(
+        (version) =>
+          version.workflow_id === workflow.id && version.id === body.default_version_id
+      )
+    ) {
+      return validationProblem(
+        [{ field: "default_version_id", message: "Указанная версия не найдена." }],
+        "Request payload does not match C5 workflow DTO."
+      );
+    }
+
+    const updated: Workflow = {
+      ...workflow,
+      enabled: typeof body.enabled === "boolean" ? body.enabled : workflow.enabled,
+      status: body.status ?? workflow.status,
+      default_version_id: body.default_version_id ?? workflow.default_version_id,
+      updated_at: "2026-07-03T11:16:00.000Z"
+    };
+    currentWorkflows = currentWorkflows.map((item) => (item.id === workflow.id ? updated : item));
+
+    return HttpResponse.json(cloneWorkflow(updated));
+  }),
+
+  http.post(/\/api\/v1\/ai\/onboarding:command$/, async ({ request }) => {
+    const body = (await request.json()) as Partial<OnboardingCommandRequest>;
+    if (!body.prompt || !body.prompt.trim()) {
+      return validationProblem(
+        [{ field: "prompt", message: "Опишите, что нужно изменить." }],
+        "Request payload does not match C4 onboarding DTO."
+      );
+    }
+
+    const response = deriveOnboardingCommand(
+      { prompt: body.prompt, request_id: body.request_id },
+      {
+        organizationId: currentOrganization.id,
+        organization: currentOrganization,
+        configuration: currentConfiguration
+      },
+      {
+        requestId: body.request_id ?? `onboarding-req-${nextOnboardingNumber++}`,
+        createdAt: "2026-07-03T11:00:00.000Z"
+      }
+    );
+
+    return HttpResponse.json(response);
+  }),
+
+  http.post(/\/api\/v1\/ai\/onboarding:apply$/, async ({ request }) => {
+    const body = (await request.json()) as Partial<OnboardingApplyRequest>;
+    const command = body.command;
+    if (!command) {
+      return validationProblem(
+        [{ field: "command", message: "Команда обязательна." }],
+        "Request payload does not match C4 onboarding DTO."
+      );
+    }
+
+    if (command.organization_id !== currentOrganization.id) {
+      return problem(400, "Bad Request", "Command organization_id does not match the tenant.");
+    }
+
+    const { result, organization, configuration } = applyOnboardingCommand(
+      command,
+      {
+        organizationId: currentOrganization.id,
+        organization: currentOrganization,
+        configuration: currentConfiguration
+      },
+      {
+        appliedAt: "2026-07-03T11:00:05.000Z",
+        configurationVersion: nextConfigurationVersion++
+      }
+    );
+
+    currentOrganization = organization;
+    currentConfiguration = configuration;
+
+    return HttpResponse.json({
+      contract: "C4.OnboardingApplyResponse",
+      version: "1.0.0",
+      request_id: command.command_id,
+      organization_id: currentOrganization.id,
+      result,
+      configuration,
+      organization,
+      applied_at: "2026-07-03T11:00:05.000Z"
+    });
   })
 ];
 
@@ -334,8 +546,30 @@ export function resetMockBackendState() {
   currentConfiguration = { ...mockConfiguration };
   currentChannels = cloneChannels(mockChannels);
   currentDocuments = cloneDocuments(mockKnowledgeDocuments);
+  currentWorkflows = mockWorkflows.map(cloneWorkflow);
+  currentVersions = mockWorkflowVersions.map(cloneWorkflowVersion);
+  currentInstances = mockWorkflowInstances.map(cloneWorkflowInstance);
   nextChannelNumber = 1;
   nextDocumentNumber = 1;
+  nextWorkflowVersionNumber = 1;
+  nextOnboardingNumber = 1;
+  nextConfigurationVersion = 2;
+}
+
+function validateWorkflowVersionPayload(schema: WorkflowSchema | undefined) {
+  const errors: NonNullable<ProblemDetails["errors"]> = [];
+
+  if (!schema || typeof schema !== "object") {
+    errors.push({ field: "schema", message: "Схема Workflow обязательна." });
+    return errors;
+  }
+
+  const validation = validateWorkflowSchema(schema);
+  for (const message of validation.errors) {
+    errors.push({ field: "schema", message });
+  }
+
+  return errors;
 }
 
 function validateOrganization(input: Partial<UpdateOrganizationRequest>) {
