@@ -1,85 +1,334 @@
-import { useEffect, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import { Save } from "lucide-react";
 
-import type { Organization, OrganizationConfiguration } from "../../api/client/types";
-import { useAuth } from "../../state/auth";
+import type {
+  Organization,
+  OrganizationConfiguration,
+  ProblemDetails
+} from "../../api/client/types";
+import { hasAnyRole, useAuth } from "../../state/auth";
 import { useSaasAdminApi } from "../../state/admin";
-import { Badge, Panel } from "../../shared/ui-kit";
+import { Badge, Button, CheckboxInput, Panel, TextAreaInput, TextInput } from "../../shared/ui-kit";
+
+interface OrganizationFormState {
+  name: string;
+  description: string;
+  timezone: string;
+  locale: string;
+  defaultLanguage: string;
+  aiAssistantEnabled: boolean;
+  workflowAutomationEnabled: boolean;
+  monthlyMessageLimit: string;
+  notificationEmail: string;
+  retentionDays: string;
+}
+
+type FieldErrors = Partial<Record<keyof OrganizationFormState, string>>;
 
 export default function OrganizationPage() {
   const { session } = useAuth();
   const api = useSaasAdminApi();
+  const canEdit = hasAnyRole(session, ["administrator"]);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [configuration, setConfiguration] = useState<OrganizationConfiguration | null>(null);
+  const [form, setForm] = useState<OrganizationFormState | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
+  const [alert, setAlert] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let active = true;
 
-    if (!session) {
+    if (!session || !canEdit) {
+      setLoading(false);
       return () => {
         active = false;
       };
     }
 
+    setLoading(true);
     Promise.all([
       api.org.getOrganization(session.organization.id),
       api.org.getConfiguration(session.organization.id)
-    ]).then(([nextOrganization, nextConfiguration]) => {
-      if (active) {
-        setOrganization(nextOrganization);
-        setConfiguration(nextConfiguration);
-      }
-    });
+    ])
+      .then(([nextOrganization, nextConfiguration]) => {
+        if (active) {
+          setOrganization(nextOrganization);
+          setConfiguration(nextConfiguration);
+          setForm(toFormState(nextOrganization, nextConfiguration));
+          setAlert(null);
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          setAlert(getProblemMessage(error, "Не удалось загрузить организацию."));
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoading(false);
+        }
+      });
 
     return () => {
       active = false;
     };
-  }, [api, session]);
+  }, [api, canEdit, session]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    if (!session || !form) {
+      return;
+    }
+
+    setSaving(true);
+    setAlert(null);
+    setSuccess(null);
+    setFieldErrors({});
+
+    try {
+      const [nextOrganization, nextConfiguration] = await Promise.all([
+        api.org.updateOrganization(session.organization.id, {
+          name: form.name,
+          description: form.description,
+          timezone: form.timezone,
+          locale: form.locale
+        }),
+        api.org.updateConfiguration(session.organization.id, {
+          defaultLanguage: form.defaultLanguage,
+          aiAssistantEnabled: form.aiAssistantEnabled,
+          workflowAutomationEnabled: form.workflowAutomationEnabled,
+          monthlyMessageLimit: Number(form.monthlyMessageLimit),
+          notificationEmail: form.notificationEmail,
+          retentionDays: Number(form.retentionDays)
+        })
+      ]);
+
+      setOrganization(nextOrganization);
+      setConfiguration(nextConfiguration);
+      setForm(toFormState(nextOrganization, nextConfiguration));
+      setSuccess("Изменения сохранены");
+    } catch (error) {
+      const problem = getProblemDetails(error);
+      setAlert(problem?.detail ?? getProblemMessage(error, "Не удалось сохранить изменения."));
+      setFieldErrors(toFieldErrors(problem));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function updateField<TKey extends keyof OrganizationFormState>(
+    field: TKey,
+    value: OrganizationFormState[TKey]
+  ) {
+    setForm((current) => (current ? { ...current, [field]: value } : current));
+    setFieldErrors((current) => ({ ...current, [field]: undefined }));
+    setSuccess(null);
+  }
 
   return (
     <section className="page-section">
       <div className="page-heading">
         <Badge tone="neutral">Организация</Badge>
         <h1>Организация и конфигурация</h1>
-        <p>Основные сведения и параметры доступны в режиме чтения.</p>
+        <p>Параметры сохраняются через C3.org Backend API с серверной валидацией.</p>
       </div>
 
-      <div className="details-grid">
-        <Panel className="detail-panel">
-          <h2>{organization?.name ?? "Загрузка организации"}</h2>
-          <dl>
-            <div>
-              <dt>Часовой пояс</dt>
-              <dd>{organization?.timezone ?? "..."}</dd>
-            </div>
-            <div>
-              <dt>Локаль</dt>
-              <dd>{organization?.locale ?? "..."}</dd>
-            </div>
-            <div>
-              <dt>Статус</dt>
-              <dd>{organization?.status === "active" ? "активна" : "..."}</dd>
-            </div>
-          </dl>
+      {!canEdit ? (
+        <Panel className="empty-state">
+          <Badge tone="warning">Роль</Badge>
+          <h2>Редактор скрыт для текущей роли</h2>
         </Panel>
+      ) : null}
 
-        <Panel className="detail-panel">
-          <h2>Конфигурация</h2>
-          <dl>
-            <div>
-              <dt>Язык по умолчанию</dt>
-              <dd>{configuration?.defaultLanguage ?? "..."}</dd>
+      {alert ? (
+        <div className="form-alert" role="alert">
+          {alert}
+        </div>
+      ) : null}
+
+      {success ? <div className="form-success">{success}</div> : null}
+
+      {canEdit && form ? (
+        <Panel as="form" className="organization-form" onSubmit={(event) => void handleSubmit(event)}>
+          <fieldset disabled={saving || loading}>
+            <legend>Основные сведения</legend>
+            <div className="form-grid">
+              <TextInput
+                error={fieldErrors.name}
+                label="Название организации"
+                onChange={(event) => updateField("name", event.currentTarget.value)}
+                required
+                value={form.name}
+              />
+              <TextInput
+                error={fieldErrors.timezone}
+                label="Часовой пояс"
+                onChange={(event) => updateField("timezone", event.currentTarget.value)}
+                required
+                value={form.timezone}
+              />
+              <TextInput
+                error={fieldErrors.locale}
+                label="Локаль"
+                onChange={(event) => updateField("locale", event.currentTarget.value)}
+                required
+                value={form.locale}
+              />
+              <TextAreaInput
+                error={fieldErrors.description}
+                label="Описание"
+                onChange={(event) => updateField("description", event.currentTarget.value)}
+                rows={4}
+                value={form.description}
+              />
             </div>
-            <div>
-              <dt>Workflow</dt>
-              <dd>{configuration?.workflowAutomationEnabled ? "включён" : "..."}</dd>
+          </fieldset>
+
+          <fieldset disabled={saving || loading}>
+            <legend>Конфигурация</legend>
+            <div className="form-grid">
+              <TextInput
+                error={fieldErrors.defaultLanguage}
+                label="Язык по умолчанию"
+                maxLength={2}
+                onChange={(event) => updateField("defaultLanguage", event.currentTarget.value)}
+                required
+                value={form.defaultLanguage}
+              />
+              <TextInput
+                error={fieldErrors.notificationEmail}
+                label="Email уведомлений"
+                onChange={(event) => updateField("notificationEmail", event.currentTarget.value)}
+                required
+                type="email"
+                value={form.notificationEmail}
+              />
+              <TextInput
+                error={fieldErrors.monthlyMessageLimit}
+                label="Месячный лимит сообщений"
+                min={100}
+                onChange={(event) => updateField("monthlyMessageLimit", event.currentTarget.value)}
+                required
+                type="number"
+                value={form.monthlyMessageLimit}
+              />
+              <TextInput
+                error={fieldErrors.retentionDays}
+                label="Хранение истории, дней"
+                min={1}
+                onChange={(event) => updateField("retentionDays", event.currentTarget.value)}
+                required
+                type="number"
+                value={form.retentionDays}
+              />
+              <div className="checkbox-grid">
+                <CheckboxInput
+                  checked={form.aiAssistantEnabled}
+                  label="AI Assistant"
+                  onChange={(event) => updateField("aiAssistantEnabled", event.currentTarget.checked)}
+                />
+                <CheckboxInput
+                  checked={form.workflowAutomationEnabled}
+                  label="Workflow"
+                  onChange={(event) =>
+                    updateField("workflowAutomationEnabled", event.currentTarget.checked)
+                  }
+                />
+              </div>
             </div>
-            <div>
-              <dt>Email уведомлений</dt>
-              <dd>{configuration?.notificationEmail ?? "..."}</dd>
-            </div>
-          </dl>
+          </fieldset>
+
+          <div className="form-actions">
+            <Button disabled={saving || loading} type="submit">
+              <Save aria-hidden="true" size={16} />
+              Сохранить изменения
+            </Button>
+            <span className="muted">
+              Обновлено: {configuration?.updatedAt ?? organization?.updatedAt ?? "..."}
+            </span>
+          </div>
         </Panel>
-      </div>
+      ) : null}
+
+      {canEdit && loading ? <div className="route-loader">Загрузка организации...</div> : null}
     </section>
   );
+}
+
+function toFormState(
+  organization: Organization,
+  configuration: OrganizationConfiguration
+): OrganizationFormState {
+  return {
+    name: organization.name,
+    description: organization.description,
+    timezone: organization.timezone,
+    locale: organization.locale,
+    defaultLanguage: configuration.defaultLanguage,
+    aiAssistantEnabled: configuration.aiAssistantEnabled,
+    workflowAutomationEnabled: configuration.workflowAutomationEnabled,
+    monthlyMessageLimit: String(configuration.monthlyMessageLimit),
+    notificationEmail: configuration.notificationEmail,
+    retentionDays: String(configuration.retentionDays)
+  };
+}
+
+function getProblemDetails(error: unknown) {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "body" in error &&
+    typeof (error as { body?: unknown }).body === "object" &&
+    (error as { body?: unknown }).body !== null
+  ) {
+    return (error as { body: ProblemDetails }).body;
+  }
+
+  return null;
+}
+
+function toFieldErrors(problem: ProblemDetails | null): FieldErrors {
+  if (!problem?.errors) {
+    return {};
+  }
+
+  return problem.errors.reduce<FieldErrors>((errors, item) => {
+    if (isOrganizationField(item.field)) {
+      errors[item.field] = item.message;
+    }
+
+    return errors;
+  }, {});
+}
+
+function isOrganizationField(field: string): field is keyof OrganizationFormState {
+  return [
+    "name",
+    "description",
+    "timezone",
+    "locale",
+    "defaultLanguage",
+    "aiAssistantEnabled",
+    "workflowAutomationEnabled",
+    "monthlyMessageLimit",
+    "notificationEmail",
+    "retentionDays"
+  ].includes(field);
+}
+
+function getProblemMessage(error: unknown, fallback: string) {
+  const problem = getProblemDetails(error);
+  if (problem) {
+    return problem.detail;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return fallback;
 }

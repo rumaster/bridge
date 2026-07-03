@@ -42,16 +42,18 @@ export default function OverviewPage() {
   return (
     <section className="page-section">
       <div className="page-heading">
-        <Badge tone="success">Каркас</Badge>
+        <Badge tone="success">M1</Badge>
         <h1>Административная панель</h1>
-        <p>Разделы управления организацией доступны в демонстрационном режиме просмотра.</p>
+        <p>Сессия администратора и конфигурация организации загружены через Backend API.</p>
       </div>
 
       <div className="summary-grid">
         <Panel className="summary-panel">
           <span className="metric-label">Организация</span>
           <strong>{session?.organization.name}</strong>
-          <span className="muted">Статус: {session?.organization.status === "active" ? "активна" : "заблокирована"}</span>
+          <span className="muted">
+            Пользователь: {session?.user.status === "active" ? "активен" : "заблокирован"}
+          </span>
         </Panel>
         <Panel className="summary-panel">
           <span className="metric-label">Workflow</span>
