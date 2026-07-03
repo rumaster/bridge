@@ -52,7 +52,16 @@ export const mockMessages: Message[] = [
     senderType: "client",
     content: "Хочу уточнить статус заказа",
     status: "received",
-    createdAt: "2026-07-02T16:09:15.000Z"
+    createdAt: "2026-07-02T16:09:15.000Z",
+    attachments: [
+      {
+        id: "att-1",
+        name: "order-status.png",
+        contentType: "image/png",
+        sizeBytes: 184320,
+        url: "https://example.test/files/order-status.png"
+      }
+    ]
   },
   {
     id: "msg-2",

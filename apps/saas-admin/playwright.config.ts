@@ -3,7 +3,7 @@ import type { PlaywrightTestConfig } from "@playwright/test";
 const config: PlaywrightTestConfig = {
   testDir: "./test/e2e",
   webServer: {
-    command: "npm run dev -- --port 4311",
+    command: "VITE_SAAS_ADMIN_MOCKS=true npm run dev -- --port 4311",
     url: "http://127.0.0.1:4311",
     reuseExistingServer: true
   },

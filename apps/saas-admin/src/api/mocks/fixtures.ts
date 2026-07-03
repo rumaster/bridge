@@ -1,25 +1,38 @@
-import type { AdminSession, Organization, OrganizationConfiguration } from "../client/types";
+import type {
+  AdminRole,
+  AdminSession,
+  Organization,
+  OrganizationConfiguration
+} from "../client/types";
 
 export const mockSession: AdminSession = {
-  token: "admin-session-token",
+  authenticated: true,
   user: {
-    id: "user-admin-1",
+    id: "00000000-0000-4000-8000-000000000101",
+    organizationId: "org-demo",
     displayName: "Демо Администратор",
-    role: "administrator",
-    telegramUsername: "admin_demo"
+    telegramUsername: "admin_demo",
+    status: "active"
   },
   organization: {
     id: "org-demo",
-    name: "Демо Организация",
-    status: "active"
+    slug: "demo-organization",
+    name: "Демо Организация"
   },
-  expiresAt: "2026-07-02T18:00:00.000Z"
+  roles: ["administrator"],
+  session: {
+    id: "mock-session-m1",
+    mode: "mock",
+    issuedAt: "2026-07-03T09:00:00.000Z",
+    expiresAt: null
+  },
+  implementationStage: "M1"
 };
 
 export const mockOrganization: Organization = {
   id: "org-demo",
   name: "Демо Организация",
-  description: "Организация для проверки M0-каркаса админ-панели.",
+  description: "Организация для проверки M1-входа и конфигурации админ-панели.",
   timezone: "Europe/Moscow",
   locale: "ru-RU",
   status: "active",
@@ -31,6 +44,18 @@ export const mockConfiguration: OrganizationConfiguration = {
   defaultLanguage: "ru",
   aiAssistantEnabled: true,
   workflowAutomationEnabled: true,
+  monthlyMessageLimit: 10000,
   notificationEmail: "admin@example.test",
-  updatedAt: "2026-07-02T16:12:00.000Z"
+  retentionDays: 90,
+  updatedAt: "2026-07-03T09:12:00.000Z"
 };
+
+export function createMockSession(roles: AdminRole[] = ["administrator"]): AdminSession {
+  return {
+    ...mockSession,
+    user: { ...mockSession.user },
+    organization: { ...mockSession.organization },
+    roles: [...roles],
+    session: { ...mockSession.session }
+  };
+}

@@ -26,6 +26,47 @@ function problem(status, title, detail) {
   };
 }
 
+function matchRoutePath(routePath, pathname) {
+  const routeParts = routePath.split("/").filter(Boolean);
+  const pathParts = pathname.split("/").filter(Boolean);
+
+  if (routeParts.length !== pathParts.length) {
+    return null;
+  }
+
+  const params = {};
+  for (let index = 0; index < routeParts.length; index += 1) {
+    const routePart = routeParts[index];
+    const pathPart = pathParts[index];
+
+    if (routePart.startsWith(":")) {
+      params[routePart.slice(1)] = decodeURIComponent(pathPart);
+      continue;
+    }
+
+    if (routePart !== pathPart) {
+      return null;
+    }
+  }
+
+  return params;
+}
+
+function findRoute(routes, method, pathname) {
+  for (const route of routes) {
+    if (route.method !== method) {
+      continue;
+    }
+
+    const params = matchRoutePath(route.path, pathname);
+    if (params) {
+      return { route, params };
+    }
+  }
+
+  return null;
+}
+
 async function readJsonBody(request) {
   const chunks = [];
   let size = 0;
@@ -74,13 +115,9 @@ export function createBackendServer({
 
   return createServer(async (incomingRequest, response) => {
     const url = new URL(incomingRequest.url ?? "/", "http://localhost");
-    const route = routes.find(
-      (candidate) =>
-        candidate.method === incomingRequest.method &&
-        candidate.path === url.pathname,
-    );
+    const matchedRoute = findRoute(routes, incomingRequest.method, url.pathname);
 
-    if (!route) {
+    if (!matchedRoute) {
       sendJson(
         response,
         404,
@@ -103,11 +140,23 @@ export function createBackendServer({
       method: incomingRequest.method,
       path: url.pathname,
       headers: incomingRequest.headers,
+      query: url.searchParams,
     };
-    const result = route.handler({
-      request,
-      body: bodyResult.body,
-    });
+    let result;
+    try {
+      result = await matchedRoute.route.handler({
+        request,
+        body: bodyResult.body,
+        params: matchedRoute.params,
+      });
+    } catch (error) {
+      sendJson(
+        response,
+        500,
+        problem(500, "Internal Server Error", error.message),
+      );
+      return;
+    }
 
     sendJson(response, result.status, result.body);
   });

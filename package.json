@@ -22,7 +22,7 @@
     "test:unit": "npm test",
     "test:integration": "node --test tests/integration/*.test.mjs && npm run test:integration --workspace @bridge/integration-platform",
     "test:contract": "node --test tests/contract/*.test.mjs",
-    "test:e2e": "node --test tests/e2e/*.test.mjs",
+    "test:e2e": "node --test tests/e2e/*.test.mjs && npm run test:e2e --workspace @bridge/manager-workspace",
     "db:migrate:up": "node scripts/db-migrate.mjs up",
     "db:migrate:down": "node scripts/db-migrate.mjs down",
     "db:seed": "node scripts/db-seed.mjs",

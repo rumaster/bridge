@@ -145,8 +145,11 @@ textarea {
   line-height: 1.45;
 }
 
-.bridge-chat-message time {
-  display: block;
+.bridge-chat-message-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
   margin-top: 6px;
   font-size: 11px;
   line-height: 1.2;

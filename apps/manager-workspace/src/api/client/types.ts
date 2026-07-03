@@ -55,6 +55,15 @@ export interface Message {
   content: string;
   status: MessageStatus;
   createdAt: ISODateTime;
+  attachments?: MessageAttachment[];
+}
+
+export interface MessageAttachment {
+  id: string;
+  name: string;
+  contentType: string;
+  sizeBytes: number;
+  url: string;
 }
 
 export interface SendMessageRequest {

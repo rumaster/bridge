@@ -1,11 +1,12 @@
 import {
-  CommunicationCoreMockValidationError,
-  createCommunicationCoreMock,
-} from "./mock-ingress-egress.mjs";
+  CommunicationCoreM1NotFoundError,
+  CommunicationCoreM1ValidationError,
+  createCommunicationCoreM1Service,
+} from "./communication-core-m1.mjs";
 
 function validationProblem(error) {
   const errors =
-    error instanceof CommunicationCoreMockValidationError
+    error instanceof CommunicationCoreM1ValidationError
       ? error.errors
       : [error.message];
 
@@ -18,28 +19,92 @@ function validationProblem(error) {
   };
 }
 
+function notFoundProblem(error) {
+  return {
+    status: 404,
+    body: {
+      message: error.message,
+    },
+  };
+}
+
+function problemFor(error) {
+  if (error instanceof CommunicationCoreM1NotFoundError) {
+    return notFoundProblem(error);
+  }
+
+  return validationProblem(error);
+}
+
+function organizationIdFrom({ request, body }) {
+  const header = request.headers["x-organization-id"];
+  const headerValue = Array.isArray(header) ? header[0] : header;
+
+  return body.organization_id ?? headerValue ?? request.query?.get("organization_id");
+}
+
 export function createCommunicationCoreModule({
-  core = createCommunicationCoreMock(),
+  core = createCommunicationCoreM1Service(),
 } = {}) {
-  function acceptIngressMessage({ body }) {
+  async function acceptIngressMessage({ body }) {
     try {
       return {
         status: 202,
-        body: core.acceptIngressMessage(body),
+        body: await core.acceptIngressMessage(body),
       };
     } catch (error) {
-      return validationProblem(error);
+      return problemFor(error);
     }
   }
 
-  function handoffEgressMessage({ body }) {
+  async function handoffEgressMessage({ body }) {
     try {
       return {
         status: 202,
-        body: core.handoffEgressMessage(body.message, body.delivery_target),
+        body: await core.handoffEgressMessage(body.message, body.delivery_target),
       };
     } catch (error) {
-      return validationProblem(error);
+      return problemFor(error);
+    }
+  }
+
+  async function listConversations({ request, body }) {
+    try {
+      return {
+        status: 200,
+        body: await core.listConversations({
+          organizationId: organizationIdFrom({ request, body }),
+          limit: request.query?.get("limit"),
+        }),
+      };
+    } catch (error) {
+      return problemFor(error);
+    }
+  }
+
+  async function listConversationMessages({ request, body, params }) {
+    try {
+      return {
+        status: 200,
+        body: await core.listConversationMessages({
+          organizationId: organizationIdFrom({ request, body }),
+          conversationId: params.conversationId,
+          limit: request.query?.get("limit"),
+        }),
+      };
+    } catch (error) {
+      return problemFor(error);
+    }
+  }
+
+  async function sendManagerMessage({ body }) {
+    try {
+      return {
+        status: 202,
+        body: await core.sendManagerMessage(body),
+      };
+    } catch (error) {
+      return problemFor(error);
     }
   }
 
@@ -68,6 +133,21 @@ export function createCommunicationCoreModule({
         method: "POST",
         path: "/api/v1/internal/egress/messages",
         handler: handoffEgressMessage,
+      },
+      {
+        method: "GET",
+        path: "/api/v1/conversations",
+        handler: listConversations,
+      },
+      {
+        method: "GET",
+        path: "/api/v1/conversations/:conversationId/messages",
+        handler: listConversationMessages,
+      },
+      {
+        method: "POST",
+        path: "/api/v1/messages",
+        handler: sendManagerMessage,
       },
     ],
   };

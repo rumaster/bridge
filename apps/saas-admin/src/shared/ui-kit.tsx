@@ -5,7 +5,8 @@ import type {
   ComponentPropsWithoutRef,
   ElementType,
   InputHTMLAttributes,
-  PropsWithChildren
+  PropsWithChildren,
+  TextareaHTMLAttributes
 } from "react";
 import { Link } from "react-router-dom";
 
@@ -68,18 +69,70 @@ export function Panel<TElement extends ElementType = "div">({
 
 export interface TextInputProps extends InputHTMLAttributes<HTMLInputElement> {
   label: string;
+  error?: string;
 }
 
 export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(function TextInput(
-  { id, label, className, ...props },
+  { error, id, label, className, ...props },
   ref
 ) {
   const inputId = id ?? label.toLowerCase().replaceAll(" ", "-");
+  const errorId = error ? `${inputId}-error` : undefined;
 
   return (
     <label className={`text-input ${className ?? ""}`} htmlFor={inputId}>
       <span>{label}</span>
-      <input id={inputId} ref={ref} {...props} />
+      <input aria-describedby={errorId} aria-invalid={Boolean(error)} id={inputId} ref={ref} {...props} />
+      {error ? (
+        <span className="field-error" id={errorId}>
+          {error}
+        </span>
+      ) : null}
     </label>
   );
 });
+
+export interface TextAreaInputProps extends TextareaHTMLAttributes<HTMLTextAreaElement> {
+  label: string;
+  error?: string;
+}
+
+export const TextAreaInput = forwardRef<HTMLTextAreaElement, TextAreaInputProps>(
+  function TextAreaInput({ error, id, label, className, ...props }, ref) {
+    const inputId = id ?? label.toLowerCase().replaceAll(" ", "-");
+    const errorId = error ? `${inputId}-error` : undefined;
+
+    return (
+      <label className={`text-input ${className ?? ""}`} htmlFor={inputId}>
+        <span>{label}</span>
+        <textarea
+          aria-describedby={errorId}
+          aria-invalid={Boolean(error)}
+          id={inputId}
+          ref={ref}
+          {...props}
+        />
+        {error ? (
+          <span className="field-error" id={errorId}>
+            {error}
+          </span>
+        ) : null}
+      </label>
+    );
+  }
+);
+
+export interface CheckboxInputProps extends InputHTMLAttributes<HTMLInputElement> {
+  label: string;
+}
+
+export function CheckboxInput({ id, label, className, ...props }: CheckboxInputProps) {
+  const inputId = id ?? label.toLowerCase().replaceAll(" ", "-");
+
+  return (
+    <label className={`checkbox-input ${className ?? ""}`} htmlFor={inputId}>
+      <input id={inputId} type="checkbox" {...props} />
+      <span>{label}</span>
+    </label>
+  );
+}

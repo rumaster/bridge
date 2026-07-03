@@ -49,9 +49,9 @@ export default function LoginPage() {
     <main className="login-page">
       <Panel className="login-panel">
         <div className="page-heading compact">
-          <Badge tone="neutral">C3.auth mock</Badge>
+          <Badge tone="neutral">C3.auth</Badge>
           <h1>Вход менеджера</h1>
-          <p>Заглушка Telegram-входа для проверки shell и будущей интеграции C3.auth.</p>
+          <p>Telegram-код для рабочей сессии менеджера.</p>
         </div>
 
         <form className="login-form" onSubmit={handleStart}>
@@ -77,7 +77,7 @@ export default function LoginPage() {
           </div>
         ) : null}
 
-        {session ? <p className="muted">Активная mock-сессия: {session.user.displayName}</p> : null}
+        {session ? <p className="muted">Активная сессия: {session.user.displayName}</p> : null}
         {error ? <p className="error-text">{error}</p> : null}
 
         <Link className="inline-link" to="/queue">
