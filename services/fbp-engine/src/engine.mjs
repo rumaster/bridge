@@ -1,0 +1,125 @@
+import { TRANSFORM_DEFAULT_LIMITS } from "../../../packages/contracts/src/c5.mjs";
+import { ExecutionContext } from "./core/execution-context.mjs";
+import { WorkflowExecutionError } from "./core/errors.mjs";
+import { runGraph } from "./core/executor.mjs";
+import { deterministicUuid } from "./core/ids.mjs";
+import { assertWorkflowSchema, validateWorkflowSchema } from "./schema/validate-workflow.mjs";
+
+/**
+ * Фасад движка Workflow (форк fbp-engine, ТЗ §13.13). Предоставляет две операции:
+ *
+ *  - `validateSchema(schema)` — валидация НА ЭТАПЕ СОХРАНЕНИЯ (CP-5, §16.7): всё,
+ *    что можно проверить статически (типы узлов, конфигурация, запрет операций
+ *    Transform вне whitelist, DAG), проверяется до создания новой версии.
+ *  - `runWorkflow({ schema, context, input })` — пошаговое исполнение (CP-4):
+ *    старт → узлы → финал, с журналом (`workflow_execution_logs`).
+ *
+ * Движок НЕ инициирует Workflow сам (§6.13) — инициатор всегда Backend, который
+ * передаёт `context` с арендатором и актором. Движок не исполняет SQL и не имеет
+ * прямого доступа к БД/внутренним сервисам: единственный канал данных — узел
+ * Backend API через переданный `backendClient` (канал C3, §13.12, §13.13-п.3).
+ */
+export function createFbpEngine({ backendClient, limits = {}, now } = {}) {
+  if (!backendClient || typeof backendClient.call !== "function") {
+    throw new TypeError(
+      "createFbpEngine требует backendClient с методом call — движок меняет и читает данные только через Backend API (C3).",
+    );
+  }
+  const effectiveLimits = Object.freeze({ ...TRANSFORM_DEFAULT_LIMITS, ...limits });
+
+  return {
+    /** Валидация схемы Workflow на этапе сохранения. Возвращает `{ valid, errors }`. */
+    validateSchema(schema, options = {}) {
+      return validateWorkflowSchema(schema, { limits: effectiveLimits, ...options });
+    },
+
+    /**
+     * Исполнить экземпляр Workflow. Возвращает
+     * `{ instance_id, organization_id, status, output, journal, ... }`.
+     * Ошибки исполнения фиксируются в журнале (`workflow.failed`) и возвращаются
+     * как `status:"failed"` — журнал возвращается ВСЕГДА, чтобы Backend мог его
+     * сохранить в `workflow_execution_logs`.
+     */
+    async runWorkflow({ schema, context, input = {}, instanceId } = {}) {
+      assertWorkflowSchema(schema, { limits: effectiveLimits });
+      const resolvedInstanceId = resolveInstanceId(instanceId, context, schema, input);
+      const ctx = createContext({ context, schema, input, instanceId: resolvedInstanceId, now });
+
+      try {
+        const result = await runGraph({
+          schema,
+          ctx,
+          backendClient,
+          limits: effectiveLimits,
+        });
+        return { instance_id: resolvedInstanceId, organization_id: ctx.organizationId, ...result };
+      } catch (error) {
+        ctx.appendJournal("workflow.failed", {
+          nodeId: error?.nodeId ?? null,
+          data: { reason: error?.reason ?? "error", message: error?.message ?? String(error) },
+        });
+        return {
+          instance_id: resolvedInstanceId,
+          organization_id: ctx.organizationId,
+          status: "failed",
+          output: null,
+          error: {
+            reason: error?.reason ?? "error",
+            message: error?.message ?? String(error),
+            node_id: error?.nodeId ?? null,
+            node_type: error?.nodeType ?? null,
+          },
+          journal: ctx.journal,
+        };
+      }
+    },
+  };
+}
+
+export { validateWorkflowSchema, assertWorkflowSchema } from "./schema/validate-workflow.mjs";
+
+function createContext({ context, schema, input, instanceId, now }) {
+  if (!context || typeof context.organization_id !== "string" || context.organization_id.trim() === "") {
+    throw new WorkflowExecutionError(
+      "invalid_context",
+      "runWorkflow требует context.organization_id — инициатор Workflow всегда Backend (§6.13).",
+    );
+  }
+  return new ExecutionContext({
+    organizationId: context.organization_id,
+    actorUserId: context.actor_user_id ?? null,
+    trigger: context.trigger ?? null,
+    roles: context.roles ?? [],
+    correlationId: context.correlation_id ?? null,
+    locale: context.locale ?? null,
+    instanceId,
+    workflowId: schema.workflow_id ?? null,
+    workflowVersionId: schema.workflow_version_id ?? null,
+    input,
+    ...(now ? { now } : {}),
+  });
+}
+
+function resolveInstanceId(instanceId, context, schema, input) {
+  if (typeof instanceId === "string" && instanceId.trim() !== "") {
+    return instanceId;
+  }
+  return deterministicUuid([
+    context?.organization_id ?? "",
+    schema?.workflow_version_id ?? schema?.workflow_id ?? "",
+    stableStringify(input ?? {}),
+  ]);
+}
+
+// Детерминированная сериализация с сортировкой ключей — instance_id одинаков при
+// одинаковом входе независимо от порядка ключей (без ГСЧ/времени).
+function stableStringify(value) {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value ?? null);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(stableStringify).join(",")}]`;
+  }
+  const keys = Object.keys(value).sort();
+  return `{${keys.map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(",")}}`;
+}
