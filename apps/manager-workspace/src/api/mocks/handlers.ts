@@ -1,11 +1,11 @@
 import { HttpResponse, http, ws } from "msw";
 
-import type { SendMessageRequest } from "../client/types";
+import type { AssistantSuggestRequest, SendMessageRequest } from "../client/types";
 import { MockBackendError, createMockManagerWorkspaceBackend } from "./backend";
 import { mockC7Events } from "./fixtures";
 
 const API_PREFIX = "*/api/v1";
-const c7Socket = ws.link("ws://localhost/api/v1/ws");
+const c7Socket = ws.link("*/api/v1/ws");
 
 type JsonResponseBody = Record<string, any> | string | number | boolean | null | undefined;
 
@@ -68,6 +68,11 @@ export const handlers = [
   http.post(/\/api\/v1\/notifications\/([^/]+):read$/, ({ request }) => {
     const notificationId = new URL(request.url).pathname.match(/\/notifications\/([^/]+):read$/)?.[1];
     return toJsonResponse(() => backend.markNotificationRead(notificationId ?? ""));
+  }),
+
+  http.post(`${API_PREFIX}/ai/assistant:suggest`, async ({ request }) => {
+    const body = (await request.json()) as AssistantSuggestRequest;
+    return toJsonResponse(() => backend.suggestAssistant(body));
   }),
 
   c7Socket.addEventListener("connection", ({ client }) => {

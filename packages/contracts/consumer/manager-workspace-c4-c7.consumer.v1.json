@@ -1,0 +1,99 @@
+{
+  "x-contract-id": "CP3.manager-workspace.consumer",
+  "x-consumer": "SVC-MWS",
+  "x-stage": "M2",
+  "upstream_contracts": ["C4", "C7"],
+  "interactions": [
+    {
+      "name": "request AI assistant suggestion",
+      "contract": "C4",
+      "method": "POST",
+      "path": "/ai/assistant:suggest",
+      "request": {
+        "required": ["contract", "version", "request_id", "organization_id", "query"],
+        "optional": ["conversation_id", "requester_user_id", "context.messages"]
+      },
+      "response": {
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "degraded",
+          "fallback_reason",
+          "suggestion",
+          "source_status",
+          "sources",
+          "created_at"
+        ]
+      },
+      "degradation": {
+        "aiUnavailableKeepsMessagingUsable": true
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "message.created",
+      "contract": "C7",
+      "payload": {
+        "required": ["message"]
+      },
+      "consumer_behavior": {
+        "appendMessage": true,
+        "deduplicateBy": "payload.message.id",
+        "catchUpCursor": "sequence_number"
+      }
+    },
+    {
+      "name": "message.status_changed",
+      "contract": "C7",
+      "payload": {
+        "required": ["message_id", "conversation_id", "status"]
+      },
+      "consumer_behavior": {
+        "updateMessageStatus": true,
+        "catchUpCursor": "sequence_number"
+      }
+    },
+    {
+      "name": "typing.started",
+      "contract": "C7",
+      "payload": {
+        "required": ["conversation_id", "client_id"]
+      },
+      "consumer_behavior": {
+        "showTypingIndicator": true,
+        "catchUpCursor": "sequence_number"
+      }
+    },
+    {
+      "name": "typing.stopped",
+      "contract": "C7",
+      "payload": {
+        "required": ["conversation_id", "client_id"]
+      },
+      "consumer_behavior": {
+        "hideTypingIndicator": true,
+        "catchUpCursor": "sequence_number"
+      }
+    },
+    {
+      "name": "client.status_changed",
+      "contract": "C7",
+      "payload": {
+        "required": ["client_id", "status"]
+      },
+      "consumer_behavior": {
+        "updateClientPresence": true,
+        "catchUpCursor": "sequence_number"
+      }
+    }
+  ],
+  "reconnect": {
+    "transportCursor": "last_event_id",
+    "eventDeduplication": "event_id",
+    "messageDeduplication": "payload.message.id",
+    "gapDetection": "sequence_number"
+  }
+}

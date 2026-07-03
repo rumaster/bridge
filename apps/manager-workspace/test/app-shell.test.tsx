@@ -75,6 +75,50 @@ describe("Manager Workspace M1 flow", () => {
     expect((await screen.findAllByText("sent")).length).toBeGreaterThan(0);
   });
 
+  it("applies C7 realtime messages, statuses and client presence in the dialog", async () => {
+    renderRoute("/dialogs/conv-1");
+
+    expect(await screen.findByRole("heading", { name: "Диалог" })).toBeInTheDocument();
+    expect(await screen.findByText("Есть обновления по доставке заказа?")).toBeInTheDocument();
+    expect(await screen.findByText("delivered")).toBeInTheDocument();
+    expect(await screen.findByText("online")).toBeInTheDocument();
+  });
+
+  it("renders C4 AI suggestions with sources", async () => {
+    const { user } = renderRoute("/dialogs/conv-1");
+
+    expect(await screen.findByRole("heading", { name: "Диалог" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Получить подсказку" }));
+
+    expect(await screen.findByText(/Поблагодарите клиента за ожидание/)).toBeInTheDocument();
+    expect(await screen.findByText("KB: статусы доставки заказов")).toBeInTheDocument();
+  });
+
+  it("keeps the dialog usable when C4 AI is unavailable", async () => {
+    const services = createMockManagerWorkspaceServices();
+    services.api.ai.suggest = async () => {
+      throw new Error("AI unavailable");
+    };
+    const router = createManagerWorkspaceRouter({
+      initialEntries: ["/dialogs/conv-1"],
+      services
+    });
+    const user = userEvent.setup();
+
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByRole("heading", { name: "Диалог" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Получить подсказку" }));
+    expect(await screen.findByText("AI недоступен. Переписка продолжает работать.")).toBeInTheDocument();
+
+    await user.type(screen.getByLabelText("Ответ менеджера"), "Ответ после отказа AI");
+    await user.click(screen.getByRole("button", { name: "Отправить" }));
+
+    expect(await screen.findByText("Ответ после отказа AI")).toBeInTheDocument();
+  });
+
   it("covers the manager e2e path in memory: queue, history, reply", async () => {
     const { user } = renderRoute("/queue");
 

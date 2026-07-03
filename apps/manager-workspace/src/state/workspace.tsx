@@ -2,7 +2,7 @@ import { createContext, useContext, useMemo } from "react";
 import type { PropsWithChildren } from "react";
 
 import { createManagerWorkspaceApiClient } from "../api/client/http";
-import { createMockC7RealtimeClient } from "../api/client/realtime";
+import { createC7RealtimeClient } from "../api/client/realtime";
 import type { C7RealtimeClient } from "../api/client/realtime";
 import type { ManagerWorkspaceApiClient } from "../api/client/types";
 import { AuthProvider } from "./auth";
@@ -18,7 +18,7 @@ export interface ManagerWorkspaceProvidersProps extends PropsWithChildren {
 
 const defaultServices: ManagerWorkspaceServices = {
   api: createManagerWorkspaceApiClient(),
-  realtime: createMockC7RealtimeClient()
+  realtime: createC7RealtimeClient()
 };
 
 const WorkspaceContext = createContext<ManagerWorkspaceServices | null>(null);

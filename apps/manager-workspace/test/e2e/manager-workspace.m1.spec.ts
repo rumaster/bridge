@@ -26,3 +26,21 @@ test("Работа менеджера: очередь, история, отве�
 
   await expect(page.getByText("Ответ отправлен из e2e-сценария")).toBeVisible();
 });
+
+test("AI Assistant из KB и realtime C7 в диалоге", async ({ page }) => {
+  await page.goto("/dialogs/conv-1");
+
+  await expect(page.getByRole("heading", { name: "Диалог" })).toBeVisible();
+  await expect(page.getByText("Есть обновления по доставке заказа?")).toBeVisible();
+  await expect(page.getByText("online")).toBeVisible();
+
+  await page.getByRole("button", { name: "Получить подсказку" }).click();
+
+  await expect(page.getByText(/Поблагодарите клиента за ожидание/)).toBeVisible();
+  await expect(page.getByText("KB: статусы доставки заказов")).toBeVisible();
+
+  await page.getByLabel("Ответ менеджера").fill("Спасибо, проверяю статус доставки по базе знаний");
+  await page.getByRole("button", { name: "Отправить" }).click();
+
+  await expect(page.getByText("Спасибо, проверяю статус доставки по базе знаний")).toBeVisible();
+});

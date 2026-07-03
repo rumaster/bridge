@@ -1,4 +1,6 @@
 import type {
+  AssistantSuggestRequest,
+  AssistantSuggestResponse,
   ClientProfile,
   Conversation,
   ManagerSession,
@@ -31,6 +33,7 @@ export interface MockManagerWorkspaceBackend {
   getClient: (clientId: string) => ClientProfile;
   listNotifications: () => NotificationItem[];
   markNotificationRead: (notificationId: string) => NotificationItem;
+  suggestAssistant: (request: AssistantSuggestRequest) => AssistantSuggestResponse;
 }
 
 export function createMockManagerWorkspaceBackend(): MockManagerWorkspaceBackend {
@@ -148,6 +151,35 @@ export function createMockManagerWorkspaceBackend(): MockManagerWorkspaceBackend
 
       notification.status = "read";
       return copyNotification(notification);
+    },
+    suggestAssistant(request) {
+      validateAssistantSuggestRequest(request);
+
+      return {
+        contract: "C4.AssistantSuggestResponse",
+        version: "1.0.0",
+        request_id: request.request_id,
+        organization_id: request.organization_id,
+        degraded: false,
+        fallback_reason: null,
+        suggestion: {
+          mode: "deterministic_mock",
+          text:
+            "Поблагодарите клиента за ожидание, уточните номер заказа и сообщите, что статус доставки проверяется по базе знаний.",
+          confidence: 0.72
+        },
+        source_status: "available",
+        sources: [
+          {
+            source_type: "knowledge_chunk",
+            document_id: "kb-order-delivery",
+            chunk_id: "kb-order-delivery-status",
+            title: "KB: статусы доставки заказов",
+            excerpt: "Перед обещанием срока менеджер проверяет актуальный статус заказа и доставки."
+          }
+        ],
+        created_at: "2026-07-02T16:12:30.000Z"
+      };
     }
   };
 }
@@ -171,6 +203,16 @@ function validateSendMessageRequest(request: SendMessageRequest, conversations: 
 
   if (!request.idempotencyKey.trim()) {
     throw new MockBackendError("idempotencyKey is required", 400);
+  }
+}
+
+function validateAssistantSuggestRequest(request: AssistantSuggestRequest) {
+  if (request.contract !== "C4.AssistantSuggestRequest" || request.version !== "1.0.0") {
+    throw new MockBackendError("C4 assistant contract/version is invalid", 400);
+  }
+
+  if (!request.request_id.trim() || !request.organization_id.trim() || !request.query.trim()) {
+    throw new MockBackendError("request_id, organization_id and query are required", 400);
   }
 }
 
