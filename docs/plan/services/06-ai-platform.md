@@ -302,6 +302,16 @@ contract-тестами `tests/contract/ai-integration-c4-consumer.test.mjs` и
   применяются **только Backend** после проверок (ТЗ §13.13); e2e «AI Onboarding
   применяет конфиг» зелёный (мастер-план §9.4).
 
+**Статус реализации M3.** M3 AI Platform завершён для CP-5: AI Onboarding
+формирует только структурированные команды §12.6 без прямого доступа к данным, а
+Backend повторно валидирует и применяет их через C3. Покрытие:
+`services/ai-platform/test/unit/onboarding*.test.mjs`,
+`services/ai-platform/test/integration/onboarding-server.test.mjs`,
+`tests/contract/c4-onboarding-command-cp5.test.mjs`,
+`tests/integration/ai-onboarding-backend.test.mjs` и
+`tests/e2e/ai-onboarding-apply.test.mjs`. C4 стабилизирован вместе с C3/C5 в
+`packages/contracts/cp4-cp5-freeze.v1.json` как baseline для M4.
+
 ### M5 — Харденинг: изоляция, мониторинг, деградация
 
 - **Цель.** Стабилизация SVC-AI: изоляция арендаторов, мониторинг качества/стоимости,

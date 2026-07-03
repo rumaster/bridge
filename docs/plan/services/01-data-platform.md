@@ -231,6 +231,16 @@ KB-поиск, связи identity и данные capabilities. Gate зафик
   - *e2e:* CP-4 — БД как зависимость «Workflow вызывает Backend API».
 - **DoD.** § 9.4 + обратимость.
 
+**Статус реализации M3.** M3 Data Platform завершён для CP-4/CP-5:
+`workflow_*` входят в обратимые миграции, RLS по `organization_id` изолирует
+версии, экземпляры, состояние и `workflow_execution_logs`, а `workflow_versions`
+фиксируют монотонный `version_no` и запрет перезаписи схемы. Проверки
+`tests/integration/data-platform.test.mjs` подтверждают `up/down`, version
+pinning, неизменяемость версий и tenant-isolated журналы; сквозные M3-сценарии
+используют эти таблицы через `tests/e2e/workflow-engine-cp4-cp5.test.mjs`.
+Готовность M4: `workflow_*` стабильны, следующие схемы — `broadcast_*`,
+`notifications`, `outbox_events` и `edge_message_buffer`.
+
 ### 5.5 M4 — broadcast/notification/outbox/edge + RF-first
 
 - **Цель.** Массовые коммуникации, надёжная асинхронная интеграция и Edge/ПДн

@@ -239,6 +239,19 @@ FBP.
   доступ к БД отсутствует; изоляция арендаторов и серверная валидация (мастер §9.4);
   добавлены contract- и e2e-тесты CP-4/CP-5.
 
+**Статус реализации M3.** M3 FBP Engine завершён для CP-4/CP-5: движок исполняет
+нейтральный граф, валидирует Transform Node на сохранении схемы, вызывает
+Backend API как единственный write path и не имеет прямого SQL-доступа. Покрытие:
+`services/fbp-engine/test/unit/{validate-workflow,nodes,transform-validate}.test.mjs`,
+`services/fbp-engine/test/integration/backend-fbp.test.mjs`,
+`tests/contract/c5-fbp-contract.test.mjs`,
+`tests/contract/c5-fbp-node-catalog.test.mjs`,
+`tests/e2e/workflow-cp4.test.mjs` и
+`tests/e2e/workflow-engine-cp4-cp5.test.mjs`. C5 заморожен на CP-4 и вместе с
+C3/C4 стабилизирован на CP-5 в `packages/contracts/cp4-cp5-freeze.v1.json`.
+Готовность M4: базовые `workflow_*` стабильны; version pinning/stateless
+масштабирование остаются следующим этапом.
+
 ### M4 — Версии, version pinning, stateless-масштабирование
 
 - **Цель.** Обеспечить неизменяемость версий, корректный version pinning и

@@ -253,16 +253,22 @@ Workflow/AI (ТЗ §13.5): `modules/backend-api/backend-api.controller.ts`
 JSON-схеме §12.6, проверяет права по **реальному принципалу** (никогда по
 самодекларированным ролям контекста Workflow) и пишет `audit_events` с
 `actor_type = ai|workflow` (ТЗ §12.6, §22.9). Покрытие: unit
-`test/unit/workflow-action-applier.spec.ts` (состояния circuit breaker, таймауты,
-bulkhead, преобразователи DTO, валидация §12.6), integration
+`test/unit/resilience.spec.ts` (состояния circuit breaker, таймауты, bulkhead),
+`test/unit/*-integration.facade.spec.ts` (преобразователи DTO фасадов) и
+`test/unit/workflow-action-applier.spec.ts` (валидация §12.6 и audit actor_type),
+integration
 `test/integration/m3-facades.spec.ts` (Backend↔AI/FBP, применение изменения с
 проверкой прав и аудитом на реальном Postgres/RLS), contract
-`tests/contract/cp4-cp5-freeze.test.mjs` (C4↔AI, C5↔FBP), e2e
+`tests/contract/cp4-cp5-freeze.test.mjs` (C5 freeze на CP-4, C3+C4+C5
+стабилизация на CP-5), e2e
 `tests/e2e/facades-cp4-cp5.test.mjs` («Workflow вызывает Backend API»,
-«AI Onboarding применяет конфигурацию»). C4/C5 зафиксированы как `stable_for_m3`
-в `packages/contracts/cp4-cp5-freeze.v1.json`; пять новых операций опубликованы в
-`packages/contracts/openapi/backend-core/openapi.json`. Broadcast/Notification
-(C8/C10) остаются следующим scope M4.
+«AI Onboarding применяет конфигурацию») и
+`tests/e2e/workflow-engine-cp4-cp5.test.mjs` («Admin правит Workflow»).
+C3/C4/C5 зафиксированы как `stable_for_m4` в
+`packages/contracts/cp4-cp5-freeze.v1.json`; пять новых операций опубликованы в
+`packages/contracts/openapi/backend-core/openapi.json`. Следующий scope M4:
+сквозная идемпотентность, Broadcast/Notification фасады (C8/C10), Mobile API и
+Telegram Console.
 
 ### M4 — Фасады Broadcast и Notification (M)
 
