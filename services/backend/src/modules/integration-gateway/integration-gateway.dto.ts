@@ -1,22 +1,25 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import { IsIn, IsObject, IsOptional, IsString, MaxLength } from "class-validator";
 
+const CHANNEL_TYPES = ["web_chat", "telegram", "email", "sms", "vk", "max", "whatsapp"] as const;
+type ChannelType = (typeof CHANNEL_TYPES)[number];
+
 export class ConnectChannelRequestDto {
   @ApiProperty({ example: "org-1" })
   @IsString()
   @MaxLength(128)
   organization_id!: string;
 
-  @ApiProperty({ enum: ["web_chat"], example: "web_chat" })
-  @IsIn(["web_chat"])
-  channel_type!: "web_chat";
+  @ApiProperty({ enum: CHANNEL_TYPES, example: "telegram" })
+  @IsIn(CHANNEL_TYPES)
+  channel_type!: ChannelType;
 
   @ApiProperty({ example: "Основной Web Chat" })
   @IsString()
   @MaxLength(120)
   name!: string;
 
-  @ApiPropertyOptional({ example: "secret://web-chat/org-1/main" })
+  @ApiPropertyOptional({ example: "secret://telegram/org-1/main" })
   @IsString()
   @MaxLength(512)
   @IsOptional()
@@ -39,8 +42,8 @@ export class ChannelResponseDto {
   @ApiProperty({ example: "org-1" })
   organization_id!: string;
 
-  @ApiProperty({ enum: ["web_chat"], example: "web_chat" })
-  channel_type!: "web_chat";
+  @ApiProperty({ enum: CHANNEL_TYPES, example: "telegram" })
+  channel_type!: ChannelType;
 
   @ApiProperty({ example: "Основной Web Chat" })
   name!: string;
@@ -48,7 +51,7 @@ export class ChannelResponseDto {
   @ApiProperty({ enum: ["connected", "error", "disabled"], example: "connected" })
   status!: "connected" | "error" | "disabled";
 
-  @ApiPropertyOptional({ example: "secret://web-chat/org-1/main" })
+  @ApiPropertyOptional({ example: "secret://telegram/org-1/main" })
   credentials_ref?: string;
 
   @ApiProperty({ additionalProperties: true, type: Object })

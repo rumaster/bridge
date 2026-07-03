@@ -10,7 +10,10 @@ export function createIntegrationPlatformServer({
     coreIngressUrl: process.env.CORE_INGRESS_URL,
   }),
   webChatAdapter,
+  adapters = {},
 } = {}) {
+  const channelAdapters = createChannelAdapterRegistry({ adapters, webChatAdapter });
+
   return createServer(async (request, response) => {
     try {
       const url = new URL(request.url, "http://integration-platform.local");
@@ -41,9 +44,28 @@ export function createIntegrationPlatformServer({
         return;
       }
 
-      if (request.method === "GET" && url.pathname === "/web-chat/capabilities") {
-        const currentWebChatAdapter = ensureWebChatAdapter(webChatAdapter);
-        sendJson(response, 200, currentWebChatAdapter.capabilityDescriptor);
+      const channelRoute = findChannelRoute(url.pathname, channelAdapters);
+      if (request.method === "GET" && channelRoute?.action === "capabilities") {
+        sendJson(response, 200, channelRoute.adapter.capabilityDescriptor);
+        return;
+      }
+
+      if (request.method === "POST" && channelRoute?.action === "incoming") {
+        const payload = await readJson(request);
+        try {
+          const result = await channelRoute.adapter.publishIncomingMessage(payload);
+          sendJson(response, 202, result);
+        } catch (error) {
+          if (error instanceof TypeError) {
+            sendJson(response, 400, {
+              accepted: false,
+              errors: [error.message],
+            });
+            return;
+          }
+
+          throw error;
+        }
         return;
       }
 
@@ -69,8 +91,10 @@ export function createIntegrationPlatformServer({
 
       if (request.method === "POST" && url.pathname === "/internal/egress/deliveries") {
         const payload = await readJson(request);
-        const egressAdapter =
-          webChatAdapter && isWebChatEgressDelivery(payload) ? webChatAdapter : adapter;
+        const egressAdapter = resolveEgressAdapter(payload, channelAdapters, {
+          adapter,
+          webChatAdapter,
+        });
         const result = await egressAdapter.acceptEgressDelivery(payload);
         sendJson(response, result.accepted ? 202 : 400, result);
         return;
@@ -89,6 +113,22 @@ export function createIntegrationPlatformServer({
   });
 }
 
+function createChannelAdapterRegistry({ adapters, webChatAdapter }) {
+  const registry = new Map();
+
+  for (const [channelType, channelAdapter] of Object.entries(adapters ?? {})) {
+    if (channelAdapter) {
+      registry.set(channelType, channelAdapter);
+    }
+  }
+
+  if (webChatAdapter) {
+    registry.set("web_chat", webChatAdapter);
+  }
+
+  return registry;
+}
+
 function ensureWebChatAdapter(adapter) {
   if (!adapter) {
     throw new Error("webChatAdapter is required for Web Chat routes");
@@ -99,6 +139,41 @@ function ensureWebChatAdapter(adapter) {
 
 function isWebChatIncomingPath(pathname) {
   return pathname === "/web-chat/incoming/messages" || pathname === "/web-chat/messages";
+}
+
+function findChannelRoute(pathname, channelAdapters) {
+  for (const [channelType, channelAdapter] of channelAdapters.entries()) {
+    const pathSegment = channelType.replaceAll("_", "-");
+    if (pathname === `/${pathSegment}/capabilities`) {
+      return {
+        action: "capabilities",
+        adapter: channelAdapter,
+        channelType,
+      };
+    }
+    if (pathname === `/${pathSegment}/incoming/messages`) {
+      return {
+        action: "incoming",
+        adapter: channelAdapter,
+        channelType,
+      };
+    }
+  }
+
+  return null;
+}
+
+function resolveEgressAdapter(payload, channelAdapters, { adapter, webChatAdapter }) {
+  const channelType = payload?.message?.channel_type ?? payload?.message?.channel;
+  if (typeof channelType === "string" && channelAdapters.has(channelType)) {
+    return channelAdapters.get(channelType);
+  }
+
+  if (webChatAdapter && isWebChatEgressDelivery(payload)) {
+    return webChatAdapter;
+  }
+
+  return adapter;
 }
 
 async function readJson(request) {

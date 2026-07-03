@@ -10,7 +10,7 @@ const ORG_ID = "30000000-0000-4000-8000-000000000101";
 const ADMIN_ID = "30000000-0000-4000-8000-000000000201";
 const ADMIN_TOKEN = "brs_channels_admin";
 
-describe("C3.channels Web Chat skeleton", () => {
+describe("C3.channels M2 omnichannel API", () => {
   let app: INestApplication;
 
   beforeAll(async () => {
@@ -95,6 +95,69 @@ describe("C3.channels Web Chat skeleton", () => {
         expect(body.status).toBe("connected");
       });
   });
+
+  it.each([
+    ["telegram", "secret://telegram/tenant-a/main", true, false],
+    ["email", "secret://email/tenant-a/support", false, false],
+    ["sms", "secret://sms/tenant-a/main", false, false],
+    ["vk", "secret://vk/tenant-a/main", true, false],
+    ["max", "secret://max/tenant-a/main", true, false],
+    ["whatsapp", "secret://whatsapp/tenant-a/main", false, true],
+  ] as const)(
+    "connects %s, keeps only credentials_ref, tests connection, and returns C6",
+    async (channelType, credentialsRef, typingIndicator, readReceipt) => {
+      const createResponse = await request(app.getHttpServer())
+        .post("/api/v1/channels")
+        .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+        .set("x-organization-id", ORG_ID)
+        .send({
+          organization_id: ORG_ID,
+          channel_type: channelType,
+          name: `${channelType} основной`,
+          credentials_ref: credentialsRef,
+          config: {
+            endpoint: `${channelType}-endpoint`,
+          },
+        })
+        .expect(201);
+
+      expect(createResponse.body.channel).toMatchObject({
+        organization_id: ORG_ID,
+        channel_type: channelType,
+        status: "connected",
+        credentials_ref: credentialsRef,
+      });
+      expect(createResponse.body.channel).not.toHaveProperty("token");
+
+      const channelId = createResponse.body.channel.id;
+
+      await request(app.getHttpServer())
+        .get(`/api/v1/channels/${channelId}/capabilities`)
+        .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+        .set("x-organization-id", ORG_ID)
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body.contract).toBe("C6.CapabilityDescriptor");
+          expect(body.channel_type).toBe(channelType);
+          expect(body.channel_id).toBe(channelId);
+          expect(body.capabilities.text.supported).toBe(true);
+          expect(body.capabilities.typing_indicator.supported).toBe(typingIndicator);
+          expect(body.capabilities.read_receipt.supported).toBe(readReceipt);
+        });
+
+      await request(app.getHttpServer())
+        .post(`/api/v1/channels/${channelId}:test`)
+        .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+        .set("x-organization-id", ORG_ID)
+        .send({})
+        .expect(200)
+        .expect(({ body }) => {
+          expect(body.accepted).toBe(true);
+          expect(body.channel_id).toBe(channelId);
+          expect(body.status).toBe("connected");
+        });
+    },
+  );
 });
 
 function createAuthDatabaseStub(): Pick<PgDatabase, "withTenant"> {

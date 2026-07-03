@@ -87,7 +87,7 @@
             }
           }
         },
-        "summary": "Connect a Web Chat channel skeleton",
+        "summary": "Connect an omnichannel adapter",
         "tags": [
           "channels"
         ]
@@ -1031,9 +1031,15 @@
           "channel_type": {
             "type": "string",
             "enum": [
-              "web_chat"
+              "web_chat",
+              "telegram",
+              "email",
+              "sms",
+              "vk",
+              "max",
+              "whatsapp"
             ],
-            "example": "web_chat"
+            "example": "telegram"
           },
           "name": {
             "type": "string",
@@ -1050,7 +1056,7 @@
           },
           "credentials_ref": {
             "type": "string",
-            "example": "secret://web-chat/org-1/main"
+            "example": "secret://telegram/org-1/main"
           },
           "config": {
             "type": "object",
@@ -1090,9 +1096,15 @@
           "channel_type": {
             "type": "string",
             "enum": [
-              "web_chat"
+              "web_chat",
+              "telegram",
+              "email",
+              "sms",
+              "vk",
+              "max",
+              "whatsapp"
             ],
-            "example": "web_chat"
+            "example": "telegram"
           },
           "name": {
             "type": "string",
@@ -1100,7 +1112,7 @@
           },
           "credentials_ref": {
             "type": "string",
-            "example": "secret://web-chat/org-1/main"
+            "example": "secret://telegram/org-1/main"
           },
           "config": {
             "type": "object",
