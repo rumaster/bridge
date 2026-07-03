@@ -3,9 +3,16 @@ import { KB_EMBEDDING_DIMENSIONS } from "../../../packages/contracts/src/c3-kb.m
 /**
  * Swappable LLM abstraction for SVC-AI (ТЗ §12.9).
  *
- * A provider exposes two capabilities used by the RAG pipeline:
+ * A provider exposes three capabilities:
  *   - embed(text): Promise<number[]>       — a `KB_EMBEDDING_DIMENSIONS`-vector.
  *   - generate({ query, chunks }): Promise<{ text, confidence, citations }>
+ *   - interpretOnboarding({ prompt, organizationId }): Promise<draft>
+ *
+ * The first two power the RAG assistant (CP-3); the third powers AI Onboarding
+ * (CP-5): it turns an administrator's natural-language request into a *draft*
+ * structured command ({ action, params, requiresConfirmation, notes }) that the
+ * onboarding pipeline validates against the §12.6 catalogue before assembling a
+ * C4 command. The model only ever proposes a description — it never applies it.
  *
  * The provider never talks to the database and never performs Knowledge Base
  * search itself — embeddings are handed to Backend (C3.kb) which owns pgvector
@@ -42,6 +49,10 @@ export function createDeterministicMockLlm({
     async generate({ query, chunks = [] }) {
       return generateAnswer({ query, chunks });
     },
+
+    async interpretOnboarding({ prompt }) {
+      return interpretOnboardingPrompt(prompt);
+    },
   };
 }
 
@@ -65,6 +76,9 @@ export function createUnavailableLlm({
       fail();
     },
     async generate() {
+      fail();
+    },
+    async interpretOnboarding() {
       fail();
     },
   };
@@ -98,6 +112,99 @@ export function embedText(text, dimensions = LLM_EMBEDDING_DIMENSIONS) {
   }
 
   return normalize(vector);
+}
+
+/**
+ * Deterministic AI Onboarding interpretation (ТЗ §12.4, §12.6). Maps an
+ * administrator's natural-language request onto exactly one *draft* structured
+ * command — an action from the §12.6 catalogue plus its parameters. The draft
+ * never carries an `organization_id`: the onboarding pipeline pins tenancy to
+ * the authenticated request so the model can never target another organization
+ * (ТЗ §22.6). The command is a description only — Backend validates, authorizes
+ * and applies it (ТЗ §12.6, §13.13). Same prompt in → same draft out.
+ */
+export function interpretOnboardingPrompt(prompt) {
+  const normalizedPrompt = normalizeText(prompt);
+
+  if (normalizedPrompt.includes("telegram") || normalizedPrompt.includes("телеграм")) {
+    return {
+      action: "channel.connect",
+      params: {
+        channel_type: "telegram",
+        display_name: "Telegram",
+        mode: "mock",
+      },
+      requiresConfirmation: true,
+      notes: [
+        "Backend must validate administrator permissions and channel credentials before applying.",
+      ],
+    };
+  }
+
+  if (
+    normalizedPrompt.includes("часовой пояс") ||
+    normalizedPrompt.includes("timezone") ||
+    normalizedPrompt.includes("europe/moscow")
+  ) {
+    return {
+      action: "configuration.upsert",
+      params: {
+        key: "organization.timezone",
+        value: extractTimezone(prompt),
+      },
+      requiresConfirmation: true,
+      notes: [
+        "Backend must validate the configuration key, value format and organization scope.",
+      ],
+    };
+  }
+
+  if (normalizedPrompt.includes("пригласи") || normalizedPrompt.includes("invite")) {
+    return {
+      action: "user.invite",
+      params: {
+        role: "manager",
+        delivery: "manual",
+      },
+      requiresConfirmation: true,
+      notes: [
+        "Backend must validate role assignment and invitation target before applying.",
+      ],
+    };
+  }
+
+  if (normalizedPrompt.includes("название") || normalizedPrompt.includes("name")) {
+    return {
+      action: "organization.update_profile",
+      params: {
+        display_name: "M0 Mock Organization",
+      },
+      requiresConfirmation: true,
+      notes: [
+        "Backend must validate organization profile fields before applying.",
+      ],
+    };
+  }
+
+  return {
+    action: "noop",
+    params: {
+      reason: "unsupported_m0_prompt",
+    },
+    requiresConfirmation: false,
+    notes: [
+      "M0 deterministic mock could not map the prompt to a supported Backend operation.",
+    ],
+  };
+}
+
+function extractTimezone(prompt) {
+  const match = String(prompt ?? "").match(/[A-Za-z]+\/[A-Za-z_]+/);
+  return match ? match[0] : "Europe/Moscow";
+}
+
+function normalizeText(value) {
+  return String(value ?? "").trim().toLowerCase();
 }
 
 function generateAnswer({ query, chunks }) {
