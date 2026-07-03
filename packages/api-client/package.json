@@ -11,8 +11,8 @@
   },
   "types": "./src/index.d.ts",
   "scripts": {
-    "lint": "find src test -name '*.mjs' -print0 | xargs -0 -r -n 1 node --check",
-    "test": "node --test test/*.test.mjs",
-    "build": "find src -name '*.mjs' -print0 | xargs -0 -r -n 1 node --check"
+    "lint": "node ../../scripts/check-mjs.mjs src test",
+    "test": "node --test test",
+    "build": "node ../../scripts/check-mjs.mjs src"
   }
 }

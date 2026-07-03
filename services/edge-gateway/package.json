@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "find src test -name '*.mjs' -print0 | xargs -0 -n1 node --check",
-    "test": "node --test test/unit/*.test.mjs test/integration/*.test.mjs",
-    "build": "find src -name '*.mjs' -print0 | xargs -0 -n1 node --check"
+    "lint": "node ../../scripts/check-mjs.mjs src test",
+    "test": "node --test test/unit test/integration",
+    "build": "node ../../scripts/check-mjs.mjs src"
   }
 }
