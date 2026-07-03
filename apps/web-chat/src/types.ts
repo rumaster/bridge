@@ -1,11 +1,26 @@
 export type WebChatAuthorType = "visitor" | "manager" | "system";
 
-export type WebChatMessageStatus = "sent" | "delivered" | "read";
+export type WebChatMessageStatus =
+  | "received"
+  | "routed"
+  | "sent"
+  | "delivered"
+  | "read"
+  | "failed";
+
+export type WebChatSession = {
+  visitorSessionId: string;
+  organizationId: string;
+  conversationId: string;
+  endpointId: string;
+};
 
 export type WebChatMessage = {
   id: string;
+  idempotencyKey?: string;
   organizationId: string;
   conversationId: string;
+  endpointId?: string;
   channel: "web_chat";
   author: {
     type: WebChatAuthorType;

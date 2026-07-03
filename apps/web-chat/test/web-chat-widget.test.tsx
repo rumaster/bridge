@@ -53,6 +53,10 @@ describe("Bridge Web Chat widget", () => {
     await user.click(screen.getByRole("button", { name: "Отправить" }));
 
     expect(await screen.findByText("Здравствуйте")).toBeInTheDocument();
+    expect(await screen.findByText("доставлено")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Здравствуйте! Менеджер получил сообщение."),
+    ).toBeInTheDocument();
     expect(screen.getByLabelText("Сообщение")).toHaveValue("");
   });
 });
