@@ -1,6 +1,7 @@
 import { createServer } from "node:http";
 
 import { createMockAdapter } from "./adapters/mock/mock-adapter.mjs";
+import { isWebChatEgressDelivery } from "./adapters/web-chat/web-chat-adapter.mjs";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 
@@ -8,6 +9,7 @@ export function createIntegrationPlatformServer({
   adapter = createMockAdapter({
     coreIngressUrl: process.env.CORE_INGRESS_URL,
   }),
+  webChatAdapter,
 } = {}) {
   return createServer(async (request, response) => {
     try {
@@ -39,9 +41,25 @@ export function createIntegrationPlatformServer({
         return;
       }
 
+      if (request.method === "GET" && url.pathname === "/web-chat/capabilities") {
+        const currentWebChatAdapter = ensureWebChatAdapter(webChatAdapter);
+        sendJson(response, 200, currentWebChatAdapter.capabilityDescriptor);
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/web-chat/incoming/messages") {
+        const currentWebChatAdapter = ensureWebChatAdapter(webChatAdapter);
+        const payload = await readJson(request);
+        const result = await currentWebChatAdapter.publishIncomingMessage(payload);
+        sendJson(response, 202, result);
+        return;
+      }
+
       if (request.method === "POST" && url.pathname === "/internal/egress/deliveries") {
         const payload = await readJson(request);
-        const result = await adapter.acceptEgressDelivery(payload);
+        const egressAdapter =
+          webChatAdapter && isWebChatEgressDelivery(payload) ? webChatAdapter : adapter;
+        const result = await egressAdapter.acceptEgressDelivery(payload);
         sendJson(response, result.accepted ? 202 : 400, result);
         return;
       }
@@ -57,6 +75,14 @@ export function createIntegrationPlatformServer({
       });
     }
   });
+}
+
+function ensureWebChatAdapter(adapter) {
+  if (!adapter) {
+    throw new Error("webChatAdapter is required for Web Chat routes");
+  }
+
+  return adapter;
 }
 
 async function readJson(request) {

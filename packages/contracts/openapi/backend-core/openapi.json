@@ -37,6 +37,109 @@
           "health"
         ]
       }
+    },
+    "/api/v1/channels": {
+      "get": {
+        "operationId": "ChannelsController_listChannels_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChannelResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "List connected channels",
+        "tags": [
+          "channels"
+        ]
+      },
+      "post": {
+        "operationId": "ChannelsController_connectChannel_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConnectChannelRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectChannelResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Connect a Web Chat channel skeleton",
+        "tags": [
+          "channels"
+        ]
+      }
+    },
+    "/api/v1/channels/{id}/capabilities": {
+      "get": {
+        "operationId": "ChannelsController_getCapabilities_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "C6.CapabilityDescriptor"
+          }
+        },
+        "summary": "Return channel C6 capabilities",
+        "tags": [
+          "channels"
+        ]
+      }
+    },
+    "/api/v1/channels/{id}:test": {
+      "post": {
+        "operationId": "ChannelTestController_testChannel_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Channel test result"
+          }
+        },
+        "summary": "Test a connected channel",
+        "tags": [
+          "channels"
+        ]
+      }
     }
   },
   "info": {
@@ -130,6 +233,116 @@
           "version",
           "timestamp",
           "checks"
+        ]
+      },
+      "ChannelResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "web-chat-91a9aaad-7ef7-4f65-9f6b-71ef7b1c4e61"
+          },
+          "organization_id": {
+            "type": "string",
+            "example": "org-1"
+          },
+          "channel_type": {
+            "type": "string",
+            "enum": [
+              "web_chat"
+            ],
+            "example": "web_chat"
+          },
+          "name": {
+            "type": "string",
+            "example": "Основной Web Chat"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "connected",
+              "error",
+              "disabled"
+            ],
+            "example": "connected"
+          },
+          "credentials_ref": {
+            "type": "string",
+            "example": "secret://web-chat/org-1/main"
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "last_check_at": {
+            "type": "string",
+            "example": "2026-07-03T09:00:00.000Z"
+          },
+          "created_at": {
+            "type": "string",
+            "example": "2026-07-03T09:00:00.000Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "example": "2026-07-03T09:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "channel_type",
+          "name",
+          "status",
+          "config",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "ConnectChannelRequestDto": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "example": "org-1"
+          },
+          "channel_type": {
+            "type": "string",
+            "enum": [
+              "web_chat"
+            ],
+            "example": "web_chat"
+          },
+          "name": {
+            "type": "string",
+            "example": "Основной Web Chat"
+          },
+          "credentials_ref": {
+            "type": "string",
+            "example": "secret://web-chat/org-1/main"
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": true,
+            "example": {
+              "widget_origin": "https://example.test"
+            }
+          }
+        },
+        "required": [
+          "organization_id",
+          "channel_type",
+          "name"
+        ]
+      },
+      "ConnectChannelResponseDto": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "$ref": "#/components/schemas/ChannelResponseDto"
+          }
+        },
+        "required": [
+          "channel"
         ]
       }
     }

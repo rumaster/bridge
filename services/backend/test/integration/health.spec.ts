@@ -29,7 +29,9 @@ describe("backend health", () => {
       .expect(({ body }) => {
         expect(body.status).toBe("ok");
         expect(body.service).toBe("backend");
-        expect(body.checks.facades).toHaveLength(4);
+        expect(body.checks.facades).toHaveLength(5);
+        expect(body.checks.facades.map((facade: { serviceId: string }) => facade.serviceId))
+          .toContain("SVC-INT");
       });
   });
 

@@ -8,9 +8,10 @@ import { RequestIdMiddleware } from "./common/request-id.middleware";
 import { RequestLoggingInterceptor } from "./common/request-logging.interceptor";
 import { createValidationPipe } from "./common/validation.pipe";
 import { HealthModule } from "./modules/health/health.module";
+import { IntegrationGatewayModule } from "./modules/integration-gateway/integration-gateway.module";
 
 @Module({
-  imports: [HealthModule],
+  imports: [HealthModule, IntegrationGatewayModule],
   providers: [
     InMemoryIdempotencyStore,
     {
