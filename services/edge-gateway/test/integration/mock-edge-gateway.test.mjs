@@ -3,8 +3,10 @@ import { randomBytes } from "node:crypto";
 import { connect } from "node:net";
 import { after, before, describe, it } from "node:test";
 
+import { createWebSocketEvent } from "../../../../packages/contracts/src/c7.mjs";
 import { createEdgeTunnelMessage } from "../../../../packages/contracts/src/c9.mjs";
 import { createCommunicationCoreMock } from "../../../backend/src/modules/communication-core/mock-ingress-egress.mjs";
+import { createMockWebSocketChannel } from "../../src/mock-ws-channel.mjs";
 import { createEdgeGatewayServer } from "../../src/server.mjs";
 
 const canonicalMessage = Object.freeze({
@@ -29,13 +31,16 @@ const canonicalMessage = Object.freeze({
 describe("Edge Gateway M0 mock", () => {
   let server;
   let baseUrl;
+  let wsChannel;
 
   before(async () => {
+    wsChannel = createMockWebSocketChannel();
     server = createEdgeGatewayServer({
       core: createCommunicationCoreMock({
         clock: () => "2026-07-02T16:10:04.000Z",
       }),
       now: () => "2026-07-02T16:10:03.000Z",
+      wsChannel,
     });
     await new Promise((resolve) => {
       server.listen(0, "127.0.0.1", resolve);
@@ -98,6 +103,45 @@ describe("Edge Gateway M0 mock", () => {
 
     assert.match(handshake, /^HTTP\/1\.1 101 Switching Protocols/);
     assert.match(handshake, /Sec-WebSocket-Accept:/);
+  });
+
+  it("accepts internal C7 events and delivers them to matching WS subscriptions", async () => {
+    const delivered = [];
+    const connection = wsChannel.connect({
+      subscription: {
+        organizationId: "org-1",
+        conversationId: "conversation-1",
+      },
+      send(event) {
+        delivered.push(event.event_id);
+      },
+    });
+    const event = createWebSocketEvent({
+      event: "message.created",
+      eventId: "event-http-1",
+      organizationId: "org-1",
+      payload: {
+        conversation_id: "conversation-1",
+        message_id: "message-http-1",
+      },
+      sequenceNumber: 1,
+      occurredAt: "2026-07-02T16:20:00.000Z",
+    });
+
+    const response = await fetch(`${baseUrl}/api/v1/internal/ws/events`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(event),
+    });
+    const body = await response.json();
+
+    assert.equal(response.status, 202);
+    assert.equal(body.accepted, true);
+    assert.equal(body.event_id, "event-http-1");
+    assert.deepEqual(delivered, ["event-http-1"]);
+    connection.close();
   });
 });
 

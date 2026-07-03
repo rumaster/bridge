@@ -74,13 +74,13 @@ export function createEdgeGatewayServer({
 
       if (request.method === "POST" && path === "/mock/ws/events") {
         const payload = await readJson(request);
-        const result = webSocketChannel.publish(payload);
-        sendJson(response, 202, {
-          accepted: result.accepted,
-          duplicate: result.duplicate,
-          event_id: result.event.event_id,
-          published_at: now(),
-        });
+        sendJson(response, 202, publishC7Event(webSocketChannel, payload, now));
+        return;
+      }
+
+      if (request.method === "POST" && path === "/internal/ws/events") {
+        const payload = await readJson(request);
+        sendJson(response, 202, publishC7Event(webSocketChannel, payload, now));
         return;
       }
 
@@ -145,7 +145,9 @@ export function createEdgeGatewayServer({
 
     upgradedSockets.add(socket);
     const connection = webSocketChannel.connect({
+      afterSequenceNumber: url.searchParams.get("after_sequence_number") ?? undefined,
       lastEventId: url.searchParams.get("last_event_id") ?? undefined,
+      subscription: subscriptionFromSearchParams(url.searchParams),
       send(event) {
         socket.write(encodeWebSocketTextFrame(JSON.stringify(event)));
       },
@@ -169,10 +171,24 @@ export function createEdgeGatewayServer({
       socket.destroy();
     }
     upgradedSockets.clear();
+    if (typeof webSocketChannel.close === "function") {
+      webSocketChannel.close();
+    }
     return closeServer(callback);
   };
 
   return server;
+}
+
+function publishC7Event(webSocketChannel, payload, now) {
+  const result = webSocketChannel.publish(payload);
+
+  return {
+    accepted: result.accepted,
+    duplicate: result.duplicate,
+    event_id: result.event.event_id,
+    published_at: now(),
+  };
 }
 
 async function readJson(request) {
@@ -208,6 +224,20 @@ function normalizeApiPath(path) {
   }
 
   return path;
+}
+
+function subscriptionFromSearchParams(searchParams) {
+  return {
+    organizationId: searchParams.get("organization_id") ?? undefined,
+    subscriptionId: searchParams.get("subscription_id") ?? undefined,
+    conversationId: searchParams.get("conversation_id") ?? undefined,
+    endpointId: searchParams.get("endpoint_id") ?? undefined,
+    clientId: searchParams.get("client_id") ?? undefined,
+    recipientUserId: searchParams.get("recipient_user_id") ?? undefined,
+    userId: searchParams.get("user_id") ?? undefined,
+    managerUserId: searchParams.get("manager_user_id") ?? undefined,
+    visitorSessionId: searchParams.get("visitor_session_id") ?? undefined,
+  };
 }
 
 function sendJson(response, statusCode, payload) {

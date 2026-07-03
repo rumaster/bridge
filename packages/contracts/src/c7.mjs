@@ -22,10 +22,23 @@ export const C7_EVENT_TYPES = Object.freeze([
 export const C7_RECONNECT_SEMANTICS = Object.freeze({
   mode: "client_auto_reconnect",
   resume_cursor: "last_event_id",
+  fallback_cursor: "after_sequence_number",
   delivery: "at_least_once_with_client_dedup",
   duplicate_rule: "drop events with event_id already observed by the client",
   ordering: "sequence_number is monotonic inside one WebSocket subscription",
 });
+
+export const C7_WS_SUBSCRIPTION_FILTERS = Object.freeze([
+  "organization_id",
+  "subscription_id",
+  "conversation_id",
+  "endpoint_id",
+  "client_id",
+  "recipient_user_id",
+  "user_id",
+  "manager_user_id",
+  "visitor_session_id",
+]);
 
 export const C7_WEBSOCKET_EVENT_SCHEMA = Object.freeze(
   JSON.parse(
