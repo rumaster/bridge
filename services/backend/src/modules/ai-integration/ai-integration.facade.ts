@@ -1,6 +1,12 @@
 import { Injectable } from "@nestjs/common";
 import { ApiProperty } from "@nestjs/swagger";
 
+import { FacadeResilience } from "../../common/resilience/resilience";
+import type {
+  FacadeResilienceOptions,
+  ResilienceRejectionReason,
+} from "../../common/resilience/resilience";
+
 export type FacadeMode = "mock";
 export type FacadeStatusValue = "degraded";
 export type AiFacadeDegradationReason = "timeout" | "unavailable";
@@ -86,6 +92,15 @@ export class FacadeStatusDto {
 
 @Injectable()
 export class AiIntegrationFacade {
+  private readonly resilience: FacadeResilience;
+
+  constructor(options: FacadeResilienceOptions = {}) {
+    this.resilience = new FacadeResilience({
+      defaultTimeoutMs: DEFAULT_AI_TIMEOUT_MS,
+      ...options,
+    });
+  }
+
   getStatus(): FacadeStatusDto {
     return {
       mode: "mock",
@@ -99,54 +114,28 @@ export class AiIntegrationFacade {
     request: AiAssistantFacadeRequest,
     options: AiFacadeCallOptions<AiAssistantFacadeResponse> = {},
   ): Promise<AiAssistantFacadeResponse> {
-    const result = await this.callAi(options);
+    const result = await this.resilience.execute(options.call, {
+      timeoutMs: options.timeoutMs,
+    });
     if (result.ok) {
       return result.value;
     }
 
-    return this.createAssistantFallback(request, result.reason, options.now);
+    return this.createAssistantFallback(request, toDegradationReason(result.reason), options.now);
   }
 
   async createOnboardingCommand(
     request: AiOnboardingFacadeRequest,
     options: AiFacadeCallOptions<AiOnboardingFacadeResponse> = {},
   ): Promise<AiOnboardingFacadeResponse> {
-    const result = await this.callAi(options);
+    const result = await this.resilience.execute(options.call, {
+      timeoutMs: options.timeoutMs,
+    });
     if (result.ok) {
       return result.value;
     }
 
-    return this.createOnboardingFallback(request, result.reason, options.now);
-  }
-
-  private async callAi<TResponse>(
-    options: AiFacadeCallOptions<TResponse>,
-  ): Promise<
-    | { ok: true; value: TResponse }
-    | { ok: false; reason: AiFacadeDegradationReason }
-  > {
-    if (!options.call) {
-      return {
-        ok: false,
-        reason: "unavailable",
-      };
-    }
-
-    try {
-      const value = await withTimeout(
-        options.call(),
-        options.timeoutMs ?? DEFAULT_AI_TIMEOUT_MS,
-      );
-      return {
-        ok: true,
-        value,
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        reason: error instanceof AiFacadeTimeoutError ? "timeout" : "unavailable",
-      };
-    }
+    return this.createOnboardingFallback(request, toDegradationReason(result.reason), options.now);
   }
 
   private createAssistantFallback(
@@ -210,30 +199,12 @@ export class AiIntegrationFacade {
   }
 }
 
-async function withTimeout<TValue>(
-  promise: Promise<TValue>,
-  timeoutMs: number,
-): Promise<TValue> {
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(new AiFacadeTimeoutError());
-    }, Math.max(1, timeoutMs));
-    timer.unref();
-  });
-
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    if (timer) {
-      clearTimeout(timer);
-    }
-  }
-}
-
-class AiFacadeTimeoutError extends Error {
-  constructor() {
-    super("AI facade call timed out.");
-    this.name = "AiFacadeTimeoutError";
-  }
+/**
+ * Collapse the resilience rejection taxonomy onto the two degradation reasons
+ * the C4 contract exposes: a timeout stays a timeout, every other rejection
+ * (missing client, open breaker, saturated bulkhead, upstream error) surfaces
+ * as "unavailable" so the conversation keeps working (ТЗ §5.4).
+ */
+function toDegradationReason(reason: ResilienceRejectionReason): AiFacadeDegradationReason {
+  return reason === "timeout" ? "timeout" : "unavailable";
 }

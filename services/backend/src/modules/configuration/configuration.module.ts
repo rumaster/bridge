@@ -6,6 +6,7 @@ import { ConfigurationService } from "./configuration.service";
 
 @Module({
   controllers: [ConfigurationController],
+  exports: [ConfigurationService],
   imports: [AuditModule],
   providers: [ConfigurationService],
 })

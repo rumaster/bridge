@@ -6,6 +6,7 @@ import { OrganizationService } from "./organization.service";
 
 @Module({
   controllers: [OrganizationController],
+  exports: [OrganizationService],
   imports: [AuditModule],
   providers: [OrganizationService],
 })

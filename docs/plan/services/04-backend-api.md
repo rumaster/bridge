@@ -240,6 +240,30 @@ CRUD/proxy, tenant isolation, идемпотентный `POST /messages` и а�
 - **Тесты.** *Unit*: **логика circuit breaker** (open/half-open/closed), таймауты, bulkhead-лимиты, преобразователи DTO фасадов; валидация структурированной команды AI (ТЗ §12.6). *Integration*: Backend↔AI и Backend↔FBP через **моки контрактов** (мастер §8.4, ТЗ §26.4); узел Backend API применяет изменение с проверкой прав и пишет аудит. *E2e*: «AI Assistant из KB», «Workflow вызывает Backend API» (мастер §8.2).
 - **DoD.** Фасады AI/FBP реализованы с timeout/circuit breaker/bulkhead; деградация проверена; аудит действий AI/Workflow пишется; **CP-3, CP-4, CP-5** пройдены (см. §6); контракты C4/C5 стабилизированы вместе с C3.
 
+**Статус реализации M3 (M3-04).** M3 Backend API завершён для CP-4/CP-5. Тонкие
+фасады `ai-integration` (C4) и `fbp-integration` (C5) обёрнуты в общий
+`common/resilience/resilience.ts` (timeout + circuit breaker + bulkhead, ТЗ §11.2)
+и единую деградацию без падения ядра (ТЗ §11.11): контроллеры
+`services/backend/src/modules/ai-integration/ai-integration.controller.ts` и
+`services/backend/src/modules/fbp-integration/fbp-integration.controller.ts`.
+Узел **Backend API** — единственный санкционированный путь изменения данных из
+Workflow/AI (ТЗ §13.5): `modules/backend-api/backend-api.controller.ts`
+(`POST /ai/onboarding:apply`, `POST /workflows/backend-api-node:invoke`) через
+`workflow-action-applier.service.ts` валидирует структурированную команду по
+JSON-схеме §12.6, проверяет права по **реальному принципалу** (никогда по
+самодекларированным ролям контекста Workflow) и пишет `audit_events` с
+`actor_type = ai|workflow` (ТЗ §12.6, §22.9). Покрытие: unit
+`test/unit/workflow-action-applier.spec.ts` (состояния circuit breaker, таймауты,
+bulkhead, преобразователи DTO, валидация §12.6), integration
+`test/integration/m3-facades.spec.ts` (Backend↔AI/FBP, применение изменения с
+проверкой прав и аудитом на реальном Postgres/RLS), contract
+`tests/contract/cp4-cp5-freeze.test.mjs` (C4↔AI, C5↔FBP), e2e
+`tests/e2e/facades-cp4-cp5.test.mjs` («Workflow вызывает Backend API»,
+«AI Onboarding применяет конфигурацию»). C4/C5 зафиксированы как `stable_for_m3`
+в `packages/contracts/cp4-cp5-freeze.v1.json`; пять новых операций опубликованы в
+`packages/contracts/openapi/backend-core/openapi.json`. Broadcast/Notification
+(C8/C10) остаются следующим scope M4.
+
 ### M4 — Фасады Broadcast и Notification (M)
 
 - **Цель.** Тонкие фасады `broadcast-facade` (C8) и `notification-facade` (C10).

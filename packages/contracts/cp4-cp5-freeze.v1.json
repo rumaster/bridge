@@ -1,0 +1,92 @@
+{
+  "x-gate": "CP-4+CP-5",
+  "x-stage": "M3",
+  "x-status": "complete",
+  "frozen_at": "2026-07-03",
+  "scope": {
+    "services": [
+      "SVC-API(ai-integration/fbp-integration/backend-api-node)",
+      "SVC-AI",
+      "SVC-FBP",
+      "SVC-DATA(audit)"
+    ],
+    "scenarios": [
+      "Workflow вызывает Backend API node",
+      "AI Onboarding применяет конфигурацию через Backend"
+    ],
+    "invariants": [
+      "thin AI/FBP facades with timeout + circuit breaker + bulkhead",
+      "AI unavailable degradation keeps conversation usable",
+      "FBP unavailable degradation without core crash",
+      "Backend is the only sanctioned way to change data from Workflow/AI",
+      "structured command validated against §12.6 schema before apply",
+      "rights checked against the real principal, never self-declared context roles",
+      "AI/Workflow actions audited with actor_type = ai|workflow"
+    ]
+  },
+  "contracts": [
+    {
+      "id": "C4",
+      "version": "1.0.0",
+      "owner": "SVC-AI",
+      "status": "stable_for_m3",
+      "surface": [
+        "/api/v1/ai/assistant:suggest",
+        "/api/v1/ai/onboarding:command",
+        "/api/v1/ai/onboarding:apply"
+      ],
+      "artifacts": [
+        "packages/contracts/openapi/backend-core/openapi.json",
+        "packages/contracts/openapi/ai/c4.ai.openapi.json",
+        "packages/contracts/json-schema/c4-ai-onboarding-command.schema.json",
+        "services/backend/src/modules/ai-integration/ai-integration.facade.ts",
+        "services/backend/src/modules/ai-integration/ai-integration.controller.ts",
+        "services/backend/src/modules/backend-api/workflow-action-applier.service.ts",
+        "services/backend/src/modules/backend-api/backend-api.controller.ts",
+        "services/backend/src/common/json-schema/json-schema-validator.ts"
+      ],
+      "evidence": [
+        "tests/contract/c4-ai-contract.test.mjs",
+        "services/backend/test/unit/ai-integration.facade.spec.ts",
+        "services/backend/test/unit/workflow-action-applier.spec.ts",
+        "services/backend/test/unit/json-schema-validator.spec.ts",
+        "services/backend/test/unit/json-schema-drift.spec.ts",
+        "services/backend/test/integration/m3-facades.spec.ts"
+      ]
+    },
+    {
+      "id": "C5",
+      "version": "1.0.0",
+      "owner": "SVC-FBP",
+      "status": "stable_for_m3",
+      "surface": [
+        "/api/v1/fbp/workflows/{workflowId}:start",
+        "/api/v1/workflows/backend-api-node:invoke"
+      ],
+      "artifacts": [
+        "packages/contracts/openapi/backend-core/openapi.json",
+        "packages/contracts/openapi/fbp/c5.fbp.openapi.json",
+        "services/backend/src/modules/fbp-integration/fbp-integration.facade.ts",
+        "services/backend/src/modules/fbp-integration/fbp-integration.controller.ts",
+        "services/backend/src/modules/backend-api/workflow-action-applier.service.ts",
+        "services/backend/src/modules/backend-api/backend-api.controller.ts",
+        "services/backend/src/common/resilience/resilience.ts"
+      ],
+      "evidence": [
+        "tests/contract/c5-fbp-contract.test.mjs",
+        "services/backend/test/unit/fbp-integration.facade.spec.ts",
+        "services/backend/test/unit/resilience.spec.ts",
+        "services/backend/test/unit/workflow-action-applier.spec.ts",
+        "services/backend/test/integration/m3-facades.spec.ts"
+      ]
+    }
+  ],
+  "m4_readiness": {
+    "stable_contracts": ["C4", "C5"],
+    "next_scope": [
+      "broadcast-facade (C8)",
+      "notification-facade (C10)",
+      "channel.connect / user.invite apply actions"
+    ]
+  }
+}

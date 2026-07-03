@@ -38,6 +38,90 @@
         ]
       }
     },
+    "/api/v1/ai/assistant:suggest": {
+      "post": {
+        "operationId": "AiIntegrationController_suggestAssistant_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiAssistantSuggestRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Request an AI assistant suggestion (degrades to a safe fallback)",
+        "tags": [
+          "ai-integration"
+        ]
+      }
+    },
+    "/api/v1/ai/onboarding:command": {
+      "post": {
+        "operationId": "AiIntegrationController_createOnboardingCommand_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiOnboardingCommandRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Generate a structured AI onboarding command (never auto-applied)",
+        "tags": [
+          "ai-integration"
+        ]
+      }
+    },
+    "/api/v1/fbp/workflows/{workflowId}:start": {
+      "post": {
+        "operationId": "FbpIntegrationController_startWorkflow_v1",
+        "parameters": [
+          {
+            "name": "workflowId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartWorkflowRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Start a Workflow instance (initiated by the Backend, degrades safely)",
+        "tags": [
+          "fbp-integration"
+        ]
+      }
+    },
     "/api/v1/channels": {
       "get": {
         "operationId": "ChannelsController_listChannels_v1",
@@ -953,6 +1037,56 @@
           "users"
         ]
       }
+    },
+    "/api/v1/ai/onboarding:apply": {
+      "post": {
+        "operationId": "BackendApiController_applyOnboarding_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnboardingApplyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Apply a confirmed AI onboarding command (actor_type = ai)",
+        "tags": [
+          "backend-api"
+        ]
+      }
+    },
+    "/api/v1/workflows/backend-api-node:invoke": {
+      "post": {
+        "operationId": "BackendApiController_invokeNode_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BackendApiNodeInvokeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Apply a change requested by a Workflow node (actor_type = workflow)",
+        "tags": [
+          "backend-api"
+        ]
+      }
     }
   },
   "info": {
@@ -1046,6 +1180,53 @@
           "version",
           "timestamp",
           "checks"
+        ]
+      },
+      "AiAssistantSuggestRequestDto": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "example": "Как оформить возврат заказа?",
+            "description": "Вопрос оператора, для которого AI предлагает подсказку."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "AiOnboardingCommandRequestDto": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "example": "Установи часовой пояс Europe/Moscow и локаль ru-RU",
+            "description": "Свободное описание желаемой настройки для онбординга."
+          }
+        },
+        "required": [
+          "prompt"
+        ]
+      },
+      "StartWorkflowRequestDto": {
+        "type": "object",
+        "properties": {
+          "workflow_version_id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000402"
+          },
+          "actor_user_id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000201"
+          },
+          "input": {
+            "type": "object",
+            "description": "Optional Workflow input payload."
+          }
+        },
+        "required": [
+          "workflow_version_id",
+          "actor_user_id"
         ]
       },
       "ChannelResponseDto": {
@@ -2074,6 +2255,91 @@
           "userId",
           "organizationId",
           "revokedCount"
+        ]
+      },
+      "OnboardingApplyDto": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "object",
+            "description": "C4 structured command produced by SVC-AI."
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "WorkflowNodeContextDto": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000101"
+          },
+          "actor_user_id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000201"
+          },
+          "trigger": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "message",
+              "system",
+              "workflow"
+            ],
+            "example": "workflow"
+          },
+          "roles": {
+            "example": [
+              "administrator"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "organization_id",
+          "actor_user_id",
+          "trigger"
+        ]
+      },
+      "BackendApiNodeInvokeDto": {
+        "type": "object",
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000401"
+          },
+          "workflow_version_id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000402"
+          },
+          "instance_id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000403"
+          },
+          "node_id": {
+            "type": "string",
+            "example": "apply-configuration"
+          },
+          "context": {
+            "$ref": "#/components/schemas/WorkflowNodeContextDto"
+          },
+          "command": {
+            "type": "object",
+            "description": "C4 structured command to apply (validated §12.6)."
+          }
+        },
+        "required": [
+          "workflow_id",
+          "workflow_version_id",
+          "instance_id",
+          "node_id",
+          "context",
+          "command"
         ]
       },
       "AttachmentDto": {
