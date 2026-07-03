@@ -1,0 +1,59 @@
+{
+  "x-contract-id": "CP3.ai-integration.consumer",
+  "x-consumer": "SVC-API",
+  "x-stage": "M2",
+  "upstream_contracts": ["C4", "C3.kb"],
+  "interactions": [
+    {
+      "name": "request AI assistant suggestion from Knowledge Base",
+      "contract": "C4",
+      "method": "POST",
+      "path": "/ai/assistant:suggest",
+      "request": {
+        "required": ["contract", "version", "request_id", "organization_id", "query"],
+        "optional": ["conversation_id", "requester_user_id", "context.messages"]
+      },
+      "response": {
+        "required": [
+          "contract",
+          "version",
+          "request_id",
+          "organization_id",
+          "degraded",
+          "fallback_reason",
+          "suggestion",
+          "source_status",
+          "sources",
+          "created_at"
+        ],
+        "sources": {
+          "item_source_types": ["knowledge_chunk", "none"],
+          "citationsRequiredWhenSourceStatusAvailable": true
+        }
+      },
+      "degradation": {
+        "aiUnavailableKeepsMessagingUsable": true,
+        "degradedResponseIsContractSuccess": true
+      }
+    }
+  ],
+  "provides": [
+    {
+      "name": "internal Knowledge Base search for the RAG pipeline",
+      "contract": "C3.kb",
+      "method": "POST",
+      "path": "/knowledge:search",
+      "request": {
+        "required": ["contract", "version", "organization_id", "embedding"],
+        "optional": ["query", "limit"]
+      },
+      "response": {
+        "required": ["contract", "version", "organization_id", "results"]
+      },
+      "isolation": {
+        "filterByOrganizationId": true,
+        "noCrossTenantResults": true
+      }
+    }
+  ]
+}

@@ -19,6 +19,62 @@ export const AI_ONBOARDING_COMMAND_SCHEMA = Object.freeze(
   ),
 );
 
+export const AI_ASSISTANT_SUGGEST_RESPONSE_SCHEMA = Object.freeze(
+  JSON.parse(
+    readFileSync(
+      new URL(
+        "../json-schema/c4-ai-assistant-suggest-response.schema.json",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
+  ),
+);
+
+export const AI_ASSISTANT_SOURCE_TYPES = Object.freeze(["knowledge_chunk", "none"]);
+
+export const AI_ASSISTANT_SOURCE_STATUSES = Object.freeze([
+  "available",
+  "not_available_m0",
+  "unavailable",
+]);
+
+/**
+ * Build a frozen C4 assistant suggestion response. Used by the RAG pipeline
+ * (CP-3) and by fallbacks; the shape never diverges from the M0 contract.
+ */
+export function createAssistantSuggestResponse({
+  requestId,
+  organizationId,
+  suggestion,
+  sources = [],
+  sourceStatus,
+  degraded = false,
+  fallbackReason = null,
+  now = () => new Date().toISOString(),
+}) {
+  return {
+    contract: "C4.AssistantSuggestResponse",
+    version: C4_VERSION,
+    request_id: requestId,
+    organization_id: organizationId,
+    degraded,
+    fallback_reason: fallbackReason,
+    suggestion: {
+      mode: suggestion.mode,
+      text: suggestion.text,
+      confidence: suggestion.confidence,
+    },
+    source_status: sourceStatus,
+    sources,
+    created_at: now(),
+  };
+}
+
+export function validateAssistantSuggestResponse(response) {
+  return validateJsonSchema(response, AI_ASSISTANT_SUGGEST_RESPONSE_SCHEMA);
+}
+
 export function createAiOnboardingCommand({
   requestId,
   organizationId,
