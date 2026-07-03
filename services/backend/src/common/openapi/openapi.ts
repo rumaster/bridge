@@ -5,7 +5,7 @@ import type { OpenAPIObject } from "@nestjs/swagger";
 export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
   const config = new DocumentBuilder()
     .setTitle("Bridge Backend Core API")
-    .setDescription("M0 REST skeleton for C3 backend core contracts.")
+    .setDescription("M1 REST API for C3 domain CRUD and Communication Core proxy contracts.")
     .setVersion("1.0.0")
     .build();
 

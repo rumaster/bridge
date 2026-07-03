@@ -37,11 +37,793 @@
           "health"
         ]
       }
+    },
+    "/api/v1/organizations/{id}": {
+      "get": {
+        "operationId": "OrganizationController_getOrganization_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get organization by id",
+        "tags": [
+          "organizations"
+        ]
+      },
+      "patch": {
+        "operationId": "OrganizationController_updateOrganization_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateOrganizationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Update organization settings",
+        "tags": [
+          "organizations"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/configuration": {
+      "get": {
+        "operationId": "ConfigurationController_getConfiguration_v1",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get organization configuration",
+        "tags": [
+          "configuration"
+        ]
+      },
+      "put": {
+        "operationId": "ConfigurationController_putConfiguration_v1",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutConfigurationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Replace organization configuration and record history",
+        "tags": [
+          "configuration"
+        ]
+      }
+    },
+    "/api/v1/clients": {
+      "get": {
+        "operationId": "ClientController_listClients_v1",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Search query",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "filter",
+            "required": false,
+            "in": "query",
+            "description": "Structured resource filters",
+            "schema": {
+              "additionalProperties": true,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientListResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List clients in tenant scope",
+        "tags": [
+          "clients"
+        ]
+      },
+      "post": {
+        "operationId": "ClientController_createClient_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateClientDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create client in tenant scope",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
+    "/api/v1/clients/{id}": {
+      "get": {
+        "operationId": "ClientController_getClient_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Get client by id in tenant scope",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
+    "/api/v1/clients/{id}/notes": {
+      "post": {
+        "operationId": "ClientController_addNote_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateClientNoteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientNoteResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create client note",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
+    "/api/v1/clients/{id}/tags": {
+      "post": {
+        "operationId": "ClientController_addTag_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateClientTagDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientTagResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create client tag",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
+    "/api/v1/clients/{id}/endpoints": {
+      "post": {
+        "operationId": "ClientController_addEndpoint_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddClientEndpointDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientEndpointResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Proxy client endpoint creation to Communication Core",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
+    "/api/v1/clients:merge": {
+      "post": {
+        "operationId": "ClientMergeController_mergeClients_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MergeClientsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientMergeResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Proxy client merge to Communication Core",
+        "tags": [
+          "clients"
+        ]
+      }
+    },
+    "/api/v1/conversations": {
+      "get": {
+        "operationId": "ConversationController_listConversations_v1",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Search query",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "filter",
+            "required": false,
+            "in": "query",
+            "description": "Structured resource filters",
+            "schema": {
+              "additionalProperties": true,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationListResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Proxy conversation list from Communication Core",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/api/v1/conversations/{id}": {
+      "get": {
+        "operationId": "ConversationController_getConversation_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Proxy conversation by id from Communication Core",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/api/v1/conversations/{id}/messages": {
+      "get": {
+        "operationId": "ConversationController_listMessages_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Search query",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "filter",
+            "required": false,
+            "in": "query",
+            "description": "Structured resource filters",
+            "schema": {
+              "additionalProperties": true,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageListResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Proxy conversation messages from Communication Core",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/api/v1/messages/{id}": {
+      "get": {
+        "operationId": "MessageController_getMessage_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Proxy message by id from Communication Core",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/api/v1/messages": {
+      "post": {
+        "operationId": "MessageController_createMessage_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Idempotently proxy outbound message creation to Communication Core",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organizationId}/users": {
+      "get": {
+        "operationId": "OrganizationUsersController_listUsers_v1",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserListResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List organization users",
+        "tags": [
+          "users"
+        ]
+      },
+      "post": {
+        "operationId": "OrganizationUsersController_createUser_v1",
+        "parameters": [
+          {
+            "name": "organizationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create organization user",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/{id}": {
+      "patch": {
+        "operationId": "UserController_patchUser_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PatchUserDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Patch user in tenant scope",
+        "tags": [
+          "users"
+        ]
+      }
     }
   },
   "info": {
     "title": "Bridge Backend Core API",
-    "description": "M0 REST skeleton for C3 backend core contracts.",
+    "description": "M1 REST API for C3 domain CRUD and Communication Core proxy contracts.",
     "version": "1.0.0",
     "contact": {}
   },
@@ -131,6 +913,832 @@
           "timestamp",
           "checks"
         ]
+      },
+      "OrganizationResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000101"
+          },
+          "name": {
+            "type": "string",
+            "example": "Demo Organization"
+          },
+          "description": {
+            "type": "object",
+            "example": "Customer support tenant",
+            "nullable": true
+          },
+          "timezone": {
+            "type": "string",
+            "example": "UTC"
+          },
+          "locale": {
+            "type": "string",
+            "example": "ru-RU"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "blocked"
+            ],
+            "example": "active"
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "timezone",
+          "locale",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "UpdateOrganizationDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Demo Organization"
+          },
+          "description": {
+            "type": "object",
+            "example": "Customer support tenant",
+            "nullable": true
+          },
+          "timezone": {
+            "type": "string",
+            "example": "Europe/Moscow"
+          },
+          "locale": {
+            "type": "string",
+            "example": "ru-RU"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "blocked"
+            ],
+            "example": "active"
+          }
+        }
+      },
+      "ConfigurationResponseDto": {
+        "type": "object",
+        "properties": {
+          "organizationId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000101"
+          },
+          "key": {
+            "type": "string",
+            "example": "default"
+          },
+          "value": {
+            "type": "object",
+            "example": {
+              "ai": {
+                "enabled": true
+              }
+            }
+          },
+          "version": {
+            "type": "number",
+            "example": 2
+          },
+          "updatedBy": {
+            "type": "object",
+            "example": "00000000-0000-4000-8000-000000000201",
+            "nullable": true
+          },
+          "updatedAt": {
+            "type": "object",
+            "example": "2026-01-01T00:00:00.000Z",
+            "nullable": true
+          }
+        },
+        "required": [
+          "organizationId",
+          "key",
+          "value",
+          "version"
+        ]
+      },
+      "PutConfigurationDto": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "object",
+            "example": {
+              "ai": {
+                "enabled": true
+              },
+              "locale": "ru-RU"
+            }
+          },
+          "key": {
+            "type": "string",
+            "default": "default",
+            "example": "default"
+          }
+        },
+        "required": [
+          "value"
+        ]
+      },
+      "Object": {
+        "type": "object",
+        "properties": {}
+      },
+      "ClientResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000301"
+          },
+          "organizationId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000101"
+          },
+          "displayName": {
+            "type": "object",
+            "example": "Jane Customer",
+            "nullable": true
+          },
+          "anonymizedAt": {
+            "type": "object",
+            "example": null,
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "PaginationPageDto": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "example": 50
+          },
+          "nextCursor": {
+            "type": "string",
+            "example": "eyJpZCI6IjEyMyJ9"
+          },
+          "total": {
+            "type": "number",
+            "example": 125
+          }
+        },
+        "required": [
+          "limit"
+        ]
+      },
+      "ClientListResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClientResponseDto"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/PaginationPageDto"
+          }
+        },
+        "required": [
+          "items",
+          "page"
+        ]
+      },
+      "CreateClientDto": {
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "object",
+            "example": "Jane Customer",
+            "nullable": true
+          }
+        }
+      },
+      "CreateClientNoteDto": {
+        "type": "object",
+        "properties": {
+          "body": {
+            "type": "string",
+            "example": "Asked to be contacted in the evening."
+          }
+        },
+        "required": [
+          "body"
+        ]
+      },
+      "ClientNoteResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000311"
+          },
+          "clientId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000301"
+          },
+          "authorUserId": {
+            "type": "object",
+            "example": "00000000-0000-4000-8000-000000000201",
+            "nullable": true
+          },
+          "body": {
+            "type": "string",
+            "example": "Asked to be contacted in the evening."
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "clientId",
+          "body",
+          "createdAt"
+        ]
+      },
+      "CreateClientTagDto": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "string",
+            "example": "vip"
+          }
+        },
+        "required": [
+          "tag"
+        ]
+      },
+      "ClientTagResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000321"
+          },
+          "clientId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000301"
+          },
+          "tag": {
+            "type": "string",
+            "example": "vip"
+          },
+          "createdBy": {
+            "type": "object",
+            "example": "00000000-0000-4000-8000-000000000201",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "clientId",
+          "tag",
+          "createdAt"
+        ]
+      },
+      "AddClientEndpointDto": {
+        "type": "object",
+        "properties": {
+          "channel": {
+            "type": "string",
+            "example": "web_chat"
+          },
+          "externalId": {
+            "type": "string",
+            "example": "web-chat-session-1"
+          },
+          "verified": {
+            "type": "boolean",
+            "default": false
+          },
+          "metadata": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "channel",
+          "externalId"
+        ]
+      },
+      "ClientEndpointResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000401"
+          },
+          "clientId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000301"
+          },
+          "channel": {
+            "type": "string",
+            "example": "web_chat"
+          },
+          "externalId": {
+            "type": "string",
+            "example": "web-chat-session-1"
+          },
+          "verified": {
+            "type": "boolean",
+            "example": true
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "clientId",
+          "channel",
+          "externalId",
+          "verified",
+          "metadata",
+          "createdAt"
+        ]
+      },
+      "MergeClientsDto": {
+        "type": "object",
+        "properties": {
+          "sourceClientId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000301"
+          },
+          "targetClientId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000302"
+          },
+          "reason": {
+            "type": "string",
+            "example": "Duplicate external identity"
+          }
+        },
+        "required": [
+          "sourceClientId",
+          "targetClientId"
+        ]
+      },
+      "ClientMergeResponseDto": {
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "example": true
+          },
+          "sourceClientId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000301"
+          },
+          "targetClientId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000302"
+          },
+          "mode": {
+            "type": "string",
+            "example": "mock-core"
+          }
+        },
+        "required": [
+          "accepted",
+          "sourceClientId",
+          "targetClientId",
+          "mode"
+        ]
+      },
+      "ConversationResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000501"
+          },
+          "organizationId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000101"
+          },
+          "clientId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000301"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed",
+              "pending"
+            ],
+            "example": "open"
+          },
+          "lastMessageAt": {
+            "type": "object",
+            "example": "2026-01-01T00:00:00.000Z",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "clientId",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "ConversationListResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversationResponseDto"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/PaginationPageDto"
+          }
+        },
+        "required": [
+          "items",
+          "page"
+        ]
+      },
+      "MessageResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000601"
+          },
+          "organizationId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000101"
+          },
+          "conversationId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000501"
+          },
+          "endpointId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000401"
+          },
+          "channel": {
+            "type": "string",
+            "example": "web_chat"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "inbound",
+              "outbound"
+            ],
+            "example": "outbound"
+          },
+          "senderType": {
+            "type": "string",
+            "enum": [
+              "client",
+              "manager",
+              "ai",
+              "broadcast",
+              "system"
+            ],
+            "example": "manager"
+          },
+          "sequenceNumber": {
+            "type": "number",
+            "example": 2
+          },
+          "type": {
+            "type": "string",
+            "example": "text"
+          },
+          "content": {
+            "type": "object",
+            "example": {
+              "text": "Hello"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "received",
+              "routed",
+              "sent",
+              "delivered",
+              "failed"
+            ],
+            "example": "routed"
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "deliveredAt": {
+            "type": "object",
+            "example": null,
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "conversationId",
+          "endpointId",
+          "channel",
+          "direction",
+          "senderType",
+          "sequenceNumber",
+          "type",
+          "content",
+          "status",
+          "createdAt"
+        ]
+      },
+      "MessageListResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MessageResponseDto"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/PaginationPageDto"
+          }
+        },
+        "required": [
+          "items",
+          "page"
+        ]
+      },
+      "CreateMessageDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000601"
+          },
+          "conversationId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000501"
+          },
+          "endpointId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000401"
+          },
+          "channel": {
+            "type": "string",
+            "example": "web_chat"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "inbound",
+              "outbound"
+            ],
+            "example": "outbound"
+          },
+          "senderType": {
+            "type": "string",
+            "enum": [
+              "client",
+              "manager",
+              "ai",
+              "broadcast",
+              "system"
+            ],
+            "example": "manager"
+          },
+          "sequenceNumber": {
+            "type": "number",
+            "minimum": 1
+          },
+          "type": {
+            "type": "string",
+            "example": "text"
+          },
+          "content": {
+            "type": "object",
+            "example": {
+              "text": "Hello"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "received",
+              "routed",
+              "sent",
+              "delivered",
+              "failed"
+            ],
+            "example": "routed"
+          }
+        },
+        "required": [
+          "conversationId",
+          "endpointId",
+          "content"
+        ]
+      },
+      "UserResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000201"
+          },
+          "organizationId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000101"
+          },
+          "telegramUsername": {
+            "type": "object",
+            "example": "seeded_admin",
+            "nullable": true
+          },
+          "email": {
+            "type": "object",
+            "example": "seeded-admin@example.bridge.local",
+            "nullable": true
+          },
+          "displayName": {
+            "type": "string",
+            "example": "Seeded Admin"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "blocked"
+            ],
+            "example": "active"
+          },
+          "roleCodes": {
+            "example": [
+              "administrator"
+            ],
+            "type": "array",
+            "items": {
+              "type": "array"
+            }
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "displayName",
+          "status",
+          "roleCodes",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "UserListResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserResponseDto"
+            }
+          }
+        },
+        "required": [
+          "items"
+        ]
+      },
+      "CreateUserDto": {
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "example": "Manager User"
+          },
+          "email": {
+            "type": "string",
+            "example": "manager@example.bridge.local"
+          },
+          "telegramUsername": {
+            "type": "string",
+            "example": "manager_user"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "blocked"
+            ],
+            "example": "active"
+          },
+          "roleCodes": {
+            "example": [
+              "manager"
+            ],
+            "type": "array",
+            "items": {
+              "type": "array"
+            }
+          }
+        },
+        "required": [
+          "displayName"
+        ]
+      },
+      "PatchUserDto": {
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "example": "Manager User"
+          },
+          "email": {
+            "type": "object",
+            "example": "manager@example.bridge.local"
+          },
+          "telegramUsername": {
+            "type": "object",
+            "example": "manager_user"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "blocked"
+            ],
+            "example": "blocked"
+          },
+          "roleCodes": {
+            "example": [
+              "administrator",
+              "manager"
+            ],
+            "type": "array",
+            "items": {
+              "type": "array"
+            }
+          }
+        }
       }
     }
   }
