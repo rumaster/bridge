@@ -1,0 +1,63 @@
+# Bridge — Edge Cluster (РФ), для развёртывания на отдельном сервере,
+# физически размещённом в России (152-ФЗ, требования к локализации данных).
+#
+# Поднимает только то, что относится к РФ-периметру:
+#   - postgres-rf — резидентный Postgres для буфера edge-сообщений;
+#   - edge-gateway — WebSocket-шлюз, принимающий соединения клиентов в РФ.
+#
+# Не входит и намеренно не создаётся в этом файле:
+#   - VPN Tunnel Service, связывающий Edge Cluster с Application Cluster —
+#     согласно docs/plan это компонент этапа M4, в текущем коде отсутствует
+#     полностью (ни одного файла реализации), поэтому фиктивный сервис для
+#     него не добавляется, чтобы не создавать ложное впечатление рабочей
+#     функциональности;
+#   - таблица edge_message_buffer — упоминается только в документах
+#     планирования (docs/plan/*.md), в реальных миграциях db/migrations её
+#     ещё нет, поэтому против postgres-rf не прогоняются миграции
+#     Application Cluster (они рассчитаны на мультитенантную SaaS-схему и
+#     архитектурно не относятся к Edge Cluster).
+#   - edge-gateway на сегодняшний день не читает DATABASE_URL и не использует
+#     пакет "pg" (только mock-tunnel.mjs/mock-ws-channel.mjs), поэтому
+#     DATABASE_URL в него не передаётся — соответствует фактическому коду,
+#     а не документам планирования.
+#
+# Этот файл полностью независим от deploy/compose/docker-compose.yml
+# (Application Cluster) и запускается отдельно, на своём сервере:
+#   cp .env.rf.example .env.rf
+#   docker compose --env-file .env.rf -f deploy/compose/docker-compose.rf.yml up --build
+
+name: bridge-edge-rf
+
+services:
+  postgres-rf:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_RF_USER:-bridge_edge}
+      POSTGRES_PASSWORD: ${POSTGRES_RF_PASSWORD:-bridge_edge}
+      POSTGRES_DB: ${POSTGRES_RF_DB:-bridge_edge}
+    ports:
+      - "${POSTGRES_RF_PORT:-5433}:5432"
+    volumes:
+      - bridge-edge-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_RF_USER:-bridge_edge} -d ${POSTGRES_RF_DB:-bridge_edge}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  edge-gateway:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/edge-gateway/Dockerfile
+    restart: unless-stopped
+    environment:
+      # В коде edge-gateway хост по умолчанию 127.0.0.1 — переопределяем на
+      # 0.0.0.0, иначе сервис недоступен снаружи контейнера.
+      HOST: 0.0.0.0
+      PORT: ${EDGE_GATEWAY_PORT:-3000}
+    ports:
+      - "${EDGE_GATEWAY_PORT:-3000}:${EDGE_GATEWAY_PORT:-3000}"
+
+volumes:
+  bridge-edge-postgres-data:

@@ -8,6 +8,7 @@
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
     "test:e2e": "playwright install chromium && playwright test"
   },
   "dependencies": {
