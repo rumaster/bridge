@@ -185,6 +185,21 @@ textarea {
   gap: 16px;
 }
 
+.dialog-side {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+}
+
+.realtime-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: #607086;
+  font-size: 0.9rem;
+}
+
 .message-thread {
   display: grid;
   align-content: start;
@@ -254,6 +269,59 @@ textarea {
   border-radius: 6px;
   color: #1c2430;
   background: #ffffff;
+}
+
+.ai-panel {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 16px;
+}
+
+.panel-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.panel-title-row h2,
+.ai-panel h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.ai-form,
+.assistant-result,
+.source-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ai-query textarea {
+  min-height: 78px;
+  padding: 8px 10px;
+  resize: vertical;
+  border: 1px solid #c8d2df;
+  border-radius: 6px;
+  color: #1c2430;
+  background: #ffffff;
+}
+
+.assistant-result {
+  padding-top: 10px;
+  border-top: 1px solid #d5dde7;
+}
+
+.assistant-result small,
+.source-list {
+  color: #607086;
+  font-size: 0.86rem;
+}
+
+.source-list div {
+  display: grid;
+  gap: 2px;
 }
 
 .reply-actions {

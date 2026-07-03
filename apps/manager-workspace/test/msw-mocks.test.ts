@@ -45,13 +45,35 @@ describe("Manager Workspace MSW mocks", () => {
 
     const readNotification = await api.notifications.markRead("notif-1");
     expect(readNotification.status).toBe("read");
+
+    const suggestion = await api.ai.suggest({
+      contract: "C4.AssistantSuggestRequest",
+      version: "1.0.0",
+      request_id: "mws-c4-request-1",
+      organization_id: "org-1",
+      conversation_id: "conv-1",
+      requester_user_id: "manager-1",
+      query: "Как ответить по доставке заказа?",
+      context: {
+        messages: [
+          {
+            message_id: "msg-1",
+            sender_type: "client",
+            text: "Хочу уточнить статус заказа",
+            occurred_at: "2026-07-02T16:09:15.000Z"
+          }
+        ]
+      }
+    });
+    expect(suggestion.contract).toBe("C4.AssistantSuggestResponse");
+    expect(suggestion.sources[0]?.source_type).toBe("knowledge_chunk");
   });
 
   it("starts a C7 realtime mock and emits typed events", async () => {
     const realtime = createMockC7RealtimeClient();
     const events = await realtime.collectInitialEvents();
 
-    expect(events.map((event) => event.type)).toContain("message.created");
-    expect(events.map((event) => event.type)).toContain("notification.created");
+    expect(events.map((event) => event.event)).toContain("message.created");
+    expect(events.map((event) => event.event)).toContain("notification.created");
   });
 });

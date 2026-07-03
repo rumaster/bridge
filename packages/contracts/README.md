@@ -47,6 +47,15 @@
 - M2 readiness: стабильные C1/C2/C3/C7; следующий scope — adapters, realtime,
   AI Assistant и identity resolution.
 
+## CP-3: SVC-MWS consumer C4/C7
+
+- `consumer/manager-workspace-c4-c7.consumer.v1.json` фиксирует потребление
+  SVC-MWS контракта C4 `POST /ai/assistant:suggest` и C7 событий
+  `message.created`, `message.status_changed`, `typing.*`, `client.status_changed`.
+- Reconnect-инварианты клиента: transport cursor `last_event_id`, дедупликация
+  событий по `event_id`, сообщений по `payload.message.id`, gap detection по
+  `sequence_number`.
+
 ## M0-05: C2/C6 для Integration Platform
 
 - `openapi/c2-internal-api.yaml` фиксирует mock C2: Adapter вызывает Core

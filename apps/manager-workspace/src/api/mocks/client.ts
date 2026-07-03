@@ -55,6 +55,11 @@ export function createMockManagerWorkspaceApiClient(): ManagerWorkspaceApiClient
       async markRead(notificationId: string) {
         return backend.markNotificationRead(notificationId);
       }
+    },
+    ai: {
+      async suggest(request) {
+        return backend.suggestAssistant(request);
+      }
     }
   };
 }

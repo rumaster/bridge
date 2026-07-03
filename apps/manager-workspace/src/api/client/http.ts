@@ -1,5 +1,7 @@
 import { createJsonApiClient } from "@bridge/api-client";
 import type {
+  AssistantSuggestRequest,
+  AssistantSuggestResponse,
   ClientProfile,
   Conversation,
   ManagerSession,
@@ -68,6 +70,13 @@ export function createManagerWorkspaceApiClient(
       markRead: (notificationId: string) =>
         requestJson<NotificationItem>(`/notifications/${notificationId}:read`, {
           method: "POST"
+        })
+    },
+    ai: {
+      suggest: (request: AssistantSuggestRequest) =>
+        requestJson<AssistantSuggestResponse>("/ai/assistant:suggest", {
+          method: "POST",
+          body: JSON.stringify(request)
         })
     }
   };

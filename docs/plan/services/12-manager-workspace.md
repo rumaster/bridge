@@ -252,6 +252,14 @@ SVC-MWS включён в `packages/contracts/cp1-freeze.v1.json` как ста�
 **DoD.** DoD §9.4 + **CP-3**: contract-тесты потребителя C4 и C7; зелёный e2e «AI
 Assistant из KB»; проверено, что отключение AI **не ломает** очередь/переписку.
 
+**Статус реализации.** M2-срез SVC-MWS реализует C7 WS-клиент с авто-reconnect и
+`last_event_id`, live-обновления сообщений/статусов/typing/client presence,
+дедупликацию по `event_id` и `message.id`, догрузку истории/очереди при gap по
+`sequence_number`, а также панель AI-подсказок на C4 `POST /ai/assistant:suggest`
+с отображением источников KB и graceful degradation при недоступности AI.
+Проверки этапа покрывают unit-слияние C7, component/MSW C4/C7, consumer contract
+C4/C7 и Playwright e2e «AI Assistant из KB» с realtime-наблюдением.
+
 ### M3 — Интерфейс уведомлений (CP-8)
 
 **Цель.** Отображение внутренних уведомлений менеджера в web на C10 (мастер-план §5,
