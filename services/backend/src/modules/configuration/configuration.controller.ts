@@ -8,17 +8,23 @@ import {
   Put,
   Query,
   Req,
+  UseGuards,
   Version,
 } from "@nestjs/common";
 import { ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { Request } from "express";
 
+import { Roles } from "../../common/auth/roles.decorator";
+import { RolesGuard } from "../../common/auth/roles.guard";
+import { SessionAuthGuard } from "../../common/auth/session-auth.guard";
 import { ACTOR_USER_ID_HEADER, getOptionalActorUserId } from "../../common/request-context";
 import type { RequestWithRequestId } from "../../common/request-id.middleware";
 import { ConfigurationResponseDto, DEFAULT_CONFIGURATION_KEY, PutConfigurationDto } from "./configuration.dto";
 import { ConfigurationService } from "./configuration.service";
 
 @ApiTags("configuration")
+@UseGuards(SessionAuthGuard, RolesGuard)
+@Roles("administrator")
 @Controller("organizations/:organizationId/configuration")
 export class ConfigurationController {
   constructor(private readonly configuration: ConfigurationService) {}

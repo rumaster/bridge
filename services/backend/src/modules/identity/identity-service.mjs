@@ -6,11 +6,11 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 
-import { SEEDED_AUTH_CONTEXT } from "../../common/auth/mock-auth-guard.mjs";
 import {
   validateTelegramLoginStartRequest,
   validateTelegramLoginVerifyRequest,
 } from "./dto/auth-dto.mjs";
+import { SEEDED_AUTH_CONTEXT } from "./seeded-auth-context.mjs";
 
 const TELEGRAM_LOGIN_PURPOSE = "telegram_login";
 const DEFAULT_CODE_TTL_SECONDS = 5 * 60;

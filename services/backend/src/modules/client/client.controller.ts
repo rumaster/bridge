@@ -8,11 +8,15 @@ import {
   Post,
   Query,
   Req,
+  UseGuards,
   Version,
 } from "@nestjs/common";
 import { ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { Request } from "express";
 
+import { Roles } from "../../common/auth/roles.decorator";
+import { RolesGuard } from "../../common/auth/roles.guard";
+import { SessionAuthGuard } from "../../common/auth/session-auth.guard";
 import { PaginationQueryDto } from "../../common/query/pagination-query.dto";
 import {
   ACTOR_USER_ID_HEADER,
@@ -37,6 +41,8 @@ import {
 import { ClientService } from "./client.service";
 
 @ApiTags("clients")
+@UseGuards(SessionAuthGuard, RolesGuard)
+@Roles("manager")
 @Controller("clients")
 export class ClientController {
   constructor(private readonly clients: ClientService) {}
@@ -136,6 +142,8 @@ export class ClientController {
 }
 
 @ApiTags("clients")
+@UseGuards(SessionAuthGuard, RolesGuard)
+@Roles("manager")
 @Controller("clients\\:merge")
 export class ClientMergeController {
   constructor(private readonly clients: ClientService) {}

@@ -1,6 +1,3 @@
-import {
-  getAuthContext,
-} from "../../common/auth/mock-auth-guard.mjs";
 import { createSessionAuthGuard } from "../../common/auth/session-auth-guard.mjs";
 import { createIdentityService } from "./identity-service.mjs";
 
@@ -47,13 +44,13 @@ export function createIdentityController({
 
     logout({ request }) {
       return withGuard(authGuard, request, () =>
-        identityService.logout(getAuthContext(request)),
+        identityService.logout(request.auth),
       );
     },
 
     getCurrentSession({ request }) {
       return withGuard(authGuard, request, () =>
-        identityService.getSession(getAuthContext(request)),
+        identityService.getSession(request.auth),
       );
     },
   };

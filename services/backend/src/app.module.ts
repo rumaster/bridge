@@ -2,6 +2,7 @@ import { MiddlewareConsumer, Module, NestModule } from "@nestjs/common";
 import { APP_FILTER, APP_INTERCEPTOR, APP_PIPE } from "@nestjs/core";
 
 import { ApiExceptionFilter } from "./common/api-exception.filter";
+import { AuthModule } from "./common/auth/auth.module";
 import { DatabaseModule } from "./common/database/database.module";
 import { IdempotencyInterceptor } from "./common/idempotency/idempotency.interceptor";
 import { InMemoryIdempotencyStore } from "./common/idempotency/idempotency.store";
@@ -19,6 +20,7 @@ import { UserModule } from "./modules/user/user.module";
 @Module({
   imports: [
     DatabaseModule,
+    AuthModule,
     HealthModule,
     IntegrationGatewayModule,
     OrganizationModule,
