@@ -127,10 +127,35 @@ describe("SVC-API M1 domain API", () => {
       .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-organization-id", ORG_A)
       .set("x-actor-user-id", USER_A)
-      .send({ status: "blocked" })
+      .send({ roleCodes: ["administrator"], status: "blocked" })
       .expect(200)
       .expect(({ body }) => {
         expect(body.status).toBe("blocked");
+        expect(body.roleCodes).toEqual(["administrator"]);
+      });
+
+    await withClient(databaseUrl, async (client) => {
+      await client.query("SELECT set_config('app.is_platform_operator', 'true', false)");
+      await insertAuthSession(client, {
+        id: "10000000-0000-4000-8000-000000000905",
+        organizationId: ORG_A,
+        token: "brs_created_user_session",
+        userId: createdUser.id,
+      });
+    });
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/users/${createdUser.id}/sessions:revoke`)
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
+      .set("x-organization-id", ORG_A)
+      .set("x-actor-user-id", USER_A)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          organizationId: ORG_A,
+          revokedCount: 1,
+          userId: createdUser.id,
+        });
       });
 
     await withClient(databaseUrl, async (client) => {
@@ -155,6 +180,9 @@ describe("SVC-API M1 domain API", () => {
       );
       expect(audit.rows.map((row) => row.action)).toEqual(
         expect.arrayContaining([
+          "access.permissions.change",
+          "access.roles.change",
+          "auth.session.revoke",
           "configuration.put",
           "organization.update",
           "user.create",

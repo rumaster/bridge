@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  IDENTITY_AUDIT_ACTIONS,
   createIdentityService,
+  createInMemoryAuditRecorder,
   createInMemoryIdentityStore,
   createMockTelegramCodeDeliveryAdapter,
 } from "../../src/modules/identity/identity-service.mjs";
@@ -21,10 +23,12 @@ function mutableClock(start = BASE_TIME) {
 }
 
 function createTestService(options = {}) {
+  const auditRecorder = options.auditRecorder ?? createInMemoryAuditRecorder();
   const clock = mutableClock();
   const deliveryAdapter = createMockTelegramCodeDeliveryAdapter();
   const store = options.store ?? createInMemoryIdentityStore();
   const service = createIdentityService({
+    auditRecorder,
     codeGenerator: () => "123456",
     deliveryAdapter,
     hashSecret: "unit-test-secret",
@@ -34,6 +38,7 @@ function createTestService(options = {}) {
   });
 
   return {
+    auditRecorder,
     clock,
     deliveryAdapter,
     service,
@@ -242,5 +247,65 @@ describe("identity service M1 Telegram login", () => {
 
     assert.equal(afterLogout.status, 401);
     assert.match(afterLogout.body.detail, /revoked/i);
+  });
+
+  it("records audit events for login start, failed verify, successful login, and logout", async () => {
+    const { auditRecorder, service } = createTestService();
+    const start = await service.startTelegramLogin({
+      telegramUsername: "seeded_admin",
+    });
+
+    await service.verifyTelegramLogin({
+      requestId: start.body.requestId,
+      code: "000000",
+    });
+    const verify = await service.verifyTelegramLogin(
+      {
+        requestId: start.body.requestId,
+        code: "123456",
+      },
+      {
+        ip: "127.0.0.1",
+        userAgent: "identity-unit-test",
+      },
+    );
+    const session = await service.getSessionByToken(verify.body.token);
+    await service.logout(session.body);
+
+    assert.deepEqual(
+      auditRecorder.events.map((event) => ({
+        action: event.action,
+        objectType: event.objectType,
+        result: event.result,
+      })),
+      [
+        {
+          action: IDENTITY_AUDIT_ACTIONS.loginStart,
+          objectType: "login_code",
+          result: "success",
+        },
+        {
+          action: IDENTITY_AUDIT_ACTIONS.loginFailure,
+          objectType: "login_code",
+          result: "failure",
+        },
+        {
+          action: IDENTITY_AUDIT_ACTIONS.loginSuccess,
+          objectType: "auth_session",
+          result: "success",
+        },
+        {
+          action: IDENTITY_AUDIT_ACTIONS.sessionLogout,
+          objectType: "auth_session",
+          result: "success",
+        },
+      ],
+    );
+    assert.equal(auditRecorder.events[0].actorUserId, verify.body.user.id);
+    assert.equal(auditRecorder.events[0].organizationId, verify.body.organization.id);
+    assert.equal(auditRecorder.events[1].metadata.reason, "code_invalid");
+    assert.equal(auditRecorder.events[2].metadata.loginCodeId, start.body.requestId);
+    assert.equal(auditRecorder.events[2].ip, "127.0.0.1");
+    assert.deepEqual(auditRecorder.events[2].metadata.roleCodes, ["administrator"]);
   });
 });
