@@ -8,6 +8,48 @@ import {
   toUtcTimestamptz,
 } from "./primitives.mjs";
 
+export const TEST_EMBEDDING_DIMENSIONS = 1536;
+
+export function createDeterministicEmbedding(
+  seed = "bridge-test-embedding",
+  dimensions = TEST_EMBEDDING_DIMENSIONS,
+) {
+  assertNonBlankText(seed, "embedding.seed");
+  assertPositiveInteger(dimensions, "embedding.dimensions");
+
+  let state = 0;
+  for (const char of seed) {
+    state = (Math.imul(state, 31) + char.charCodeAt(0)) >>> 0;
+  }
+
+  return Array.from({ length: dimensions }, (_, index) => {
+    state = (Math.imul(state + index + 1, 1664525) + 1013904223) >>> 0;
+    return Number(((state / 0xffffffff) * 2 - 1).toFixed(6));
+  });
+}
+
+export function assertEmbeddingVector(
+  value,
+  fieldName = "embedding",
+  dimensions = TEST_EMBEDDING_DIMENSIONS,
+) {
+  if (!Array.isArray(value) || value.length !== dimensions) {
+    throw new TypeError(`${fieldName} must be a ${dimensions}-dimension embedding vector`);
+  }
+
+  for (const [index, coordinate] of value.entries()) {
+    if (typeof coordinate !== "number" || !Number.isFinite(coordinate)) {
+      throw new TypeError(`${fieldName}[${index}] must be a finite number`);
+    }
+  }
+
+  return value;
+}
+
+export function formatPgVector(value, fieldName = "embedding") {
+  return `[${assertEmbeddingVector(value, fieldName).join(",")}]`;
+}
+
 export function createTestOrganization(overrides = {}) {
   const createdAt = overrides.created_at ?? toUtcTimestamptz();
   const organization = {
@@ -151,4 +193,64 @@ export function createTestMessage(overrides = {}) {
   }
 
   return message;
+}
+
+export function createTestKnowledgeDocument(overrides = {}) {
+  const createdAt = overrides.created_at ?? toUtcTimestamptz();
+  const document = {
+    id: randomUUID(),
+    organization_id: randomUUID(),
+    title: "FAQ: delivery policy",
+    source: "manual://kb/delivery",
+    status: "indexing",
+    indexed_at: null,
+    created_at: createdAt,
+    updated_at: createdAt,
+    ...overrides,
+  };
+
+  assertUuid(document.id, "knowledge_document.id");
+  assertUuid(document.organization_id, "knowledge_document.organization_id");
+  assertNonBlankText(document.title, "knowledge_document.title");
+  if (document.source !== null) {
+    assertNonBlankText(document.source, "knowledge_document.source");
+  }
+  if (!["indexing", "indexed", "failed"].includes(document.status)) {
+    throw new TypeError("knowledge_document.status must be indexing, indexed, or failed");
+  }
+  if (document.indexed_at !== null) {
+    assertUtcTimestamptz(document.indexed_at, "knowledge_document.indexed_at");
+  }
+  assertUtcTimestamptz(document.created_at, "knowledge_document.created_at");
+  assertUtcTimestamptz(document.updated_at, "knowledge_document.updated_at");
+
+  return document;
+}
+
+export function createTestKnowledgeChunk(overrides = {}) {
+  const chunkNo = overrides.chunk_no ?? 1;
+  const chunk = {
+    id: randomUUID(),
+    organization_id: randomUUID(),
+    document_id: randomUUID(),
+    chunk_no: chunkNo,
+    content: "Delivery takes one business day inside the city.",
+    embedding: createDeterministicEmbedding(`knowledge-chunk:${chunkNo}`),
+    metadata: {},
+    created_at: toUtcTimestamptz(),
+    ...overrides,
+  };
+
+  assertUuid(chunk.id, "knowledge_chunk.id");
+  assertUuid(chunk.organization_id, "knowledge_chunk.organization_id");
+  assertUuid(chunk.document_id, "knowledge_chunk.document_id");
+  assertPositiveInteger(chunk.chunk_no, "knowledge_chunk.chunk_no");
+  assertNonBlankText(chunk.content, "knowledge_chunk.content");
+  assertEmbeddingVector(chunk.embedding, "knowledge_chunk.embedding");
+  if (chunk.metadata === null || typeof chunk.metadata !== "object" || Array.isArray(chunk.metadata)) {
+    throw new TypeError("knowledge_chunk.metadata must be a JSON object");
+  }
+  assertUtcTimestamptz(chunk.created_at, "knowledge_chunk.created_at");
+
+  return chunk;
 }

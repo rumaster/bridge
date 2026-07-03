@@ -24,7 +24,7 @@ DATABASE_URL=postgres://user:password@localhost:5432/bridge npm run db:migrate:d
 npm run test:integration
 ```
 
-## M0/M1 Схема
+## M0/M1/M2 Схема
 
 Миграция `20260702160218000_m0_schema.sql` создаёт:
 
@@ -53,6 +53,23 @@ M1 добавляет tenant RLS для всех арендо-зависимых
 `communication_endpoints(organization_id, channel, external_id)`, порядок
 сообщений по индексу `messages(endpoint_id, sequence_number)`, а также
 append-only защиту `audit_events` и `configuration_history`.
+
+Миграция `20260703103000000_m1_client_notes_tags.sql` добавляет клиентские
+заметки и теги (`client_notes`, `client_tags`), которые входят в M2-срез
+расширения профиля клиента и покрыты tenant RLS.
+
+Миграция `20260703124000000_m2_schema.sql` добавляет схему M2:
+
+- `knowledge_documents` со статусом индексации `indexing/indexed/failed`;
+- `knowledge_chunks` с `embedding vector(1536)` и HNSW-индексом
+  `knowledge_chunks_embedding_hnsw_idx`;
+- `client_identity_links` с аудитом создания, обратимостью через `reverted_at`
+  и единственной активной связью на endpoint;
+- `channels` и `adapter_capabilities` для омниканальности и Capability Model.
+
+Секреты каналов хранятся только ссылкой `channels.credentials_ref`; top-level
+ключи `token`, `secret`, `password`, `api_key` и близкие варианты запрещены в
+`channels.config`.
 
 ## RLS Контекст
 
