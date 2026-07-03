@@ -11,6 +11,10 @@ import {
   ROLE_SEEDS,
   SEEDED_ADMIN_USER_SEED,
 } from "../../packages/testing/src/db/m0-seed-data.mjs";
+import {
+  formatPgVector,
+  TEST_EMBEDDING_DIMENSIONS,
+} from "../../packages/testing/src/db/factories.mjs";
 
 const POSTGRES_PORT = 5432;
 const POSTGRES_IMAGE = "pgvector/pgvector:pg16";
@@ -19,10 +23,13 @@ const TEST_DB = {
   user: "bridge_test",
   password: "bridge_test",
 };
-const M1_TABLES = [
+const DATA_PLATFORM_TABLES = [
+  "adapter_capabilities",
   "attachments",
   "audit_events",
   "auth_sessions",
+  "channels",
+  "client_identity_links",
   "client_notes",
   "client_tags",
   "clients",
@@ -31,6 +38,8 @@ const M1_TABLES = [
   "configurations",
   "conversations",
   "invitations",
+  "knowledge_chunks",
+  "knowledge_documents",
   "login_codes",
   "message_delivery_attempts",
   "messages",
@@ -40,9 +49,12 @@ const M1_TABLES = [
   "users",
 ];
 const TENANT_RLS_TABLES = [
+  "adapter_capabilities",
   "attachments",
   "audit_events",
   "auth_sessions",
+  "channels",
+  "client_identity_links",
   "client_notes",
   "client_tags",
   "clients",
@@ -51,6 +63,8 @@ const TENANT_RLS_TABLES = [
   "configurations",
   "conversations",
   "invitations",
+  "knowledge_chunks",
+  "knowledge_documents",
   "login_codes",
   "message_delivery_attempts",
   "messages",
@@ -82,6 +96,13 @@ const M1_FIXTURES = {
     attempt: "10000000-0000-4000-8000-000000000801",
     config: "10000000-0000-4000-8000-000000000901",
     audit: "10000000-0000-4000-8000-000000000a01",
+    knowledgeDocument: "10000000-0000-4000-8000-000000000b01",
+    knowledgeChunkNear: "10000000-0000-4000-8000-000000000b11",
+    knowledgeChunkFar: "10000000-0000-4000-8000-000000000b12",
+    identityLink: "10000000-0000-4000-8000-000000000c01",
+    identityLinkReplacement: "10000000-0000-4000-8000-000000000c11",
+    channel: "10000000-0000-4000-8000-000000000d01",
+    capability: "10000000-0000-4000-8000-000000000d11",
   },
   [ORG_B]: {
     organization: ORG_B,
@@ -100,6 +121,13 @@ const M1_FIXTURES = {
     attempt: "10000000-0000-4000-8000-000000000802",
     config: "10000000-0000-4000-8000-000000000902",
     audit: "10000000-0000-4000-8000-000000000a02",
+    knowledgeDocument: "10000000-0000-4000-8000-000000000b02",
+    knowledgeChunkNear: "10000000-0000-4000-8000-000000000b21",
+    knowledgeChunkFar: "10000000-0000-4000-8000-000000000b22",
+    identityLink: "10000000-0000-4000-8000-000000000c02",
+    identityLinkReplacement: "10000000-0000-4000-8000-000000000c12",
+    channel: "10000000-0000-4000-8000-000000000d02",
+    capability: "10000000-0000-4000-8000-000000000d12",
   },
 };
 
@@ -131,8 +159,14 @@ function quoteIdentifier(identifier) {
   return `"${identifier}"`;
 }
 
+function axisEmbedding(firstCoordinate) {
+  const embedding = Array(TEST_EMBEDDING_DIMENSIONS).fill(0);
+  embedding[0] = firstCoordinate;
+  return embedding;
+}
+
 function expectedTenantRowCount(tableName, organizationId) {
-  if (tableName === "messages") {
+  if (tableName === "messages" || tableName === "knowledge_chunks") {
     return 2;
   }
 
@@ -140,10 +174,14 @@ function expectedTenantRowCount(tableName, organizationId) {
     return organizationId === ORG_A ? 2 : 1;
   }
 
+  if (tableName === "client_identity_links") {
+    return organizationId === ORG_A ? 2 : 1;
+  }
+
   return 1;
 }
 
-async function assertM1Schema(client, { expectSeedData }) {
+async function assertDataPlatformSchema(client, { expectSeedData }) {
   const tables = await client.query(
     `
       SELECT table_name
@@ -152,12 +190,12 @@ async function assertM1Schema(client, { expectSeedData }) {
         AND table_name = ANY($1)
       ORDER BY table_name
     `,
-    [M1_TABLES],
+    [DATA_PLATFORM_TABLES],
   );
 
   assert.deepEqual(
     tables.rows.map((row) => row.table_name),
-    M1_TABLES,
+    DATA_PLATFORM_TABLES,
   );
 
   const vectorExtension = await client.query(
@@ -207,7 +245,8 @@ async function assertM1Schema(client, { expectSeedData }) {
   const indexes = await client.query(
     `
       SELECT to_regclass('public.conversations_organization_client_idx') AS conversations_organization_client_idx,
-             to_regclass('public.messages_endpoint_sequence_number_idx') AS messages_endpoint_sequence_number_idx
+             to_regclass('public.messages_endpoint_sequence_number_idx') AS messages_endpoint_sequence_number_idx,
+             to_regclass('public.knowledge_chunks_embedding_hnsw_idx') AS knowledge_chunks_embedding_hnsw_idx
     `,
   );
 
@@ -218,6 +257,54 @@ async function assertM1Schema(client, { expectSeedData }) {
   assert.equal(
     indexes.rows[0].messages_endpoint_sequence_number_idx,
     "messages_endpoint_sequence_number_idx",
+  );
+  assert.equal(
+    indexes.rows[0].knowledge_chunks_embedding_hnsw_idx,
+    "knowledge_chunks_embedding_hnsw_idx",
+  );
+
+  const embeddingColumn = await client.query(
+    `
+      SELECT format_type(attribute.atttypid, attribute.atttypmod) AS type
+      FROM pg_attribute attribute
+      JOIN pg_class relation ON relation.oid = attribute.attrelid
+      JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+      WHERE namespace.nspname = 'public'
+        AND relation.relname = 'knowledge_chunks'
+        AND attribute.attname = 'embedding'
+        AND NOT attribute.attisdropped
+    `,
+  );
+  assert.equal(embeddingColumn.rows[0].type, `vector(${TEST_EMBEDDING_DIMENSIONS})`);
+
+  const vectorIndex = await client.query(
+    `
+      SELECT indexdef
+      FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND tablename = 'knowledge_chunks'
+        AND indexname = 'knowledge_chunks_embedding_hnsw_idx'
+    `,
+  );
+  assert.match(vectorIndex.rows[0].indexdef, /USING hnsw/);
+  assert.match(vectorIndex.rows[0].indexdef, /vector_l2_ops/);
+
+  const channelColumns = await client.query(
+    `
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'channels'
+      ORDER BY column_name
+    `,
+  );
+  const channelColumnNames = channelColumns.rows.map((row) => row.column_name);
+  assert.equal(channelColumnNames.includes("credentials_ref"), true);
+  assert.deepEqual(
+    channelColumnNames.filter((columnName) =>
+      /(^|_)(api_key|access_key|password|secret|token)(_|$)/.test(columnName),
+    ),
+    [],
   );
 
   if (!expectSeedData) {
@@ -257,8 +344,8 @@ async function assertM1Schema(client, { expectSeedData }) {
   );
 }
 
-async function assertM1SchemaDropped(client) {
-  const objectColumns = M1_TABLES.map(
+async function assertDataPlatformSchemaDropped(client) {
+  const objectColumns = DATA_PLATFORM_TABLES.map(
     (tableName) => `to_regclass('public.${tableName}') AS ${tableName}`,
   ).join(",\n      ");
   const objects = await client.query(`
@@ -271,7 +358,7 @@ async function assertM1SchemaDropped(client) {
   `);
 
   assert.deepEqual(objects.rows[0], {
-    ...Object.fromEntries(M1_TABLES.map((tableName) => [tableName, null])),
+    ...Object.fromEntries(DATA_PLATFORM_TABLES.map((tableName) => [tableName, null])),
     current_organization_id: null,
     is_platform_operator: null,
     reject_append_only_mutation: null,
@@ -291,7 +378,7 @@ async function assertRlsIsolation(adminConfig, adminClient) {
   await adminClient.query(`DROP ROLE IF EXISTS ${roleIdentifier}`);
   await adminClient.query(`CREATE ROLE ${roleIdentifier} LOGIN PASSWORD 'bridge_test'`);
   await adminClient.query(`GRANT USAGE ON SCHEMA app, public TO ${roleIdentifier}`);
-  await adminClient.query(`GRANT SELECT ON ${M1_TABLES.map(quoteIdentifier).join(", ")} TO ${roleIdentifier}`);
+  await adminClient.query(`GRANT SELECT ON ${DATA_PLATFORM_TABLES.map(quoteIdentifier).join(", ")} TO ${roleIdentifier}`);
 
   try {
     await withClient(connectionConfigFromAdmin(adminConfig, { user: roleName }), async (client) => {
@@ -599,6 +686,155 @@ async function insertM1TenantSlice(client, organizationId) {
     `,
     [fixture.attempt, organizationId, fixture.messageSecond],
   );
+
+  const vectorOffsets = organizationId === ORG_A
+    ? { near: 1, far: 2 }
+    : { near: 0, far: 3 };
+
+  await client.query(
+    `
+      INSERT INTO knowledge_documents (
+        id,
+        organization_id,
+        title,
+        source,
+        status,
+        indexed_at,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        'indexed',
+        '2026-01-01T00:02:00.000Z',
+        '2026-01-01T00:00:00.000Z',
+        '2026-01-01T00:02:00.000Z'
+      )
+    `,
+    [
+      fixture.knowledgeDocument,
+      organizationId,
+      `Knowledge ${suffix.toUpperCase()}`,
+      `manual://kb/${suffix}`,
+    ],
+  );
+  await client.query(
+    `
+      INSERT INTO knowledge_chunks (
+        id,
+        organization_id,
+        document_id,
+        chunk_no,
+        content,
+        embedding,
+        metadata,
+        created_at
+      )
+      VALUES
+        ($1, $2, $3, 1, $4, $5::vector, $6::jsonb, '2026-01-01T00:02:01.000Z'),
+        ($7, $2, $3, 2, $8, $9::vector, $10::jsonb, '2026-01-01T00:02:02.000Z')
+    `,
+    [
+      fixture.knowledgeChunkNear,
+      organizationId,
+      fixture.knowledgeDocument,
+      `Nearest tenant ${suffix.toUpperCase()} knowledge chunk`,
+      formatPgVector(axisEmbedding(vectorOffsets.near)),
+      JSON.stringify({ section: "nearest" }),
+      fixture.knowledgeChunkFar,
+      `Fallback tenant ${suffix.toUpperCase()} knowledge chunk`,
+      formatPgVector(axisEmbedding(vectorOffsets.far)),
+      JSON.stringify({ section: "fallback" }),
+    ],
+  );
+  await client.query(
+    `
+      INSERT INTO client_identity_links (
+        id,
+        organization_id,
+        client_id,
+        endpoint_id,
+        link_type,
+        evidence,
+        created_by,
+        created_by_actor_type,
+        created_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, 'user', '2026-01-01T00:03:00.000Z')
+    `,
+    [
+      fixture.identityLink,
+      organizationId,
+      fixture.client,
+      fixture.endpoint,
+      organizationId === ORG_A ? "manual" : "automatic",
+      JSON.stringify({ source: "integration-test", confidence: 1 }),
+      fixture.user,
+    ],
+  );
+  await client.query(
+    `
+      INSERT INTO channels (
+        id,
+        organization_id,
+        channel_type,
+        name,
+        status,
+        credentials_ref,
+        config,
+        last_check_at,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        $1,
+        $2,
+        'telegram',
+        $3,
+        'connected',
+        $4,
+        $5::jsonb,
+        '2026-01-01T00:04:00.000Z',
+        '2026-01-01T00:00:00.000Z',
+        '2026-01-01T00:04:00.000Z'
+      )
+    `,
+    [
+      fixture.channel,
+      organizationId,
+      `Telegram ${suffix.toUpperCase()}`,
+      `secret://telegram/${organizationId}/main`,
+      JSON.stringify({ username: `bridge_${suffix}_bot` }),
+    ],
+  );
+  await client.query(
+    `
+      INSERT INTO adapter_capabilities (
+        id,
+        organization_id,
+        channel_id,
+        capability,
+        supported,
+        metadata,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        $1,
+        $2,
+        $3,
+        'text',
+        true,
+        '{"max_length":4096}'::jsonb,
+        '2026-01-01T00:04:01.000Z',
+        '2026-01-01T00:04:01.000Z'
+      )
+    `,
+    [fixture.capability, organizationId, fixture.channel],
+  );
 }
 
 async function assertM1Invariants(client) {
@@ -703,7 +939,215 @@ async function assertM1Invariants(client) {
   );
 }
 
-describe("SVC-DATA M1 migrations", { timeout: 300_000 }, () => {
+async function assertM2Invariants(client) {
+  const fixture = M1_FIXTURES[ORG_A];
+
+  const nearestChunks = await client.query(
+    `
+      SELECT id
+      FROM knowledge_chunks
+      WHERE organization_id = $1
+      ORDER BY embedding <-> $2::vector
+      LIMIT 2
+    `,
+    [ORG_A, formatPgVector(axisEmbedding(0))],
+  );
+  assert.deepEqual(
+    nearestChunks.rows.map((row) => row.id),
+    [fixture.knowledgeChunkNear, fixture.knowledgeChunkFar],
+  );
+
+  const channel = await client.query(
+    "SELECT credentials_ref, config FROM channels WHERE id = $1",
+    [fixture.channel],
+  );
+  assert.equal(channel.rows[0].credentials_ref, `secret://telegram/${ORG_A}/main`);
+  assert.equal(Object.hasOwn(channel.rows[0].config, "token"), false);
+  assert.equal(Object.hasOwn(channel.rows[0].config, "secret"), false);
+
+  await assert.rejects(
+    client.query(
+      `
+        INSERT INTO channels (
+          id,
+          organization_id,
+          channel_type,
+          name,
+          status,
+          credentials_ref,
+          config
+        )
+        VALUES (
+          '10000000-0000-4000-8000-000000000d99',
+          $1,
+          'telegram',
+          'Leaky Telegram',
+          'disabled',
+          'secret://telegram/leaky',
+          '{"token":"raw-token"}'::jsonb
+        )
+      `,
+      [ORG_A],
+    ),
+    /channels_config_no_inline_secrets|violates check constraint/,
+  );
+
+  await assert.rejects(
+    client.query(
+      `
+        INSERT INTO client_identity_links (
+          id,
+          organization_id,
+          client_id,
+          endpoint_id,
+          link_type,
+          evidence,
+          created_by,
+          created_by_actor_type
+        )
+        VALUES ($1, $2, $3, $4, 'manual', '{}'::jsonb, $5, 'user')
+      `,
+      [
+        fixture.identityLinkReplacement,
+        ORG_A,
+        fixture.client,
+        fixture.endpoint,
+        fixture.user,
+      ],
+    ),
+    /client_identity_links_active_endpoint_unique|duplicate key value/,
+  );
+
+  await client.query(
+    `
+      UPDATE client_identity_links
+      SET reverted_at = '2026-01-01T00:05:00.000Z',
+          reverted_by = $1,
+          reverted_by_actor_type = 'user',
+          reverted_reason = 'manual undo'
+      WHERE id = $2
+    `,
+    [fixture.user, fixture.identityLink],
+  );
+  await client.query(
+    `
+      INSERT INTO client_identity_links (
+        id,
+        organization_id,
+        client_id,
+        endpoint_id,
+        link_type,
+        evidence,
+        created_by,
+        created_by_actor_type,
+        created_at
+      )
+      VALUES ($1, $2, $3, $4, 'manual', '{"source":"replacement"}'::jsonb, $5, 'user', '2026-01-01T00:06:00.000Z')
+    `,
+    [
+      fixture.identityLinkReplacement,
+      ORG_A,
+      fixture.client,
+      fixture.endpoint,
+      fixture.user,
+    ],
+  );
+
+  const links = await client.query(
+    `
+      SELECT id, reverted_at
+      FROM client_identity_links
+      WHERE organization_id = $1 AND endpoint_id = $2
+      ORDER BY created_at
+    `,
+    [ORG_A, fixture.endpoint],
+  );
+  assert.deepEqual(
+    links.rows.map((row) => [row.id, row.reverted_at === null]),
+    [
+      [fixture.identityLink, false],
+      [fixture.identityLinkReplacement, true],
+    ],
+  );
+}
+
+async function assertKnowledgeVectorSearchIsolation(adminConfig, adminClient) {
+  const roleName = `kb_vector_probe_${process.pid}`;
+  const roleIdentifier = quoteIdentifier(roleName);
+
+  await adminClient.query(`DROP ROLE IF EXISTS ${roleIdentifier}`);
+  await adminClient.query(`CREATE ROLE ${roleIdentifier} LOGIN PASSWORD 'bridge_test'`);
+  await adminClient.query(`GRANT USAGE ON SCHEMA app, public TO ${roleIdentifier}`);
+  await adminClient.query(
+    `GRANT SELECT ON knowledge_documents, knowledge_chunks TO ${roleIdentifier}`,
+  );
+
+  try {
+    await withClient(connectionConfigFromAdmin(adminConfig, { user: roleName }), async (client) => {
+      await client.query("SELECT set_config('app.current_organization_id', $1, false)", [
+        ORG_A,
+      ]);
+
+      let result = await client.query(
+        `
+          SELECT id, organization_id
+          FROM knowledge_chunks
+          WHERE organization_id = app.current_organization_id()
+          ORDER BY embedding <-> $1::vector
+          LIMIT 10
+        `,
+        [formatPgVector(axisEmbedding(0))],
+      );
+      assert.deepEqual(
+        result.rows.map((row) => [row.id, row.organization_id]),
+        [
+          [M1_FIXTURES[ORG_A].knowledgeChunkNear, ORG_A],
+          [M1_FIXTURES[ORG_A].knowledgeChunkFar, ORG_A],
+        ],
+      );
+
+      result = await client.query(
+        `
+          SELECT id
+          FROM knowledge_chunks
+          ORDER BY embedding <-> $1::vector
+          LIMIT 10
+        `,
+        [formatPgVector(axisEmbedding(0))],
+      );
+      assert.deepEqual(
+        result.rows.map((row) => row.id),
+        [
+          M1_FIXTURES[ORG_A].knowledgeChunkNear,
+          M1_FIXTURES[ORG_A].knowledgeChunkFar,
+        ],
+      );
+
+      await client.query("SELECT set_config('app.current_organization_id', $1, false)", [
+        ORG_B,
+      ]);
+      result = await client.query(
+        `
+          SELECT id, organization_id
+          FROM knowledge_chunks
+          WHERE organization_id = app.current_organization_id()
+          ORDER BY embedding <-> $1::vector
+          LIMIT 1
+        `,
+        [formatPgVector(axisEmbedding(0))],
+      );
+      assert.deepEqual(
+        result.rows.map((row) => [row.id, row.organization_id]),
+        [[M1_FIXTURES[ORG_B].knowledgeChunkNear, ORG_B]],
+      );
+    });
+  } finally {
+    await adminClient.query(`DROP OWNED BY ${roleIdentifier}`);
+    await adminClient.query(`DROP ROLE IF EXISTS ${roleIdentifier}`);
+  }
+}
+
+describe("SVC-DATA M2 migrations", { timeout: 300_000 }, () => {
   it("runs up, seeds deterministic data, enforces RLS, then runs down and up again", async () => {
     const container = await new GenericContainer(POSTGRES_IMAGE)
       .withEnvironment({
@@ -721,21 +1165,23 @@ describe("SVC-DATA M1 migrations", { timeout: 300_000 }, () => {
       await withClient(adminConfig, async (client) => {
         await runMigrations({ databaseUrl: adminConfig, direction: "up" });
         await runSeeds({ client });
-        await assertM1Schema(client, { expectSeedData: true });
+        await assertDataPlatformSchema(client, { expectSeedData: true });
         await insertM1TenantSlice(client, ORG_A);
         await insertM1TenantSlice(client, ORG_B);
         await assertM1Invariants(client);
+        await assertM2Invariants(client);
         await assertRlsIsolation(adminConfig, client);
+        await assertKnowledgeVectorSearchIsolation(adminConfig, client);
 
         await runMigrations({
           databaseUrl: adminConfig,
           direction: "down",
           count: Number.POSITIVE_INFINITY,
         });
-        await assertM1SchemaDropped(client);
+        await assertDataPlatformSchemaDropped(client);
 
         await runMigrations({ databaseUrl: adminConfig, direction: "up" });
-        await assertM1Schema(client, { expectSeedData: false });
+        await assertDataPlatformSchema(client, { expectSeedData: false });
       });
     } finally {
       await container.stop();

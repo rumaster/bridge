@@ -2,11 +2,17 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  assertEmbeddingVector,
+  createDeterministicEmbedding,
+  createTestKnowledgeChunk,
+  createTestKnowledgeDocument,
   createTestClient,
   createTestConversation,
   createTestMessage,
   createTestOrganization,
   createTestUser,
+  formatPgVector,
+  TEST_EMBEDDING_DIMENSIONS,
 } from "../../src/db/factories.mjs";
 import {
   assertNonBlankText,
@@ -86,5 +92,34 @@ describe("db test factories", () => {
     assert.throws(() => createTestClient({ display_name: "" }), /non-blank string/);
     assert.throws(() => createTestConversation({ status: "archived" }), /conversation.status/);
     assert.throws(() => createTestMessage({ sequence_number: 0 }), /positive safe integer/);
+  });
+
+  it("creates M2 knowledge document, chunk, and deterministic embedding fixtures", () => {
+    const organization = createTestOrganization();
+    const document = createTestKnowledgeDocument({
+      organization_id: organization.id,
+      status: "indexed",
+      indexed_at: "2026-01-01T00:00:00.000Z",
+    });
+    const embedding = createDeterministicEmbedding("kb:delivery-policy");
+    const sameEmbedding = createDeterministicEmbedding("kb:delivery-policy");
+    const chunk = createTestKnowledgeChunk({
+      organization_id: organization.id,
+      document_id: document.id,
+      chunk_no: 3,
+      embedding,
+    });
+
+    assert.equal(document.organization_id, organization.id);
+    assert.equal(chunk.document_id, document.id);
+    assert.equal(chunk.embedding.length, TEST_EMBEDDING_DIMENSIONS);
+    assert.deepEqual(embedding, sameEmbedding);
+    assert.equal(formatPgVector(embedding).startsWith("["), true);
+    assert.equal(formatPgVector(embedding).endsWith("]"), true);
+
+    assert.throws(() => createDeterministicEmbedding(""), /non-blank string/);
+    assert.throws(() => assertEmbeddingVector([1, 2, 3]), /1536-dimension embedding/);
+    assert.throws(() => createTestKnowledgeDocument({ status: "queued" }), /knowledge_document.status/);
+    assert.throws(() => createTestKnowledgeChunk({ chunk_no: 0 }), /positive safe integer/);
   });
 });
