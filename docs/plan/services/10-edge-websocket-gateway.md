@@ -199,6 +199,14 @@ SVC-EDGE приходится на **M4**.
 - **DoD.** События идут в realtime; WS масштабируется горизонтально; reconnect не
   дублирует доставку (мастер §9.4).
 
+**Статус реализации M2.** M2 Application WS Gateway завершён для gate CP-2/CP-3:
+контракт C7 и reconnect-семантика закреплены в
+`packages/contracts/openapi/edge/c7.websocket.openapi.json`,
+`packages/contracts/events/c7-websocket-event.schema.json` и consumer contract
+SVC-MWS; дедупликация по `event_id`/`message.id` и gap detection по
+`sequence_number` проверяются `apps/manager-workspace/test/realtime-merge.test.ts`
+и `tests/contract/manager-workspace-c4-c7-consumer.test.mjs`.
+
 ### M3 — без крупных задач
 
 - SVC-EDGE в вехе M3 **не имеет крупных задач** (мастер §5.1): M3 — программируемость

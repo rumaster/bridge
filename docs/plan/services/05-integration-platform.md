@@ -211,6 +211,15 @@ adapter_capabilities(                       -- Capability Model (ТЗ §10.6), �
   contract-тесты.
 - **DoD.** § 9.4 + **C2+C6 заморожены** на CP-2; per-adapter contract-тесты зелёные.
 
+**Статус реализации M2.** M2 Integration Platform завершён для CP-2: Telegram,
+Email, SMS, VK, MAX и WhatsApp адаптеры нормализуют inbound в C2 Ingress,
+публикуют C6 capabilities и проверены unit/integration тестами
+`services/integration-platform/test/unit/m2-channel-adapters.test.mjs`,
+`services/integration-platform/test/integration/m2-channel-adapters.integration.test.mjs`
+и per-adapter contract `tests/contract/int-core-m2-adapters.contract.test.mjs`.
+C2+C6 зафиксированы как `stable_for_m3` в
+`packages/contracts/cp2-cp3-freeze.v1.json`.
+
 ### 5.4 M3 — без крупных задач у SVC-INT
 
 - **Цель.** Веха **M3** (программируемость: Workflow-редактор, AI Onboarding,

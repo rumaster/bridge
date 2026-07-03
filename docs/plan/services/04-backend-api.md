@@ -218,6 +218,15 @@ CRUD/proxy, tenant isolation, идемпотентный `POST /messages` и а�
 - **Тесты.** *Unit*: валидаторы документов, маппинг статусов индексации. *Integration*: Backend↔PostgreSQL (документы, изоляция арендатора); Backend↔AI по контракту KB-search через мок (мастер §8.1, ТЗ §26.4). *E2e*: участие в «AI Assistant из KB» (мастер §8.2).
 - **DoD.** KB-эндпоинты покрыты integration-тестами (3 случая); поиск изолирован по арендатору; контракт `C3.kb` стабилизирован для CP-3.
 
+**Статус реализации M2.** M2 Backend API завершён для CP-3: C3.kb search
+используется AI-пайплайном через Backend-only доступ к KB, consumer contract
+`packages/contracts/consumer/ai-integration-c4.consumer.v1.json` фиксирует
+ожидания API как потребителя C4 и поставщика `C3.kb`, а
+`tests/integration/ai-rag-kb.test.mjs` проверяет реальный pgvector/RLS-путь без
+утечки чужого `organization_id`. C4 зафиксирован как `stable_for_m3` в
+`packages/contracts/cp2-cp3-freeze.v1.json`; M3-фасады остаются следующим scope
+для полноценного circuit breaker/bulkhead.
+
 ### M3 — Фасады AI и FBP + интеграция аудита (XL) — CP-3, CP-4, CP-5
 
 - **Цель.** Тонкие фасады `ai-integration` (C4) и `fbp-integration` (C5) с полными

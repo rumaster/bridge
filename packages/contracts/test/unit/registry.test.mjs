@@ -7,9 +7,12 @@ import { fileURLToPath } from "node:url";
 import {
   CP1_CONTRACT_FREEZE,
   CP1_GATE_REQUIRED_CONTRACT_IDS,
+  CP2_CP3_CONTRACT_FREEZE,
+  CP2_CP3_GATE_REQUIRED_CONTRACT_IDS,
   M0_CONTRACT_REGISTRY,
   M0_GATE_REQUIRED_CONTRACT_IDS,
   validateCp1ContractFreeze,
+  validateCp2Cp3ContractFreeze,
   validateM0ContractRegistry,
 } from "../../src/registry.mjs";
 
@@ -77,6 +80,42 @@ describe("CP-1 contract freeze", () => {
 
   it("points every frozen artifact and evidence file at an existing file", () => {
     for (const contract of CP1_CONTRACT_FREEZE) {
+      for (const artifact of contract.artifacts) {
+        assert.doesNotThrow(
+          () => accessSync(join(repoRoot, artifact)),
+          `${contract.id} artifact is missing: ${artifact}`,
+        );
+      }
+
+      for (const evidence of contract.evidence) {
+        assert.doesNotThrow(
+          () => accessSync(join(repoRoot, evidence)),
+          `${contract.id} evidence is missing: ${evidence}`,
+        );
+      }
+    }
+  });
+});
+
+describe("CP-2/CP-3 contract freeze", () => {
+  it("publishes C2/C6/C4 as stable for M3", () => {
+    const validation = validateCp2Cp3ContractFreeze();
+
+    assert.equal(validation.valid, true, validation.errors.join("\n"));
+    assert.deepEqual(
+      CP2_CP3_CONTRACT_FREEZE.map((contract) => contract.id),
+      CP2_CP3_GATE_REQUIRED_CONTRACT_IDS,
+    );
+
+    for (const contract of CP2_CP3_CONTRACT_FREEZE) {
+      assert.equal(contract.stage, "M2");
+      assert.equal(contract.gate, "CP-2+CP-3");
+      assert.equal(contract.status, "stable_for_m3");
+    }
+  });
+
+  it("points every frozen artifact and evidence file at an existing file", () => {
+    for (const contract of CP2_CP3_CONTRACT_FREEZE) {
       for (const artifact of contract.artifacts) {
         assert.doesNotThrow(
           () => accessSync(join(repoRoot, artifact)),

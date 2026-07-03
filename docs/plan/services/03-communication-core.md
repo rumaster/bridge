@@ -223,6 +223,14 @@ Conversation/messages, идемпотентный `POST /messages`, перехо
   ответ» (CP-2).
 - **DoD.** Порядок и слияние покрыты тестами; C7 события идут в realtime.
 
+**Статус реализации M2.** M2 Communication Core завершён для CP-2: identity
+resolution, endpoint-scoped `sequence_number`, gap detection, C7 публикация и
+выбор канала по C6 capabilities покрыты
+`services/backend/test/unit/communication-core.m2.test.mjs` и
+`tests/integration/communication-core-m2.test.mjs`; сквозной Telegram receive/reply
+проверен в `tests/e2e/telegram-cp2.test.mjs`. C2 зафиксирован как
+`stable_for_m3` в `packages/contracts/cp2-cp3-freeze.v1.json`.
+
 ### M3 — Доменные события для Workflow (outbox)
 
 - **Цель.** Надёжно уведомлять вынесенные сервисы о событиях ядра.
