@@ -8,9 +8,11 @@ const MAX_BODY_BYTES = 1024 * 1024;
 
 export function createAiPlatformServer({
   ai,
+  mode,
   now = () => new Date().toISOString(),
 } = {}) {
   const mockAi = ai ?? createDeterministicAiMock({ now });
+  const serviceMode = mode ?? mockAi.mode ?? "deterministic-mock";
 
   return createServer(async (request, response) => {
     try {
@@ -21,7 +23,7 @@ export function createAiPlatformServer({
         sendJson(response, 200, {
           status: "ok",
           service: "ai-platform",
-          mode: "deterministic-mock",
+          mode: serviceMode,
           contract: "C4",
         });
         return;
@@ -34,13 +36,13 @@ export function createAiPlatformServer({
 
       if (request.method === "POST" && path === "/ai/assistant:suggest") {
         const payload = await readJson(request);
-        sendJson(response, 200, mockAi.suggestAssistant(payload));
+        sendJson(response, 200, await mockAi.suggestAssistant(payload));
         return;
       }
 
       if (request.method === "POST" && path === "/ai/onboarding:command") {
         const payload = await readJson(request);
-        sendJson(response, 200, mockAi.createOnboardingCommand(payload));
+        sendJson(response, 200, await mockAi.createOnboardingCommand(payload));
         return;
       }
 
@@ -145,6 +147,9 @@ function renderMetrics(metrics) {
     "# HELP ai_platform_mock_onboarding_command_total C4 onboarding commands served by the deterministic mock.",
     "# TYPE ai_platform_mock_onboarding_command_total counter",
     `ai_platform_mock_onboarding_command_total ${metrics.onboarding_command_total}`,
+    "# HELP ai_platform_assistant_suggest_degraded_total C4 assistant suggestions that fell back to the degraded stub.",
+    "# TYPE ai_platform_assistant_suggest_degraded_total counter",
+    `ai_platform_assistant_suggest_degraded_total ${metrics.assistant_suggest_degraded_total ?? 0}`,
   ];
 
   return `${lines.join("\n")}\n`;
