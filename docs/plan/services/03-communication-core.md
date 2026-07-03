@@ -250,7 +250,10 @@ resolution, endpoint-scoped `sequence_number`, gap detection, C7 публика�
 `pending -> published` обеспечивают идемпотентную доставку в мок SVC-FBP.
 Покрытие: `services/backend/test/unit/communication-core.m3.test.mjs`,
 `tests/integration/communication-core-m3.test.mjs` и
-`tests/e2e/workflow-cp4.test.mjs`.
+`tests/e2e/workflow-cp4.test.mjs`. Для M3 gate outbox-инвариант зафиксирован в
+`packages/contracts/cp4-cp5-freeze.v1.json`: replay идемпотентен и не создаёт
+дублирующих запусков Workflow. Готовность M4: `outbox_events` остаётся
+стабильной основой для Broadcast, Edge и Notification producer-потоков.
 
 ### M4 — Сквозная идемпотентность, Broadcast, Edge
 

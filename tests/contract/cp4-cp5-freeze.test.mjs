@@ -15,7 +15,7 @@ function readFreeze() {
 }
 
 describe("CP-4/CP-5 M3 facade freeze", () => {
-  it("freezes C4/C5 Backend facades as the M3 baseline", () => {
+  it("freezes C5 at CP-4 and stabilizes C3/C4/C5 at CP-5 as the M4 baseline", () => {
     const freeze = readFreeze();
 
     assert.equal(freeze["x-gate"], "CP-4+CP-5");
@@ -24,16 +24,20 @@ describe("CP-4/CP-5 M3 facade freeze", () => {
     assert.equal(freeze.frozen_at, "2026-07-03");
     assert.deepEqual(
       freeze.contracts.map((contract) => contract.id),
-      ["C4", "C5"],
+      ["C5", "C3", "C4"],
     );
-    assert.deepEqual(freeze.m4_readiness.stable_contracts, ["C4", "C5"]);
+    assert.deepEqual(freeze.m4_readiness.stable_contracts, ["C3", "C4", "C5"]);
+    assert.deepEqual(freeze.m4_readiness.stable_data_surfaces, [
+      "outbox_events",
+      "workflow_*",
+    ]);
   });
 
   it("points every frozen contract at existing artifacts and evidence", () => {
     const freeze = readFreeze();
 
     for (const contract of freeze.contracts) {
-      assert.equal(contract.status, "stable_for_m3");
+      assert.equal(contract.status, "stable_for_m4");
       assert.ok(contract.evidence.length > 0);
       for (const artifact of contract.artifacts) {
         assert.doesNotThrow(
@@ -54,10 +58,13 @@ describe("CP-4/CP-5 M3 facade freeze", () => {
     const openApi = readJson("packages/contracts/openapi/backend-core/openapi.json");
     const freeze = readFreeze();
 
-    const frozenPaths = freeze.contracts.flatMap((contract) => contract.surface);
-    for (const path of frozenPaths) {
+    const frozenOperations = freeze.contracts.flatMap((contract) => contract.surface);
+    for (const { method, path } of frozenOperations) {
       assert.ok(openApi.paths[path], `backend-core OpenAPI is missing ${path}`);
-      assert.ok(openApi.paths[path].post, `backend-core OpenAPI ${path} must expose POST`);
+      assert.ok(
+        openApi.paths[path][method],
+        `backend-core OpenAPI ${path} must expose ${method.toUpperCase()}`,
+      );
     }
   });
 
@@ -66,6 +73,7 @@ describe("CP-4/CP-5 M3 facade freeze", () => {
 
     assert.deepEqual(freeze.scope.scenarios, [
       "Workflow вызывает Backend API node",
+      "Admin правит Workflow",
       "AI Onboarding применяет конфигурацию через Backend",
     ]);
     assert.ok(
@@ -81,6 +89,16 @@ describe("CP-4/CP-5 M3 facade freeze", () => {
     assert.ok(
       freeze.scope.invariants.includes(
         "AI/Workflow actions audited with actor_type = ai|workflow",
+      ),
+    );
+    assert.ok(
+      freeze.scope.invariants.includes(
+        "outbox replay is idempotent and does not duplicate Workflow starts",
+      ),
+    );
+    assert.ok(
+      freeze.scope.invariants.includes(
+        "workflow_* rows are tenant-isolated and execution logs are insertable",
       ),
     );
   });

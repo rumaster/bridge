@@ -516,6 +516,22 @@ fallback без остановки переписки. Готовность M3: 
 scope M3 — outbox/domain events, FBP/Workflow, AI Onboarding, Notification и
 фасады `ai-integration`/`fbp-integration` с circuit breaker.
 
+**Статус CP-4/CP-5 (M3-99, 2026-07-03).** Gate M3 выполнен: расширен
+машинно-читаемый freeze-артефакт `packages/contracts/cp4-cp5-freeze.v1.json`,
+на CP-4 заморожен C5 (запуск Workflow + узел Backend API), а на CP-5 совместно
+стабилизированы C3/C4/C5 как `stable_for_m4`. Проверки CP-4 покрывают e2e
+«Workflow вызывает Backend API», contract API↔FBP, idempotent replay outbox и
+аудит `actor_type = workflow`. Проверки CP-5 покрывают e2e «Admin правит
+Workflow» и «AI Onboarding применяет конфиг», contract API↔AI и повторную
+валидацию структурированной команды §12.6 на Backend. Инварианты gate: Backend
+API — единственный санкционированный способ изменения данных из Workflow/AI;
+права проверяются по реальному принципалу; Transform Node валидируется на
+сохранении схемы; Workflow изолирован по `organization_id`; `workflow_*` и
+outbox готовы как стабильная база M4. Готовность M4: стабильные C3/C4/C5,
+`outbox_events`, `workflow_*`; следующий scope M4 — сквозная идемпотентность,
+Broadcast CP-6, Edge/VPN/буфер CP-7, Notification CP-8, Mobile API, Telegram
+Console и фасады broadcast/notification.
+
 ## 6.1 Граф зависимостей вех (упрощённо)
 
 ```text

@@ -251,6 +251,15 @@ SVC-DATA). Ниже — ключевые поля и этап появления
 - **DoD.** Все действия аутентификации и управления доступом фиксируются
   (мастер-план §9.4, п.6); косвенно питает CP-8 (аудит как источник событий).
 
+**Статус реализации M3.** M3 Identity завершён для аудита доступа: login
+failure/success, logout и tenant-isolated audit path покрыты
+`services/backend/test/unit/identity-audit.spec.ts` и
+`services/backend/test/integration/identity-postgres.test.mjs`. Для CP-4/CP-5
+роль SVC-IDN — поставлять реального принципала и роли, по которым Backend
+проверяет AI/Workflow изменения; самодекларированные роли из Workflow-контекста
+не являются источником прав. Готовность M4: audit_events остаются стабильной
+append-only базой для bootstrap/приглашений и будущих Notification-событий.
+
 ### M4 — Bootstrap организаций Platform Operator'ом + приглашения
 
 - **Цель.** Заменить seeded-bootstrap M1 на полноценный self-service провижининг

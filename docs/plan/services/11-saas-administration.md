@@ -230,6 +230,16 @@ Playwright (мастер §8.2). До готовности смежных сер
 - **DoD.** Мастер §9.4; оба e2e зелёные; контракты C3/C4/C5 стабилизированы на
   CP-5.
 
+**Статус реализации M3.** M3 SaaS Administration завершён для CP-5: визуальный
+редактор Workflow сохраняет валидные схемы как новые версии, отклоняет unsafe
+Transform/tenant-spoofing правки через контракт SVC-FBP, а AI Onboarding
+показывает команду администратору и применяет её только через Backend API.
+Покрытие: `apps/saas-admin/test/m3-*.test.ts*`,
+`apps/saas-admin/test/e2e/saas-admin.m3.spec.ts` и общий e2e
+`tests/e2e/workflow-engine-cp4-cp5.test.mjs`. C3/C4/C5 стабилизированы в
+`packages/contracts/cp4-cp5-freeze.v1.json`; следующий UI-scope M4 — Broadcast и
+настройки Notification.
+
 ### M4 — Broadcast и настройки уведомлений
 
 - **Цель.** Администратор управляет массовыми коммуникациями и уведомлениями.
