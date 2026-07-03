@@ -1,5 +1,10 @@
 import { Injectable } from "@nestjs/common";
 
+import { FacadeResilience } from "../../common/resilience/resilience";
+import type {
+  FacadeResilienceOptions,
+  ResilienceRejectionReason,
+} from "../../common/resilience/resilience";
 import type { FacadeStatusDto } from "../ai-integration/ai-integration.facade";
 
 export type FbpFacadeDegradationReason = "timeout" | "unavailable";
@@ -40,6 +45,15 @@ const DEFAULT_FBP_TIMEOUT_MS = 250;
 
 @Injectable()
 export class FbpIntegrationFacade {
+  private readonly resilience: FacadeResilience;
+
+  constructor(options: FacadeResilienceOptions = {}) {
+    this.resilience = new FacadeResilience({
+      defaultTimeoutMs: DEFAULT_FBP_TIMEOUT_MS,
+      ...options,
+    });
+  }
+
   getStatus(): FacadeStatusDto {
     return {
       mode: "mock",
@@ -53,42 +67,14 @@ export class FbpIntegrationFacade {
     request: FbpStartWorkflowFacadeRequest,
     options: FbpFacadeCallOptions<FbpStartWorkflowFacadeResponse> = {},
   ): Promise<FbpStartWorkflowFacadeResponse> {
-    const result = await this.callFbp(options);
+    const result = await this.resilience.execute(options.call, {
+      timeoutMs: options.timeoutMs,
+    });
     if (result.ok) {
       return result.value;
     }
 
-    return this.createStartFallback(request, result.reason, options.now);
-  }
-
-  private async callFbp<TResponse>(
-    options: FbpFacadeCallOptions<TResponse>,
-  ): Promise<
-    | { ok: true; value: TResponse }
-    | { ok: false; reason: FbpFacadeDegradationReason }
-  > {
-    if (!options.call) {
-      return {
-        ok: false,
-        reason: "unavailable",
-      };
-    }
-
-    try {
-      const value = await withTimeout(
-        options.call(),
-        options.timeoutMs ?? DEFAULT_FBP_TIMEOUT_MS,
-      );
-      return {
-        ok: true,
-        value,
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        reason: error instanceof FbpFacadeTimeoutError ? "timeout" : "unavailable",
-      };
-    }
+    return this.createStartFallback(request, toDegradationReason(result.reason), options.now);
   }
 
   private createStartFallback(
@@ -119,30 +105,11 @@ export class FbpIntegrationFacade {
   }
 }
 
-async function withTimeout<TValue>(
-  promise: Promise<TValue>,
-  timeoutMs: number,
-): Promise<TValue> {
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(new FbpFacadeTimeoutError());
-    }, Math.max(1, timeoutMs));
-    timer.unref();
-  });
-
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    if (timer) {
-      clearTimeout(timer);
-    }
-  }
-}
-
-class FbpFacadeTimeoutError extends Error {
-  constructor() {
-    super("FBP facade call timed out.");
-    this.name = "FbpFacadeTimeoutError";
-  }
+/**
+ * Map the resilience rejection taxonomy onto the two C5 degradation reasons:
+ * timeouts stay timeouts, everything else (missing client, open breaker,
+ * saturated bulkhead, upstream error) degrades as "unavailable" (ТЗ §11.11).
+ */
+function toDegradationReason(reason: ResilienceRejectionReason): FbpFacadeDegradationReason {
+  return reason === "timeout" ? "timeout" : "unavailable";
 }
