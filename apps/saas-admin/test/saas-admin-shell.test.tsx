@@ -31,13 +31,16 @@ describe("SaaS Administration M0 shell", () => {
     expect(screen.getAllByText("Демо Организация").length).toBeGreaterThan(0);
   });
 
-  it("guards protected routes and returns to the requested section after demo auth", async () => {
+  it("guards protected routes and returns to the requested section after Telegram auth", async () => {
     const { user } = renderRoute("/organization", false);
 
     expect(await screen.findByRole("heading", { name: "Вход администратора" })).toBeInTheDocument();
     expect(screen.queryByRole("navigation", { name: "Администрирование организации" })).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Войти как демо-администратор" }));
+    await user.type(screen.getByLabelText("Telegram-имя"), "@admin_demo");
+    await user.click(screen.getByRole("button", { name: "Отправить код" }));
+    await user.type(await screen.findByLabelText("Одноразовый код"), "000000");
+    await user.click(screen.getByRole("button", { name: "Войти" }));
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Организация и конфигурация" })).toBeInTheDocument();

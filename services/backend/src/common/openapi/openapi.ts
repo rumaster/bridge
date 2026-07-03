@@ -9,11 +9,330 @@ export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
     .setVersion("1.0.0")
     .build();
 
-  return SwaggerModule.createDocument(app, config);
+  const document = SwaggerModule.createDocument(app, config);
+  addCommunicationCoreM1Contract(document);
+
+  return document;
 }
 
 export function setupSwaggerUi(app: INestApplication): void {
   SwaggerModule.setup("api/docs", app, buildOpenApiDocument(app), {
     jsonDocumentUrl: "api/docs-json",
   });
+}
+
+function addCommunicationCoreM1Contract(document: OpenAPIObject): void {
+  setPathIfAbsent(document, "/api/v1/conversations", {
+    get: {
+      operationId: "CommunicationCore_listConversations_v1",
+      parameters: [
+        {
+          in: "header",
+          name: "x-organization-id",
+          required: true,
+          schema: {
+            format: "uuid",
+            type: "string",
+          },
+        },
+        {
+          in: "query",
+          name: "limit",
+          required: false,
+          schema: {
+            default: 50,
+            maximum: 100,
+            minimum: 1,
+            type: "integer",
+          },
+        },
+      ],
+      responses: {
+        "200": {
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/ConversationListResponse",
+              },
+            },
+          },
+          description: "Tenant-scoped conversations ordered by last message time.",
+        },
+        "400": {
+          description: "Invalid tenant or pagination query.",
+        },
+      },
+      summary: "List tenant conversations",
+      tags: ["communication-core"],
+    },
+  });
+
+  setPathIfAbsent(
+    document,
+    "/api/v1/conversations/{conversationId}/messages",
+    {
+      get: {
+        operationId: "CommunicationCore_listConversationMessages_v1",
+        parameters: [
+          {
+            in: "path",
+            name: "conversationId",
+            required: true,
+            schema: {
+              format: "uuid",
+              type: "string",
+            },
+          },
+          {
+            in: "header",
+            name: "x-organization-id",
+            required: true,
+            schema: {
+              format: "uuid",
+              type: "string",
+            },
+          },
+          {
+            in: "query",
+            name: "limit",
+            required: false,
+            schema: {
+              default: 50,
+              maximum: 100,
+              minimum: 1,
+              type: "integer",
+            },
+          },
+        ],
+        responses: {
+          "200": {
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ConversationMessagesResponse",
+                },
+              },
+            },
+            description: "Messages for one tenant conversation.",
+          },
+          "400": {
+            description: "Invalid tenant, conversation, or pagination query.",
+          },
+        },
+        summary: "List conversation messages",
+        tags: ["communication-core"],
+      },
+    },
+    "/api/v1/conversations/{id}/messages",
+  );
+
+  setPathIfAbsent(document, "/api/v1/messages", {
+    post: {
+      operationId: "CommunicationCore_sendManagerMessage_v1",
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              $ref: "#/components/schemas/SendManagerMessageRequest",
+            },
+          },
+        },
+      },
+      responses: {
+        "202": {
+          content: {
+            "application/json": {
+              schema: {
+                $ref: "#/components/schemas/SendManagerMessageResponse",
+              },
+            },
+          },
+          description: "Outbound manager message stored and handed off to SVC-INT.",
+        },
+        "400": {
+          description: "Invalid message DTO.",
+        },
+        "404": {
+          description: "Conversation or endpoint was not found.",
+        },
+      },
+      summary: "Send idempotent manager message",
+      tags: ["communication-core"],
+    },
+  });
+
+  document.components ??= { schemas: {} };
+  document.components.schemas ??= {};
+  Object.assign(document.components.schemas, {
+    AttachmentDto: {
+      properties: {
+        id: { format: "uuid", type: "string" },
+        kind: { example: "image", type: "string" },
+        storage_ref: { example: "s3://bridge/m1.png", type: "string" },
+        mime: { example: "image/png", nullable: true, type: "string" },
+        size: { example: 128, minimum: 0, type: "integer" },
+      },
+      required: ["id", "kind", "storage_ref", "size"],
+      type: "object",
+    },
+    ConversationDto: {
+      properties: {
+        id: { format: "uuid", type: "string" },
+        organization_id: { format: "uuid", type: "string" },
+        client_id: { format: "uuid", type: "string" },
+        status: { enum: ["open", "closed", "pending"], type: "string" },
+        last_message_at: { format: "date-time", nullable: true, type: "string" },
+        created_at: { format: "date-time", type: "string" },
+        updated_at: { format: "date-time", type: "string" },
+      },
+      required: ["id", "organization_id", "client_id", "status", "created_at", "updated_at"],
+      type: "object",
+    },
+    ConversationListResponse: {
+      properties: {
+        data: {
+          items: { $ref: "#/components/schemas/ConversationDto" },
+          type: "array",
+        },
+        pagination: { $ref: "#/components/schemas/CorePaginationDto" },
+      },
+      required: ["data", "pagination"],
+      type: "object",
+    },
+    ConversationMessagesResponse: {
+      properties: {
+        conversation_id: { format: "uuid", type: "string" },
+        data: {
+          items: { $ref: "#/components/schemas/MessageDto" },
+          type: "array",
+        },
+        pagination: { $ref: "#/components/schemas/CorePaginationDto" },
+      },
+      required: ["conversation_id", "data", "pagination"],
+      type: "object",
+    },
+    CorePaginationDto: {
+      properties: {
+        count: { example: 1, minimum: 0, type: "integer" },
+        limit: { example: 50, maximum: 100, minimum: 1, type: "integer" },
+      },
+      required: ["count", "limit"],
+      type: "object",
+    },
+    DeliveryAttemptDto: {
+      properties: {
+        adapter: { example: "web_chat", type: "string" },
+        attempt_no: { example: 1, minimum: 1, type: "integer" },
+        status: { enum: ["pending", "sent", "delivered", "failed"], type: "string" },
+        error: { nullable: true, type: "string" },
+      },
+      required: ["adapter", "attempt_no", "status"],
+      type: "object",
+    },
+    MessageDto: {
+      properties: {
+        id: { format: "uuid", type: "string" },
+        organization_id: { format: "uuid", type: "string" },
+        conversation_id: { format: "uuid", type: "string" },
+        endpoint_id: { format: "uuid", type: "string" },
+        channel: { example: "web_chat", type: "string" },
+        direction: { enum: ["inbound", "outbound"], type: "string" },
+        sender_type: {
+          enum: ["client", "manager", "ai", "broadcast", "system"],
+          type: "string",
+        },
+        sequence_number: { example: 1, minimum: 1, type: "integer" },
+        type: { example: "text", type: "string" },
+        content: { additionalProperties: true, type: "object" },
+        status: {
+          enum: ["received", "routed", "sent", "delivered", "failed"],
+          type: "string",
+        },
+        created_at: { format: "date-time", type: "string" },
+        delivered_at: { format: "date-time", nullable: true, type: "string" },
+        attachments: {
+          items: { $ref: "#/components/schemas/AttachmentDto" },
+          type: "array",
+        },
+      },
+      required: [
+        "id",
+        "organization_id",
+        "conversation_id",
+        "endpoint_id",
+        "channel",
+        "direction",
+        "sender_type",
+        "sequence_number",
+        "type",
+        "content",
+        "status",
+        "created_at",
+      ],
+      type: "object",
+    },
+    SendManagerMessageRequest: {
+      properties: {
+        idempotency_key: { format: "uuid", type: "string" },
+        organization_id: { format: "uuid", type: "string" },
+        conversation_id: { format: "uuid", type: "string" },
+        sender_type: { enum: ["manager"], type: "string" },
+        type: { example: "text", type: "string" },
+        content: {
+          additionalProperties: true,
+          example: { text: "Здравствуйте, я помогу." },
+          type: "object",
+        },
+      },
+      required: [
+        "idempotency_key",
+        "organization_id",
+        "conversation_id",
+        "sender_type",
+        "type",
+        "content",
+      ],
+      type: "object",
+    },
+    SendManagerMessageResponse: {
+      properties: {
+        accepted: { const: true, type: "boolean" },
+        duplicate: { type: "boolean" },
+        message_id: { format: "uuid", type: "string" },
+        idempotency_key: { format: "uuid", type: "string" },
+        organization_id: { format: "uuid", type: "string" },
+        conversation_id: { format: "uuid", type: "string" },
+        endpoint_id: { format: "uuid", type: "string" },
+        sequence_number: { minimum: 1, type: "integer" },
+        status: { enum: ["sent", "failed"], type: "string" },
+        delivery_attempt: { $ref: "#/components/schemas/DeliveryAttemptDto" },
+      },
+      required: [
+        "accepted",
+        "duplicate",
+        "message_id",
+        "idempotency_key",
+        "organization_id",
+        "conversation_id",
+        "endpoint_id",
+        "sequence_number",
+        "status",
+      ],
+      type: "object",
+    },
+  });
+}
+
+function setPathIfAbsent(
+  document: OpenAPIObject,
+  path: string,
+  pathItem: OpenAPIObject["paths"][string],
+  equivalentPath?: string,
+): void {
+  if (document.paths[path] || (equivalentPath && document.paths[equivalentPath])) {
+    return;
+  }
+
+  document.paths[path] = pathItem;
 }

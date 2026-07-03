@@ -4,8 +4,12 @@ import {
   DEFAULT_CONVERSATION_ID,
   DEFAULT_ORGANIZATION_ID,
 } from "./platform/apiClient";
+import {
+  loadStoredVisitorSession,
+  saveStoredVisitorSession,
+} from "./platform/visitorSession";
 import { IconButton, PrimaryButton, WidgetShell } from "./platform/uiKit";
-import type { WebChatMessage, WebChatMountOptions } from "./types";
+import type { WebChatMessage, WebChatMountOptions, WebChatSession } from "./types";
 
 export function WebChatWidget({
   apiBaseUrl,
@@ -19,6 +23,7 @@ export function WebChatWidget({
   );
   const [messages, setMessages] = useState<WebChatMessage[]>([]);
   const [messageText, setMessageText] = useState("");
+  const [session, setSession] = useState<WebChatSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -28,8 +33,17 @@ export function WebChatWidget({
 
     async function loadMessages() {
       try {
-        const loadedMessages = await client.getMessages(conversationId);
+        const initializedSession = await client.createOrResumeSession({
+          organizationId,
+          visitorSessionId: loadStoredVisitorSession(),
+          conversationId,
+        });
+        const loadedMessages = await client.getMessages(
+          initializedSession.conversationId,
+        );
         if (isActive) {
+          saveStoredVisitorSession(initializedSession.visitorSessionId);
+          setSession(initializedSession);
           setMessages(loadedMessages);
           setError(null);
         }
@@ -49,24 +63,33 @@ export function WebChatWidget({
     return () => {
       isActive = false;
     };
-  }, [client, conversationId]);
+  }, [client, conversationId, organizationId]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const trimmedText = messageText.trim();
-    if (!trimmedText || isSending) {
+    if (!trimmedText || isSending || !session) {
       return;
     }
 
     setIsSending(true);
     try {
+      const idempotencyKey = crypto.randomUUID();
       const sentMessage = await client.sendMessage({
-        conversationId,
-        organizationId,
+        conversationId: session.conversationId,
+        endpointId: session.endpointId,
+        idempotencyKey,
+        organizationId: session.organizationId,
         text: trimmedText,
+        visitorSessionId: session.visitorSessionId,
       });
-      setMessages((currentMessages) => [...currentMessages, sentMessage]);
+      const updatedMessages = await client.getMessages(session.conversationId);
+      setMessages(
+        updatedMessages.some((message) => message.id === sentMessage.id)
+          ? updatedMessages
+          : [...updatedMessages, sentMessage],
+      );
       setMessageText("");
       setError(null);
     } catch (unknownError) {
@@ -110,9 +133,14 @@ export function WebChatWidget({
               {message.author.displayName}
             </p>
             <p className="bridge-chat-message-text">{message.body.text}</p>
-            <time dateTime={message.createdAt}>
-              {formatMessageTime(message.createdAt)}
-            </time>
+            <footer className="bridge-chat-message-meta">
+              <time dateTime={message.createdAt}>
+                {formatMessageTime(message.createdAt)}
+              </time>
+              {message.author.type === "visitor" && message.status ? (
+                <span>{formatStatus(message.status)}</span>
+              ) : null}
+            </footer>
           </article>
         ))}
       </main>
@@ -139,7 +167,9 @@ export function WebChatWidget({
           rows={2}
           value={messageText}
         />
-        <PrimaryButton disabled={isSending || messageText.trim().length === 0}>
+        <PrimaryButton
+          disabled={isSending || !session || messageText.trim().length === 0}
+        >
           {isSending ? "Отправка" : "Отправить"}
         </PrimaryButton>
       </form>
@@ -160,4 +190,23 @@ function getErrorMessage(error: unknown): string {
   }
 
   return "Неизвестная ошибка Web Chat";
+}
+
+function formatStatus(status: WebChatMessage["status"]): string {
+  switch (status) {
+    case "received":
+      return "получено";
+    case "routed":
+      return "в обработке";
+    case "sent":
+      return "отправлено";
+    case "delivered":
+      return "доставлено";
+    case "read":
+      return "прочитано";
+    case "failed":
+      return "ошибка";
+    default:
+      return "";
+  }
 }
