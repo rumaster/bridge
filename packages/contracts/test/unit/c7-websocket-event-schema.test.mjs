@@ -5,6 +5,7 @@ import {
   C7_EVENT_TYPES,
   C7_RECONNECT_SEMANTICS,
   C7_WS_PATH,
+  C7_WS_SUBSCRIPTION_FILTERS,
   createWebSocketEvent,
   validateWebSocketEvent,
 } from "../../src/c7.mjs";
@@ -64,9 +65,24 @@ describe("C7 WebSocket event schema", () => {
     assert.deepEqual(C7_RECONNECT_SEMANTICS, {
       mode: "client_auto_reconnect",
       resume_cursor: "last_event_id",
+      fallback_cursor: "after_sequence_number",
       delivery: "at_least_once_with_client_dedup",
       duplicate_rule: "drop events with event_id already observed by the client",
       ordering: "sequence_number is monotonic inside one WebSocket subscription",
     });
+  });
+
+  it("documents optional transport filters for routed C7 subscriptions", () => {
+    assert.deepEqual(C7_WS_SUBSCRIPTION_FILTERS, [
+      "organization_id",
+      "subscription_id",
+      "conversation_id",
+      "endpoint_id",
+      "client_id",
+      "recipient_user_id",
+      "user_id",
+      "manager_user_id",
+      "visitor_session_id",
+    ]);
   });
 });

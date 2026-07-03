@@ -1,5 +1,4 @@
 import {
-  selectEventsAfterCursor,
   validateWebSocketEvent,
 } from "../../../packages/contracts/src/c7.mjs";
 
@@ -11,19 +10,106 @@ export class WebSocketChannelMockValidationError extends Error {
   }
 }
 
-export function createMockWebSocketChannel({ initialEvents = [] } = {}) {
-  const clients = new Set();
+export function createInMemoryC7EventStore({ initialEvents = [] } = {}) {
   const events = [];
   const eventIds = new Set();
+
+  const store = {
+    append(event) {
+      if (eventIds.has(event.event_id)) {
+        return {
+          duplicate: true,
+          event: events.find((item) => item.event_id === event.event_id),
+        };
+      }
+
+      const storedEvent = Object.freeze(structuredClone(event));
+      events.push(storedEvent);
+      eventIds.add(storedEvent.event_id);
+
+      return {
+        duplicate: false,
+        event: storedEvent,
+      };
+    },
+
+    select({ afterSequenceNumber, lastEventId, subscription } = {}) {
+      const scopedEvents = events.filter((event) =>
+        eventMatchesSubscription(event, subscription),
+      );
+      const normalizedAfterSequenceNumber = normalizePositiveInteger(afterSequenceNumber);
+
+      if (lastEventId) {
+        const cursorIndex = scopedEvents.findIndex((event) => event.event_id === lastEventId);
+
+        if (cursorIndex !== -1) {
+          return scopedEvents.slice(cursorIndex + 1);
+        }
+      }
+
+      if (normalizedAfterSequenceNumber > 0) {
+        return scopedEvents.filter(
+          (event) => event.sequence_number > normalizedAfterSequenceNumber,
+        );
+      }
+
+      return [...scopedEvents];
+    },
+  };
+
+  for (const event of initialEvents) {
+    store.append(event);
+  }
+
+  return store;
+}
+
+export function createInMemoryC7EventBus() {
+  const subscribers = new Set();
+
+  return {
+    publish(event) {
+      for (const subscriber of subscribers) {
+        subscriber(event);
+      }
+    },
+
+    subscribe(subscriber) {
+      if (typeof subscriber !== "function") {
+        throw new TypeError("subscriber must be a function");
+      }
+
+      subscribers.add(subscriber);
+
+      return () => {
+        subscribers.delete(subscriber);
+      };
+    },
+  };
+}
+
+export function createMockWebSocketChannel({
+  eventBus = createInMemoryC7EventBus(),
+  eventStore = createInMemoryC7EventStore(),
+  initialEvents = [],
+} = {}) {
+  const clients = new Set();
   const metrics = {
     connection_total: 0,
     event_published_total: 0,
     duplicate_event_total: 0,
     rejected_event_total: 0,
   };
+  const unsubscribeFromEventBus = eventBus.subscribe((event) => {
+    for (const client of clients) {
+      if (eventMatchesSubscription(event, client.subscription)) {
+        client.sendEvent(event);
+      }
+    }
+  });
 
   const channel = {
-    connect({ lastEventId, send }) {
+    connect({ afterSequenceNumber, lastEventId, send, subscription } = {}) {
       if (typeof send !== "function") {
         throw new TypeError("send must be a function");
       }
@@ -31,6 +117,7 @@ export function createMockWebSocketChannel({ initialEvents = [] } = {}) {
       const client = {
         closed: false,
         lastEventId,
+        subscription: normalizeSubscription(subscription),
         sendEvent(event) {
           if (this.closed) {
             return;
@@ -43,7 +130,11 @@ export function createMockWebSocketChannel({ initialEvents = [] } = {}) {
       clients.add(client);
       metrics.connection_total += 1;
 
-      for (const event of selectEventsAfterCursor(events, lastEventId)) {
+      for (const event of eventStore.select({
+        afterSequenceNumber,
+        lastEventId,
+        subscription: client.subscription,
+      })) {
         client.sendEvent(event);
       }
 
@@ -71,42 +162,49 @@ export function createMockWebSocketChannel({ initialEvents = [] } = {}) {
         );
       }
 
-      if (eventIds.has(event.event_id)) {
+      const result = eventStore.append(event);
+
+      if (result.duplicate) {
         metrics.duplicate_event_total += 1;
-        const existingEvent = events.find((item) => item.event_id === event.event_id);
         return {
           accepted: true,
           duplicate: true,
-          event: existingEvent,
+          event: result.event,
         };
       }
 
-      const storedEvent = Object.freeze({ ...event });
-      events.push(storedEvent);
-      eventIds.add(storedEvent.event_id);
       metrics.event_published_total += 1;
-
-      for (const client of clients) {
-        client.sendEvent(storedEvent);
-      }
+      eventBus.publish(result.event);
 
       return {
         accepted: true,
         duplicate: false,
-        event: storedEvent,
+        event: result.event,
       };
     },
 
-    getEvents({ afterEventId } = {}) {
-      return selectEventsAfterCursor(events, afterEventId);
+    getEvents({ afterEventId, afterSequenceNumber, subscription } = {}) {
+      return eventStore.select({
+        afterSequenceNumber,
+        lastEventId: afterEventId,
+        subscription: normalizeSubscription(subscription),
+      });
     },
 
     getMetrics() {
       return {
         ...metrics,
         connected_clients: clients.size,
-        retained_events: events.length,
+        retained_events: eventStore.select().length,
       };
+    },
+
+    close() {
+      for (const client of clients) {
+        client.closed = true;
+      }
+      clients.clear();
+      unsubscribeFromEventBus();
     },
   };
 
@@ -115,4 +213,137 @@ export function createMockWebSocketChannel({ initialEvents = [] } = {}) {
   }
 
   return channel;
+}
+
+function normalizeSubscription(subscription) {
+  if (subscription === null || typeof subscription !== "object" || Array.isArray(subscription)) {
+    return {};
+  }
+
+  return Object.freeze({
+    organizationId: getString(subscription.organizationId ?? subscription.organization_id),
+    subscriptionId: getString(subscription.subscriptionId ?? subscription.subscription_id),
+    conversationId: getString(subscription.conversationId ?? subscription.conversation_id),
+    endpointId: getString(subscription.endpointId ?? subscription.endpoint_id),
+    clientId: getString(subscription.clientId ?? subscription.client_id),
+    recipientUserId: getString(subscription.recipientUserId ?? subscription.recipient_user_id),
+    userId: getString(subscription.userId ?? subscription.user_id),
+    managerUserId: getString(subscription.managerUserId ?? subscription.manager_user_id),
+    visitorSessionId: getString(subscription.visitorSessionId ?? subscription.visitor_session_id),
+  });
+}
+
+function eventMatchesSubscription(event, subscription) {
+  const normalized = normalizeSubscription(subscription);
+
+  if (!hasSubscriptionFilters(normalized)) {
+    return true;
+  }
+
+  return (
+    matchesEventValue(event, normalized.organizationId, ["organization_id"], {
+      includePayload: false,
+    }) &&
+    matchesEventValue(event, normalized.subscriptionId, [
+      "subscription_id",
+      "subscriptionId",
+    ]) &&
+    matchesEventValue(event, normalized.conversationId, [
+      "conversation_id",
+      "conversationId",
+    ]) &&
+    matchesEventValue(event, normalized.endpointId, ["endpoint_id", "endpointId"]) &&
+    matchesEventValue(event, normalized.clientId, ["client_id", "clientId"]) &&
+    matchesEventValue(event, normalized.recipientUserId, [
+      "recipient_user_id",
+      "recipientUserId",
+    ]) &&
+    matchesEventValue(event, normalized.userId, ["user_id", "userId"]) &&
+    matchesEventValue(event, normalized.managerUserId, [
+      "manager_user_id",
+      "managerUserId",
+    ]) &&
+    matchesEventValue(event, normalized.visitorSessionId, [
+      "visitor_session_id",
+      "visitorSessionId",
+    ], {
+      strict: false,
+    })
+  );
+}
+
+function hasSubscriptionFilters(subscription) {
+  return Object.values(subscription).some((value) => value !== undefined);
+}
+
+function matchesEventValue(
+  event,
+  expectedValue,
+  keys,
+  { includePayload = true, strict = true } = {},
+) {
+  if (expectedValue === undefined) {
+    return true;
+  }
+
+  const values = collectEventValues(event, keys, { includePayload });
+
+  if (values.length === 0) {
+    return !strict;
+  }
+
+  return values.includes(expectedValue);
+}
+
+function collectEventValues(event, keys, { includePayload }) {
+  const records = [event];
+  const payload = event?.payload;
+
+  if (includePayload && isRecord(payload)) {
+    records.push(payload);
+
+    for (const nestedKey of ["message", "notification", "broadcast", "workflow"]) {
+      if (isRecord(payload[nestedKey])) {
+        records.push(payload[nestedKey]);
+      }
+    }
+  }
+
+  const values = [];
+
+  for (const record of records) {
+    if (!isRecord(record)) {
+      continue;
+    }
+
+    for (const key of keys) {
+      const value = getString(record[key]);
+
+      if (value !== undefined) {
+        values.push(value);
+      }
+    }
+  }
+
+  return values;
+}
+
+function normalizePositiveInteger(value) {
+  if (typeof value === "number" && Number.isSafeInteger(value) && value > 0) {
+    return value;
+  }
+
+  if (typeof value === "string" && /^[1-9]\d*$/.test(value)) {
+    return Number(value);
+  }
+
+  return 0;
+}
+
+function getString(value) {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

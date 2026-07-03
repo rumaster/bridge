@@ -9,6 +9,7 @@
   "x-reconnect": {
     "mode": "client_auto_reconnect",
     "resume_cursor": "last_event_id",
+    "fallback_cursor": "after_sequence_number",
     "delivery": "at_least_once_with_client_dedup",
     "duplicate_rule": "drop events with event_id already observed by the client",
     "ordering": "sequence_number is monotonic inside one WebSocket subscription"
@@ -33,6 +34,97 @@
               "type": "string"
             },
             "description": "Last C7 event observed by the client. Used to resume without redelivering already observed events."
+          },
+          {
+            "name": "after_sequence_number",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Fallback resume cursor for clients that know the last observed sequence number."
+          },
+          {
+            "name": "organization_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Tenant scope for routed C7 delivery."
+          },
+          {
+            "name": "subscription_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional explicit C7 subscription scope."
+          },
+          {
+            "name": "conversation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Conversation scope for client-side realtime subscriptions."
+          },
+          {
+            "name": "endpoint_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Communication endpoint scope for client-side realtime subscriptions."
+          },
+          {
+            "name": "client_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Client profile scope for manager workspace realtime subscriptions."
+          },
+          {
+            "name": "recipient_user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Notification recipient scope for user-facing realtime subscriptions."
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "User scope for manager/admin realtime subscriptions."
+          },
+          {
+            "name": "manager_user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Manager-specific scope for routed realtime subscriptions."
+          },
+          {
+            "name": "visitor_session_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Optional Web Chat visitor session scope. Events without this field may still be routed by organization/conversation filters."
           }
         ],
         "responses": {

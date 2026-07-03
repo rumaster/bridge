@@ -92,7 +92,8 @@
 ## M0-13: C7/C9 для Edge & WebSocket Gateway
 
 - `openapi/edge/c7.websocket.openapi.json` фиксирует C7 `GET /ws` как WebSocket
-  upgrade и семантику авто-reconnect через cursor `last_event_id`.
+  upgrade, transport-фильтры подписки и семантику авто-reconnect через cursor
+  `last_event_id` с fallback `after_sequence_number`.
 - `events/c7-websocket-event.schema.json` фиксирует общий envelope C7 v1:
   `event_id`, `organization_id`, `sequence_number`, `payload`, `occurred_at` и
   события `message.created`, `message.status_changed`, `typing.started`,
