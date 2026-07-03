@@ -117,6 +117,7 @@ describe("M0 integration contract gate", () => {
             organization_id: "org-1",
             channel_id: "web-chat-channel",
             channel_type: "web_chat",
+            conversation_ref: "web-chat-session-1",
             direction: "outbound",
             content: {
               type: "text",

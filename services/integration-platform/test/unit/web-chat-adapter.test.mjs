@@ -124,6 +124,27 @@ describe("Web Chat adapter normalization", () => {
     );
   });
 
+  it("rejects outbound C2 Egress without a Web Chat conversation reference", () => {
+    assert.throws(
+      () =>
+        normalizeOutgoingWebChatDelivery({
+          contract: "C2.EgressDelivery",
+          version: "1.0.0",
+          idempotency_key: "web-out-1",
+          channel_id: "channel-web",
+          message: {
+            message_id: "web-out-1",
+            organization_id: "org-1",
+            channel_id: "channel-web",
+            channel_type: WEB_CHAT_CHANNEL_TYPE,
+            direction: "outbound",
+            content: { type: "text", text: "hello" },
+          },
+        }),
+      /message\.conversation_ref must be a non-empty string/,
+    );
+  });
+
   it("publishes Web Chat C6 capabilities with only actually supported features enabled", () => {
     const adapter = createWebChatAdapter({
       coreIngressUrl: "http://core.local/internal/ingress/messages",

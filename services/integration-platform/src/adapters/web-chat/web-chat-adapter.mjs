@@ -348,13 +348,7 @@ function validateEgressDelivery(delivery) {
     errors.push("message.content.type must be one of: text, image, file");
   }
 
-  if (
-    delivery?.message?.conversation_ref !== undefined &&
-    (typeof delivery.message.conversation_ref !== "string" ||
-      delivery.message.conversation_ref.trim() === "")
-  ) {
-    errors.push("message.conversation_ref must be a non-empty string");
-  }
+  expectNonEmptyString(errors, delivery?.message?.conversation_ref, "message.conversation_ref");
 
   return errors;
 }

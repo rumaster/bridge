@@ -1,0 +1,121 @@
+{
+  "x-contract-id": "C3.saas-admin.consumer",
+  "x-consumer": "SVC-ADMIN",
+  "x-provider": "Backend API C3",
+  "x-stage": "M1",
+  "interactions": [
+    {
+      "name": "start Telegram login",
+      "method": "POST",
+      "path": "/auth/login/telegram/start",
+      "request": {
+        "required": ["telegramUsername"]
+      },
+      "response": {
+        "required": ["status", "deliveryChannel", "telegramUsername", "expiresInSeconds"]
+      }
+    },
+    {
+      "name": "verify Telegram login",
+      "method": "POST",
+      "path": "/auth/login/telegram/verify",
+      "request": {
+        "required": ["telegramUsername", "code"]
+      },
+      "response": {
+        "required": ["authenticated", "user", "organization", "roles", "session"]
+      }
+    },
+    {
+      "name": "read current session",
+      "method": "GET",
+      "path": "/auth/session",
+      "response": {
+        "required": ["authenticated", "user", "organization", "roles", "session"]
+      }
+    },
+    {
+      "name": "logout current session",
+      "method": "POST",
+      "path": "/auth/logout",
+      "response": {
+        "required": ["loggedOut", "sessionMode"]
+      },
+      "audit": {
+        "required": false,
+        "reason": "Session revocation is recorded in auth_sessions.revoked_at."
+      }
+    },
+    {
+      "name": "read organization",
+      "method": "GET",
+      "path": "/organizations/{organizationId}",
+      "response": {
+        "required": ["id", "name", "description", "timezone", "locale", "status", "updatedAt"]
+      }
+    },
+    {
+      "name": "update organization",
+      "method": "PATCH",
+      "path": "/organizations/{organizationId}",
+      "request": {
+        "required": ["name", "description", "timezone", "locale"]
+      },
+      "response": {
+        "required": ["id", "name", "description", "timezone", "locale", "status", "updatedAt"]
+      },
+      "audit": {
+        "required": true,
+        "action": "organization.update"
+      }
+    },
+    {
+      "name": "read organization configuration",
+      "method": "GET",
+      "path": "/organizations/{organizationId}/configuration",
+      "response": {
+        "required": [
+          "organizationId",
+          "defaultLanguage",
+          "aiAssistantEnabled",
+          "workflowAutomationEnabled",
+          "monthlyMessageLimit",
+          "notificationEmail",
+          "retentionDays",
+          "updatedAt"
+        ]
+      }
+    },
+    {
+      "name": "replace organization configuration",
+      "method": "PUT",
+      "path": "/organizations/{organizationId}/configuration",
+      "request": {
+        "required": [
+          "defaultLanguage",
+          "aiAssistantEnabled",
+          "workflowAutomationEnabled",
+          "monthlyMessageLimit",
+          "notificationEmail",
+          "retentionDays"
+        ]
+      },
+      "response": {
+        "required": [
+          "organizationId",
+          "defaultLanguage",
+          "aiAssistantEnabled",
+          "workflowAutomationEnabled",
+          "monthlyMessageLimit",
+          "notificationEmail",
+          "retentionDays",
+          "updatedAt"
+        ]
+      },
+      "audit": {
+        "required": true,
+        "action": "configuration.put"
+      }
+    }
+  ]
+}

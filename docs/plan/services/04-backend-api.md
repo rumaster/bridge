@@ -201,6 +201,13 @@ SVC-API поставляет **общий каркас** для всех гру�
 - **Тесты.** *Unit*: DTO-валидаторы клиентов/конфигурации, преобразователи, версионирование конфигурации. *Integration*: Backend↔PostgreSQL для каждого ресурса — **happy-path + изоляция арендатора + ошибка валидации** (мастер §8.3); проксирование Backend↔CORE через публичный интерфейс. *E2e*: участие в «Работа менеджера» и «Web Chat: приём и ответ» (мастер §8.2).
 - **DoD.** Каждый эндпоинт домена покрыт integration-тестом (3 случая); изоляция арендатора (ТЗ §22.6) и валидация (ТЗ §11.10) соблюдены; аудит пишется; **CP-1** пройдена (см. §6); контракт C3 (base) заморожен.
 
+**Статус реализации CP-1.** M1 Backend API завершён: C3 base опубликован в
+`packages/contracts/openapi/backend-core/openapi.json`, C3.auth — в
+`packages/contracts/openapi/auth/c3.auth.openapi.json`, consumer contracts
+SVC-MWS/SVC-ADMIN закреплены в `packages/contracts/consumer/`, а доменные
+CRUD/proxy, tenant isolation, идемпотентный `POST /messages` и аудит
+изменяющих операций покрыты `services/backend/test/integration/m1-domain-api.spec.ts`.
+
 ### M2 — Knowledge Base API (L) — CP-3
 
 - **Цель.** CRUD документов базы знаний и internal-поиск для AI.
