@@ -1,6 +1,8 @@
 import { createServer } from "node:http";
 import { pathToFileURL } from "node:url";
 
+import { createBackendApiModule } from "./modules/backend-api/m0-api-module.mjs";
+import { createCommunicationCoreModule } from "./modules/communication-core/communication-core-module.mjs";
 import { createIdentityModule } from "./modules/identity/identity-module.mjs";
 
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -66,7 +68,7 @@ async function readJsonBody(request) {
 }
 
 export function createBackendServer({
-  modules = [createIdentityModule()],
+  modules = createBackendM0Modules(),
 } = {}) {
   const routes = modules.flatMap((module) => module.routes);
 
@@ -109,6 +111,20 @@ export function createBackendServer({
 
     sendJson(response, result.status, result.body);
   });
+}
+
+export function createBackendM0Modules() {
+  const communicationCoreModule = createCommunicationCoreModule();
+  const identityModule = createIdentityModule();
+  const apiModule = createBackendApiModule({
+    moduleNames: [
+      "backend-api",
+      identityModule.name,
+      communicationCoreModule.name,
+    ],
+  });
+
+  return [apiModule, identityModule, communicationCoreModule];
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

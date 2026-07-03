@@ -3,9 +3,16 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.mjs"
+    }
+  },
+  "types": "./src/index.d.ts",
   "scripts": {
-    "lint": "node ../../scripts/workspace-command.mjs lint",
-    "test": "node ../../scripts/workspace-command.mjs test",
-    "build": "node ../../scripts/workspace-command.mjs build"
+    "lint": "find src test -name '*.mjs' -print0 | xargs -0 -r -n 1 node --check",
+    "test": "node --test test/*.test.mjs",
+    "build": "find src -name '*.mjs' -print0 | xargs -0 -r -n 1 node --check"
   }
 }

@@ -1,3 +1,4 @@
+import { createJsonApiClient } from "@bridge/api-client";
 import type { WebChatMessage } from "../types";
 
 export const DEFAULT_API_BASE_URL = "/api/v1";
@@ -22,33 +23,24 @@ export type WebChatApiClientOptions = {
   fetcher?: Fetcher;
 };
 
-// TODO(SVC-CHAT M1): заменить локальную заглушку на @bridge/api-client,
-// когда пакет начнет экспортировать сгенерированный C3.messages клиент.
 export function createWebChatApiClient(
   options: WebChatApiClientOptions = {},
 ): WebChatApiClient {
-  const baseUrl = normalizeBaseUrl(options.baseUrl ?? DEFAULT_API_BASE_URL);
-  const fetcher = options.fetcher ?? fetch;
+  const { requestJson } = createJsonApiClient({
+    baseUrl: options.baseUrl ?? DEFAULT_API_BASE_URL,
+    fetcher: options.fetcher,
+  });
 
   return {
     async getMessages(conversationId) {
-      const response = await fetcher(
-        `${baseUrl}/conversations/${encodeURIComponent(conversationId)}/messages`,
+      return requestJson<WebChatMessage[]>(
+        `/conversations/${encodeURIComponent(conversationId)}/messages`,
       );
-
-      if (!response.ok) {
-        throw new Error(`Cannot load web chat messages: ${response.status}`);
-      }
-
-      return (await response.json()) as WebChatMessage[];
     },
 
     async sendMessage(input) {
-      const response = await fetcher(`${baseUrl}/messages`, {
+      return requestJson<WebChatMessage>("/messages", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-        },
         body: JSON.stringify({
           channel: "web_chat",
           conversation_id: input.conversationId,
@@ -59,16 +51,6 @@ export function createWebChatApiClient(
           },
         }),
       });
-
-      if (!response.ok) {
-        throw new Error(`Cannot send web chat message: ${response.status}`);
-      }
-
-      return (await response.json()) as WebChatMessage;
     },
   };
-}
-
-function normalizeBaseUrl(baseUrl: string): string {
-  return baseUrl.replace(/\/+$/, "");
 }
