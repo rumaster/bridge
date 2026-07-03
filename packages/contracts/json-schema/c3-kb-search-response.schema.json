@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge.local/c3-kb-search-response.schema.json",
+  "title": "C3.kb Knowledge Base Search Response",
+  "description": "Ranked knowledge chunks returned by Backend for a single organization. Results are already filtered by organization_id (tenant isolation) and ordered by vector distance (nearest first).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "organization_id",
+    "results"
+  ],
+  "properties": {
+    "contract": {
+      "const": "C3.kb.SearchResponse"
+    },
+    "version": {
+      "const": "1.0.0"
+    },
+    "organization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/KnowledgeSearchHit"
+      }
+    }
+  },
+  "$defs": {
+    "KnowledgeSearchHit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "document_id",
+        "chunk_id",
+        "chunk_no",
+        "content",
+        "distance"
+      ],
+      "properties": {
+        "document_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "chunk_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "chunk_no": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "content": {
+          "type": "string",
+          "minLength": 1
+        },
+        "distance": {
+          "type": "number",
+          "minimum": 0
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    }
+  }
+}

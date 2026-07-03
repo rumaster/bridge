@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge.local/c3-kb-search-request.schema.json",
+  "title": "C3.kb Knowledge Base Search Request",
+  "description": "Internal Backend knowledge search request issued by SVC-AI during the RAG pipeline. Backend performs the pgvector search with tenant isolation by organization_id; SVC-AI never queries the database directly.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "organization_id",
+    "embedding"
+  ],
+  "properties": {
+    "contract": {
+      "const": "C3.kb.SearchRequest"
+    },
+    "version": {
+      "const": "1.0.0"
+    },
+    "organization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "query": {
+      "type": "string"
+    },
+    "embedding": {
+      "type": "array",
+      "minItems": 1536,
+      "maxItems": 1536,
+      "items": {
+        "type": "number"
+      }
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50
+    }
+  }
+}
