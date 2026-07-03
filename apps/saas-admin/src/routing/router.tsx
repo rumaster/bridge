@@ -20,6 +20,7 @@ const UsersPage = lazy(() => import("../presentation/pages/UsersPage"));
 const ChannelsPage = lazy(() => import("../presentation/pages/ChannelsPage"));
 const KnowledgePage = lazy(() => import("../presentation/pages/KnowledgePage"));
 const WorkflowPage = lazy(() => import("../presentation/pages/WorkflowPage"));
+const OnboardingPage = lazy(() => import("../presentation/pages/OnboardingPage"));
 const BroadcastPage = lazy(() => import("../presentation/pages/BroadcastPage"));
 const NotificationsPage = lazy(() => import("../presentation/pages/NotificationsPage"));
 
@@ -92,6 +93,10 @@ function createRoutes(services?: SaasAdminServiceOverrides): RouteObject[] {
                 {
                   path: "workflow",
                   element: <WorkflowPage />
+                },
+                {
+                  path: "onboarding",
+                  element: <OnboardingPage />
                 },
                 {
                   path: "broadcast",
