@@ -696,6 +696,10 @@ lint (ESLint/Prettier, ТЗ §27.5)
 M1, точка согласования CP-1) — в документе
 [parallel-stage-2-prompts.md](./parallel-stage-2-prompts.md).
 
+Третья серия параллельных задач для омниканальности, realtime и AI Assistant (веха
+M2, точки согласования CP-2 и CP-3) — в документе
+[parallel-stage-3-prompts.md](./parallel-stage-3-prompts.md).
+
 | Сервис | План | Точки согласования |
 |--------|------|--------------------|
 | Data Platform | [01-data-platform.md](./services/01-data-platform.md) | все (поставщик схемы) |
