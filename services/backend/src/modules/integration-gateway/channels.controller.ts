@@ -44,12 +44,13 @@ export class ChannelsController {
 
   @Post()
   @Version("1")
-  @ApiOperation({ summary: "Connect a Web Chat channel skeleton" })
+  @ApiOperation({ summary: "Connect an omnichannel adapter" })
   @ApiCreatedResponse({ type: ConnectChannelResponseDto })
   connectChannel(@Body() dto: ConnectChannelRequestDto): ConnectChannelResponseDto {
     return {
-      channel: this.integrationGateway.connectWebChatChannel({
+      channel: this.integrationGateway.connectChannel({
         organization_id: dto.organization_id,
+        channel_type: dto.channel_type,
         name: dto.name,
         credentials_ref: dto.credentials_ref,
         config: dto.config,
