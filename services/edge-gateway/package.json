@@ -6,6 +6,7 @@
   "scripts": {
     "lint": "find src test -name '*.mjs' -print0 | xargs -0 -n1 node --check",
     "test": "node --test test/unit/*.test.mjs test/integration/*.test.mjs",
-    "build": "find src -name '*.mjs' -print0 | xargs -0 -n1 node --check"
+    "build": "find src -name '*.mjs' -print0 | xargs -0 -n1 node --check",
+    "start": "node src/main.mjs"
   }
 }
