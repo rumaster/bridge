@@ -47,11 +47,23 @@ export function createIntegrationPlatformServer({
         return;
       }
 
-      if (request.method === "POST" && url.pathname === "/web-chat/incoming/messages") {
+      if (request.method === "POST" && isWebChatIncomingPath(url.pathname)) {
         const currentWebChatAdapter = ensureWebChatAdapter(webChatAdapter);
         const payload = await readJson(request);
-        const result = await currentWebChatAdapter.publishIncomingMessage(payload);
-        sendJson(response, 202, result);
+        try {
+          const result = await currentWebChatAdapter.publishIncomingMessage(payload);
+          sendJson(response, 202, result);
+        } catch (error) {
+          if (error instanceof TypeError) {
+            sendJson(response, 400, {
+              accepted: false,
+              errors: [error.message],
+            });
+            return;
+          }
+
+          throw error;
+        }
         return;
       }
 
@@ -83,6 +95,10 @@ function ensureWebChatAdapter(adapter) {
   }
 
   return adapter;
+}
+
+function isWebChatIncomingPath(pathname) {
+  return pathname === "/web-chat/incoming/messages" || pathname === "/web-chat/messages";
 }
 
 async function readJson(request) {

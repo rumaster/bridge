@@ -52,6 +52,33 @@ describe("Web Chat adapter normalization", () => {
     assert.equal(message.occurred_at, "2026-07-03T09:00:00.000Z");
   });
 
+  it("keeps the M1 Web Chat Endpoint payload compatible with the C2 envelope", () => {
+    const message = normalizeIncomingWebChatMessage(
+      {
+        organization_id: "org-1",
+        conversation_id: "conversation-1",
+        endpoint_id: "channel-web",
+        visitor_session_id: "visitor-1",
+        idempotency_key: "web-msg-legacy-1",
+        body: {
+          type: "text",
+          text: "legacy ping",
+        },
+      },
+      () => "2026-07-03T09:00:00.000Z",
+    );
+
+    assert.equal(message.message_id, "web-msg-legacy-1");
+    assert.equal(message.idempotency_key, "web-msg-legacy-1");
+    assert.equal(message.channel_id, "channel-web");
+    assert.equal(message.conversation_ref, "conversation-1");
+    assert.equal(message.sender_ref, "visitor-1");
+    assert.deepEqual(message.content, {
+      type: "text",
+      text: "legacy ping",
+    });
+  });
+
   it("normalizes outbound C2 Egress delivery into a Web Chat channel payload", () => {
     const delivery = normalizeOutgoingWebChatDelivery({
       contract: "C2.EgressDelivery",

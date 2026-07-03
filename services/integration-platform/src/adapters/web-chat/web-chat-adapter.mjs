@@ -159,46 +159,57 @@ export function createWebChatCapabilityDescriptor({
 export function normalizeIncomingWebChatMessage(payload, now = () => new Date().toISOString()) {
   const errors = [];
   expectRecord(errors, payload, "payload");
-  expectNonEmptyString(errors, payload?.organization_id, "organization_id");
-  expectNonEmptyString(errors, payload?.channel_id, "channel_id");
+
+  const normalized = normalizeIncomingPayload(payload);
+  expectNonEmptyString(errors, normalized.organizationId, "organization_id");
+  expectNonEmptyString(errors, normalized.channelId, "channel_id or endpoint_id");
   expectNonEmptyString(
     errors,
-    payload?.session_id ?? payload?.conversation_ref,
-    "session_id",
+    normalized.sessionId,
+    "session_id, conversation_ref, or conversation_id",
   );
-  expectNonEmptyString(errors, payload?.sender_ref, "sender_ref");
+  expectNonEmptyString(errors, normalized.senderRef, "sender_ref or visitor_session_id");
 
-  if (payload?.text !== undefined && typeof payload.text !== "string") {
+  if (normalized.text !== undefined && typeof normalized.text !== "string") {
     errors.push("text must be a string");
   }
 
-  const attachments = normalizeAttachments(payload?.attachments ?? [], errors);
-  if ((payload?.text ?? "") === "" && attachments.length === 0) {
+  const attachments = normalizeAttachments(normalized.attachments, errors);
+  if ((normalized.text ?? "") === "" && attachments.length === 0) {
     errors.push("text or attachments are required");
+  }
+
+  if (
+    typeof normalized.messageId === "string" &&
+    typeof normalized.idempotencyKey === "string" &&
+    normalized.messageId !== normalized.idempotencyKey
+  ) {
+    errors.push("idempotency_key must match message_id");
   }
 
   if (errors.length > 0) {
     throw new TypeError(errors.join("; "));
   }
 
-  const messageId = payload.message_id ?? `web-chat-in-${randomUUID()}`;
-  const contentType = inferContentType(payload, attachments);
-  const occurredAt = payload.occurred_at ?? now();
+  const messageId =
+    normalized.messageId ?? normalized.idempotencyKey ?? `web-chat-in-${randomUUID()}`;
+  const contentType = inferContentType(normalized, attachments);
+  const occurredAt = normalized.occurredAt ?? now();
 
   return {
     message_id: messageId,
     idempotency_key: messageId,
-    organization_id: payload.organization_id,
-    channel_id: payload.channel_id,
+    organization_id: normalized.organizationId,
+    channel_id: normalized.channelId,
     channel_type: WEB_CHAT_CHANNEL_TYPE,
-    external_message_id: payload.external_message_id ?? messageId,
-    conversation_ref: payload.conversation_ref ?? payload.session_id,
-    sender_ref: payload.sender_ref,
+    external_message_id: normalized.externalMessageId ?? messageId,
+    conversation_ref: normalized.sessionId,
+    sender_ref: normalized.senderRef,
     direction: "inbound",
     content: {
       type: contentType,
-      ...(payload.text !== undefined && payload.text !== ""
-        ? { text: payload.text }
+      ...(normalized.text !== undefined && normalized.text !== ""
+        ? { text: normalized.text }
         : {}),
     },
     attachments,
@@ -241,6 +252,23 @@ function createCapability(capability) {
   return {
     supported: false,
     notes: "Not supported by the M1 Web Chat adapter.",
+  };
+}
+
+function normalizeIncomingPayload(payload) {
+  return {
+    organizationId: payload?.organization_id,
+    channelId: payload?.channel_id ?? payload?.endpoint_id,
+    messageId: payload?.message_id,
+    idempotencyKey: payload?.idempotency_key,
+    sessionId:
+      payload?.session_id ?? payload?.conversation_ref ?? payload?.conversation_id,
+    senderRef: payload?.sender_ref ?? payload?.visitor_session_id,
+    text: payload?.text ?? payload?.body?.text,
+    type: payload?.type ?? payload?.body?.type,
+    attachments: payload?.attachments ?? payload?.body?.attachments ?? [],
+    externalMessageId: payload?.external_message_id,
+    occurredAt: payload?.occurred_at,
   };
 }
 

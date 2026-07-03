@@ -119,6 +119,55 @@ describe("Web Chat adapter <-> mock core CP-1 slice", () => {
     assert.equal(ingressCalls[0].message.attachments[0].kind, "image");
   });
 
+  it("preserves the M1 Web Chat Endpoint route from SVC-CHAT", async () => {
+    const previousCalls = ingressCalls.length;
+    const response = await fetch(`${integrationBaseUrl}/web-chat/messages`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({
+        organization_id: "org-1",
+        conversation_id: "conversation-1",
+        endpoint_id: "channel-web",
+        visitor_session_id: "visitor-1",
+        idempotency_key: "web-msg-legacy-1",
+        body: {
+          type: "text",
+          text: "hello from widget",
+        },
+      }),
+    });
+
+    assert.equal(response.status, 202);
+    assert.equal(ingressCalls.length, previousCalls + 1);
+
+    const ingress = ingressCalls.at(-1);
+    assert.equal(ingress.contract, "C2.IngressMessage");
+    assert.equal(ingress.idempotency_key, "web-msg-legacy-1");
+    assert.equal(ingress.message.message_id, "web-msg-legacy-1");
+    assert.equal(ingress.message.channel_id, "channel-web");
+    assert.equal(ingress.message.conversation_ref, "conversation-1");
+    assert.equal(ingress.message.sender_ref, "visitor-1");
+    assert.deepEqual(ingress.message.content, {
+      type: "text",
+      text: "hello from widget",
+    });
+  });
+
+  it("returns 400 for invalid Web Chat Endpoint payloads", async () => {
+    const response = await fetch(`${integrationBaseUrl}/web-chat/messages`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({
+        organization_id: "org-1",
+      }),
+    });
+
+    assert.equal(response.status, 400);
+    const body = await response.json();
+    assert.equal(body.accepted, false);
+    assert.match(body.errors[0], /channel_id or endpoint_id/);
+  });
+
   it("accepts C2 Egress and delivers one idempotent Web Chat payload", async () => {
     const egressBody = {
       contract: "C2.EgressDelivery",
