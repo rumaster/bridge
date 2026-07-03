@@ -1504,6 +1504,12 @@ function transitionStoredMessage(message, status, changedAt) {
 
 function buildC2EgressDelivery({ message, endpoint }) {
   const channelId = endpoint.metadata?.channel_id ?? endpoint.external_id ?? endpoint.id;
+  const conversationRef =
+    endpoint.metadata?.conversation_ref ??
+    message.metadata?.conversation_ref ??
+    message.conversation_ref ??
+    message.conversation_id;
+  const channelType = endpoint.channel ?? message.channel;
   const content = {
     ...message.content,
     type: message.type,
@@ -1518,6 +1524,8 @@ function buildC2EgressDelivery({ message, endpoint }) {
       message_id: message.id,
       organization_id: message.organization_id,
       channel_id: channelId,
+      channel_type: channelType,
+      conversation_ref: conversationRef,
       direction: MESSAGE_DIRECTION.OUTBOUND,
       content,
     },

@@ -224,7 +224,9 @@ e2e «Авторизация» (мастер-план §8.2).
 базовую карточку клиента и идемпотентную отправку ответа через C3.messages с
 оптимистичным отображением и примирением статуса. Добавлены unit/component-тесты,
 MSW integration-проверка идемпотентности `POST /messages`, consumer-driven контракт
-C3 для SVC-MWS и Playwright e2e «Работа менеджера».
+C3 для SVC-MWS и Playwright e2e «Работа менеджера». На CP-1 контракт C3 для
+SVC-MWS включён в `packages/contracts/cp1-freeze.v1.json` как стабильная основа
+для M2 realtime и AI Assistant.
 
 ### M2 — Realtime по WebSocket + панель AI-подсказок (CP-3)
 

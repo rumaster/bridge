@@ -157,6 +157,8 @@ describe("Communication Core M1", () => {
     assert.equal(outbound.delivery_attempt.status, "sent");
     assert.equal(deliveries.length, 1);
     assert.equal(deliveries[0].contract, "C2.EgressDelivery");
+    assert.equal(deliveries[0].message.channel_type, "web_chat");
+    assert.equal(deliveries[0].message.conversation_ref, "web-chat-room-1");
     assert.equal(deliveries[0].message.direction, "outbound");
     assert.equal(deliveries[0].message.content.text, "Hello, I can help");
 

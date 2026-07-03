@@ -200,6 +200,12 @@ M4 §26.6).
 - **DoD.** § 9.4 + contract-тест (потребление API/WS) и e2e CP-1 (§ 6); заморожены
   C1/C2/C7 (владелец — SVC-CORE).
 
+**Статус реализации CP-1.** M1 Web Chat завершён для первого канала: клиентские
+API/MSW проверки живут в `apps/web-chat/test/**`, а сквозной gate
+`tests/e2e/web-chat-cp1.test.mjs` поднимает Web Chat adapter и настоящий
+Communication Core, принимает inbound через C2 Ingress, создаёт manager reply
+через C3 `POST /messages` и доставляет outbound обратно в Web Chat session.
+
 ### 5.3 M2 — AI-ответы, полная история/подгрузка, realtime по WS (C7)
 
 - **Цель.** **AI-ответы** в ленте (§12), **полная история** с подгрузкой,

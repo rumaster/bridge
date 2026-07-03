@@ -12,6 +12,7 @@ import { ClientModule } from "./modules/client/client.module";
 import { CommunicationCoreProxyModule } from "./modules/communication-core/communication-core-proxy.module";
 import { ConfigurationModule } from "./modules/configuration/configuration.module";
 import { HealthModule } from "./modules/health/health.module";
+import { IntegrationGatewayModule } from "./modules/integration-gateway/integration-gateway.module";
 import { OrganizationModule } from "./modules/organization/organization.module";
 import { UserModule } from "./modules/user/user.module";
 
@@ -19,6 +20,7 @@ import { UserModule } from "./modules/user/user.module";
   imports: [
     DatabaseModule,
     HealthModule,
+    IntegrationGatewayModule,
     OrganizationModule,
     ConfigurationModule,
     ClientModule,

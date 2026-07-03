@@ -34,6 +34,19 @@
 - Session endpoints используют Bearer/cookie token; в БД хранится только
   `auth_sessions.token_hash`.
 
+## CP-1: заморозка C1/C2/C3/C7 для M2
+
+- `cp1-freeze.v1.json` фиксирует gate M1 (CP-1) от 2026-07-03: C1, C2, C3 и C7
+  имеют статус `stable_for_m2`.
+- `src/registry.mjs` экспортирует `CP1_CONTRACT_FREEZE`,
+  `CP1_GATE_REQUIRED_CONTRACT_IDS` и `validateCp1ContractFreeze()` для
+  машинной проверки freeze.
+- C3 на CP-1 агрегирует `openapi/backend-core/openapi.json`,
+  `openapi/auth/c3.auth.openapi.json`, consumer contract SVC-MWS и consumer
+  contract SVC-ADMIN.
+- M2 readiness: стабильные C1/C2/C3/C7; следующий scope — adapters, realtime,
+  AI Assistant и identity resolution.
+
 ## M0-05: C2/C6 для Integration Platform
 
 - `openapi/c2-internal-api.yaml` фиксирует mock C2: Adapter вызывает Core

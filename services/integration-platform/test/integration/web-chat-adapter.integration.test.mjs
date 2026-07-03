@@ -36,7 +36,7 @@ async function readJson(request) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
-describe("web chat adapter M1", () => {
+describe("Web Chat adapter <-> mock core CP-1 slice", () => {
   const ingressCalls = [];
   let coreServer;
   let coreBaseUrl;
@@ -49,7 +49,7 @@ describe("web chat adapter M1", () => {
       if (request.method === "POST" && request.url === "/internal/ingress/messages") {
         ingressCalls.push(await readJson(request));
         response.writeHead(202, JSON_HEADERS);
-        response.end(JSON.stringify({ accepted: true, sequence: ingressCalls.length }));
+        response.end(JSON.stringify({ accepted: true }));
         return;
       }
 
@@ -71,7 +71,7 @@ describe("web chat adapter M1", () => {
     await close(coreServer);
   });
 
-  it("публикует возможности C6 Web Chat", async () => {
+  it("exposes C6 capabilities for Web Chat", async () => {
     const response = await fetch(`${integrationBaseUrl}/web-chat/capabilities`);
 
     assert.equal(response.status, 200);
@@ -79,86 +79,143 @@ describe("web chat adapter M1", () => {
     assert.equal(capabilities.contract, "C6.CapabilityDescriptor");
     assert.equal(capabilities.channel_type, "web_chat");
     assert.equal(capabilities.capabilities.text.supported, true);
+    assert.equal(capabilities.capabilities.image.supported, true);
+    assert.equal(capabilities.capabilities.file.supported, true);
     assert.equal(capabilities.capabilities.typing_indicator.supported, true);
     assert.equal(capabilities.capabilities.read_receipt.supported, true);
+    assert.equal(capabilities.capabilities.voice.supported, false);
   });
 
-  it("нормализует входящее сообщение Web Chat в canonical C1 и публикует C2 Ingress", async () => {
-    const response = await fetch(`${integrationBaseUrl}/web-chat/messages`, {
+  it("receives Web Chat input and publishes C2 Ingress to core", async () => {
+    const response = await fetch(`${integrationBaseUrl}/web-chat/incoming/messages`, {
       method: "POST",
       headers: JSON_HEADERS,
       body: JSON.stringify({
-        idempotency_key: "12345678-1234-4234-8234-123456789abc",
-        organization_id: "22345678-1234-4234-8234-123456789abc",
-        conversation_id: "32345678-1234-4234-8234-123456789abc",
-        endpoint_id: "42345678-1234-4234-8234-123456789abc",
-        visitor_session_id: "visitor-session-1",
-        text: "Нужна помощь",
+        organization_id: "org-1",
+        channel_id: "channel-web",
+        message_id: "web-msg-1",
+        session_id: "session-1",
+        sender_ref: "visitor-1",
+        text: "hello core",
+        attachments: [
+          {
+            id: "image-1",
+            kind: "image",
+            storage_ref: "blob://image-1",
+            mime: "image/png",
+            size: 512,
+          },
+        ],
       }),
     });
 
     assert.equal(response.status, 202);
-    const body = await response.json();
-    assert.equal(body.accepted, true);
-    assert.equal(body.message_id, "12345678-1234-4234-8234-123456789abc");
-
     assert.equal(ingressCalls.length, 1);
-    assert.deepEqual(ingressCalls[0], {
-      id: "12345678-1234-4234-8234-123456789abc",
-      idempotency_key: "12345678-1234-4234-8234-123456789abc",
-      organization_id: "22345678-1234-4234-8234-123456789abc",
-      conversation_id: "32345678-1234-4234-8234-123456789abc",
-      endpoint_id: "42345678-1234-4234-8234-123456789abc",
-      channel: "web_chat",
-      direction: "inbound",
-      sender_type: "client",
-      sequence_number: 1,
-      type: "text",
-      content: {
-        text: "Нужна помощь",
-      },
-      status: "received",
-      created_at: "2026-07-03T09:00:00.000Z",
-      updated_at: "2026-07-03T09:00:00.000Z",
-      metadata: {
-        visitor_session_id: "visitor-session-1",
-      },
-    });
+    assert.equal(ingressCalls[0].contract, "C2.IngressMessage");
+    assert.equal(ingressCalls[0].idempotency_key, "web-msg-1");
+    assert.equal(ingressCalls[0].message.message_id, "web-msg-1");
+    assert.equal(ingressCalls[0].message.channel_type, "web_chat");
+    assert.equal(ingressCalls[0].message.content.text, "hello core");
+    assert.equal(ingressCalls[0].message.attachments[0].kind, "image");
   });
 
-  it("принимает C2 Egress ответа менеджера и сохраняет доставку в Web Chat канал", async () => {
-    const response = await fetch(`${integrationBaseUrl}/internal/egress/deliveries`, {
+  it("preserves the M1 Web Chat Endpoint route from SVC-CHAT", async () => {
+    const previousCalls = ingressCalls.length;
+    const response = await fetch(`${integrationBaseUrl}/web-chat/messages`, {
       method: "POST",
       headers: JSON_HEADERS,
       body: JSON.stringify({
-        contract: "C2.EgressDelivery",
-        version: "1.0.0",
-        idempotency_key: "manager-reply-1",
-        channel_id: "web-chat-channel",
-        message: {
-          message_id: "manager-reply-1",
-          organization_id: "22345678-1234-4234-8234-123456789abc",
-          channel_id: "web-chat-channel",
-          channel_type: "web_chat",
-          conversation_ref: "32345678-1234-4234-8234-123456789abc",
-          direction: "outbound",
-          content: { type: "text", text: "Здравствуйте, чем помочь?" },
-          occurred_at: "2026-07-03T09:01:00.000Z",
+        organization_id: "org-1",
+        conversation_id: "conversation-1",
+        endpoint_id: "channel-web",
+        visitor_session_id: "visitor-1",
+        idempotency_key: "web-msg-legacy-1",
+        body: {
+          type: "text",
+          text: "hello from widget",
         },
       }),
     });
 
     assert.equal(response.status, 202);
+    assert.equal(ingressCalls.length, previousCalls + 1);
+
+    const ingress = ingressCalls.at(-1);
+    assert.equal(ingress.contract, "C2.IngressMessage");
+    assert.equal(ingress.idempotency_key, "web-msg-legacy-1");
+    assert.equal(ingress.message.message_id, "web-msg-legacy-1");
+    assert.equal(ingress.message.channel_id, "channel-web");
+    assert.equal(ingress.message.conversation_ref, "conversation-1");
+    assert.equal(ingress.message.sender_ref, "visitor-1");
+    assert.deepEqual(ingress.message.content, {
+      type: "text",
+      text: "hello from widget",
+    });
+  });
+
+  it("returns 400 for invalid Web Chat Endpoint payloads", async () => {
+    const response = await fetch(`${integrationBaseUrl}/web-chat/messages`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify({
+        organization_id: "org-1",
+      }),
+    });
+
+    assert.equal(response.status, 400);
     const body = await response.json();
-    assert.equal(body.accepted, true);
+    assert.equal(body.accepted, false);
+    assert.match(body.errors[0], /channel_id or endpoint_id/);
+  });
+
+  it("accepts C2 Egress and delivers one idempotent Web Chat payload", async () => {
+    const egressBody = {
+      contract: "C2.EgressDelivery",
+      version: "1.0.0",
+      idempotency_key: "web-out-1",
+      channel_id: "channel-web",
+      message: {
+        message_id: "web-out-1",
+        organization_id: "org-1",
+        channel_id: "channel-web",
+        channel_type: "web_chat",
+        conversation_ref: "session-1",
+        direction: "outbound",
+        content: { type: "text", text: "hello web chat" },
+      },
+    };
+
+    const first = await fetch(`${integrationBaseUrl}/internal/egress/deliveries`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(egressBody),
+    });
+    const second = await fetch(`${integrationBaseUrl}/internal/egress/deliveries`, {
+      method: "POST",
+      headers: JSON_HEADERS,
+      body: JSON.stringify(egressBody),
+    });
+
+    assert.equal(first.status, 202);
+    assert.equal(second.status, 202);
+
+    const firstBody = await first.json();
+    const secondBody = await second.json();
+    assert.equal(firstBody.accepted, true);
+    assert.equal(firstBody.duplicate, false);
+    assert.equal(secondBody.accepted, true);
+    assert.equal(secondBody.duplicate, true);
+
     assert.deepEqual(adapter.getChannelDeliveries(), [
       {
-        idempotency_key: "manager-reply-1",
-        message_id: "manager-reply-1",
-        organization_id: "22345678-1234-4234-8234-123456789abc",
-        conversation_ref: "32345678-1234-4234-8234-123456789abc",
-        channel_id: "web-chat-channel",
-        content: { type: "text", text: "Здравствуйте, чем помочь?" },
+        idempotency_key: "web-out-1",
+        message_id: "web-out-1",
+        organization_id: "org-1",
+        channel_id: "channel-web",
+        session_id: "session-1",
+        type: "text",
+        text: "hello web chat",
+        attachments: [],
         accepted_at: "2026-07-03T09:00:00.000Z",
       },
     ]);

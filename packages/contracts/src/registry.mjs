@@ -26,6 +26,13 @@ export const M0_GATE_REQUIRED_CONTRACT_IDS = Object.freeze([
   "MOBILE.v1",
 ]);
 
+export const CP1_GATE_REQUIRED_CONTRACT_IDS = Object.freeze([
+  "C1",
+  "C2",
+  "C3",
+  "C7",
+]);
+
 export const M0_CONTRACT_REGISTRY = Object.freeze([
   freezeContract({
     id: MESSAGE_MODEL_CONTRACT_ID,
@@ -240,22 +247,133 @@ export const M0_CONTRACT_REGISTRY = Object.freeze([
   }),
 ]);
 
+export const CP1_CONTRACT_FREEZE = Object.freeze([
+  freezeContract({
+    id: MESSAGE_MODEL_CONTRACT_ID,
+    name: "Canonical Message Model",
+    owner: "SVC-CORE",
+    stage: "M1",
+    gate: "CP-1",
+    status: "stable_for_m2",
+    version: MESSAGE_MODEL_VERSION,
+    artifacts: [
+      "packages/contracts/message-model/message.schema.json",
+      "packages/contracts/message-model/status-machine.v1.json",
+      "packages/contracts/message-model/index.mjs",
+    ],
+    dtoNames: ["C1.CanonicalMessage"],
+    evidence: [
+      "packages/contracts/message-model/message-model.test.mjs",
+      "services/backend/test/unit/communication-core.m1.test.mjs",
+    ],
+  }),
+  freezeContract({
+    id: "C2",
+    name: "INT <-> CORE Ingress/Egress",
+    owner: "SVC-CORE",
+    stage: "M1",
+    gate: "CP-1",
+    status: "stable_for_m2",
+    version: "1.0.0",
+    artifacts: [
+      "packages/contracts/openapi/communication-core-c2.openapi.json",
+      "packages/contracts/openapi/c2-internal-api.yaml",
+      "packages/contracts/json-schema/c2-ingress-message.schema.json",
+      "packages/contracts/json-schema/c2-egress-delivery.schema.json",
+    ],
+    dtoNames: [
+      "C2.IngressMessage",
+      "C2.IngressAcceptedResponse",
+      "C2.EgressDelivery",
+    ],
+    evidence: [
+      "tests/contract/int-core.m1.contract.test.mjs",
+      "tests/contract/int-core-c2-c6.test.mjs",
+      "tests/e2e/web-chat-cp1.test.mjs",
+    ],
+  }),
+  freezeContract({
+    id: "C3",
+    name: "Backend API for M1 workspaces",
+    owner: "SVC-API/SVC-IDN",
+    stage: "M1",
+    gate: "CP-1",
+    status: "stable_for_m2",
+    version: "1.0.0",
+    basePath: "/api/v1",
+    artifacts: [
+      "packages/contracts/openapi/backend-core/openapi.json",
+      "packages/contracts/openapi/auth/c3.auth.openapi.json",
+      "packages/contracts/consumer/manager-workspace-c3.consumer.v1.json",
+      "packages/contracts/consumer/saas-admin-c3.consumer.v1.json",
+    ],
+    dtoNames: [
+      "C3.auth.TelegramLoginStartRequest",
+      "C3.auth.TelegramLoginVerifyRequest",
+      "C3.auth.AuthSessionResponse",
+      "C3.base.OrganizationResponse",
+      "C3.base.ConfigurationResponse",
+      "C3.base.ConversationResponse",
+      "C3.base.MessageResponse",
+    ],
+    evidence: [
+      "tests/contract/manager-workspace-c3-consumer.test.mjs",
+      "tests/contract/saas-admin-c3-consumer.test.mjs",
+      "services/backend/test/integration/m1-domain-api.spec.ts",
+      "apps/saas-admin/test/e2e/saas-admin.auth.spec.ts",
+      "apps/manager-workspace/test/e2e/manager-workspace.m1.spec.ts",
+    ],
+  }),
+  freezeContract({
+    id: "C7",
+    name: "Realtime event envelope",
+    owner: "SVC-CORE/SVC-API",
+    stage: "M1",
+    gate: "CP-1",
+    status: "stable_for_m2",
+    version: C7_VERSION,
+    basePath: "/api/v1",
+    artifacts: [
+      "packages/contracts/openapi/edge/c7.websocket.openapi.json",
+      "packages/contracts/events/c7-websocket-event.schema.json",
+      "packages/contracts/src/c7.mjs",
+    ],
+    dtoNames: ["C7.WebSocketEvent"],
+    evidence: ["packages/contracts/test/unit/c7-websocket-event-schema.test.mjs"],
+  }),
+]);
+
 export function getM0ContractRegistry() {
-  return M0_CONTRACT_REGISTRY.map((contract) => ({
-    ...contract,
-    artifacts: [...contract.artifacts],
-    dtoNames: [...contract.dtoNames],
-  }));
+  return M0_CONTRACT_REGISTRY.map(cloneContract);
 }
 
 export function findM0Contract(contractId) {
   return M0_CONTRACT_REGISTRY.find((contract) => contract.id === contractId);
 }
 
+export function getCp1ContractFreeze() {
+  return CP1_CONTRACT_FREEZE.map(cloneContract);
+}
+
+export function findCp1Contract(contractId) {
+  return CP1_CONTRACT_FREEZE.find((contract) => contract.id === contractId);
+}
+
 export function validateM0ContractRegistry(
   registry = M0_CONTRACT_REGISTRY,
   requiredIds = M0_GATE_REQUIRED_CONTRACT_IDS,
 ) {
+  return validateContractRegistry(registry, requiredIds, "M0 registry");
+}
+
+export function validateCp1ContractFreeze(
+  registry = CP1_CONTRACT_FREEZE,
+  requiredIds = CP1_GATE_REQUIRED_CONTRACT_IDS,
+) {
+  return validateContractRegistry(registry, requiredIds, "CP-1 freeze");
+}
+
+function validateContractRegistry(registry, requiredIds, registryName) {
   const errors = [];
 
   assertUnique(errors, registry.map((contract) => contract.id), "contract id");
@@ -272,7 +390,7 @@ export function validateM0ContractRegistry(
 
   for (const requiredId of requiredIds) {
     if (!registry.some((contract) => contract.id === requiredId)) {
-      errors.push(`required contract ${requiredId} is missing from M0 registry`);
+      errors.push(`required contract ${requiredId} is missing from ${registryName}`);
     }
   }
 
@@ -302,11 +420,21 @@ export function validateM0ContractRegistry(
   };
 }
 
+function cloneContract(contract) {
+  return {
+    ...contract,
+    artifacts: [...contract.artifacts],
+    dtoNames: [...contract.dtoNames],
+    ...(contract.evidence ? { evidence: [...contract.evidence] } : {}),
+  };
+}
+
 function freezeContract(contract) {
   return Object.freeze({
     ...contract,
     artifacts: Object.freeze([...contract.artifacts]),
     dtoNames: Object.freeze([...contract.dtoNames]),
+    ...(contract.evidence ? { evidence: Object.freeze([...contract.evidence]) } : {}),
   });
 }
 

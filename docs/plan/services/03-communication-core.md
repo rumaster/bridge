@@ -197,6 +197,15 @@ Endpoint (ТЗ §8.5); (2) `sequence_number` монотонен в предел�
 - **DoD.** Срез M1 проходит e2e; изоляция арендатора и серверная валидация
   (мастер §9.4).
 
+**Статус реализации CP-1.** M1 Communication Core завершён: C2 Ingress,
+Conversation/messages, идемпотентный `POST /messages`, переходы
+`received -> routed -> sent` и `message_delivery_attempts` покрыты
+`services/backend/test/unit/communication-core.m1.test.mjs`,
+`tests/integration/communication-core-m1.test.mjs` и
+`tests/contract/int-core.m1.contract.test.mjs`. C2 Egress сохраняет
+`channel_type` и `conversation_ref`, чтобы Web Chat adapter доставлял ответ в ту
+же сессию CP-1.
+
 ### M2 — Identity resolution, порядок, realtime
 
 - **Цель.** Омниканальная единая история, гарантия порядка, обновления realtime.

@@ -181,6 +181,12 @@ Playwright (мастер §8.2). До готовности смежных сер
   SVC-IDN на CP-1.
 - **DoD.** Мастер §9.4; e2e «Авторизация» зелёный.
 
+**Статус реализации CP-1.** M1 SaaS Administration завершён: вход через C3.auth,
+экран организации/конфигурации, logout и обработка ошибок покрыты unit/MSW
+тестами `apps/saas-admin/test/**`, e2e «Авторизация»
+`apps/saas-admin/test/e2e/saas-admin.auth.spec.ts` и consumer contract
+`packages/contracts/consumer/saas-admin-c3.consumer.v1.json`.
+
 ### M2 — Каналы связи и Knowledge Base
 
 - **Цель.** Администратор подключает каналы и наполняет базу знаний.

@@ -1,0 +1,104 @@
+{
+  "x-gate": "CP-1",
+  "x-stage": "M1",
+  "x-status": "complete",
+  "frozen_at": "2026-07-03",
+  "scope": {
+    "services": [
+      "SVC-CHAT",
+      "SVC-INT(Web Chat)",
+      "SVC-CORE",
+      "SVC-API",
+      "SVC-IDN",
+      "SVC-MWS",
+      "SVC-ADMIN"
+    ],
+    "scenarios": [
+      "Web Chat: приём и ответ",
+      "Авторизация",
+      "Работа менеджера"
+    ],
+    "invariants": [
+      "tenant isolation (RLS)",
+      "idempotent POST /messages",
+      "received -> routed -> sent status transitions",
+      "audit events for mutating operations"
+    ]
+  },
+  "contracts": [
+    {
+      "id": "C1",
+      "version": "1.0.0",
+      "owner": "SVC-CORE",
+      "status": "stable_for_m2",
+      "artifacts": [
+        "packages/contracts/message-model/message.schema.json",
+        "packages/contracts/message-model/status-machine.v1.json",
+        "packages/contracts/message-model/index.mjs"
+      ],
+      "evidence": [
+        "packages/contracts/message-model/message-model.test.mjs",
+        "services/backend/test/unit/communication-core.m1.test.mjs"
+      ]
+    },
+    {
+      "id": "C2",
+      "version": "1.0.0",
+      "owner": "SVC-CORE",
+      "status": "stable_for_m2",
+      "artifacts": [
+        "packages/contracts/openapi/communication-core-c2.openapi.json",
+        "packages/contracts/openapi/c2-internal-api.yaml",
+        "packages/contracts/json-schema/c2-ingress-message.schema.json",
+        "packages/contracts/json-schema/c2-egress-delivery.schema.json"
+      ],
+      "evidence": [
+        "tests/contract/int-core.m1.contract.test.mjs",
+        "tests/contract/int-core-c2-c6.test.mjs",
+        "tests/e2e/web-chat-cp1.test.mjs"
+      ]
+    },
+    {
+      "id": "C3",
+      "version": "1.0.0",
+      "owner": "SVC-API/SVC-IDN",
+      "status": "stable_for_m2",
+      "artifacts": [
+        "packages/contracts/openapi/backend-core/openapi.json",
+        "packages/contracts/openapi/auth/c3.auth.openapi.json",
+        "packages/contracts/consumer/manager-workspace-c3.consumer.v1.json",
+        "packages/contracts/consumer/saas-admin-c3.consumer.v1.json"
+      ],
+      "evidence": [
+        "tests/contract/manager-workspace-c3-consumer.test.mjs",
+        "tests/contract/saas-admin-c3-consumer.test.mjs",
+        "services/backend/test/integration/m1-domain-api.spec.ts",
+        "apps/saas-admin/test/e2e/saas-admin.auth.spec.ts",
+        "apps/manager-workspace/test/e2e/manager-workspace.m1.spec.ts"
+      ]
+    },
+    {
+      "id": "C7",
+      "version": "1.0.0",
+      "owner": "SVC-CORE/SVC-API",
+      "status": "stable_for_m2",
+      "artifacts": [
+        "packages/contracts/openapi/edge/c7.websocket.openapi.json",
+        "packages/contracts/events/c7-websocket-event.schema.json",
+        "packages/contracts/src/c7.mjs"
+      ],
+      "evidence": [
+        "packages/contracts/test/unit/c7-websocket-event-schema.test.mjs"
+      ]
+    }
+  ],
+  "m2_readiness": {
+    "stable_contracts": ["C1", "C2", "C3", "C7"],
+    "next_scope": [
+      "adapters",
+      "realtime",
+      "AI Assistant",
+      "identity resolution"
+    ]
+  }
+}
