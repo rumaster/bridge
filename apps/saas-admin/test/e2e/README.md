@@ -1,4 +1,3 @@
-# SaaS Administration Playwright skeleton
+# SaaS Administration Playwright
 
-E2E-сценарии появятся на M1/CP-1 вместе с реальным входом C3.auth.
-На M0 папка фиксирует точку подключения Playwright без активных сценариев.
+M1 добавляет сценарий «Авторизация» против C3.auth/C3.org MSW-моков.

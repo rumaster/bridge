@@ -55,13 +55,25 @@ export function extractSessionToken(request = {}) {
   return null;
 }
 
+function queryValue(query, name) {
+  if (!query) {
+    return undefined;
+  }
+
+  if (typeof query.get === "function") {
+    return query.get(name) ?? undefined;
+  }
+
+  return query[name];
+}
+
 export function requestedOrganizationId(request = {}) {
   return (
     request.organizationId ??
     request.params?.organizationId ??
     request.params?.organization_id ??
-    request.query?.organizationId ??
-    request.query?.organization_id ??
+    queryValue(request.query, "organizationId") ??
+    queryValue(request.query, "organization_id") ??
     request.body?.organizationId ??
     request.body?.organization_id ??
     headerValue(request.headers, "x-organization-id") ??

@@ -216,7 +216,7 @@ describe("backend skeleton with M1 AuthGuard", () => {
     assert.equal(body.errors[0].field, "code");
   });
 
-  it("accepts a valid C2 ingress message through the Communication Core mock", async () => {
+  it("accepts and routes a valid C2 ingress message through Communication Core M1", async () => {
     const response = await fetch(`${baseUrl}/api/v1/internal/ingress/messages`, {
       method: "POST",
       headers: {
@@ -247,6 +247,7 @@ describe("backend skeleton with M1 AuthGuard", () => {
     const body = await response.json();
     assert.equal(body.accepted, true);
     assert.equal(body.message_id, "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
-    assert.equal(body.status, "received");
+    assert.equal(body.status, "routed");
+    assert.equal(body.routed_to, "manager");
   });
 });

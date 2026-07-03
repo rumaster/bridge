@@ -1,0 +1,93 @@
+import { describe, expect, it } from "vitest";
+import { createWebChatApiClient } from "../src/platform/apiClient";
+
+describe("Bridge Web Chat API client M1", () => {
+  it("создает или восстанавливает анонимную сессию посетителя через public chat API", async () => {
+    const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      calls.push({ input, init });
+      return Response.json({
+        visitorSessionId: "visitor-session-1",
+        organizationId: "22345678-1234-4234-8234-123456789abc",
+        conversationId: "32345678-1234-4234-8234-123456789abc",
+        endpointId: "42345678-1234-4234-8234-123456789abc",
+      });
+    };
+    const client = createWebChatApiClient({
+      baseUrl: "http://localhost/api/v1",
+      fetcher,
+    });
+
+    const session = await client.createOrResumeSession({
+      organizationId: "22345678-1234-4234-8234-123456789abc",
+      visitorSessionId: "visitor-session-1",
+      conversationId: "32345678-1234-4234-8234-123456789abc",
+    });
+
+    expect(session.conversationId).toBe("32345678-1234-4234-8234-123456789abc");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.input).toBe("http://localhost/api/v1/web-chat/sessions");
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      channel: "web_chat",
+      organization_id: "22345678-1234-4234-8234-123456789abc",
+      visitor_session_id: "visitor-session-1",
+      conversation_id: "32345678-1234-4234-8234-123456789abc",
+    });
+  });
+
+  it("отправляет сообщение с клиентским idempotency_key", async () => {
+    const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      calls.push({ input, init });
+      return Response.json({
+        id: "12345678-1234-4234-8234-123456789abc",
+        idempotencyKey: "12345678-1234-4234-8234-123456789abc",
+        organizationId: "22345678-1234-4234-8234-123456789abc",
+        conversationId: "32345678-1234-4234-8234-123456789abc",
+        endpointId: "42345678-1234-4234-8234-123456789abc",
+        channel: "web_chat",
+        author: {
+          type: "visitor",
+          displayName: "Посетитель",
+        },
+        body: {
+          type: "text",
+          text: "Здравствуйте",
+        },
+        createdAt: "2026-07-03T09:00:00.000Z",
+        status: "sent",
+      });
+    };
+    const client = createWebChatApiClient({
+      baseUrl: "http://localhost/api/v1",
+      fetcher,
+    });
+
+    await client.sendMessage({
+      conversationId: "32345678-1234-4234-8234-123456789abc",
+      endpointId: "42345678-1234-4234-8234-123456789abc",
+      idempotencyKey: "12345678-1234-4234-8234-123456789abc",
+      organizationId: "22345678-1234-4234-8234-123456789abc",
+      text: "Здравствуйте",
+      visitorSessionId: "visitor-session-1",
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.input).toBe("http://localhost/api/v1/messages");
+    expect(new Headers(calls[0]?.init?.headers).get("idempotency-key")).toBe(
+      "12345678-1234-4234-8234-123456789abc",
+    );
+    expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
+      channel: "web_chat",
+      conversation_id: "32345678-1234-4234-8234-123456789abc",
+      endpoint_id: "42345678-1234-4234-8234-123456789abc",
+      idempotency_key: "12345678-1234-4234-8234-123456789abc",
+      organization_id: "22345678-1234-4234-8234-123456789abc",
+      visitor_session_id: "visitor-session-1",
+      body: {
+        type: "text",
+        text: "Здравствуйте",
+      },
+    });
+  });
+});

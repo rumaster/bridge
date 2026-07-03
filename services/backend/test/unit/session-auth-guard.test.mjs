@@ -90,4 +90,22 @@ describe("session AuthGuard", () => {
     assert.equal(result.ok, false);
     assert.equal(result.status, 403);
   });
+
+  it("checks organization ownership from URLSearchParams query scope", async () => {
+    const { service, token } = await createAuthenticatedService();
+    const guard = createSessionAuthGuard({ identityService: service });
+    const request = {
+      headers: {
+        authorization: `Bearer ${token}`,
+      },
+      query: new URLSearchParams({
+        organization_id: "99999999-9999-4999-8999-999999999999",
+      }),
+    };
+
+    const result = await guard.authorize(request);
+
+    assert.equal(result.ok, false);
+    assert.equal(result.status, 403);
+  });
 });
