@@ -1,5 +1,5 @@
 export const SEEDED_AUTH_CONTEXT = Object.freeze({
-  mode: "mock",
+  mode: "seed",
   source: "SVC-DATA M0 seeded demo identity",
   user: Object.freeze({
     id: "00000000-0000-4000-8000-000000000201",
@@ -22,28 +22,9 @@ export const SEEDED_AUTH_CONTEXT = Object.freeze({
     }),
   ]),
   session: Object.freeze({
-    id: "mock-session-m0",
-    mode: "mock",
+    id: "seed-session-m0",
+    mode: "seed",
     issuedAt: "1970-01-01T00:00:00.000Z",
     expiresAt: null,
   }),
 });
-
-export function createMockAuthGuard({
-  authContext = SEEDED_AUTH_CONTEXT,
-} = {}) {
-  return {
-    canActivate(request) {
-      if (!request || typeof request !== "object") {
-        throw new TypeError("MockAuthGuard requires a mutable request object.");
-      }
-
-      request.auth = authContext;
-      return true;
-    },
-  };
-}
-
-export function getAuthContext(request) {
-  return request?.auth ?? SEEDED_AUTH_CONTEXT;
-}

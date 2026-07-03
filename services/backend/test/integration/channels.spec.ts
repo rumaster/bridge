@@ -4,6 +4,11 @@ import request from "supertest";
 
 import { AppModule } from "../../src/app.module";
 import { configureBackendApp } from "../../src/bootstrap";
+import { PgDatabase } from "../../src/common/database/database.service";
+
+const ORG_ID = "30000000-0000-4000-8000-000000000101";
+const ADMIN_ID = "30000000-0000-4000-8000-000000000201";
+const ADMIN_TOKEN = "brs_channels_admin";
 
 describe("C3.channels Web Chat skeleton", () => {
   let app: INestApplication;
@@ -11,7 +16,10 @@ describe("C3.channels Web Chat skeleton", () => {
   beforeAll(async () => {
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
-    }).compile();
+    })
+      .overrideProvider(PgDatabase)
+      .useValue(createAuthDatabaseStub())
+      .compile();
 
     app = moduleRef.createNestApplication();
     configureBackendApp(app, { installSwaggerUi: false });
@@ -25,11 +33,13 @@ describe("C3.channels Web Chat skeleton", () => {
   it("connects Web Chat and returns its C6 capabilities", async () => {
     const createResponse = await request(app.getHttpServer())
       .post("/api/v1/channels")
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
       .send({
-        organization_id: "org-1",
+        organization_id: ORG_ID,
         channel_type: "web_chat",
         name: "Основной Web Chat",
-        credentials_ref: "secret://web-chat/org-1/main",
+        credentials_ref: "secret://web-chat/tenant-a/main",
         config: {
           widget_origin: "https://example.test",
         },
@@ -37,18 +47,29 @@ describe("C3.channels Web Chat skeleton", () => {
       .expect(201);
 
     expect(createResponse.body.channel).toMatchObject({
-      organization_id: "org-1",
+      organization_id: ORG_ID,
       channel_type: "web_chat",
       name: "Основной Web Chat",
       status: "connected",
-      credentials_ref: "secret://web-chat/org-1/main",
+      credentials_ref: "secret://web-chat/tenant-a/main",
     });
     expect(createResponse.body.channel).not.toHaveProperty("token");
 
     const channelId = createResponse.body.channel.id;
 
     await request(app.getHttpServer())
+      .get("/api/v1/channels")
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.map((channel: { id: string }) => channel.id)).toEqual([channelId]);
+      });
+
+    await request(app.getHttpServer())
       .get(`/api/v1/channels/${channelId}/capabilities`)
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
       .expect(200)
       .expect(({ body }) => {
         expect(body.contract).toBe("C6.CapabilityDescriptor");
@@ -64,6 +85,8 @@ describe("C3.channels Web Chat skeleton", () => {
 
     await request(app.getHttpServer())
       .post(`/api/v1/channels/${channelId}:test`)
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
       .send({})
       .expect(200)
       .expect(({ body }) => {
@@ -73,3 +96,34 @@ describe("C3.channels Web Chat skeleton", () => {
       });
   });
 });
+
+function createAuthDatabaseStub(): Pick<PgDatabase, "withTenant"> {
+  return {
+    async withTenant(_organizationId, callback) {
+      return callback({
+        async query() {
+          return {
+            rowCount: 1,
+            rows: [
+              {
+                display_name: "Channels Admin",
+                expires_at: new Date("2099-01-01T00:00:00.000Z"),
+                id: "30000000-0000-4000-8000-000000000901",
+                issued_at: new Date("2026-07-03T10:00:00.000Z"),
+                organization_id: ORG_ID,
+                organization_name: "Tenant Channels",
+                organization_status: "active",
+                revoked_at: null,
+                role_bindings: [{ role: "administrator", organizationId: ORG_ID }],
+                roles: ["administrator"],
+                telegram_username: "channels_admin",
+                user_id: ADMIN_ID,
+                user_status: "active",
+              },
+            ],
+          };
+        },
+      } as never);
+    },
+  };
+}

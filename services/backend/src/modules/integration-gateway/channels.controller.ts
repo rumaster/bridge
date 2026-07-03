@@ -1,6 +1,23 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Version } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  HttpCode,
+  Param,
+  Post,
+  UseGuards,
+  Version,
+} from "@nestjs/common";
 import { ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 
+import { Roles } from "../../common/auth/roles.decorator";
+import { RolesGuard } from "../../common/auth/roles.guard";
+import { SessionAuthGuard } from "../../common/auth/session-auth.guard";
+import {
+  ORGANIZATION_ID_HEADER,
+  getRequiredOrganizationId,
+} from "../../common/request-context";
 import {
   ChannelResponseDto,
   ConnectChannelRequestDto,
@@ -9,6 +26,8 @@ import {
 import { IntegrationGatewayFacade } from "./integration-gateway.facade";
 
 @ApiTags("channels")
+@UseGuards(SessionAuthGuard, RolesGuard)
+@Roles("administrator")
 @Controller("channels")
 export class ChannelsController {
   constructor(private readonly integrationGateway: IntegrationGatewayFacade) {}
@@ -17,8 +36,10 @@ export class ChannelsController {
   @Version("1")
   @ApiOperation({ summary: "List connected channels" })
   @ApiOkResponse({ type: ChannelResponseDto, isArray: true })
-  listChannels(): ChannelResponseDto[] {
-    return this.integrationGateway.listChannels();
+  listChannels(
+    @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: string | string[] | undefined,
+  ): ChannelResponseDto[] {
+    return this.integrationGateway.listChannels(getRequiredOrganizationId(organizationIdHeader));
   }
 
   @Post()
@@ -40,12 +61,20 @@ export class ChannelsController {
   @Version("1")
   @ApiOperation({ summary: "Return channel C6 capabilities" })
   @ApiOkResponse({ description: "C6.CapabilityDescriptor" })
-  getCapabilities(@Param("id") channelId: string): unknown {
-    return this.integrationGateway.getChannelCapabilities(channelId);
+  getCapabilities(
+    @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: string | string[] | undefined,
+    @Param("id") channelId: string,
+  ): unknown {
+    return this.integrationGateway.getChannelCapabilities(
+      channelId,
+      getRequiredOrganizationId(organizationIdHeader),
+    );
   }
 }
 
 @ApiTags("channels")
+@UseGuards(SessionAuthGuard, RolesGuard)
+@Roles("administrator")
 @Controller("channels")
 export class ChannelTestController {
   constructor(protected readonly integrationGateway: IntegrationGatewayFacade) {}
@@ -55,7 +84,13 @@ export class ChannelTestController {
   @HttpCode(200)
   @ApiOperation({ summary: "Test a connected channel" })
   @ApiOkResponse({ description: "Channel test result" })
-  testChannel(@Param("id") channelId: string): unknown {
-    return this.integrationGateway.testChannel(channelId);
+  testChannel(
+    @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: string | string[] | undefined,
+    @Param("id") channelId: string,
+  ): unknown {
+    return this.integrationGateway.testChannel(
+      channelId,
+      getRequiredOrganizationId(organizationIdHeader),
+    );
   }
 }

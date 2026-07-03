@@ -94,8 +94,10 @@ export class IntegrationGatewayFacade {
     };
   }
 
-  listChannels(): ChannelFacade[] {
-    return Array.from(this.channels.values()).map((channel) => ({ ...channel }));
+  listChannels(organizationId?: string): ChannelFacade[] {
+    return Array.from(this.channels.values())
+      .filter((channel) => !organizationId || channel.organization_id === organizationId)
+      .map((channel) => ({ ...channel }));
   }
 
   connectWebChatChannel(request: ConnectWebChatChannelRequest): ChannelFacade {
@@ -117,8 +119,8 @@ export class IntegrationGatewayFacade {
     return { ...channel };
   }
 
-  getChannelCapabilities(channelId: string): CapabilityDescriptorFacade {
-    const channel = this.getChannel(channelId);
+  getChannelCapabilities(channelId: string, organizationId?: string): CapabilityDescriptorFacade {
+    const channel = this.getChannel(channelId, organizationId);
 
     return createWebChatCapabilityDescriptor({
       channelId: channel.id,
@@ -126,13 +128,13 @@ export class IntegrationGatewayFacade {
     });
   }
 
-  testChannel(channelId: string): {
+  testChannel(channelId: string, organizationId?: string): {
     accepted: true;
     channel_id: string;
     status: ChannelStatus;
     checked_at: string;
   } {
-    const channel = this.getChannel(channelId);
+    const channel = this.getChannel(channelId, organizationId);
     const checkedAt = this.clock();
     const updatedChannel = {
       ...channel,
@@ -151,9 +153,9 @@ export class IntegrationGatewayFacade {
     };
   }
 
-  private getChannel(channelId: string): ChannelFacade {
+  private getChannel(channelId: string, organizationId?: string): ChannelFacade {
     const channel = this.channels.get(channelId);
-    if (!channel) {
+    if (!channel || (organizationId && channel.organization_id !== organizationId)) {
       throw new NotFoundException({
         code: "CHANNEL_NOT_FOUND",
         description: "Channel was not found.",

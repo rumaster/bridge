@@ -8,11 +8,15 @@ import {
   Patch,
   Post,
   Req,
+  UseGuards,
   Version,
 } from "@nestjs/common";
 import { ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { Request } from "express";
 
+import { Roles } from "../../common/auth/roles.decorator";
+import { RolesGuard } from "../../common/auth/roles.guard";
+import { SessionAuthGuard } from "../../common/auth/session-auth.guard";
 import {
   ACTOR_USER_ID_HEADER,
   getOptionalActorUserId,
@@ -24,6 +28,8 @@ import { CreateUserDto, PatchUserDto, UserListResponseDto, UserResponseDto } fro
 import { UserService } from "./user.service";
 
 @ApiTags("users")
+@UseGuards(SessionAuthGuard, RolesGuard)
+@Roles("administrator")
 @Controller("organizations/:organizationId/users")
 export class OrganizationUsersController {
   constructor(private readonly users: UserService) {}
@@ -56,6 +62,8 @@ export class OrganizationUsersController {
 }
 
 @ApiTags("users")
+@UseGuards(SessionAuthGuard, RolesGuard)
+@Roles("administrator")
 @Controller("users")
 export class UserController {
   constructor(private readonly users: UserService) {}

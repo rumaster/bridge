@@ -1,6 +1,6 @@
-# Identity Module M1
+# Identity Module M2
 
-This directory contains the M1 implementation for SVC-IDN:
+This directory contains the M2 implementation for SVC-IDN:
 
 - Telegram one-time code login with normalized `telegramUsername`.
 - `login_codes` persistence with `code_hash`, TTL, `consumed_at`, attempt count
@@ -11,6 +11,8 @@ This directory contains the M1 implementation for SVC-IDN:
   `revoked_at`.
 - Shared session `AuthGuard` integration for active, not expired and not revoked
   sessions with organization ownership checks.
+- Shared `RolesGuard` and `@Roles(...)` decorator for server-side RBAC from
+  `user_roles`.
 
-Full RBAC enforcement and self-service organization bootstrap remain later
-Identity milestones.
+Self-service organization bootstrap and invitations remain later Identity
+milestones.

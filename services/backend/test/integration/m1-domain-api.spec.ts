@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { resolve } from "node:path";
 
 import type { INestApplication } from "@nestjs/common";
@@ -34,6 +35,7 @@ const CONVERSATION_B = "10000000-0000-4000-8000-000000000502";
 const MESSAGE_A = "10000000-0000-4000-8000-000000000601";
 const MESSAGE_B = "10000000-0000-4000-8000-000000000602";
 const IDEMPOTENCY_KEY = "10000000-0000-4000-8000-000000000777";
+const USER_A_TOKEN = "brs_m1_domain_admin_a";
 
 describe("SVC-API M1 domain API", () => {
   let app: INestApplication;
@@ -75,6 +77,7 @@ describe("SVC-API M1 domain API", () => {
   it("serves organization CRUD, configuration history, users, and audit events", async () => {
     await request(app.getHttpServer())
       .patch(`/api/v1/organizations/${ORG_A}`)
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-actor-user-id", USER_A)
       .send({ description: "Updated tenant A", locale: "en-US" })
       .expect(200)
@@ -85,6 +88,7 @@ describe("SVC-API M1 domain API", () => {
 
     await request(app.getHttpServer())
       .put(`/api/v1/organizations/${ORG_A}/configuration`)
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-actor-user-id", USER_A)
       .send({ value: { ai: { enabled: true } } })
       .expect(200)
@@ -95,6 +99,7 @@ describe("SVC-API M1 domain API", () => {
 
     await request(app.getHttpServer())
       .put(`/api/v1/organizations/${ORG_A}/configuration`)
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-actor-user-id", USER_A)
       .send({ value: { ai: { enabled: false } } })
       .expect(200)
@@ -102,8 +107,9 @@ describe("SVC-API M1 domain API", () => {
         expect(body.version).toBe(2);
       });
 
-    await request(app.getHttpServer())
+    const createdUser = await request(app.getHttpServer())
       .post(`/api/v1/organizations/${ORG_A}/users`)
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-actor-user-id", USER_A)
       .send({
         displayName: "New Manager",
@@ -113,10 +119,12 @@ describe("SVC-API M1 domain API", () => {
       .expect(201)
       .expect(({ body }) => {
         expect(body.roleCodes).toEqual(["manager"]);
-      });
+      })
+      .then((response) => response.body as { id: string });
 
     await request(app.getHttpServer())
-      .patch(`/api/v1/users/${USER_A}`)
+      .patch(`/api/v1/users/${createdUser.id}`)
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-organization-id", ORG_A)
       .set("x-actor-user-id", USER_A)
       .send({ status: "blocked" })
@@ -159,6 +167,7 @@ describe("SVC-API M1 domain API", () => {
   it("serves client CRUD, notes, tags, validation errors, and tenant isolation", async () => {
     await request(app.getHttpServer())
       .post("/api/v1/clients")
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-organization-id", ORG_A)
       .send({ displayName: "   " })
       .expect(400)
@@ -168,6 +177,7 @@ describe("SVC-API M1 domain API", () => {
 
     const createdClient = await request(app.getHttpServer())
       .post("/api/v1/clients")
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-organization-id", ORG_A)
       .set("x-actor-user-id", USER_A)
       .send({ displayName: "API Client" })
@@ -176,6 +186,7 @@ describe("SVC-API M1 domain API", () => {
 
     await request(app.getHttpServer())
       .get("/api/v1/clients")
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-organization-id", ORG_A)
       .expect(200)
       .expect(({ body }) => {
@@ -187,11 +198,13 @@ describe("SVC-API M1 domain API", () => {
 
     await request(app.getHttpServer())
       .get(`/api/v1/clients/${createdClient.id}`)
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-organization-id", ORG_B)
-      .expect(404);
+      .expect(403);
 
     await request(app.getHttpServer())
       .post(`/api/v1/clients/${createdClient.id}/notes`)
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-organization-id", ORG_A)
       .set("x-actor-user-id", USER_A)
       .send({ body: "Call back after 18:00." })
@@ -202,6 +215,7 @@ describe("SVC-API M1 domain API", () => {
 
     await request(app.getHttpServer())
       .post(`/api/v1/clients/${createdClient.id}/tags`)
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-organization-id", ORG_A)
       .set("x-actor-user-id", USER_A)
       .send({ tag: "vip" })
@@ -212,6 +226,7 @@ describe("SVC-API M1 domain API", () => {
 
     await request(app.getHttpServer())
       .post(`/api/v1/clients/${createdClient.id}/endpoints`)
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-organization-id", ORG_A)
       .set("x-actor-user-id", USER_A)
       .send({ channel: "web_chat", externalId: "api-client-session", verified: true })
@@ -223,6 +238,7 @@ describe("SVC-API M1 domain API", () => {
 
     await request(app.getHttpServer())
       .post("/api/v1/clients:merge")
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-organization-id", ORG_A)
       .set("x-actor-user-id", USER_A)
       .send({
@@ -251,6 +267,7 @@ describe("SVC-API M1 domain API", () => {
   it("proxies conversations and idempotent messages through the CORE adapter", async () => {
     await request(app.getHttpServer())
       .get("/api/v1/conversations")
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-organization-id", ORG_A)
       .expect(200)
       .expect(({ body }) => {
@@ -260,6 +277,7 @@ describe("SVC-API M1 domain API", () => {
 
     await request(app.getHttpServer())
       .get(`/api/v1/conversations/${CONVERSATION_A}/messages`)
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-organization-id", ORG_A)
       .expect(200)
       .expect(({ body }) => {
@@ -268,8 +286,9 @@ describe("SVC-API M1 domain API", () => {
 
     await request(app.getHttpServer())
       .get(`/api/v1/messages/${MESSAGE_A}`)
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-organization-id", ORG_B)
-      .expect(404);
+      .expect(403);
 
     const messagePayload = {
       content: { text: "Manager reply" },
@@ -279,6 +298,7 @@ describe("SVC-API M1 domain API", () => {
 
     const first = await request(app.getHttpServer())
       .post("/api/v1/messages")
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-organization-id", ORG_A)
       .set("x-actor-user-id", USER_A)
       .set("idempotency-key", IDEMPOTENCY_KEY)
@@ -288,6 +308,7 @@ describe("SVC-API M1 domain API", () => {
 
     await request(app.getHttpServer())
       .post("/api/v1/messages")
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-organization-id", ORG_A)
       .set("x-actor-user-id", USER_A)
       .set("idempotency-key", IDEMPOTENCY_KEY)
@@ -355,6 +376,7 @@ async function seedTenantSlices(databaseUrl: string): Promise<void> {
       endpointId: ENDPOINT_A,
       messageId: MESSAGE_A,
       organizationId: ORG_A,
+      roleCode: "administrator",
       suffix: "a",
       userId: USER_A,
     });
@@ -364,8 +386,15 @@ async function seedTenantSlices(databaseUrl: string): Promise<void> {
       endpointId: ENDPOINT_B,
       messageId: MESSAGE_B,
       organizationId: ORG_B,
+      roleCode: "manager",
       suffix: "b",
       userId: USER_B,
+    });
+    await insertAuthSession(client, {
+      id: "10000000-0000-4000-8000-000000000901",
+      organizationId: ORG_A,
+      token: USER_A_TOKEN,
+      userId: USER_A,
     });
   });
 }
@@ -378,6 +407,7 @@ async function insertTenantSlice(
     endpointId: string;
     messageId: string;
     organizationId: string;
+    roleCode: "administrator" | "manager";
     suffix: string;
     userId: string;
   },
@@ -405,9 +435,9 @@ async function insertTenantSlice(
   await client.query(
     `
       INSERT INTO user_roles (user_id, role_id, organization_id)
-      SELECT $1, id, $2 FROM roles WHERE code = 'manager'
+      SELECT $1, id, $2 FROM roles WHERE code = $3
     `,
-    [fixture.userId, fixture.organizationId],
+    [fixture.userId, fixture.organizationId, fixture.roleCode],
   );
   await client.query(
     "INSERT INTO clients (id, organization_id, display_name) VALUES ($1, $2, $3)",
@@ -485,4 +515,33 @@ async function insertTenantSlice(
     `,
     [fixture.messageId, fixture.organizationId, fixture.conversationId, fixture.endpointId],
   );
+}
+
+async function insertAuthSession(
+  client: PoolClient,
+  fixture: {
+    id: string;
+    organizationId: string;
+    token: string;
+    userId: string;
+  },
+): Promise<void> {
+  await client.query(
+    `
+      INSERT INTO auth_sessions (id, user_id, organization_id, token_hash, issued_at, expires_at)
+      VALUES ($1, $2, $3, $4, '2026-07-03T10:00:00.000Z', '2099-01-01T00:00:00.000Z')
+    `,
+    [
+      fixture.id,
+      fixture.userId,
+      fixture.organizationId,
+      hashSessionToken(fixture.token),
+    ],
+  );
+}
+
+function hashSessionToken(token: string): string {
+  return `sha256:${createHmac("sha256", "bridge-local-dev-auth-secret")
+    .update(`auth_session:server:${token}`)
+    .digest("hex")}`;
 }
