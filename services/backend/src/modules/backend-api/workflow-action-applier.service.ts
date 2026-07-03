@@ -232,13 +232,16 @@ export class WorkflowActionApplierService {
     const objectType =
       input.actorType === "ai" ? "ai_onboarding_command" : "workflow_backend_api_node";
 
+    // `command_id` is a free-form AI-generated string (not a UUID), so it lives
+    // in metadata rather than the uuid-typed `object_id` column; the affected
+    // object is the tenant organization.
     await this.database.withTenant(input.organizationId, (client) =>
       this.audit.record(client, {
         action,
         actorType: input.actorType,
         actorUserId: input.actorUserId,
         metadata: { command_action: command.action, command_id: command.command_id, ...metadata },
-        objectId: command.command_id,
+        objectId: input.organizationId,
         objectType,
         organizationId: input.organizationId,
         requestId: input.requestId,
