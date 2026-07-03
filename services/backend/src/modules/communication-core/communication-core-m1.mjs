@@ -34,6 +34,16 @@ const VALID_MESSAGE_TYPES = new Set([
 ]);
 const AUTO_IDENTITY_LINK_TYPES = new Set(["verified_phone", "verified_email", "link_code"]);
 const CLIENT_STATUS_VALUES = new Set(["anonymous", "identified", "offline", "online"]);
+const OUTBOX_EVENT_STATUS = Object.freeze({
+  PENDING: "pending",
+  PUBLISHED: "published",
+  FAILED: "failed",
+});
+const OUTBOX_EVENT_ORDER = new Map([
+  ["conversation.created", 1],
+  ["message.created", 2],
+  ["message.status_changed", 3],
+]);
 
 export class CommunicationCoreM1ValidationError extends Error {
   constructor(message, errors = [message]) {
@@ -345,6 +355,55 @@ export function createCommunicationCoreM1Service({
     async selectDeliveryChannel(payload) {
       return store.selectDeliveryChannel(payload);
     },
+
+    async publishOutboxEvents({ organizationId, publisher, limit = 50 } = {}) {
+      assertUuid(organizationId, "organization_id");
+      const publish = normalizeOutboxPublisher(publisher);
+      const events = await store.listPendingOutboxEvents({
+        organizationId,
+        limit: normalizeLimit(limit),
+      });
+      const deliveries = [];
+      let publishedCount = 0;
+      let failedCount = 0;
+
+      for (const event of events) {
+        try {
+          const result = await publish(event);
+          if (result?.accepted === false) {
+            throw new Error(result.error ?? "Outbox publisher rejected event.");
+          }
+          await store.markOutboxEventPublished({
+            eventId: event.id,
+            organizationId,
+            publishedAt: clock(),
+          });
+          deliveries.push({
+            event_id: event.id,
+            event_type: event.event_type,
+            result,
+          });
+          publishedCount += 1;
+        } catch (error) {
+          await store.markOutboxEventFailed({
+            eventId: event.id,
+            organizationId,
+          });
+          deliveries.push({
+            event_id: event.id,
+            event_type: event.event_type,
+            error: error.message,
+          });
+          failedCount += 1;
+        }
+      }
+
+      return {
+        published_count: publishedCount,
+        failed_count: failedCount,
+        deliveries,
+      };
+    },
   };
 }
 
@@ -467,6 +526,191 @@ export function createHttpC2EgressAdapter({
   };
 }
 
+export function createFbpWorkflowOutboxPublisher({
+  fbp,
+  workflowId,
+  workflowVersionId,
+  actorUserId = "system",
+} = {}) {
+  if (!fbp) {
+    throw new TypeError("fbp is required for outbox publisher");
+  }
+  if (typeof workflowId !== "string" || workflowId.trim() === "") {
+    throw new TypeError("workflowId is required for outbox publisher");
+  }
+  if (typeof workflowVersionId !== "string" || workflowVersionId.trim() === "") {
+    throw new TypeError("workflowVersionId is required for outbox publisher");
+  }
+
+  const deliveredEventIds = new Set();
+
+  return {
+    async publish(event) {
+      if (deliveredEventIds.has(event.id)) {
+        return {
+          accepted: true,
+          duplicate: true,
+          event_id: event.id,
+        };
+      }
+
+      const response = await publishOutboxEventToFbp({
+        actorUserId,
+        event,
+        fbp,
+        workflowId,
+        workflowVersionId,
+      });
+      deliveredEventIds.add(event.id);
+
+      return {
+        accepted: response?.degraded !== true,
+        duplicate: false,
+        event_id: event.id,
+        response,
+      };
+    },
+  };
+}
+
+async function publishOutboxEventToFbp({
+  actorUserId,
+  event,
+  fbp,
+  workflowId,
+  workflowVersionId,
+}) {
+  if (typeof fbp.startWorkflowInstance === "function") {
+    return fbp.startWorkflowInstance({
+      request_id: event.id,
+      organization_id: event.organization_id,
+      workflow_id: workflowId,
+      workflow_version_id: workflowVersionId,
+      actor_user_id: actorUserId,
+      input: {
+        outbox_event: event,
+      },
+    });
+  }
+
+  const request = {
+    contract: "C5.StartWorkflowInstanceRequest",
+    version: "1.0.0",
+    request_id: event.id,
+    organization_id: event.organization_id,
+    workflow_version_id: workflowVersionId,
+    input: {
+      outbox_event: event,
+    },
+    context: {
+      organization_id: event.organization_id,
+      actor_user_id: actorUserId,
+      trigger: "message",
+      correlation_id: event.id,
+    },
+  };
+
+  if (typeof fbp.startWorkflow === "function") {
+    return fbp.startWorkflow(workflowId, request);
+  }
+  if (typeof fbp === "function") {
+    return fbp(request);
+  }
+
+  throw new TypeError("fbp must be a function or expose startWorkflow/startWorkflowInstance");
+}
+
+function createConversationCreatedOutboxEvent(conversation) {
+  return createOutboxDomainEvent({
+    aggregateType: "conversation",
+    aggregateId: conversation.id,
+    eventType: "conversation.created",
+    organizationId: conversation.organization_id,
+    occurredAt: conversation.created_at,
+    payload: {
+      client_id: conversation.client_id,
+      status: conversation.status,
+      created_at: conversation.created_at,
+    },
+  });
+}
+
+function createMessageCreatedOutboxEvent(message, { clientId = null } = {}) {
+  return createOutboxDomainEvent({
+    aggregateType: "message",
+    aggregateId: message.id,
+    eventType: "message.created",
+    organizationId: message.organization_id,
+    occurredAt: message.created_at,
+    payload: {
+      message_id: message.id,
+      conversation_id: message.conversation_id,
+      endpoint_id: message.endpoint_id,
+      client_id: message.client_id ?? clientId,
+      channel: message.channel,
+      direction: message.direction,
+      sender_type: message.sender_type,
+      sequence_number: message.sequence_number,
+      type: message.type,
+      status: message.status,
+      occurred_at: message.created_at,
+    },
+  });
+}
+
+function createMessageStatusChangedOutboxEvent({
+  message,
+  previousStatus,
+  occurredAt,
+}) {
+  return createOutboxDomainEvent({
+    aggregateType: "message",
+    aggregateId: message.id,
+    eventType: "message.status_changed",
+    organizationId: message.organization_id,
+    occurredAt,
+    dedupeKey: `${previousStatus}->${message.status}`,
+    payload: {
+      message_id: message.id,
+      conversation_id: message.conversation_id,
+      endpoint_id: message.endpoint_id,
+      previous_status: previousStatus,
+      status: message.status,
+      occurred_at: occurredAt,
+    },
+  });
+}
+
+function createOutboxDomainEvent({
+  aggregateType,
+  aggregateId,
+  eventType,
+  organizationId,
+  occurredAt,
+  payload,
+  dedupeKey = "created",
+}) {
+  return {
+    id: uuidFromText(
+      `outbox:${organizationId}:${aggregateType}:${aggregateId}:${eventType}:${dedupeKey}`,
+    ),
+    organization_id: organizationId,
+    aggregate_type: aggregateType,
+    aggregate_id: aggregateId,
+    event_type: eventType,
+    payload: {
+      aggregate_type: aggregateType,
+      aggregate_id: aggregateId,
+      event_type: eventType,
+      organization_id: organizationId,
+      ...payload,
+    },
+    status: OUTBOX_EVENT_STATUS.PENDING,
+    created_at: normalizeTimestamp(occurredAt),
+    published_at: null,
+  };
+}
+
 export class InMemoryCommunicationCoreStore {
   constructor() {
     this.clients = new Map();
@@ -477,6 +721,7 @@ export class InMemoryCommunicationCoreStore {
     this.deliveryAttempts = new Map();
     this.identityLinks = new Map();
     this.channels = new Map();
+    this.outboxEvents = new Map();
   }
 
   async recordInboundMessage(ingress) {
@@ -486,13 +731,14 @@ export class InMemoryCommunicationCoreStore {
     }
 
     const endpoint = this.resolveEndpoint(ingress);
-    const conversation = this.resolveConversation({
+    const conversationResolution = this.resolveConversationWithCreated({
       organizationId: ingress.organizationId,
       clientId: endpoint.client_id,
       conversationId: ingress.conversationId,
       conversationRef: ingress.conversationRef,
       occurredAt: ingress.occurredAt,
     });
+    const { conversation } = conversationResolution;
     const sequenceNumber =
       ingress.message.sequence_number ?? this.nextSequenceNumber(ingress.organizationId, endpoint.id);
     const sequenceGap =
@@ -524,6 +770,19 @@ export class InMemoryCommunicationCoreStore {
       })),
     );
     this.updateConversationLastMessage(conversation, routed.created_at, routedAt);
+    this.appendOutboxEvents([
+      ...(conversationResolution.created
+        ? [createConversationCreatedOutboxEvent(conversation)]
+        : []),
+      createMessageCreatedOutboxEvent(received, {
+        clientId: endpoint.client_id,
+      }),
+      createMessageStatusChangedOutboxEvent({
+        message: routed,
+        previousStatus: MESSAGE_STATUS.RECEIVED,
+        occurredAt: routedAt,
+      }),
+    ]);
 
     return {
       duplicate: false,
@@ -571,6 +830,11 @@ export class InMemoryCommunicationCoreStore {
     this.messages.set(messageKey(outbound.organizationId, message.id), message);
     this.attachments.set(messageKey(outbound.organizationId, message.id), []);
     this.updateConversationLastMessage(conversation, message.created_at, message.created_at);
+    this.appendOutboxEvents([
+      createMessageCreatedOutboxEvent(message, {
+        clientId: endpoint.client_id,
+      }),
+    ]);
 
     return {
       duplicate: false,
@@ -600,6 +864,13 @@ export class InMemoryCommunicationCoreStore {
       status === MESSAGE_STATUS.SENT ? MESSAGE_STATUS.SENT : MESSAGE_STATUS.FAILED;
     const transitioned = transitionStoredMessage(message, nextMessageStatus, occurredAt);
     this.messages.set(key, transitioned);
+    this.appendOutboxEvents([
+      createMessageStatusChangedOutboxEvent({
+        message: transitioned,
+        previousStatus: message.status,
+        occurredAt,
+      }),
+    ]);
 
     const attempt = {
       id: randomUUID(),
@@ -818,10 +1089,29 @@ export class InMemoryCommunicationCoreStore {
     conversationRef,
     occurredAt,
   }) {
+    return this.resolveConversationWithCreated({
+      organizationId,
+      clientId,
+      conversationId,
+      conversationRef,
+      occurredAt,
+    }).conversation;
+  }
+
+  resolveConversationWithCreated({
+    organizationId,
+    clientId,
+    conversationId,
+    conversationRef,
+    occurredAt,
+  }) {
     if (conversationId) {
       const existing = this.conversations.get(conversationKey(organizationId, conversationId));
       if (existing) {
-        return existing;
+        return {
+          conversation: existing,
+          created: false,
+        };
       }
     }
 
@@ -835,7 +1125,10 @@ export class InMemoryCommunicationCoreStore {
       .sort(compareConversations)[0];
 
     if (openConversation) {
-      return openConversation;
+      return {
+        conversation: openConversation,
+        created: false,
+      };
     }
 
     const id =
@@ -852,7 +1145,10 @@ export class InMemoryCommunicationCoreStore {
     };
     this.conversations.set(conversationKey(organizationId, id), conversation);
 
-    return conversation;
+    return {
+      conversation,
+      created: true,
+    };
   }
 
   findEndpointForClient(organizationId, clientId, endpointId) {
@@ -1150,6 +1446,64 @@ export class InMemoryCommunicationCoreStore {
 
   getIdentityLinks() {
     return Array.from(this.identityLinks.values()).map(clone);
+  }
+
+  appendOutboxEvents(events) {
+    for (const event of events) {
+      if (!this.outboxEvents.has(outboxEventKey(event.organization_id, event.id))) {
+        this.outboxEvents.set(outboxEventKey(event.organization_id, event.id), clone(event));
+      }
+    }
+  }
+
+  getOutboxEvents() {
+    return Array.from(this.outboxEvents.values())
+      .sort(compareOutboxEvents)
+      .map(clone);
+  }
+
+  async listPendingOutboxEvents({ organizationId, limit = 50 }) {
+    return Array.from(this.outboxEvents.values())
+      .filter(
+        (event) =>
+          event.organization_id === organizationId &&
+          event.status === OUTBOX_EVENT_STATUS.PENDING,
+      )
+      .sort(compareOutboxEvents)
+      .slice(0, limit)
+      .map(clone);
+  }
+
+  async markOutboxEventPublished({ organizationId, eventId, publishedAt }) {
+    const key = outboxEventKey(organizationId, eventId);
+    const event = this.outboxEvents.get(key);
+    if (!event) {
+      throw new CommunicationCoreM1NotFoundError("Outbox event was not found.");
+    }
+    if (event.status === OUTBOX_EVENT_STATUS.PUBLISHED) {
+      return clone(event);
+    }
+
+    event.status = OUTBOX_EVENT_STATUS.PUBLISHED;
+    event.published_at = publishedAt;
+    this.outboxEvents.set(key, event);
+
+    return clone(event);
+  }
+
+  async markOutboxEventFailed({ organizationId, eventId }) {
+    const key = outboxEventKey(organizationId, eventId);
+    const event = this.outboxEvents.get(key);
+    if (!event) {
+      throw new CommunicationCoreM1NotFoundError("Outbox event was not found.");
+    }
+    if (event.status !== OUTBOX_EVENT_STATUS.PUBLISHED) {
+      event.status = OUTBOX_EVENT_STATUS.FAILED;
+      event.published_at = null;
+      this.outboxEvents.set(key, event);
+    }
+
+    return clone(event);
   }
 
   sequenceGapForInsert({ organizationId, endpointId, receivedSequenceNumber }) {
@@ -1645,10 +1999,31 @@ export function createPostgresCommunicationCoreStore({ client }) {
     conversationRef,
     occurredAt,
   }) {
+    const result = await resolveConversationWithCreated({
+      organizationId,
+      clientId,
+      conversationId,
+      conversationRef,
+      occurredAt,
+    });
+
+    return result.conversation;
+  }
+
+  async function resolveConversationWithCreated({
+    organizationId,
+    clientId,
+    conversationId,
+    conversationRef,
+    occurredAt,
+  }) {
     if (conversationId) {
       const existing = await getConversationById(organizationId, conversationId);
       if (existing) {
-        return existing;
+        return {
+          conversation: existing,
+          created: false,
+        };
       }
     }
 
@@ -1666,7 +2041,10 @@ export function createPostgresCommunicationCoreStore({ client }) {
     );
 
     if (open.rowCount > 0) {
-      return rowToConversation(open.rows[0]);
+      return {
+        conversation: rowToConversation(open.rows[0]),
+        created: false,
+      };
     }
 
     const id =
@@ -1689,7 +2067,10 @@ export function createPostgresCommunicationCoreStore({ client }) {
       [id, organizationId, clientId, occurredAt],
     );
 
-    return rowToConversation(created.rows[0]);
+    return {
+      conversation: rowToConversation(created.rows[0]),
+      created: true,
+    };
   }
 
   async function nextSequenceNumber(organizationId, endpointId) {
@@ -1808,6 +2189,57 @@ export function createPostgresCommunicationCoreStore({ client }) {
     return result.rows.map(rowToDeliveryAttempt);
   }
 
+  async function getOutboxEventById(organizationId, eventId) {
+    const result = await client.query(
+      `
+        SELECT *
+        FROM outbox_events
+        WHERE organization_id = $1
+          AND id = $2
+      `,
+      [organizationId, eventId],
+    );
+
+    if (result.rowCount === 0) {
+      throw new CommunicationCoreM1NotFoundError("Outbox event was not found.");
+    }
+
+    return rowToOutboxEvent(result.rows[0]);
+  }
+
+  async function insertOutboxEvents(events) {
+    for (const event of events) {
+      await client.query(
+        `
+          INSERT INTO outbox_events (
+            id,
+            organization_id,
+            aggregate_type,
+            aggregate_id,
+            event_type,
+            payload,
+            status,
+            created_at,
+            published_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8::timestamptz, $9::timestamptz)
+          ON CONFLICT (id) DO NOTHING
+        `,
+        [
+          event.id,
+          event.organization_id,
+          event.aggregate_type,
+          event.aggregate_id,
+          event.event_type,
+          JSON.stringify(event.payload),
+          event.status,
+          event.created_at,
+          event.published_at,
+        ],
+      );
+    }
+  }
+
   return {
     async recordInboundMessage(ingress) {
       return withTenantTransaction(ingress.organizationId, async () => {
@@ -1818,13 +2250,14 @@ export function createPostgresCommunicationCoreStore({ client }) {
 
         const endpoint = await resolveEndpoint(ingress);
         await lockEndpointPartition(ingress.organizationId, endpoint.id);
-        const conversation = await resolveConversation({
+        const conversationResolution = await resolveConversationWithCreated({
           organizationId: ingress.organizationId,
           clientId: endpoint.client_id,
           conversationId: ingress.conversationId,
           conversationRef: ingress.conversationRef,
           occurredAt: ingress.occurredAt,
         });
+        const { conversation } = conversationResolution;
         const sequenceNumber =
           ingress.message.sequence_number ??
           (await nextSequenceNumber(ingress.organizationId, endpoint.id));
@@ -1837,6 +2270,14 @@ export function createPostgresCommunicationCoreStore({ client }) {
                 receivedSequenceNumber: ingress.message.sequence_number,
               });
         const routedAt = ingress.routedAt;
+        const receivedMessage = {
+          ...ingress.message,
+          client_id: endpoint.client_id,
+          conversation_id: conversation.id,
+          endpoint_id: endpoint.id,
+          sequence_number: sequenceNumber,
+          status: MESSAGE_STATUS.RECEIVED,
+        };
 
         await client.query(
           `
@@ -1936,6 +2377,19 @@ export function createPostgresCommunicationCoreStore({ client }) {
           ingress.organizationId,
           ingress.message.id,
         );
+        await insertOutboxEvents([
+          ...(conversationResolution.created
+            ? [createConversationCreatedOutboxEvent(conversation)]
+            : []),
+          createMessageCreatedOutboxEvent(receivedMessage, {
+            clientId: endpoint.client_id,
+          }),
+          createMessageStatusChangedOutboxEvent({
+            message,
+            previousStatus: MESSAGE_STATUS.RECEIVED,
+            occurredAt: routedAt,
+          }),
+        ]);
         const updatedConversation = await getConversationById(
           ingress.organizationId,
           conversation.id,
@@ -2041,6 +2495,11 @@ export function createPostgresCommunicationCoreStore({ client }) {
           outbound.organizationId,
           outbound.message.id,
         );
+        await insertOutboxEvents([
+          createMessageCreatedOutboxEvent(message, {
+            clientId: endpoint.client_id,
+          }),
+        ]);
         const updatedConversation = await getConversationById(
           outbound.organizationId,
           conversation.id,
@@ -2123,6 +2582,13 @@ export function createPostgresCommunicationCoreStore({ client }) {
         );
 
         const message = await getMessageWithContext(organizationId, messageId);
+        await insertOutboxEvents([
+          createMessageStatusChangedOutboxEvent({
+            message,
+            previousStatus: current.status,
+            occurredAt,
+          }),
+        ]);
         const conversation = await getConversationById(organizationId, message.conversation_id);
 
         return {
@@ -2183,6 +2649,74 @@ export function createPostgresCommunicationCoreStore({ client }) {
         }
 
         return rows;
+      });
+    },
+
+    async listPendingOutboxEvents({ organizationId, limit = 50 }) {
+      return withTenantTransaction(organizationId, async () => {
+        const result = await client.query(
+          `
+            SELECT *
+            FROM outbox_events
+            WHERE organization_id = $1
+              AND status = 'pending'
+            ORDER BY
+              created_at ASC,
+              CASE event_type
+                WHEN 'conversation.created' THEN 1
+                WHEN 'message.created' THEN 2
+                WHEN 'message.status_changed' THEN 3
+                ELSE 100
+              END ASC,
+              id ASC
+            LIMIT $2
+          `,
+          [organizationId, limit],
+        );
+
+        return result.rows.map(rowToOutboxEvent);
+      });
+    },
+
+    async markOutboxEventPublished({ organizationId, eventId, publishedAt }) {
+      return withTenantTransaction(organizationId, async () => {
+        const result = await client.query(
+          `
+            UPDATE outbox_events
+            SET status = 'published',
+                published_at = $3::timestamptz
+            WHERE organization_id = $1
+              AND id = $2
+              AND status <> 'published'
+            RETURNING *
+          `,
+          [organizationId, eventId, publishedAt],
+        );
+
+        return result.rowCount === 0
+          ? getOutboxEventById(organizationId, eventId)
+          : rowToOutboxEvent(result.rows[0]);
+      });
+    },
+
+    async markOutboxEventFailed({ organizationId, eventId }) {
+      return withTenantTransaction(organizationId, async () => {
+        const result = await client.query(
+          `
+            UPDATE outbox_events
+            SET status = 'failed',
+                published_at = NULL
+            WHERE organization_id = $1
+              AND id = $2
+              AND status <> 'published'
+            RETURNING *
+          `,
+          [organizationId, eventId],
+        );
+
+        return result.rowCount === 0
+          ? getOutboxEventById(organizationId, eventId)
+          : rowToOutboxEvent(result.rows[0]);
       });
     },
 
@@ -2784,6 +3318,19 @@ function normalizeLegacyEgressPayload(message, target) {
   };
 }
 
+function normalizeOutboxPublisher(publisher) {
+  if (typeof publisher === "function") {
+    return publisher;
+  }
+  if (publisher && typeof publisher.publish === "function") {
+    return (event) => publisher.publish(event);
+  }
+
+  throw new CommunicationCoreM1ValidationError(
+    "outbox publisher must be a function or expose publish(event).",
+  );
+}
+
 function assertInboundCanBeRouted(message) {
   if (!assertStatusTransition(message.status, MESSAGE_STATUS.ROUTED)) {
     throw new CommunicationCoreM1ValidationError(
@@ -3078,6 +3625,10 @@ function identityLinkKey(organizationId, linkId) {
   return `${organizationId}:${linkId}`;
 }
 
+function outboxEventKey(organizationId, eventId) {
+  return `${organizationId}:${eventId}`;
+}
+
 function channelKey(organizationId, channelId) {
   return `${organizationId}:${channelId}`;
 }
@@ -3093,6 +3644,15 @@ function compareMessages(left, right) {
   return (
     left.sequence_number - right.sequence_number ||
     left.created_at.localeCompare(right.created_at)
+  );
+}
+
+function compareOutboxEvents(left, right) {
+  return (
+    left.created_at.localeCompare(right.created_at) ||
+    (OUTBOX_EVENT_ORDER.get(left.event_type) ?? 100) -
+      (OUTBOX_EVENT_ORDER.get(right.event_type) ?? 100) ||
+    left.id.localeCompare(right.id)
   );
 }
 
@@ -3186,5 +3746,19 @@ function rowToIdentityLink(row) {
     reverted_by: row.reverted_by ?? null,
     reverted_by_actor_type: row.reverted_by_actor_type ?? null,
     reverted_reason: row.reverted_reason ?? null,
+  };
+}
+
+function rowToOutboxEvent(row) {
+  return {
+    id: row.id,
+    organization_id: row.organization_id,
+    aggregate_type: row.aggregate_type,
+    aggregate_id: row.aggregate_id,
+    event_type: row.event_type,
+    payload: row.payload ?? {},
+    status: row.status,
+    created_at: row.created_at?.toISOString?.() ?? row.created_at,
+    published_at: row.published_at?.toISOString?.() ?? row.published_at,
   };
 }

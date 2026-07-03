@@ -243,6 +243,15 @@ resolution, endpoint-scoped `sequence_number`, gap detection, C7 публика�
   мок; e2e — участие ядра в сценарии «Workflow (запуск→Node→завершение)».
 - **DoD.** События доставляются надёжно; повтор публикации не создаёт дублей.
 
+**Статус реализации M3.** M3 Communication Core завершён для публикации доменных
+событий ядра: `conversation.created`, `message.created` и
+`message.status_changed` пишутся в `outbox_events` в той же транзакции, что и
+создание/изменение агрегата. Детерминированный `event.id` и replay по
+`pending -> published` обеспечивают идемпотентную доставку в мок SVC-FBP.
+Покрытие: `services/backend/test/unit/communication-core.m3.test.mjs`,
+`tests/integration/communication-core-m3.test.mjs` и
+`tests/e2e/workflow-cp4.test.mjs`.
+
 ### M4 — Сквозная идемпотентность, Broadcast, Edge
 
 - **Цель.** Единый механизм доставки, устойчивость к ретраям/разрывам.

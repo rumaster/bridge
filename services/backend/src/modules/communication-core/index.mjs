@@ -8,6 +8,7 @@ export {
   InMemoryCommunicationCoreStore,
   assertStatusTransition,
   createCommunicationCoreM1Service,
+  createFbpWorkflowOutboxPublisher,
   createHttpC2EgressAdapter,
   createInMemoryC7EventPublisher,
   createMockC2EgressAdapter,
