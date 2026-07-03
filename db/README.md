@@ -24,7 +24,7 @@ DATABASE_URL=postgres://user:password@localhost:5432/bridge npm run db:migrate:d
 npm run test:integration
 ```
 
-## M0 Схема
+## M0/M1 Схема
 
 Миграция `20260702160218000_m0_schema.sql` создаёт:
 
@@ -39,6 +39,20 @@ npm run test:integration
 Сиды `000001_m0_seed.mjs` создают детерминированные роли
 `platform_operator`, `administrator`, `manager`, демо-организацию и
 `seeded-admin`.
+
+Миграция `20260703093000000_m1_schema.sql` расширяет каркас до базового
+вертикального среза CP-1:
+
+- `configurations`, `configuration_history`, `audit_events`;
+- `user_roles`, `auth_sessions`, `login_codes`, `invitations`;
+- `clients`, `communication_endpoints`, `conversations`, `messages`,
+  `attachments`, `message_delivery_attempts`.
+
+M1 добавляет tenant RLS для всех арендо-зависимых таблиц, уникальность
+`configurations(organization_id, key)` и
+`communication_endpoints(organization_id, channel, external_id)`, порядок
+сообщений по индексу `messages(endpoint_id, sequence_number)`, а также
+append-only защиту `audit_events` и `configuration_history`.
 
 ## RLS Контекст
 

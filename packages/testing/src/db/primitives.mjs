@@ -40,3 +40,23 @@ export function assertUtcTimestamptz(value, fieldName = "timestamptz") {
 
   return value;
 }
+
+export function isNonBlankText(value) {
+  return typeof value === "string" && value.trim() !== "";
+}
+
+export function assertNonBlankText(value, fieldName = "text") {
+  if (!isNonBlankText(value)) {
+    throw new TypeError(`${fieldName} must be a non-blank string`);
+  }
+
+  return value;
+}
+
+export function assertPositiveInteger(value, fieldName = "integer") {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw new TypeError(`${fieldName} must be a positive safe integer`);
+  }
+
+  return value;
+}
