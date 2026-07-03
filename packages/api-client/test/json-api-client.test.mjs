@@ -53,4 +53,28 @@ describe("@bridge/api-client JSON helper", () => {
       return true;
     });
   });
+
+  it("uses Problem Details detail as the BridgeApiError message", async () => {
+    const api = createJsonApiClient({
+      fetcher: async () =>
+        new Response(
+          JSON.stringify({
+            type: "https://bridge.local/problems/validation-error",
+            title: "Validation failed",
+            status: 400,
+            detail: "Request payload does not match C3.org DTO.",
+          }),
+          {
+            status: 400,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+    });
+
+    await assert.rejects(api.requestJson("/organizations/org-demo/configuration"), (error) => {
+      assert.ok(error instanceof BridgeApiError);
+      assert.equal(error.message, "Request payload does not match C3.org DTO.");
+      return true;
+    });
+  });
 });

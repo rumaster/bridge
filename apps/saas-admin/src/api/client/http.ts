@@ -1,12 +1,15 @@
 import { createJsonApiClient } from "@bridge/api-client";
 import type {
   AdminSession,
+  LogoutResponse,
   Organization,
   OrganizationConfiguration,
   SaasAdminApiClient,
   TelegramLoginStartRequest,
   TelegramLoginStartResponse,
-  TelegramLoginVerifyRequest
+  TelegramLoginVerifyRequest,
+  UpdateOrganizationConfigurationRequest,
+  UpdateOrganizationRequest
 } from "./types";
 
 export interface SaasAdminApiClientOptions {
@@ -36,15 +39,28 @@ export function createSaasAdminApiClient(options: SaasAdminApiClientOptions = {}
           body: JSON.stringify(request)
         }),
       logout: () =>
-        requestJson<void>("/auth/logout", {
+        requestJson<LogoutResponse>("/auth/logout", {
           method: "POST"
         })
     },
     org: {
       getOrganization: (organizationId: string) =>
         requestJson<Organization>(`/organizations/${organizationId}`),
+      updateOrganization: (organizationId: string, request: UpdateOrganizationRequest) =>
+        requestJson<Organization>(`/organizations/${organizationId}`, {
+          method: "PATCH",
+          body: JSON.stringify(request)
+        }),
       getConfiguration: (organizationId: string) =>
-        requestJson<OrganizationConfiguration>(`/organizations/${organizationId}/configuration`)
+        requestJson<OrganizationConfiguration>(`/organizations/${organizationId}/configuration`),
+      updateConfiguration: (
+        organizationId: string,
+        request: UpdateOrganizationConfigurationRequest
+      ) =>
+        requestJson<OrganizationConfiguration>(`/organizations/${organizationId}/configuration`, {
+          method: "PUT",
+          body: JSON.stringify(request)
+        })
     }
   };
 }

@@ -108,6 +108,10 @@ function getErrorMessage(body) {
     return body.message;
   }
 
+  if (isRecord(body) && typeof body.detail === "string" && body.detail.trim() !== "") {
+    return body.detail;
+  }
+
   return null;
 }
 

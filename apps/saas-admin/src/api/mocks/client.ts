@@ -4,18 +4,24 @@ import type {
   OrganizationConfiguration,
   SaasAdminApiClient,
   TelegramLoginStartRequest,
-  TelegramLoginVerifyRequest
+  TelegramLoginVerifyRequest,
+  UpdateOrganizationConfigurationRequest,
+  UpdateOrganizationRequest
 } from "../client/types";
 import { mockConfiguration, mockOrganization, mockSession } from "./fixtures";
 
 export interface CreateMockSaasAdminServicesOptions {
   authenticated?: boolean;
+  session?: AdminSession;
 }
 
 export function createMockSaasAdminApiClient(
   options: CreateMockSaasAdminServicesOptions = {}
 ): SaasAdminApiClient {
-  let currentSession: AdminSession | null = options.authenticated === false ? null : mockSession;
+  const initialSession = options.session ?? mockSession;
+  let currentSession: AdminSession | null = options.authenticated === false ? null : initialSession;
+  let currentOrganization: Organization = cloneMockOrganization();
+  let currentConfiguration: OrganizationConfiguration = cloneMockConfiguration();
 
   return {
     auth: {
@@ -32,33 +38,76 @@ export function createMockSaasAdminApiClient(
         }
 
         return {
-          requestId: "admin-login-request-1",
-          delivery: "telegram",
-          expiresAt: "2026-07-02T16:20:00.000Z"
+          status: "mock_code_delivery_scheduled",
+          deliveryChannel: "telegram",
+          telegramUsername: request.telegramUsername.replace(/^@/, "").toLowerCase(),
+          expiresInSeconds: 300,
+          implementationStage: "M1"
         };
       },
       async verifyTelegramLogin(request: TelegramLoginVerifyRequest) {
-        if (!request.requestId || !request.code) {
-          throw new Error("requestId and code are required");
+        if (!request.telegramUsername || !request.code) {
+          throw new Error("telegramUsername and code are required");
         }
 
-        currentSession = mockSession;
-        return mockSession;
+        currentSession = initialSession;
+        return initialSession;
       },
       async logout() {
         currentSession = null;
+        return {
+          loggedOut: true,
+          sessionMode: "mock",
+          implementationStage: "M1"
+        };
       }
     },
     org: {
       async getOrganization(organizationId: string) {
-        return findOrganization(organizationId);
+        if (organizationId !== currentOrganization.id) {
+          throw new Error("Organization not found");
+        }
+
+        return currentOrganization;
+      },
+      async updateOrganization(
+        organizationId: string,
+        request: UpdateOrganizationRequest
+      ) {
+        if (organizationId !== currentOrganization.id) {
+          throw new Error("Organization not found");
+        }
+
+        currentOrganization = {
+          ...currentOrganization,
+          ...request,
+          updatedAt: "2026-07-03T09:30:00.000Z"
+        };
+
+        return currentOrganization;
       },
       async getConfiguration(organizationId: string) {
-        if (organizationId !== mockConfiguration.organizationId) {
+        if (organizationId !== currentConfiguration.organizationId) {
           throw new Error("Organization configuration not found");
         }
 
-        return mockConfiguration;
+        return currentConfiguration;
+      },
+      async updateConfiguration(
+        organizationId: string,
+        request: UpdateOrganizationConfigurationRequest
+      ) {
+        if (organizationId !== currentConfiguration.organizationId) {
+          throw new Error("Organization configuration not found");
+        }
+
+        currentConfiguration = {
+          ...currentConfiguration,
+          ...request,
+          updatedAt: "2026-07-03T09:31:00.000Z"
+        };
+
+        return currentConfiguration;
       }
     }
   };
@@ -68,14 +117,6 @@ export function createMockSaasAdminServices(options: CreateMockSaasAdminServices
   return {
     api: createMockSaasAdminApiClient(options)
   };
-}
-
-function findOrganization(organizationId: string): Organization {
-  if (organizationId !== mockOrganization.id) {
-    throw new Error("Organization not found");
-  }
-
-  return mockOrganization;
 }
 
 export function cloneMockOrganization(): Organization {
