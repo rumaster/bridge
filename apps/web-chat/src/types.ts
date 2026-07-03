@@ -1,4 +1,4 @@
-export type WebChatAuthorType = "visitor" | "manager" | "system";
+export type WebChatAuthorType = "visitor" | "manager" | "ai" | "system";
 
 export type WebChatMessageStatus =
   | "received"
@@ -31,7 +31,14 @@ export type WebChatMessage = {
     text: string;
   };
   createdAt: string;
+  sequenceNumber?: number;
   status?: WebChatMessageStatus;
+};
+
+export type WebChatMessagesPage = {
+  messages: WebChatMessage[];
+  nextCursor: string | null;
+  hasMore: boolean;
 };
 
 export type WebChatRealtimeEvent =
@@ -44,10 +51,66 @@ export type WebChatRealtimeEvent =
       payload: Pick<WebChatMessage, "id" | "status">;
     }
   | {
+      type: "typing.started" | "typing.stopped";
+      payload: {
+        conversationId: string;
+        displayName?: string;
+      };
+    }
+  | {
       type: "mock.connected";
       contract: "C7";
       channel: "web_chat";
     };
+
+export type C7WebSocketEvent = {
+  contract: "C7.WebSocketEvent";
+  version: "1.0.0";
+  event:
+    | "message.created"
+    | "message.status_changed"
+    | "typing.started"
+    | "typing.stopped";
+  event_id: string;
+  organization_id: string;
+  subscription_id?: string;
+  sequence_number: number;
+  payload: Record<string, unknown>;
+  occurred_at: string;
+};
+
+export type NormalizedWebChatRealtimeEvent =
+  | {
+      type: "message.created";
+      eventId?: string;
+      sequenceNumber?: number;
+      message: WebChatMessage;
+    }
+  | {
+      type: "message.status_changed";
+      eventId?: string;
+      sequenceNumber?: number;
+      messageId: string;
+      status: WebChatMessageStatus;
+    }
+  | {
+      type: "typing.started" | "typing.stopped";
+      eventId?: string;
+      sequenceNumber?: number;
+      conversationId: string;
+      displayName?: string;
+    };
+
+export type WebChatWebSocketLike = {
+  onclose: null | ((event: unknown) => void);
+  onerror: null | ((event: unknown) => void);
+  onmessage: null | ((event: { data: unknown }) => void);
+  onopen: null | ((event: unknown) => void);
+  close: () => void;
+  send: (data: string) => void;
+};
+
+export type WebChatWebSocketFactory = (url: string) => WebChatWebSocketLike;
 
 export type WebChatMountOptions = {
   apiBaseUrl?: string;
@@ -55,6 +118,11 @@ export type WebChatMountOptions = {
   organizationId?: string;
   title?: string;
   enableMockApi?: boolean;
+  historyPageSize?: number;
+  realtimeEnabled?: boolean;
+  realtimeReconnectDelayMs?: number;
+  realtimeUrl?: string;
+  webSocketFactory?: WebChatWebSocketFactory;
 };
 
 export type WebChatInstance = {

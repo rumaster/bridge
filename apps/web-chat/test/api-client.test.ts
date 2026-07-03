@@ -90,4 +90,74 @@ describe("Bridge Web Chat API client M1", () => {
       },
     });
   });
+
+  it("получает страницу полной истории и нормализует C3/C1 backend response", async () => {
+    const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      calls.push({ input, init });
+      return Response.json({
+        items: [
+          {
+            id: "52345678-1234-4234-8234-123456789abc",
+            organizationId: "22345678-1234-4234-8234-123456789abc",
+            conversationId: "32345678-1234-4234-8234-123456789abc",
+            endpointId: "42345678-1234-4234-8234-123456789abc",
+            channel: "web_chat",
+            direction: "outbound",
+            senderType: "ai",
+            sequenceNumber: 12,
+            type: "text",
+            content: {
+              text: "AI уже ответил клиенту.",
+            },
+            status: "sent",
+            createdAt: "2026-07-03T09:01:00.000Z",
+            deliveredAt: null,
+          },
+        ],
+        page: {
+          limit: 25,
+          nextCursor: "before:12",
+          total: 42,
+        },
+      });
+    };
+    const client = createWebChatApiClient({
+      baseUrl: "http://localhost/api/v1",
+      fetcher,
+    });
+
+    const page = await client.getMessages("32345678-1234-4234-8234-123456789abc", {
+      afterSequenceNumber: 10,
+      cursor: "after:10",
+      limit: 25,
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.input).toBe(
+      "http://localhost/api/v1/conversations/32345678-1234-4234-8234-123456789abc/messages?limit=25&cursor=after%3A10&after_sequence_number=10",
+    );
+    expect(page.nextCursor).toBe("before:12");
+    expect(page.hasMore).toBe(true);
+    expect(page.messages).toEqual([
+      {
+        id: "52345678-1234-4234-8234-123456789abc",
+        organizationId: "22345678-1234-4234-8234-123456789abc",
+        conversationId: "32345678-1234-4234-8234-123456789abc",
+        endpointId: "42345678-1234-4234-8234-123456789abc",
+        channel: "web_chat",
+        author: {
+          type: "ai",
+          displayName: "Bridge AI",
+        },
+        body: {
+          type: "text",
+          text: "AI уже ответил клиенту.",
+        },
+        createdAt: "2026-07-03T09:01:00.000Z",
+        sequenceNumber: 12,
+        status: "sent",
+      },
+    ]);
+  });
 });
