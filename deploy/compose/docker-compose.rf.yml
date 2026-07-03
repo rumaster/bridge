@@ -3,6 +3,7 @@
 #
 # Поднимает только то, что относится к РФ-периметру:
 #   - postgres-rf — резидентный Postgres для буфера edge-сообщений;
+#   - migrate-rf — миграции только RF-схемы (edge_message_buffer);
 #   - edge-gateway — WebSocket-шлюз, принимающий соединения клиентов в РФ.
 #
 # Не входит и намеренно не создаётся в этом файле:
@@ -11,15 +12,8 @@
 #     полностью (ни одного файла реализации), поэтому фиктивный сервис для
 #     него не добавляется, чтобы не создавать ложное впечатление рабочей
 #     функциональности;
-#   - таблица edge_message_buffer — упоминается только в документах
-#     планирования (docs/plan/*.md), в реальных миграциях db/migrations её
-#     ещё нет, поэтому против postgres-rf не прогоняются миграции
-#     Application Cluster (они рассчитаны на мультитенантную SaaS-схему и
-#     архитектурно не относятся к Edge Cluster).
-#   - edge-gateway на сегодняшний день не читает DATABASE_URL и не использует
-#     пакет "pg" (только mock-tunnel.mjs/mock-ws-channel.mjs), поэтому
-#     DATABASE_URL в него не передаётся — соответствует фактическому коду,
-#     а не документам планирования.
+#   - миграции Application Cluster: против postgres-rf выполняется только
+#     цель "rf" скрипта scripts/db-migrate.mjs, без мультитенантной SaaS-схемы.
 #
 # Этот файл полностью независим от deploy/compose/docker-compose.yml
 # (Application Cluster) и запускается отдельно, на своём сервере:
@@ -46,6 +40,18 @@ services:
       timeout: 3s
       retries: 10
 
+  migrate-rf:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/db-tools/Dockerfile
+    environment:
+      DATABASE_URL: ${RF_DATABASE_URL:-postgres://bridge_edge:bridge_edge@postgres-rf:5432/bridge_edge}
+      DB_MIGRATE_VERBOSE: ${DB_MIGRATE_VERBOSE:-0}
+    depends_on:
+      postgres-rf:
+        condition: service_healthy
+    command: ["node", "scripts/db-migrate.mjs", "up", "rf"]
+
   edge-gateway:
     build:
       context: ../..
@@ -58,6 +64,9 @@ services:
       PORT: ${EDGE_GATEWAY_PORT:-3000}
     ports:
       - "${EDGE_GATEWAY_PORT:-3000}:${EDGE_GATEWAY_PORT:-3000}"
+    depends_on:
+      migrate-rf:
+        condition: service_completed_successfully
 
 volumes:
   bridge-edge-postgres-data:

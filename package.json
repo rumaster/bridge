@@ -25,6 +25,8 @@
     "test:e2e": "node --test tests/e2e/*.test.mjs && npm run test:e2e --workspace @bridge/manager-workspace",
     "db:migrate:up": "node scripts/db-migrate.mjs up",
     "db:migrate:down": "node scripts/db-migrate.mjs down",
+    "db:migrate:rf:up": "node scripts/db-migrate.mjs up rf",
+    "db:migrate:rf:down": "node scripts/db-migrate.mjs down rf",
     "db:seed": "node scripts/db-seed.mjs",
     "ci": "npm run lint && npm test && npm run build"
   },
