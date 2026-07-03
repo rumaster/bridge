@@ -23,10 +23,10 @@ describe("C3.auth contract publication", () => {
 
     assert.equal(contract["x-contract-id"], "C3.auth");
     assert.equal(contract["x-owner"], "SVC-IDN");
-    assert.equal(contract["x-stage"], "M0");
+    assert.equal(contract["x-stage"], "M1");
   });
 
-  it("keeps the public endpoint set frozen for M0", () => {
+  it("keeps the public endpoint set frozen for M1", () => {
     const contract = readContract();
 
     assert.deepEqual(Object.entries(contract.paths).map(([path, methods]) => [

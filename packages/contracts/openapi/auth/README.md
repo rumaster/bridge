@@ -1,6 +1,6 @@
 # C3.auth
 
-`c3.auth.openapi.json` freezes the M0 public REST contract for Identity Platform.
+`c3.auth.openapi.json` freezes the M1 public REST contract for Identity Platform.
 The contract is served under `/api/v1` and covers:
 
 - `POST /auth/login/telegram/start`
@@ -8,6 +8,6 @@ The contract is served under `/api/v1` and covers:
 - `POST /auth/logout`
 - `GET /auth/session`
 
-M0 intentionally publishes DTOs and mock-compatible response shapes only. Real
-Telegram code generation, `code_hash` persistence/checking, server session
-storage and session revocation are M1 responsibilities of SVC-IDN.
+M1 uses Telegram one-time code challenges, stores only `code_hash`, consumes
+`login_codes` once, issues opaque server session tokens, and stores only
+`auth_sessions.token_hash`.

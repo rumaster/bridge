@@ -1,14 +1,30 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 
-import { createBackendServer } from "../../src/main.mjs";
+import {
+  createBackendM1Modules,
+  createBackendServer,
+} from "../../src/main.mjs";
+import {
+  createIdentityService,
+  createMockTelegramCodeDeliveryAdapter,
+} from "../../src/modules/identity/identity-service.mjs";
 
-describe("backend skeleton with mock AuthGuard", () => {
+describe("backend skeleton with M1 AuthGuard", () => {
   let server;
   let baseUrl;
 
   before(async () => {
-    server = createBackendServer();
+    const identityService = createIdentityService({
+      codeGenerator: () => "123456",
+      deliveryAdapter: createMockTelegramCodeDeliveryAdapter(),
+      hashSecret: "backend-integration-secret",
+      now: () => new Date("2026-07-03T10:00:00.000Z"),
+    });
+
+    server = createBackendServer({
+      modules: createBackendM1Modules({ identityService }),
+    });
     await new Promise((resolve) => {
       server.listen(0, "127.0.0.1", resolve);
     });
@@ -22,16 +38,14 @@ describe("backend skeleton with mock AuthGuard", () => {
     });
   });
 
-  it("serves GET /api/v1/auth/session with seeded identity", async () => {
+  it("rejects GET /api/v1/auth/session without a server session", async () => {
     const response = await fetch(`${baseUrl}/api/v1/auth/session`);
 
-    assert.equal(response.status, 200);
+    assert.equal(response.status, 401);
     assert.equal(response.headers.get("content-type"), "application/json");
 
     const body = await response.json();
-    assert.equal(body.authenticated, true);
-    assert.equal(body.user.telegramUsername, "seeded_admin");
-    assert.deepEqual(body.roles, ["administrator"]);
+    assert.equal(body.title, "Unauthorized");
   });
 
   it("reports CORE/IDN/API modules and degraded external facades from health", async () => {
@@ -59,7 +73,7 @@ describe("backend skeleton with mock AuthGuard", () => {
     );
   });
 
-  it("serves POST /api/v1/auth/login/telegram/start as an M0 stub", async () => {
+  it("serves POST /api/v1/auth/login/telegram/start as an M1 challenge", async () => {
     const response = await fetch(
       `${baseUrl}/api/v1/auth/login/telegram/start`,
       {
@@ -76,12 +90,26 @@ describe("backend skeleton with mock AuthGuard", () => {
     assert.equal(response.status, 202);
 
     const body = await response.json();
-    assert.equal(body.status, "mock_code_delivery_scheduled");
+    assert.equal(body.status, "code_delivery_scheduled");
     assert.equal(body.telegramUsername, "seeded_admin");
-    assert.equal(body.implementationStage, "M0");
+    assert.equal(body.implementationStage, "M1");
+    assert.match(body.requestId, /^[0-9a-f-]{36}$/);
   });
 
-  it("serves POST /api/v1/auth/login/telegram/verify as an M0 stub", async () => {
+  it("serves POST /api/v1/auth/login/telegram/verify and reads the current session", async () => {
+    const start = await fetch(
+      `${baseUrl}/api/v1/auth/login/telegram/start`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          telegramUsername: "seeded_admin",
+        }),
+      },
+    );
+    const challenge = await start.json();
     const response = await fetch(
       `${baseUrl}/api/v1/auth/login/telegram/verify`,
       {
@@ -90,7 +118,7 @@ describe("backend skeleton with mock AuthGuard", () => {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          telegramUsername: "seeded_admin",
+          requestId: challenge.requestId,
           code: "123456",
         }),
       },
@@ -100,13 +128,53 @@ describe("backend skeleton with mock AuthGuard", () => {
 
     const body = await response.json();
     assert.equal(body.authenticated, true);
-    assert.equal(body.session.mode, "mock");
+    assert.equal(body.session.mode, "server");
+    assert.match(body.token, /^brs_/);
+    assert.equal(response.headers.get("set-cookie").includes("bridge_session="), true);
+
+    const sessionResponse = await fetch(`${baseUrl}/api/v1/auth/session`, {
+      headers: {
+        authorization: `Bearer ${body.token}`,
+      },
+    });
+    assert.equal(sessionResponse.status, 200);
+    const sessionBody = await sessionResponse.json();
+    assert.equal(sessionBody.user.telegramUsername, "seeded_admin");
+    assert.deepEqual(sessionBody.roles, ["administrator"]);
   });
 
-  it("serves POST /api/v1/auth/logout through mock AuthGuard", async () => {
+  it("serves POST /api/v1/auth/logout through M1 AuthGuard", async () => {
+    const start = await fetch(
+      `${baseUrl}/api/v1/auth/login/telegram/start`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          telegramUsername: "seeded_admin",
+        }),
+      },
+    );
+    const challenge = await start.json();
+    const verify = await fetch(
+      `${baseUrl}/api/v1/auth/login/telegram/verify`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          requestId: challenge.requestId,
+          code: "123456",
+        }),
+      },
+    );
+    const session = await verify.json();
     const response = await fetch(`${baseUrl}/api/v1/auth/logout`, {
       method: "POST",
       headers: {
+        authorization: `Bearer ${session.token}`,
         "content-type": "application/json",
       },
       body: JSON.stringify({}),
@@ -116,7 +184,14 @@ describe("backend skeleton with mock AuthGuard", () => {
 
     const body = await response.json();
     assert.equal(body.loggedOut, true);
-    assert.equal(body.sessionMode, "mock");
+    assert.equal(body.sessionMode, "server");
+
+    const afterLogout = await fetch(`${baseUrl}/api/v1/auth/session`, {
+      headers: {
+        authorization: `Bearer ${session.token}`,
+      },
+    });
+    assert.equal(afterLogout.status, 401);
   });
 
   it("returns ProblemDetails for DTO validation errors", async () => {

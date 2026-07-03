@@ -85,7 +85,8 @@ describe("M0 integration contract gate", () => {
       );
 
       assert.equal(authStart.statusCode, 202);
-      assert.equal(authStart.body.implementationStage, "M0");
+      assert.equal(authStart.body.implementationStage, "M1");
+      assert.match(authStart.body.requestId, /^[0-9a-f-]{36}$/);
 
       const ingress = await fetchJson(`${baseUrl}/api/v1/internal/ingress/messages`, {
         method: "POST",

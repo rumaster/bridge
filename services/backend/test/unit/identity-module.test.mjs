@@ -4,7 +4,7 @@ import { describe, it } from "node:test";
 import { createIdentityModule } from "../../src/modules/identity/identity-module.mjs";
 
 describe("identity module skeleton", () => {
-  it("registers all C3.auth M0 routes", () => {
+  it("registers all C3.auth M1 routes", () => {
     const identityModule = createIdentityModule();
     const routes = identityModule.routes.map(({ method, path }) => ({
       method,

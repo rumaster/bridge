@@ -1,8 +1,8 @@
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { runner } from "node-pg-migrate";
 
-const MIGRATIONS_DIR = "db/migrations";
+const MIGRATIONS_DIR = fileURLToPath(new URL("../db/migrations", import.meta.url));
 const MIGRATIONS_TABLE = "pgmigrations";
 
 const quietLogger = {
