@@ -1,4 +1,4 @@
-import { Bell, Inbox, LogIn, MessageSquare } from "lucide-react";
+import { Bell, Inbox, LogIn, LogOut, MessageSquare } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 
 import { useAuth } from "../../state/auth";
@@ -11,7 +11,7 @@ const navItems = [
 ];
 
 export function AppShell() {
-  const { session, status } = useAuth();
+  const { logout, session, status } = useAuth();
 
   return (
     <div className="app-shell">
@@ -39,10 +39,17 @@ export function AppShell() {
             </Badge>
             <span>{session?.user.displayName ?? "Вход не выполнен"}</span>
           </div>
-          <Button asLink to="/login" variant="secondary">
-            <LogIn aria-hidden="true" size={16} />
-            Вход
-          </Button>
+          {status === "authenticated" ? (
+            <Button onClick={logout} type="button" variant="secondary">
+              <LogOut aria-hidden="true" size={16} />
+              Выйти
+            </Button>
+          ) : (
+            <Button asLink to="/login" variant="secondary">
+              <LogIn aria-hidden="true" size={16} />
+              Вход
+            </Button>
+          )}
         </header>
 
         <div className="workspace-content">
