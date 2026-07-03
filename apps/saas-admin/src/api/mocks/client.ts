@@ -4,7 +4,10 @@ import type {
   ChannelStatus,
   ConnectChannelRequest,
   CreateKnowledgeDocumentRequest,
+  CreateWorkflowVersionRequest,
   KnowledgeDocument,
+  OnboardingApplyRequest,
+  OnboardingCommandRequest,
   Organization,
   OrganizationConfiguration,
   SaasAdminApiClient,
@@ -12,18 +15,33 @@ import type {
   TelegramLoginVerifyRequest,
   UpdateKnowledgeDocumentRequest,
   UpdateOrganizationConfigurationRequest,
-  UpdateOrganizationRequest
+  UpdateOrganizationRequest,
+  UpdateWorkflowRequest,
+  Workflow,
+  WorkflowInstance,
+  WorkflowVersion
 } from "../client/types";
 import { createMockC7RealtimeClient } from "../client/realtime";
 import type { C7RealtimeClient } from "../client/realtime";
 import {
+  applyOnboardingCommand,
+  cloneWorkflow,
+  cloneWorkflowInstance,
+  cloneWorkflowInstanceDetail,
+  cloneWorkflowSchema,
+  cloneWorkflowVersion,
   createMockCapabilityDescriptor,
+  deriveOnboardingCommand,
   mockC7Events,
   mockChannels,
   mockConfiguration,
   mockKnowledgeDocuments,
   mockOrganization,
-  mockSession
+  mockSession,
+  mockWorkflowInstanceLogs,
+  mockWorkflowInstances,
+  mockWorkflowVersions,
+  mockWorkflows
 } from "./fixtures";
 
 export interface CreateMockSaasAdminServicesOptions {
@@ -41,8 +59,14 @@ export function createMockSaasAdminApiClient(
   let currentConfiguration: OrganizationConfiguration = cloneMockConfiguration();
   let currentChannels: Channel[] = cloneMockChannels();
   let currentDocuments: KnowledgeDocument[] = cloneMockKnowledgeDocuments();
+  let currentWorkflows: Workflow[] = mockWorkflows.map(cloneWorkflow);
+  let currentVersions: WorkflowVersion[] = mockWorkflowVersions.map(cloneWorkflowVersion);
+  let currentInstances: WorkflowInstance[] = mockWorkflowInstances.map(cloneWorkflowInstance);
   let nextChannelNumber = 1;
   let nextDocumentNumber = 1;
+  let nextVersionNumber = 1;
+  let nextOnboardingNumber = 1;
+  let nextConfigurationVersion = 2;
 
   return {
     auth: {
@@ -268,8 +292,153 @@ export function createMockSaasAdminApiClient(
           document_id: documentId
         };
       }
+    },
+    workflows: {
+      async listWorkflows() {
+        return currentWorkflows.map(cloneWorkflow);
+      },
+      async listVersions(workflowId: string) {
+        requireWorkflow(currentWorkflows, workflowId);
+        return currentVersions
+          .filter((version) => version.workflow_id === workflowId)
+          .map(cloneWorkflowVersion);
+      },
+      async createVersion(workflowId: string, request: CreateWorkflowVersionRequest) {
+        const workflow = requireWorkflow(currentWorkflows, workflowId);
+        const versionNo =
+          currentVersions
+            .filter((version) => version.workflow_id === workflowId)
+            .reduce((max, version) => Math.max(max, version.version_no), 0) + 1;
+        const version: WorkflowVersion = {
+          id: `wfv-created-${nextVersionNumber++}`,
+          organization_id: workflow.organization_id,
+          workflow_id: workflowId,
+          version_no: versionNo,
+          schema: cloneWorkflowSchema(request.schema),
+          created_by: initialSession.user.displayName,
+          created_at: "2026-07-03T11:15:00.000Z"
+        };
+
+        currentVersions = [...currentVersions, version];
+        if (request.activate) {
+          currentWorkflows = currentWorkflows.map((item) =>
+            item.id === workflowId
+              ? {
+                  ...item,
+                  status: "active",
+                  default_version_id: version.id,
+                  updated_at: "2026-07-03T11:15:00.000Z"
+                }
+              : item
+          );
+        }
+
+        return cloneWorkflowVersion(version);
+      },
+      async updateWorkflow(workflowId: string, request: UpdateWorkflowRequest) {
+        const workflow = requireWorkflow(currentWorkflows, workflowId);
+        if (
+          request.default_version_id &&
+          !currentVersions.some(
+            (version) =>
+              version.workflow_id === workflowId && version.id === request.default_version_id
+          )
+        ) {
+          throw new Error("Workflow version not found");
+        }
+
+        const updated: Workflow = {
+          ...workflow,
+          enabled: request.enabled ?? workflow.enabled,
+          status: request.status ?? workflow.status,
+          default_version_id: request.default_version_id ?? workflow.default_version_id,
+          updated_at: "2026-07-03T11:16:00.000Z"
+        };
+        currentWorkflows = currentWorkflows.map((item) =>
+          item.id === workflowId ? updated : item
+        );
+
+        return cloneWorkflow(updated);
+      },
+      async listInstances(workflowId: string) {
+        requireWorkflow(currentWorkflows, workflowId);
+        return currentInstances
+          .filter((instance) => instance.workflow_id === workflowId)
+          .map(cloneWorkflowInstance);
+      },
+      async getInstance(workflowId: string, instanceId: string) {
+        const instance = currentInstances.find(
+          (item) => item.id === instanceId && item.workflow_id === workflowId
+        );
+        if (!instance) {
+          throw new Error("Workflow instance not found");
+        }
+
+        return cloneWorkflowInstanceDetail({
+          ...instance,
+          logs: mockWorkflowInstanceLogs[instanceId] ?? []
+        });
+      }
+    },
+    onboarding: {
+      async createCommand(request: OnboardingCommandRequest) {
+        return deriveOnboardingCommand(
+          request,
+          {
+            organizationId: currentOrganization.id,
+            organization: currentOrganization,
+            configuration: currentConfiguration
+          },
+          {
+            requestId: request.request_id ?? `onboarding-req-${nextOnboardingNumber++}`,
+            createdAt: "2026-07-03T11:00:00.000Z"
+          }
+        );
+      },
+      async applyCommand(request: OnboardingApplyRequest) {
+        const { command } = request;
+        if (command.organization_id !== currentOrganization.id) {
+          throw new Error("Command organization mismatch");
+        }
+
+        const { result, organization, configuration } = applyOnboardingCommand(
+          command,
+          {
+            organizationId: currentOrganization.id,
+            organization: currentOrganization,
+            configuration: currentConfiguration
+          },
+          {
+            appliedAt: "2026-07-03T11:00:05.000Z",
+            configurationVersion: nextConfigurationVersion++
+          }
+        );
+
+        currentOrganization = organization;
+        currentConfiguration = configuration;
+
+        return {
+          contract: "C4.OnboardingApplyResponse",
+          version: "1.0.0",
+          request_id: command.command_id,
+          organization_id: currentOrganization.id,
+          result,
+          configuration: { ...configuration },
+          organization: { ...organization },
+          applied_at: "2026-07-03T11:00:05.000Z"
+        };
+      }
     }
   };
+}
+
+function requireWorkflow(workflows: Workflow[], workflowId: string): Workflow {
+  const workflow = workflows.find((item) => item.id === workflowId);
+  if (!workflow) {
+    throw new Error("Workflow not found");
+  }
+
+  return workflow;
 }
 
 export function createMockSaasAdminServices(options: CreateMockSaasAdminServicesOptions = {}) {

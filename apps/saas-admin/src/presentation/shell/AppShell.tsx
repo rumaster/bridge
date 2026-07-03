@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   LogOut,
   RadioTower,
+  Sparkles,
   Users,
   Workflow
 } from "lucide-react";
@@ -31,6 +32,7 @@ const navItems: NavItem[] = [
   { to: "/channels", label: "Каналы", icon: Cable, roles: administratorRoles },
   { to: "/knowledge", label: "Knowledge Base", icon: BookOpen, roles: administratorRoles },
   { to: "/workflow", label: "Workflow", icon: Workflow, roles: administratorRoles },
+  { to: "/onboarding", label: "AI Onboarding", icon: Sparkles, roles: administratorRoles },
   { to: "/broadcast", label: "Broadcast", icon: RadioTower, roles: administratorRoles },
   { to: "/notifications", label: "Уведомления", icon: Bell, roles: administratorRoles }
 ];
