@@ -1,0 +1,127 @@
+{
+  "x-contract-id": "C3.manager-workspace.consumer",
+  "x-consumer": "SVC-MWS",
+  "x-provider": "Backend API C3",
+  "x-stage": "M1",
+  "interactions": [
+    {
+      "name": "start Telegram login",
+      "method": "POST",
+      "path": "/auth/login/telegram/start",
+      "request": {
+        "required": ["telegramUsername"]
+      },
+      "response": {
+        "required": ["requestId", "delivery", "expiresAt"]
+      }
+    },
+    {
+      "name": "verify Telegram login",
+      "method": "POST",
+      "path": "/auth/login/telegram/verify",
+      "request": {
+        "required": ["requestId", "code"]
+      },
+      "response": {
+        "required": ["token", "user", "organization", "expiresAt"]
+      }
+    },
+    {
+      "name": "read current session",
+      "method": "GET",
+      "path": "/auth/session",
+      "response": {
+        "required": ["token", "user", "organization", "expiresAt"]
+      }
+    },
+    {
+      "name": "list conversations",
+      "method": "GET",
+      "path": "/conversations",
+      "responseItem": {
+        "required": [
+          "id",
+          "clientId",
+          "status",
+          "channel",
+          "lastMessageAt",
+          "lastMessagePreview",
+          "unreadCount"
+        ]
+      }
+    },
+    {
+      "name": "read conversation",
+      "method": "GET",
+      "path": "/conversations/{conversationId}",
+      "response": {
+        "required": [
+          "id",
+          "clientId",
+          "status",
+          "channel",
+          "lastMessageAt",
+          "lastMessagePreview",
+          "unreadCount"
+        ]
+      }
+    },
+    {
+      "name": "read conversation messages",
+      "method": "GET",
+      "path": "/conversations/{conversationId}/messages",
+      "responseItem": {
+        "required": [
+          "id",
+          "conversationId",
+          "channel",
+          "direction",
+          "senderType",
+          "content",
+          "status",
+          "createdAt"
+        ]
+      }
+    },
+    {
+      "name": "create manager message idempotently",
+      "method": "POST",
+      "path": "/messages",
+      "request": {
+        "required": ["conversationId", "content", "idempotencyKey"]
+      },
+      "response": {
+        "required": [
+          "id",
+          "conversationId",
+          "channel",
+          "direction",
+          "senderType",
+          "content",
+          "status",
+          "createdAt"
+        ]
+      },
+      "idempotency": {
+        "keyField": "idempotencyKey",
+        "repeatReturnsSameMessage": true
+      }
+    },
+    {
+      "name": "read client card",
+      "method": "GET",
+      "path": "/clients/{clientId}",
+      "response": {
+        "required": ["id", "displayName", "tags", "notes", "endpoints"]
+      }
+    },
+    {
+      "name": "search clients",
+      "method": "GET",
+      "path": "/clients",
+      "responseItem": {
+        "required": ["id", "displayName", "tags", "notes", "endpoints"]
+      }
+    }
+  ]
+}

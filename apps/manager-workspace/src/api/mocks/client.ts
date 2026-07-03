@@ -1,117 +1,59 @@
 import { createMockC7RealtimeClient } from "../client/realtime";
-import type {
-  ManagerWorkspaceApiClient,
-  Message,
-  NotificationItem,
-  SendMessageRequest,
-  TelegramLoginStartRequest,
-  TelegramLoginVerifyRequest
-} from "../client/types";
-import {
-  mockC7Events,
-  mockClients,
-  mockConversations,
-  mockMessages,
-  mockNotifications,
-  mockSession
-} from "./fixtures";
+import type { ManagerWorkspaceApiClient } from "../client/types";
+import { createMockManagerWorkspaceBackend } from "./backend";
+import { mockC7Events } from "./fixtures";
 
 export function createMockManagerWorkspaceApiClient(): ManagerWorkspaceApiClient {
+  const backend = createMockManagerWorkspaceBackend();
+
   return {
     auth: {
       async getSession() {
-        return mockSession;
+        return backend.getSession();
       },
-      async startTelegramLogin(request: TelegramLoginStartRequest) {
-        if (!request.telegramUsername) {
-          throw new Error("telegramUsername is required");
-        }
-
-        return {
-          requestId: "telegram-login-request-1",
-          delivery: "telegram",
-          expiresAt: "2026-07-02T16:20:00.000Z"
-        };
+      async startTelegramLogin(request) {
+        return backend.startTelegramLogin(request);
       },
-      async verifyTelegramLogin(request: TelegramLoginVerifyRequest) {
-        if (!request.requestId || !request.code) {
-          throw new Error("requestId and code are required");
-        }
-
-        return mockSession;
+      async verifyTelegramLogin(request) {
+        return backend.verifyTelegramLogin(request);
       },
       async logout() {
-        return undefined;
+        backend.logout();
       }
     },
     conversations: {
       async list() {
-        return [...mockConversations];
+        return backend.listConversations();
       },
       async get(conversationId: string) {
-        const conversation = mockConversations.find((item) => item.id === conversationId);
-
-        if (!conversation) {
-          throw new Error("Conversation not found");
-        }
-
-        return conversation;
+        return backend.getConversation(conversationId);
       },
       async listMessages(conversationId: string) {
-        return mockMessages.filter((message) => message.conversationId === conversationId);
+        return backend.listMessages(conversationId);
       }
     },
     messages: {
-      async create(request: SendMessageRequest) {
-        const message: Message = {
-          id: `msg-${request.idempotencyKey}`,
-          conversationId: request.conversationId,
-          channel: "web_chat",
-          direction: "outbound",
-          senderType: "manager",
-          content: request.content,
-          status: "sent",
-          createdAt: "2026-07-02T16:12:00.000Z"
-        };
-
-        return message;
+      async create(request) {
+        return backend.createMessage(request);
       },
       async get(messageId: string) {
-        const message = mockMessages.find((item) => item.id === messageId);
-
-        if (!message) {
-          throw new Error("Message not found");
-        }
-
-        return message;
+        return backend.getMessage(messageId);
       }
     },
     clients: {
       async list() {
-        return [...mockClients];
+        return backend.listClients();
       },
       async get(clientId: string) {
-        const client = mockClients.find((item) => item.id === clientId);
-
-        if (!client) {
-          throw new Error("Client not found");
-        }
-
-        return client;
+        return backend.getClient(clientId);
       }
     },
     notifications: {
       async list() {
-        return [...mockNotifications];
+        return backend.listNotifications();
       },
       async markRead(notificationId: string) {
-        const notification = mockNotifications.find((item) => item.id === notificationId);
-
-        if (!notification) {
-          throw new Error("Notification not found");
-        }
-
-        return { ...notification, status: "read" } satisfies NotificationItem;
+        return backend.markNotificationRead(notificationId);
       }
     }
   };
