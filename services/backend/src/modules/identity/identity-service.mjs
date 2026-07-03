@@ -21,6 +21,14 @@ const DEFAULT_RATE_LIMIT = 10;
 const DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60;
 const DEFAULT_HASH_SECRET = "bridge-local-dev-auth-secret";
 
+export const IDENTITY_AUDIT_ACTIONS = Object.freeze({
+  loginFailure: "auth.login.failure",
+  loginStart: "auth.login.start",
+  loginSuccess: "auth.login.success",
+  sessionLogout: "auth.session.logout",
+  sessionRevoke: "auth.session.revoke",
+});
+
 function toIsoDate(value) {
   return new Date(value).toISOString();
 }
@@ -256,6 +264,27 @@ export function createMemoryRateLimiter({
         retryAfterSeconds: 0,
       };
     },
+  };
+}
+
+export function createInMemoryAuditRecorder() {
+  const events = [];
+
+  return {
+    events,
+
+    async record(event) {
+      events.push(structuredClone({
+        ...event,
+        metadata: event.metadata ?? {},
+      }));
+    },
+  };
+}
+
+export function createNoopAuditRecorder() {
+  return {
+    async record() {},
   };
 }
 
@@ -618,6 +647,48 @@ export function createPostgresIdentityStore({ client }) {
   };
 }
 
+export function createPostgresAuditRecorder({ client }) {
+  if (!client || typeof client.query !== "function") {
+    throw new TypeError("createPostgresAuditRecorder requires a pg client.");
+  }
+
+  return {
+    async record(input) {
+      await client.query(
+        `
+          INSERT INTO audit_events (
+            id,
+            organization_id,
+            actor_user_id,
+            actor_type,
+            action,
+            object_type,
+            object_id,
+            result,
+            request_id,
+            ip,
+            metadata
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::inet, $11::jsonb)
+        `,
+        [
+          randomUUID(),
+          input.organizationId,
+          input.actorUserId ?? null,
+          input.actorType ?? "user",
+          input.action,
+          input.objectType,
+          input.objectId ?? null,
+          input.result ?? "success",
+          input.requestId ?? null,
+          input.ip ?? null,
+          JSON.stringify(input.metadata ?? {}),
+        ],
+      );
+    },
+  };
+}
+
 function mapUserRow(row) {
   return {
     user: {
@@ -691,6 +762,7 @@ function mapSessionJoinRow(row) {
 }
 
 export function createIdentityService({
+  auditRecorder = createNoopAuditRecorder(),
   codeGenerator = createDefaultCode,
   codeTtlSeconds = DEFAULT_CODE_TTL_SECONDS,
   deliveryAdapter = createMockTelegramCodeDeliveryAdapter(),
@@ -764,6 +836,72 @@ export function createIdentityService({
     };
   }
 
+  async function recordAuditEvent({
+    action,
+    actorUserId,
+    ip,
+    metadata = {},
+    objectId,
+    objectType,
+    organizationId,
+    requestId,
+    result = "success",
+  }) {
+    if (!organizationId) {
+      return;
+    }
+
+    await auditRecorder.record({
+      action,
+      actorType: "user",
+      actorUserId,
+      ip,
+      metadata: {
+        authMethod: "telegram",
+        ...metadata,
+      },
+      objectId,
+      objectType,
+      organizationId,
+      requestId,
+      result,
+    });
+  }
+
+  async function recordLoginFailure({
+    failureResult = "failure",
+    loginCode,
+    reason,
+    request = {},
+    userRecord,
+  }) {
+    const organizationId =
+      userRecord?.user?.organizationId ?? loginCode?.organizationId;
+    const actorUserId = userRecord?.user?.id ?? loginCode?.userId;
+    const objectId = loginCode?.id ?? actorUserId;
+    const objectType = loginCode ? "login_code" : "user";
+
+    await recordAuditEvent({
+      action: IDENTITY_AUDIT_ACTIONS.loginFailure,
+      actorUserId,
+      ip: request.ip ?? null,
+      metadata: {
+        reason,
+        ...(loginCode
+          ? {
+              attemptCount: loginCode.attemptCount,
+              locked: Boolean(loginCode.lockedUntil),
+            }
+          : {}),
+      },
+      objectId,
+      objectType,
+      organizationId,
+      requestId: loginCode?.id,
+      result: failureResult,
+    });
+  }
+
   return {
     hashLoginCode,
     hashSessionToken,
@@ -789,14 +927,34 @@ export function createIdentityService({
       );
 
       if (!userRecord || userRecord.user.status !== "active") {
+        if (userRecord) {
+          await recordLoginFailure({
+            failureResult: "denied",
+            reason: "user_inactive_or_forbidden",
+            userRecord,
+          });
+        }
+
         return unauthorized("Telegram user is not allowed to sign in.");
       }
 
       if (userRecord.organization.status !== "active") {
+        await recordLoginFailure({
+          failureResult: "denied",
+          reason: "organization_inactive",
+          userRecord,
+        });
+
         return unauthorized("Organization is not active.");
       }
 
       if (!hasRoleBinding(userRecord)) {
+        await recordLoginFailure({
+          failureResult: "denied",
+          reason: "role_binding_missing",
+          userRecord,
+        });
+
         return unauthorized("Telegram user has no active role binding.");
       }
 
@@ -826,6 +984,19 @@ export function createIdentityService({
         requestId: loginCode.id,
         telegramUsername: userRecord.user.telegramUsername,
         userId: userRecord.user.id,
+      });
+
+      await recordAuditEvent({
+        action: IDENTITY_AUDIT_ACTIONS.loginStart,
+        actorUserId: userRecord.user.id,
+        metadata: {
+          deliveryChannel: "telegram",
+          expiresAt: loginCode.expiresAt,
+        },
+        objectId: loginCode.id,
+        objectType: "login_code",
+        organizationId: userRecord.user.organizationId,
+        requestId: loginCode.id,
       });
 
       return {
@@ -885,18 +1056,50 @@ export function createIdentityService({
       }
 
       if (userRecord.user.status !== "active") {
+        await recordLoginFailure({
+          failureResult: "denied",
+          loginCode,
+          reason: "user_inactive_or_forbidden",
+          request,
+          userRecord,
+        });
+
         return unauthorized("Telegram user is not allowed to sign in.");
       }
 
       if (userRecord.organization.status !== "active") {
+        await recordLoginFailure({
+          failureResult: "denied",
+          loginCode,
+          reason: "organization_inactive",
+          request,
+          userRecord,
+        });
+
         return unauthorized("Organization is not active.");
       }
 
       if (!hasRoleBinding(userRecord)) {
+        await recordLoginFailure({
+          failureResult: "denied",
+          loginCode,
+          reason: "role_binding_missing",
+          request,
+          userRecord,
+        });
+
         return unauthorized("Telegram user has no active role binding.");
       }
 
       if (loginCode.lockedUntil && isAfter(loginCode.lockedUntil, currentTime)) {
+        await recordLoginFailure({
+          failureResult: "denied",
+          loginCode,
+          reason: "code_locked",
+          request,
+          userRecord,
+        });
+
         return tooManyRequests(
           "Telegram login code is locked after too many attempts.",
           Math.ceil(
@@ -907,10 +1110,24 @@ export function createIdentityService({
       }
 
       if (loginCode.consumedAt) {
+        await recordLoginFailure({
+          loginCode,
+          reason: "code_consumed",
+          request,
+          userRecord,
+        });
+
         return unauthorized("Telegram login code has already been used.");
       }
 
       if (isOnOrBefore(loginCode.expiresAt, currentTime)) {
+        await recordLoginFailure({
+          loginCode,
+          reason: "code_expired",
+          request,
+          userRecord,
+        });
+
         return unauthorized("Telegram login code has expired.");
       }
 
@@ -931,6 +1148,17 @@ export function createIdentityService({
           lockedUntil,
         });
 
+        await recordLoginFailure({
+          loginCode: {
+            ...loginCode,
+            attemptCount: nextAttemptCount,
+            lockedUntil,
+          },
+          reason: lockedUntil ? "code_locked" : "code_invalid",
+          request,
+          userRecord,
+        });
+
         if (lockedUntil) {
           return tooManyRequests(
             "Telegram login code is locked after too many attempts.",
@@ -947,6 +1175,13 @@ export function createIdentityService({
       );
 
       if (!consumedCode) {
+        await recordLoginFailure({
+          loginCode,
+          reason: "code_consumed",
+          request,
+          userRecord,
+        });
+
         return unauthorized("Telegram login code has already been used.");
       }
 
@@ -967,6 +1202,21 @@ export function createIdentityService({
       });
       const authContext = toAuthContext(session);
 
+      await recordAuditEvent({
+        action: IDENTITY_AUDIT_ACTIONS.loginSuccess,
+        actorUserId: userRecord.user.id,
+        ip: request.ip ?? null,
+        metadata: {
+          loginCodeId: loginCode.id,
+          roleCodes: [...userRecord.roles],
+          sessionExpiresAt: session.expiresAt,
+        },
+        objectId: session.id,
+        objectType: "auth_session",
+        organizationId: userRecord.user.organizationId,
+        requestId: loginCode.id,
+      });
+
       return {
         status: 200,
         body: sessionResponse(authContext, token),
@@ -981,7 +1231,20 @@ export function createIdentityService({
         return unauthorized("Session is missing.");
       }
 
-      await store.revokeSession(authContext.session.id, toIsoDate(now()));
+      const revokedAt = toIsoDate(now());
+      await store.revokeSession(authContext.session.id, revokedAt);
+
+      await recordAuditEvent({
+        action: IDENTITY_AUDIT_ACTIONS.sessionLogout,
+        actorUserId: authContext.user.id,
+        metadata: {
+          sessionRevokedAt: revokedAt,
+        },
+        objectId: authContext.session.id,
+        objectType: "auth_session",
+        organizationId: authContext.organization.id,
+        result: "success",
+      });
 
       return {
         status: 200,

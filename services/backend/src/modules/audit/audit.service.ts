@@ -11,6 +11,7 @@ export interface AuditEventInput {
   action: string;
   actorType?: AuditActorType;
   actorUserId?: string;
+  ip?: string | null;
   metadata?: Record<string, unknown>;
   objectId?: string;
   objectType: string;
@@ -34,9 +35,10 @@ export class AuditService {
           object_id,
           result,
           request_id,
+          ip,
           metadata
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::inet, $11::jsonb)
       `,
       [
         randomUUID(),
@@ -48,6 +50,7 @@ export class AuditService {
         input.objectId ?? null,
         input.result ?? "success",
         input.requestId ?? null,
+        input.ip ?? null,
         JSON.stringify(input.metadata ?? {}),
       ],
     );

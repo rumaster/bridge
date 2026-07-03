@@ -43,6 +43,19 @@ export class OrganizationService {
     context: MutationContext,
   ): Promise<OrganizationResponseDto> {
     return this.database.withTenant(id, async (client) => {
+      const before = await client.query<OrganizationRow>(
+        `
+          SELECT id, name, description, timezone, locale, status, created_at, updated_at
+          FROM organizations
+          WHERE id = $1
+        `,
+        [id],
+      );
+
+      if (before.rowCount === 0) {
+        throw notFound("organization", id);
+      }
+
       const result = await client.query<OrganizationRow>(
         `
           UPDATE organizations
@@ -79,6 +92,21 @@ export class OrganizationService {
         organizationId: id,
         requestId: context.requestId,
       });
+
+      if (payload.status && payload.status !== before.rows[0].status) {
+        await this.audit.record(client, {
+          action: payload.status === "blocked" ? "organization.block" : "organization.unblock",
+          actorUserId: context.actorUserId,
+          metadata: {
+            previousStatus: before.rows[0].status,
+            status: payload.status,
+          },
+          objectId: id,
+          objectType: "organization",
+          organizationId: id,
+          requestId: context.requestId,
+        });
+      }
 
       return mapOrganization(result.rows[0]);
     });
