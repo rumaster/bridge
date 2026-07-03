@@ -56,6 +56,7 @@ textarea {
 
 .bridge-chat-header h1,
 .bridge-chat-kicker,
+.bridge-chat-connection,
 .bridge-chat-message-author,
 .bridge-chat-message-text {
   margin: 0;
@@ -72,6 +73,13 @@ textarea {
   font-size: 12px;
   line-height: 1.2;
   color: #b7f0d9;
+}
+
+.bridge-chat-connection {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.2;
+  color: #d7efe6;
 }
 
 .bridge-chat-icon-button {
@@ -108,6 +116,25 @@ textarea {
   line-height: 1.35;
 }
 
+.bridge-chat-history-button {
+  align-self: center;
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid #bac6d1;
+  border-radius: 8px;
+  color: #294355;
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.bridge-chat-history-button:disabled {
+  color: #6d7782;
+  background: #e9eef2;
+  cursor: wait;
+}
+
 .bridge-chat-message {
   width: fit-content;
   max-width: min(78%, 280px);
@@ -128,6 +155,20 @@ textarea {
   align-self: flex-start;
   border-color: #d6dde4;
   background: #ffffff;
+}
+
+.bridge-chat-message-ai {
+  align-self: flex-start;
+  border-color: #c6dfd5;
+  background: #eef8f2;
+}
+
+.bridge-chat-message-system {
+  align-self: center;
+  max-width: min(84%, 300px);
+  color: #435466;
+  border-color: #d6dde4;
+  background: #eef2f5;
 }
 
 .bridge-chat-message-author {
@@ -154,6 +195,14 @@ textarea {
   font-size: 11px;
   line-height: 1.2;
   opacity: 0.72;
+}
+
+.bridge-chat-typing {
+  align-self: flex-start;
+  margin: 0;
+  color: #435466;
+  font-size: 13px;
+  line-height: 1.35;
 }
 
 .bridge-chat-error {
@@ -197,6 +246,7 @@ textarea {
 }
 
 .bridge-chat-form textarea:focus,
+.bridge-chat-history-button:focus-visible,
 .bridge-chat-primary-button:focus-visible,
 .bridge-chat-icon-button:focus-visible {
   outline: 3px solid #d8a31a;

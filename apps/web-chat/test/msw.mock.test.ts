@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_ENDPOINT_ID,
   DEFAULT_CONVERSATION_ID,
   DEFAULT_ORGANIZATION_ID,
 } from "../src/platform/apiClient";
-import { webChatMockHandlers } from "../src/mocks/handlers";
+import { resetMockMessages, webChatMockHandlers } from "../src/mocks/handlers";
+import type { WebChatMessage } from "../src/types";
 
 describe("Bridge Web Chat MSW mocks", () => {
   it("создает анонимную Web Chat сессию для M1", async () => {
@@ -34,7 +36,43 @@ describe("Bridge Web Chat MSW mocks", () => {
     );
 
     expect(response.ok).toBe(true);
-    await expect(response.json()).resolves.toEqual([]);
+    await expect(response.json()).resolves.toEqual({
+      items: [],
+      page: {
+        limit: 20,
+        nextCursor: null,
+        total: 0,
+      },
+    });
+  });
+
+  it("возвращает постраничную историю от новых сообщений к старым", async () => {
+    resetMockMessages([
+      mockMessage("52345678-1234-4234-8234-123456789abc", 1, "Первое"),
+      mockMessage("62345678-1234-4234-8234-123456789abc", 2, "Второе"),
+      mockMessage("72345678-1234-4234-8234-123456789abc", 3, "Третье"),
+    ]);
+
+    const latestResponse = await fetch(
+      `http://localhost/api/v1/conversations/${DEFAULT_CONVERSATION_ID}/messages?limit=2`,
+    );
+    const latestPage = await latestResponse.json();
+
+    expect(latestPage.items.map((message: WebChatMessage) => message.body.text)).toEqual([
+      "Второе",
+      "Третье",
+    ]);
+    expect(latestPage.page.nextCursor).toBe("before:2");
+
+    const previousResponse = await fetch(
+      `http://localhost/api/v1/conversations/${DEFAULT_CONVERSATION_ID}/messages?limit=2&cursor=before%3A2`,
+    );
+    const previousPage = await previousResponse.json();
+
+    expect(previousPage.items.map((message: WebChatMessage) => message.body.text)).toEqual([
+      "Первое",
+    ]);
+    expect(previousPage.page.nextCursor).toBe(null);
   });
 
   it("возвращает C1-подобное сообщение после POST /messages", async () => {
@@ -98,7 +136,7 @@ describe("Bridge Web Chat MSW mocks", () => {
 
     expect(repeatedResponse.status).toBe(200);
     expect(
-      history.filter(
+      history.items.filter(
         (message: { id: string }) =>
           message.id === "12345678-1234-4234-8234-123456789abc",
       ),
@@ -111,3 +149,24 @@ describe("Bridge Web Chat MSW mocks", () => {
     ).toBe(true);
   });
 });
+
+function mockMessage(id: string, sequenceNumber: number, text: string): WebChatMessage {
+  return {
+    id,
+    organizationId: DEFAULT_ORGANIZATION_ID,
+    conversationId: DEFAULT_CONVERSATION_ID,
+    endpointId: DEFAULT_ENDPOINT_ID,
+    channel: "web_chat",
+    author: {
+      type: "visitor",
+      displayName: "Посетитель",
+    },
+    body: {
+      type: "text",
+      text,
+    },
+    createdAt: `2026-07-03T09:0${sequenceNumber}:00.000Z`,
+    sequenceNumber,
+    status: "delivered",
+  };
+}
