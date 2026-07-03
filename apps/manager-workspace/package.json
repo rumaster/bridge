@@ -8,7 +8,7 @@
     "lint": "tsc --noEmit",
     "test": "vitest run",
     "build": "vite build",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright install chromium && playwright test"
   },
   "dependencies": {
     "@bridge/api-client": "0.0.0",
