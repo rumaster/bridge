@@ -9,6 +9,7 @@ import { mapUser } from "./user.dto";
 import type {
   CreateUserDto,
   PatchUserDto,
+  RevokeUserSessionsResponseDto,
   UserListResponseDto,
   UserResponseDto,
   UserRow,
@@ -64,12 +65,17 @@ export class UserService {
           payload.status ?? "active",
         ],
       );
-      await this.replaceRoles(client, organizationId, userId, payload.roleCodes ?? ["manager"]);
+      const roleCodes = await this.replaceRoles(
+        client,
+        organizationId,
+        userId,
+        payload.roleCodes ?? ["manager"],
+      );
 
       await this.audit.record(client, {
         action: "user.create",
         actorUserId: context.actorUserId,
-        metadata: { roleCodes: payload.roleCodes ?? ["manager"] },
+        metadata: { roleCodes },
         objectId: userId,
         objectType: "user",
         organizationId,
@@ -87,6 +93,7 @@ export class UserService {
     context: UserMutationContext,
   ): Promise<UserResponseDto> {
     return this.database.withTenant(organizationId, async (client) => {
+      const before = await this.getUserInTransaction(client, organizationId, userId);
       const result = await client.query(
         `
           UPDATE users
@@ -114,8 +121,9 @@ export class UserService {
         throw notFound("user", userId);
       }
 
+      let nextRoleCodes = before.roleCodes;
       if (payload.roleCodes) {
-        await this.replaceRoles(client, organizationId, userId, payload.roleCodes);
+        nextRoleCodes = await this.replaceRoles(client, organizationId, userId, payload.roleCodes);
       }
 
       await this.audit.record(client, {
@@ -128,7 +136,80 @@ export class UserService {
         requestId: context.requestId,
       });
 
+      if (payload.roleCodes) {
+        await this.audit.record(client, {
+          action: "access.roles.change",
+          actorUserId: context.actorUserId,
+          metadata: {
+            previousRoleCodes: before.roleCodes,
+            roleCodes: nextRoleCodes,
+          },
+          objectId: userId,
+          objectType: "user",
+          organizationId,
+          requestId: context.requestId,
+        });
+      }
+
+      if (payload.status && payload.status !== before.status) {
+        await this.audit.record(client, {
+          action: "access.permissions.change",
+          actorUserId: context.actorUserId,
+          metadata: {
+            previousStatus: before.status,
+            status: payload.status,
+          },
+          objectId: userId,
+          objectType: "user",
+          organizationId,
+          requestId: context.requestId,
+        });
+      }
+
       return this.getUserInTransaction(client, organizationId, userId);
+    });
+  }
+
+  async revokeUserSessions(
+    organizationId: string,
+    userId: string,
+    context: UserMutationContext,
+  ): Promise<RevokeUserSessionsResponseDto> {
+    return this.database.withTenant(organizationId, async (client) => {
+      await this.getUserInTransaction(client, organizationId, userId);
+
+      const result = await client.query<{ id: string }>(
+        `
+          UPDATE auth_sessions
+          SET revoked_at = now()
+          WHERE organization_id = $1
+            AND user_id = $2
+            AND revoked_at IS NULL
+            AND expires_at > now()
+          RETURNING id
+        `,
+        [organizationId, userId],
+      );
+      const revokedSessionIds = result.rows.map((row) => row.id);
+
+      await this.audit.record(client, {
+        action: "auth.session.revoke",
+        actorUserId: context.actorUserId,
+        metadata: {
+          revokedCount: revokedSessionIds.length,
+          revokedSessionIds,
+        },
+        objectId: userId,
+        objectType: "user",
+        organizationId,
+        requestId: context.requestId,
+      });
+
+      return {
+        organizationId,
+        revokedCount: revokedSessionIds.length,
+        userId,
+      };
     });
   }
 
@@ -154,8 +235,8 @@ export class UserService {
     organizationId: string,
     userId: string,
     roleCodes: string[],
-  ): Promise<void> {
-    const normalizedRoleCodes = [...new Set(roleCodes.map((roleCode) => roleCode.trim()))];
+  ): Promise<string[]> {
+    const normalizedRoleCodes = [...new Set(roleCodes.map((roleCode) => roleCode.trim()))].sort();
     if (normalizedRoleCodes.length === 0 || normalizedRoleCodes.some((roleCode) => !roleCode)) {
       throw validationError("roleCodes must contain non-blank role codes");
     }
@@ -178,6 +259,8 @@ export class UserService {
         [userId, role.id, organizationId],
       );
     }
+
+    return normalizedRoleCodes;
   }
 }
 

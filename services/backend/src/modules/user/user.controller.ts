@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -24,7 +25,13 @@ import {
   ORGANIZATION_ID_HEADER,
 } from "../../common/request-context";
 import type { RequestWithRequestId } from "../../common/request-id.middleware";
-import { CreateUserDto, PatchUserDto, UserListResponseDto, UserResponseDto } from "./user.dto";
+import {
+  CreateUserDto,
+  PatchUserDto,
+  RevokeUserSessionsResponseDto,
+  UserListResponseDto,
+  UserResponseDto,
+} from "./user.dto";
 import { UserService } from "./user.service";
 
 @ApiTags("users")
@@ -80,6 +87,23 @@ export class UserController {
     @Req() request: Request,
   ): Promise<UserResponseDto> {
     return this.users.patchUser(getRequiredOrganizationId(organizationIdHeader), id, body, {
+      actorUserId: getOptionalActorUserId(actorUserIdHeader),
+      requestId: (request as RequestWithRequestId).requestId,
+    });
+  }
+
+  @Post(":id/sessions\\:revoke")
+  @HttpCode(200)
+  @Version("1")
+  @ApiOperation({ summary: "Revoke active sessions for a user in tenant scope" })
+  @ApiOkResponse({ type: RevokeUserSessionsResponseDto })
+  revokeUserSessions(
+    @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: string | string[] | undefined,
+    @Headers(ACTOR_USER_ID_HEADER) actorUserIdHeader: string | string[] | undefined,
+    @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
+    @Req() request: Request,
+  ): Promise<RevokeUserSessionsResponseDto> {
+    return this.users.revokeUserSessions(getRequiredOrganizationId(organizationIdHeader), id, {
       actorUserId: getOptionalActorUserId(actorUserIdHeader),
       requestId: (request as RequestWithRequestId).requestId,
     });

@@ -113,6 +113,17 @@ export class UserListResponseDto {
   items!: UserResponseDto[];
 }
 
+export class RevokeUserSessionsResponseDto {
+  @ApiProperty({ example: "00000000-0000-4000-8000-000000000201" })
+  userId!: string;
+
+  @ApiProperty({ example: "00000000-0000-4000-8000-000000000101" })
+  organizationId!: string;
+
+  @ApiProperty({ example: 2 })
+  revokedCount!: number;
+}
+
 export interface UserRow {
   created_at: Date | string;
   display_name: string;

@@ -922,6 +922,37 @@
           "users"
         ]
       }
+    },
+    "/api/v1/users/{id}/sessions:revoke": {
+      "post": {
+        "operationId": "UserController_revokeUserSessions_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevokeUserSessionsResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Revoke active sessions for a user in tenant scope",
+        "tags": [
+          "users"
+        ]
+      }
     }
   },
   "info": {
@@ -2022,6 +2053,28 @@
             }
           }
         }
+      },
+      "RevokeUserSessionsResponseDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000201"
+          },
+          "organizationId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000101"
+          },
+          "revokedCount": {
+            "type": "number",
+            "example": 2
+          }
+        },
+        "required": [
+          "userId",
+          "organizationId",
+          "revokedCount"
+        ]
       },
       "AttachmentDto": {
         "properties": {
