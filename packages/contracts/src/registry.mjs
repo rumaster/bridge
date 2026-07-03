@@ -65,7 +65,7 @@ export const M0_CONTRACT_REGISTRY = Object.freeze([
     id: "C3.auth",
     name: "Backend Auth API",
     owner: "SVC-IDN",
-    stage: "M0",
+    stage: "M1",
     version: "1.0.0",
     basePath: "/api/v1",
     artifacts: ["packages/contracts/openapi/auth/c3.auth.openapi.json"],

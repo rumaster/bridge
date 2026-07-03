@@ -7,10 +7,13 @@ import { createIdentityModule } from "./modules/identity/identity-module.mjs";
 
 const MAX_BODY_BYTES = 1024 * 1024;
 
-function sendJson(response, status, body) {
+function sendJson(response, status, body, headers = {}) {
   const payload = JSON.stringify(body);
 
   response.statusCode = status;
+  for (const [name, value] of Object.entries(headers)) {
+    response.setHeader(name, value);
+  }
   response.setHeader("content-type", "application/json");
   response.end(payload);
 }
@@ -109,7 +112,7 @@ async function readJsonBody(request) {
 }
 
 export function createBackendServer({
-  modules = createBackendM0Modules(),
+  modules = createBackendM1Modules(),
 } = {}) {
   const routes = modules.flatMap((module) => module.routes);
 
@@ -141,6 +144,15 @@ export function createBackendServer({
       path: url.pathname,
       headers: incomingRequest.headers,
       query: url.searchParams,
+      params: matchedRoute.params,
+      body: bodyResult.body,
+      ip:
+        incomingRequest.headers["x-forwarded-for"]
+          ?.toString()
+          .split(",")[0]
+          .trim() ??
+        incomingRequest.socket.remoteAddress ??
+        null,
     };
     let result;
     try {
@@ -158,13 +170,13 @@ export function createBackendServer({
       return;
     }
 
-    sendJson(response, result.status, result.body);
+    sendJson(response, result.status, result.body, result.headers);
   });
 }
 
-export function createBackendM0Modules() {
+export function createBackendM1Modules({ identityService } = {}) {
   const communicationCoreModule = createCommunicationCoreModule();
-  const identityModule = createIdentityModule();
+  const identityModule = createIdentityModule({ identityService });
   const apiModule = createBackendApiModule({
     moduleNames: [
       "backend-api",
@@ -175,6 +187,8 @@ export function createBackendM0Modules() {
 
   return [apiModule, identityModule, communicationCoreModule];
 }
+
+export const createBackendM0Modules = createBackendM1Modules;
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const port = Number.parseInt(process.env.PORT ?? "3000", 10);

@@ -1,19 +1,28 @@
 import {
-  createMockAuthGuard,
   getAuthContext,
 } from "../../common/auth/mock-auth-guard.mjs";
+import { createSessionAuthGuard } from "../../common/auth/session-auth-guard.mjs";
 import { createIdentityService } from "./identity-service.mjs";
 
-function withGuard(authGuard, request, handler) {
-  if (!authGuard.canActivate(request)) {
+async function withGuard(authGuard, request, handler) {
+  const authorization =
+    typeof authGuard.authorize === "function"
+      ? await authGuard.authorize(request)
+      : {
+          ok: await authGuard.canActivate(request),
+        };
+
+  if (!authorization.ok) {
     return {
-      status: 401,
-      body: {
-        type: "https://bridge.local/problems/unauthorized",
-        title: "Unauthorized",
-        status: 401,
-        detail: "Authentication is required.",
-      },
+      status: authorization.status ?? 401,
+      body:
+        authorization.body ??
+        {
+          type: "https://bridge.local/problems/unauthorized",
+          title: "Unauthorized",
+          status: 401,
+          detail: "Authentication is required.",
+        },
     };
   }
 
@@ -21,20 +30,25 @@ function withGuard(authGuard, request, handler) {
 }
 
 export function createIdentityController({
-  authGuard = createMockAuthGuard(),
   identityService = createIdentityService(),
+  authGuard = createSessionAuthGuard({ identityService }),
 } = {}) {
   return {
     startTelegramLogin({ body }) {
       return identityService.startTelegramLogin(body);
     },
 
-    verifyTelegramLogin({ body }) {
-      return identityService.verifyTelegramLogin(body);
+    verifyTelegramLogin({ body, request }) {
+      return identityService.verifyTelegramLogin(body, {
+        ip: request.ip,
+        userAgent: request.headers?.["user-agent"] ?? null,
+      });
     },
 
     logout({ request }) {
-      return withGuard(authGuard, request, () => identityService.logout());
+      return withGuard(authGuard, request, () =>
+        identityService.logout(getAuthContext(request)),
+      );
     },
 
     getCurrentSession({ request }) {

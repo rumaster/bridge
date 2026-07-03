@@ -1,11 +1,16 @@
-# Identity Module M0
+# Identity Module M1
 
-This directory contains the M0 skeleton for SVC-IDN:
+This directory contains the M1 implementation for SVC-IDN:
 
-- DTO validators for C3.auth request payloads.
-- Stub endpoint handlers for `start`, `verify`, `logout` and `session`.
-- Integration with the shared mock `AuthGuard` from `src/common/auth`.
+- Telegram one-time code login with normalized `telegramUsername`.
+- `login_codes` persistence with `code_hash`, TTL, `consumed_at`, attempt count
+  and lockout metadata.
+- Mock Telegram delivery adapter for local/CI flows until SVC-INT delivery is
+  available.
+- Server sessions through `auth_sessions` with `token_hash`, `expires_at` and
+  `revoked_at`.
+- Shared session `AuthGuard` integration for active, not expired and not revoked
+  sessions with organization ownership checks.
 
-M0 deliberately does not implement real Telegram login flow, `login_codes`,
-`code_hash` storage/checking, `auth_sessions` persistence, session expiration or
-session revocation. Those checks belong to M1.
+Full RBAC enforcement and self-service organization bootstrap remain later
+Identity milestones.

@@ -1,10 +1,10 @@
-import { createMockAuthGuard } from "../../common/auth/mock-auth-guard.mjs";
+import { createSessionAuthGuard } from "../../common/auth/session-auth-guard.mjs";
 import { createIdentityController } from "./identity-controller.mjs";
 import { createIdentityService } from "./identity-service.mjs";
 
 export function createIdentityModule({
-  authGuard = createMockAuthGuard(),
   identityService = createIdentityService(),
+  authGuard = createSessionAuthGuard({ identityService }),
 } = {}) {
   const controller = createIdentityController({
     authGuard,

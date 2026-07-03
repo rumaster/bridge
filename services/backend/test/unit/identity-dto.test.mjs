@@ -47,6 +47,21 @@ describe("identity DTO validation", () => {
     assert.equal(result.ok, true);
     assert.deepEqual(result.value, {
       telegramUsername: "seeded_admin",
+      requestId: null,
+      code: "123456",
+    });
+  });
+
+  it("accepts a valid Telegram verify payload by requestId", () => {
+    const result = validateTelegramLoginVerifyRequest({
+      requestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      code: "123456",
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.value, {
+      telegramUsername: null,
+      requestId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
       code: "123456",
     });
   });

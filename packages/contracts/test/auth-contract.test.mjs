@@ -15,7 +15,7 @@ function readContract() {
 }
 
 describe("C3.auth OpenAPI contract", () => {
-  it("publishes the frozen v1 auth contract metadata", () => {
+  it("publishes the frozen v1 M1 auth contract metadata", () => {
     const contract = readContract();
 
     assert.equal(contract.openapi, "3.1.0");
@@ -25,7 +25,7 @@ describe("C3.auth OpenAPI contract", () => {
     assert.deepEqual(contract.servers, [{ url: "/api/v1" }]);
   });
 
-  it("defines all M0 auth endpoints", () => {
+  it("defines all M1 auth endpoints", () => {
     const contract = readContract();
 
     assert.deepEqual(Object.keys(contract.paths).sort(), [
@@ -60,15 +60,22 @@ describe("C3.auth OpenAPI contract", () => {
       schemas.TelegramLoginStartRequest.required,
       ["telegramUsername"],
     );
-    assert.deepEqual(schemas.TelegramLoginVerifyRequest.required, [
-      "telegramUsername",
-      "code",
-    ]);
+    assert.deepEqual(schemas.TelegramLoginVerifyRequest.required, ["code"]);
+    assert.ok(schemas.TelegramLoginVerifyRequest.properties.requestId);
+    assert.ok(schemas.TelegramLoginStartResponse.properties.requestId);
+    assert.equal(
+      schemas.AuthSessionResponse.required.includes("token"),
+      true,
+    );
     assert.equal(
       contract.paths["/auth/login/telegram/verify"].post.description.includes(
         "code_hash",
       ),
       true,
+    );
+    assert.deepEqual(
+      Object.keys(contract.paths["/auth/login/telegram/start"].post.responses),
+      ["202", "400", "401", "429"],
     );
   });
 });

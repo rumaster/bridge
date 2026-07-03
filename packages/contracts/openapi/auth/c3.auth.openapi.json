@@ -3,11 +3,11 @@
   "info": {
     "title": "Bridge C3.auth API",
     "version": "1.0.0",
-    "description": "Frozen M0 contract for Identity Platform authentication and session endpoints. Real Telegram code_hash and server session verification are implemented in M1."
+    "description": "Frozen M1 contract for Identity Platform Telegram one-time code authentication and server sessions."
   },
   "x-contract-id": "C3.auth",
   "x-owner": "SVC-IDN",
-  "x-stage": "M0",
+  "x-stage": "M1",
   "servers": [
     {
       "url": "/api/v1"
@@ -27,7 +27,7 @@
         ],
         "operationId": "startTelegramLogin",
         "summary": "Start Telegram login",
-        "description": "Accepts a platform user Telegram username and schedules one-time code delivery through a mocked Telegram delivery channel in M0. Real user lookup, code generation and code_hash persistence are implemented in M1.",
+        "description": "Accepts a platform user Telegram username, creates a one-time login challenge, stores only code_hash with TTL and schedules delivery through the M1 mock Telegram channel.",
         "requestBody": {
           "required": true,
           "content": {
@@ -40,7 +40,7 @@
         },
         "responses": {
           "202": {
-            "description": "Login challenge accepted by the M0 mock delivery flow.",
+            "description": "Login challenge accepted by the M1 delivery flow.",
             "content": {
               "application/json": {
                 "schema": {
@@ -49,9 +49,15 @@
               }
             }
           },
-          "400": {
-            "$ref": "#/components/responses/BadRequest"
-          }
+        "400": {
+          "$ref": "#/components/responses/BadRequest"
+        },
+        "401": {
+          "$ref": "#/components/responses/Unauthorized"
+        },
+        "429": {
+          "$ref": "#/components/responses/TooManyRequests"
+        }
         }
       }
     },
@@ -62,7 +68,7 @@
         ],
         "operationId": "verifyTelegramLogin",
         "summary": "Verify Telegram login code",
-        "description": "Accepts a Telegram username and one-time code DTO. M0 returns the seeded mock session context; real code_hash lookup, constant-time code comparison, login_codes consumption and auth session creation are implemented in M1.",
+        "description": "Accepts a Telegram login requestId or username plus one-time code, verifies code_hash in constant time, consumes login_codes and creates a server auth session.",
         "requestBody": {
           "required": true,
           "content": {
@@ -75,7 +81,7 @@
         },
         "responses": {
           "200": {
-            "description": "Authenticated mock session context.",
+            "description": "Authenticated server session context.",
             "content": {
               "application/json": {
                 "schema": {
@@ -89,6 +95,9 @@
           },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
           }
         }
       }
@@ -100,7 +109,7 @@
         ],
         "operationId": "logout",
         "summary": "Logout current session",
-        "description": "M0 acknowledges logout for the mock AuthGuard context. Real server session revocation is implemented in M1.",
+        "description": "Revokes the current server auth session by setting revoked_at.",
         "security": [
           {
             "BearerAuth": []
@@ -111,7 +120,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Logout acknowledged.",
+            "description": "Server session revoked.",
             "content": {
               "application/json": {
                 "schema": {
@@ -133,7 +142,7 @@
         ],
         "operationId": "getCurrentSession",
         "summary": "Get current session",
-        "description": "Returns the current user, organization and roles from the M0 mock AuthGuard. Real session lookup, expiration and revocation checks are implemented in M1.",
+        "description": "Returns the current user, organization and roles for an active, not expired and not revoked server session.",
         "security": [
           {
             "BearerAuth": []
@@ -144,7 +153,7 @@
         ],
         "responses": {
           "200": {
-            "description": "Current mock or real session context.",
+            "description": "Current server session context.",
             "content": {
               "application/json": {
                 "schema": {
@@ -165,13 +174,13 @@
       "BearerAuth": {
         "type": "http",
         "scheme": "bearer",
-        "description": "Opaque server session token. M0 uses mock AuthGuard; real tokens are M1."
+        "description": "Opaque M1 server session token. The backend stores only token_hash."
       },
       "SessionCookie": {
         "type": "apiKey",
         "in": "cookie",
         "name": "bridge_session",
-        "description": "HTTP-only server session cookie. M0 uses mock AuthGuard; real cookies are M1."
+        "description": "HTTP-only M1 server session cookie. The backend stores only token_hash."
       }
     },
     "responses": {
@@ -187,6 +196,16 @@
       },
       "Unauthorized": {
         "description": "Authentication is required or the session is invalid.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ProblemDetails"
+            }
+          }
+        }
+      },
+      "TooManyRequests": {
+        "description": "Rate limit or brute-force lockout rejected the request.",
         "content": {
           "application/json": {
             "schema": {
@@ -218,8 +237,11 @@
         "additionalProperties": false,
         "required": [
           "status",
+          "delivery",
           "deliveryChannel",
           "telegramUsername",
+          "requestId",
+          "expiresAt",
           "expiresInSeconds",
           "implementationStage"
         ],
@@ -227,7 +249,13 @@
           "status": {
             "type": "string",
             "enum": [
-              "mock_code_delivery_scheduled"
+              "code_delivery_scheduled"
+            ]
+          },
+          "delivery": {
+            "type": "string",
+            "enum": [
+              "telegram"
             ]
           },
           "deliveryChannel": {
@@ -239,6 +267,15 @@
           "telegramUsername": {
             "type": "string"
           },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "One-time login challenge id. It identifies the stored login_codes row without exposing the code."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "expiresInSeconds": {
             "type": "integer",
             "minimum": 1,
@@ -247,12 +284,8 @@
           "implementationStage": {
             "type": "string",
             "enum": [
-              "M0"
+              "M1"
             ]
-          },
-          "note": {
-            "type": "string",
-            "description": "Human-readable note that real Telegram delivery and code_hash persistence belong to M1."
           }
         }
       },
@@ -260,8 +293,19 @@
         "type": "object",
         "additionalProperties": false,
         "required": [
-          "telegramUsername",
           "code"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "requestId"
+            ]
+          },
+          {
+            "required": [
+              "telegramUsername"
+            ]
+          }
         ],
         "properties": {
           "telegramUsername": {
@@ -271,10 +315,15 @@
             "pattern": "^@?[A-Za-z0-9_]{5,32}$",
             "description": "Telegram username with optional @ prefix. Backend normalizes it to lowercase without @."
           },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "description": "One-time login challenge id returned by startTelegramLogin."
+          },
           "code": {
             "type": "string",
             "pattern": "^[0-9]{6}$",
-            "description": "Six-digit one-time code from Telegram. M0 validates DTO shape only; real verification is M1."
+            "description": "Six-digit one-time code from Telegram. Backend verifies only code_hash and marks the challenge consumed."
           }
         }
       },
@@ -283,15 +332,26 @@
         "additionalProperties": false,
         "required": [
           "authenticated",
+          "token",
+          "expiresAt",
           "user",
           "organization",
           "roles",
+          "roleBindings",
           "session",
           "implementationStage"
         ],
         "properties": {
           "authenticated": {
             "type": "boolean"
+          },
+          "token": {
+            "type": "string",
+            "description": "Opaque server session token. The database stores only token_hash."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
           },
           "user": {
             "$ref": "#/components/schemas/AuthUser"
@@ -307,13 +367,19 @@
             "minItems": 1,
             "uniqueItems": true
           },
+          "roleBindings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AuthRoleBinding"
+            }
+          },
           "session": {
             "$ref": "#/components/schemas/AuthSession"
           },
           "implementationStage": {
             "type": "string",
             "enum": [
-              "M0"
+              "M1"
             ]
           }
         }
@@ -326,6 +392,7 @@
           "organizationId",
           "telegramUsername",
           "displayName",
+          "role",
           "status"
         ],
         "properties": {
@@ -343,6 +410,9 @@
           "displayName": {
             "type": "string"
           },
+          "role": {
+            "$ref": "#/components/schemas/AuthRoleCode"
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -358,7 +428,8 @@
         "required": [
           "id",
           "slug",
-          "name"
+          "name",
+          "status"
         ],
         "properties": {
           "id": {
@@ -370,6 +441,30 @@
           },
           "name": {
             "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "blocked"
+            ]
+          }
+        }
+      },
+      "AuthRoleBinding": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "role",
+          "organizationId"
+        ],
+        "properties": {
+          "role": {
+            "$ref": "#/components/schemas/AuthRoleCode"
+          },
+          "organizationId": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -397,7 +492,7 @@
           "mode": {
             "type": "string",
             "enum": [
-              "mock"
+              "server"
             ]
           },
           "issuedAt": {
@@ -405,6 +500,13 @@
             "format": "date-time"
           },
           "expiresAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "revokedAt": {
             "type": [
               "string",
               "null"
@@ -429,18 +531,14 @@
           "sessionMode": {
             "type": "string",
             "enum": [
-              "mock"
+              "server"
             ]
           },
           "implementationStage": {
             "type": "string",
             "enum": [
-              "M0"
+              "M1"
             ]
-          },
-          "note": {
-            "type": "string",
-            "description": "Real auth_sessions revocation is implemented in M1."
           }
         }
       },
@@ -487,6 +585,10 @@
                 }
               }
             }
+          },
+          "retryAfterSeconds": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       }

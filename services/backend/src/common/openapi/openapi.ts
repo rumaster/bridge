@@ -5,7 +5,7 @@ import type { OpenAPIObject } from "@nestjs/swagger";
 export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
   const config = new DocumentBuilder()
     .setTitle("Bridge Backend Core API")
-    .setDescription("M1 REST skeleton for C3 backend core contracts.")
+    .setDescription("M1 REST API for C3 domain CRUD and Communication Core proxy contracts.")
     .setVersion("1.0.0")
     .build();
 
@@ -22,7 +22,7 @@ export function setupSwaggerUi(app: INestApplication): void {
 }
 
 function addCommunicationCoreM1Contract(document: OpenAPIObject): void {
-  document.paths["/api/v1/conversations"] = {
+  setPathIfAbsent(document, "/api/v1/conversations", {
     get: {
       operationId: "CommunicationCore_listConversations_v1",
       parameters: [
@@ -65,63 +65,68 @@ function addCommunicationCoreM1Contract(document: OpenAPIObject): void {
       summary: "List tenant conversations",
       tags: ["communication-core"],
     },
-  };
+  });
 
-  document.paths["/api/v1/conversations/{conversationId}/messages"] = {
-    get: {
-      operationId: "CommunicationCore_listConversationMessages_v1",
-      parameters: [
-        {
-          in: "path",
-          name: "conversationId",
-          required: true,
-          schema: {
-            format: "uuid",
-            type: "string",
-          },
-        },
-        {
-          in: "header",
-          name: "x-organization-id",
-          required: true,
-          schema: {
-            format: "uuid",
-            type: "string",
-          },
-        },
-        {
-          in: "query",
-          name: "limit",
-          required: false,
-          schema: {
-            default: 50,
-            maximum: 100,
-            minimum: 1,
-            type: "integer",
-          },
-        },
-      ],
-      responses: {
-        "200": {
-          content: {
-            "application/json": {
-              schema: {
-                $ref: "#/components/schemas/ConversationMessagesResponse",
-              },
+  setPathIfAbsent(
+    document,
+    "/api/v1/conversations/{conversationId}/messages",
+    {
+      get: {
+        operationId: "CommunicationCore_listConversationMessages_v1",
+        parameters: [
+          {
+            in: "path",
+            name: "conversationId",
+            required: true,
+            schema: {
+              format: "uuid",
+              type: "string",
             },
           },
-          description: "Messages for one tenant conversation.",
+          {
+            in: "header",
+            name: "x-organization-id",
+            required: true,
+            schema: {
+              format: "uuid",
+              type: "string",
+            },
+          },
+          {
+            in: "query",
+            name: "limit",
+            required: false,
+            schema: {
+              default: 50,
+              maximum: 100,
+              minimum: 1,
+              type: "integer",
+            },
+          },
+        ],
+        responses: {
+          "200": {
+            content: {
+              "application/json": {
+                schema: {
+                  $ref: "#/components/schemas/ConversationMessagesResponse",
+                },
+              },
+            },
+            description: "Messages for one tenant conversation.",
+          },
+          "400": {
+            description: "Invalid tenant, conversation, or pagination query.",
+          },
         },
-        "400": {
-          description: "Invalid tenant, conversation, or pagination query.",
-        },
+        summary: "List conversation messages",
+        tags: ["communication-core"],
       },
-      summary: "List conversation messages",
-      tags: ["communication-core"],
     },
-  };
+    "/api/v1/conversations/{id}/messages",
+  );
 
-  document.paths["/api/v1/messages"] = {
+  setPathIfAbsent(document, "/api/v1/messages", {
     post: {
       operationId: "CommunicationCore_sendManagerMessage_v1",
       requestBody: {
@@ -155,7 +160,7 @@ function addCommunicationCoreM1Contract(document: OpenAPIObject): void {
       summary: "Send idempotent manager message",
       tags: ["communication-core"],
     },
-  };
+  });
 
   document.components ??= { schemas: {} };
   document.components.schemas ??= {};
@@ -317,4 +322,17 @@ function addCommunicationCoreM1Contract(document: OpenAPIObject): void {
       type: "object",
     },
   });
+}
+
+function setPathIfAbsent(
+  document: OpenAPIObject,
+  path: string,
+  pathItem: OpenAPIObject["paths"][string],
+  equivalentPath?: string,
+): void {
+  if (document.paths[path] || (equivalentPath && document.paths[equivalentPath])) {
+    return;
+  }
+
+  document.paths[path] = pathItem;
 }
