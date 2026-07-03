@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "node --check src/db/factories.mjs && node --check src/db/m0-seed-data.mjs && node --check src/db/primitives.mjs && node --check test/unit/db-primitives.test.mjs",
+    "lint": "node --check src/db/factories.mjs && node --check src/db/m0-seed-data.mjs && node --check src/db/primitives.mjs && node --check test/unit/db-primitives.test.mjs && node --check test/unit/workflow-factories.test.mjs",
     "test": "node --test test/unit/*.test.mjs",
     "build": "node --check src/db/factories.mjs && node --check src/db/m0-seed-data.mjs && node --check src/db/primitives.mjs"
   }

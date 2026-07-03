@@ -254,3 +254,261 @@ export function createTestKnowledgeChunk(overrides = {}) {
 
   return chunk;
 }
+
+const WORKFLOW_STATUSES = ["draft", "active", "archived"];
+const WORKFLOW_INSTANCE_STATUSES = [
+  "pending",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+];
+const OUTBOX_EVENT_STATUSES = ["pending", "published", "failed"];
+
+function assertJsonObject(value, fieldName) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError(`${fieldName} must be a JSON object`);
+  }
+
+  return value;
+}
+
+export function createTestWorkflow(overrides = {}) {
+  const createdAt = overrides.created_at ?? toUtcTimestamptz();
+  const workflow = {
+    id: randomUUID(),
+    organization_id: randomUUID(),
+    name: "Automation Workflow",
+    status: "draft",
+    default_version_id: null,
+    created_at: createdAt,
+    updated_at: createdAt,
+    ...overrides,
+  };
+
+  assertUuid(workflow.id, "workflow.id");
+  assertUuid(workflow.organization_id, "workflow.organization_id");
+  assertNonBlankText(workflow.name, "workflow.name");
+  if (!WORKFLOW_STATUSES.includes(workflow.status)) {
+    throw new TypeError(`workflow.status must be one of ${WORKFLOW_STATUSES.join(", ")}`);
+  }
+  if (workflow.default_version_id !== null) {
+    assertUuid(workflow.default_version_id, "workflow.default_version_id");
+  }
+  assertUtcTimestamptz(workflow.created_at, "workflow.created_at");
+  assertUtcTimestamptz(workflow.updated_at, "workflow.updated_at");
+
+  return workflow;
+}
+
+export function createTestWorkflowVersion(overrides = {}) {
+  const versionNo = overrides.version_no ?? 1;
+  const version = {
+    id: randomUUID(),
+    organization_id: randomUUID(),
+    workflow_id: randomUUID(),
+    version_no: versionNo,
+    schema: { nodes: [], edges: [] },
+    created_by: null,
+    created_at: toUtcTimestamptz(),
+    ...overrides,
+  };
+
+  assertUuid(version.id, "workflow_version.id");
+  assertUuid(version.organization_id, "workflow_version.organization_id");
+  assertUuid(version.workflow_id, "workflow_version.workflow_id");
+  assertPositiveInteger(version.version_no, "workflow_version.version_no");
+  assertJsonObject(version.schema, "workflow_version.schema");
+  if (version.created_by !== null) {
+    assertUuid(version.created_by, "workflow_version.created_by");
+  }
+  assertUtcTimestamptz(version.created_at, "workflow_version.created_at");
+
+  return version;
+}
+
+// Валидатор монотонности version_no (ТЗ §13.10): версии в рамках одного workflow
+// нумеруются строго возрастающими положительными целыми.
+export function assertMonotonicWorkflowVersionNumbers(
+  versions,
+  fieldName = "workflow_versions",
+) {
+  if (!Array.isArray(versions) || versions.length === 0) {
+    throw new TypeError(`${fieldName} must be a non-empty array of versions`);
+  }
+
+  let previous = null;
+  for (const [index, version] of versions.entries()) {
+    const versionNo =
+      typeof version === "number" ? version : version?.version_no;
+    assertPositiveInteger(versionNo, `${fieldName}[${index}].version_no`);
+
+    if (previous !== null && versionNo <= previous) {
+      throw new TypeError(
+        `${fieldName}[${index}].version_no must be strictly greater than the previous version_no`,
+      );
+    }
+
+    previous = versionNo;
+  }
+
+  return versions;
+}
+
+export function isMonotonicWorkflowVersionNumbers(versions) {
+  try {
+    assertMonotonicWorkflowVersionNumbers(versions);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function createTestWorkflowVersionSequence(count = 2, overrides = {}) {
+  assertPositiveInteger(count, "workflow_version_sequence.count");
+  const workflowId = overrides.workflow_id ?? randomUUID();
+  const organizationId = overrides.organization_id ?? randomUUID();
+
+  return Array.from({ length: count }, (_, index) =>
+    createTestWorkflowVersion({
+      workflow_id: workflowId,
+      organization_id: organizationId,
+      version_no: index + 1,
+      ...overrides,
+    }),
+  );
+}
+
+export function createTestWorkflowInstance(overrides = {}) {
+  const createdAt = overrides.created_at ?? toUtcTimestamptz();
+  const instance = {
+    id: randomUUID(),
+    organization_id: randomUUID(),
+    workflow_id: randomUUID(),
+    version_id: randomUUID(),
+    status: "pending",
+    started_at: null,
+    finished_at: null,
+    created_at: createdAt,
+    ...overrides,
+  };
+
+  assertUuid(instance.id, "workflow_instance.id");
+  assertUuid(instance.organization_id, "workflow_instance.organization_id");
+  assertUuid(instance.workflow_id, "workflow_instance.workflow_id");
+  assertUuid(instance.version_id, "workflow_instance.version_id");
+  if (!WORKFLOW_INSTANCE_STATUSES.includes(instance.status)) {
+    throw new TypeError(
+      `workflow_instance.status must be one of ${WORKFLOW_INSTANCE_STATUSES.join(", ")}`,
+    );
+  }
+  assertUtcTimestamptz(instance.created_at, "workflow_instance.created_at");
+  if (instance.started_at !== null) {
+    assertUtcTimestamptz(instance.started_at, "workflow_instance.started_at");
+  }
+  if (instance.finished_at !== null) {
+    assertUtcTimestamptz(instance.finished_at, "workflow_instance.finished_at");
+    if (instance.started_at === null) {
+      throw new TypeError(
+        "workflow_instance.finished_at requires workflow_instance.started_at",
+      );
+    }
+    if (instance.finished_at < instance.started_at) {
+      throw new TypeError(
+        "workflow_instance.finished_at must be greater than or equal to started_at",
+      );
+    }
+  }
+
+  return instance;
+}
+
+export function createTestWorkflowInstanceState(overrides = {}) {
+  const state = {
+    instance_id: randomUUID(),
+    organization_id: randomUUID(),
+    state: { cursor: 0 },
+    updated_at: toUtcTimestamptz(),
+    ...overrides,
+  };
+
+  assertUuid(state.instance_id, "workflow_instance_state.instance_id");
+  assertUuid(state.organization_id, "workflow_instance_state.organization_id");
+  assertJsonObject(state.state, "workflow_instance_state.state");
+  assertUtcTimestamptz(state.updated_at, "workflow_instance_state.updated_at");
+
+  return state;
+}
+
+export function createTestWorkflowExecutionLog(overrides = {}) {
+  const log = {
+    id: randomUUID(),
+    organization_id: randomUUID(),
+    instance_id: randomUUID(),
+    node_id: "node-1",
+    event: "node.started",
+    data: {},
+    created_at: toUtcTimestamptz(),
+    ...overrides,
+  };
+
+  assertUuid(log.id, "workflow_execution_log.id");
+  assertUuid(log.organization_id, "workflow_execution_log.organization_id");
+  assertUuid(log.instance_id, "workflow_execution_log.instance_id");
+  if (log.node_id !== null) {
+    assertNonBlankText(log.node_id, "workflow_execution_log.node_id");
+  }
+  assertNonBlankText(log.event, "workflow_execution_log.event");
+  assertJsonObject(log.data, "workflow_execution_log.data");
+  assertUtcTimestamptz(log.created_at, "workflow_execution_log.created_at");
+
+  return log;
+}
+
+export function createTestOutboxEvent(overrides = {}) {
+  const createdAt = overrides.created_at ?? toUtcTimestamptz();
+  const event = {
+    id: randomUUID(),
+    organization_id: randomUUID(),
+    aggregate_type: "message",
+    aggregate_id: randomUUID(),
+    event_type: "message.received",
+    payload: {},
+    status: "pending",
+    created_at: createdAt,
+    published_at: null,
+    ...overrides,
+  };
+
+  assertUuid(event.id, "outbox_event.id");
+  assertUuid(event.organization_id, "outbox_event.organization_id");
+  assertNonBlankText(event.aggregate_type, "outbox_event.aggregate_type");
+  assertUuid(event.aggregate_id, "outbox_event.aggregate_id");
+  assertNonBlankText(event.event_type, "outbox_event.event_type");
+  assertJsonObject(event.payload, "outbox_event.payload");
+  if (!OUTBOX_EVENT_STATUSES.includes(event.status)) {
+    throw new TypeError(
+      `outbox_event.status must be one of ${OUTBOX_EVENT_STATUSES.join(", ")}`,
+    );
+  }
+  assertUtcTimestamptz(event.created_at, "outbox_event.created_at");
+  if (event.status === "published") {
+    if (event.published_at === null) {
+      throw new TypeError("outbox_event.published_at is required when status is published");
+    }
+  } else if (event.published_at !== null) {
+    throw new TypeError(
+      "outbox_event.published_at must be null unless status is published",
+    );
+  }
+  if (event.published_at !== null) {
+    assertUtcTimestamptz(event.published_at, "outbox_event.published_at");
+    if (event.published_at < event.created_at) {
+      throw new TypeError(
+        "outbox_event.published_at must be greater than or equal to created_at",
+      );
+    }
+  }
+
+  return event;
+}
