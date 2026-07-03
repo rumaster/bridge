@@ -1,11 +1,18 @@
 import { createServer } from "node:http";
 
 import { createMockAdapter } from "./adapters/mock/mock-adapter.mjs";
+import {
+  WebChatAdapterValidationError,
+  createWebChatAdapter,
+} from "./adapters/web-chat/web-chat-adapter.mjs";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 
 export function createIntegrationPlatformServer({
   adapter = createMockAdapter({
+    coreIngressUrl: process.env.CORE_INGRESS_URL,
+  }),
+  webChatAdapter = createWebChatAdapter({
     coreIngressUrl: process.env.CORE_INGRESS_URL,
   }),
 } = {}) {
@@ -32,6 +39,30 @@ export function createIntegrationPlatformServer({
         return;
       }
 
+      if (request.method === "GET" && url.pathname === "/web-chat/capabilities") {
+        sendJson(response, 200, webChatAdapter.capabilityDescriptor);
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/web-chat/messages") {
+        const payload = await readJson(request);
+        try {
+          const result = await webChatAdapter.publishIncomingMessage(payload);
+          sendJson(response, 202, result);
+        } catch (error) {
+          if (error instanceof WebChatAdapterValidationError) {
+            sendJson(response, 400, {
+              accepted: false,
+              errors: error.errors,
+            });
+            return;
+          }
+
+          throw error;
+        }
+        return;
+      }
+
       if (request.method === "POST" && url.pathname === "/mock/incoming/messages") {
         const payload = await readJson(request);
         const result = await adapter.emulateIncomingMessage(payload);
@@ -41,7 +72,9 @@ export function createIntegrationPlatformServer({
 
       if (request.method === "POST" && url.pathname === "/internal/egress/deliveries") {
         const payload = await readJson(request);
-        const result = await adapter.acceptEgressDelivery(payload);
+        const result = isWebChatDelivery(payload)
+          ? await webChatAdapter.acceptEgressDelivery(payload)
+          : await adapter.acceptEgressDelivery(payload);
         sendJson(response, result.accepted ? 202 : 400, result);
         return;
       }
@@ -57,6 +90,10 @@ export function createIntegrationPlatformServer({
       });
     }
   });
+}
+
+function isWebChatDelivery(payload) {
+  return payload?.message?.channel_type === "web_chat";
 }
 
 async function readJson(request) {
