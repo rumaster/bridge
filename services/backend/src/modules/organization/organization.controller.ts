@@ -28,22 +28,22 @@ import { OrganizationService } from "./organization.service";
 export class OrganizationController {
   constructor(private readonly organizations: OrganizationService) {}
 
-  @Get(":organizationId")
+  @Get(":id")
   @Version("1")
   @ApiOperation({ summary: "Get organization by id" })
   @ApiOkResponse({ type: OrganizationResponseDto })
   getOrganization(
-    @Param("organizationId", new ParseUUIDPipe({ version: "4" })) organizationId: string,
+    @Param("id", new ParseUUIDPipe({ version: "4" })) organizationId: string,
   ): Promise<OrganizationResponseDto> {
     return this.organizations.getOrganization(organizationId);
   }
 
-  @Patch(":organizationId")
+  @Patch(":id")
   @Version("1")
   @ApiOperation({ summary: "Update organization settings" })
   @ApiOkResponse({ type: OrganizationResponseDto })
   updateOrganization(
-    @Param("organizationId", new ParseUUIDPipe({ version: "4" })) organizationId: string,
+    @Param("id", new ParseUUIDPipe({ version: "4" })) organizationId: string,
     @Body() body: UpdateOrganizationDto,
     @Headers(ACTOR_USER_ID_HEADER) actorUserIdHeader: string | string[] | undefined,
     @Req() request: Request,

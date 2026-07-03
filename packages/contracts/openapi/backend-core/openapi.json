@@ -141,12 +141,12 @@
         ]
       }
     },
-    "/api/v1/organizations/{organizationId}": {
+    "/api/v1/organizations/{id}": {
       "get": {
         "operationId": "OrganizationController_getOrganization_v1",
         "parameters": [
           {
-            "name": "organizationId",
+            "name": "id",
             "required": true,
             "in": "path",
             "schema": {
@@ -175,7 +175,7 @@
         "operationId": "OrganizationController_updateOrganization_v1",
         "parameters": [
           {
-            "name": "organizationId",
+            "name": "id",
             "required": true,
             "in": "path",
             "schema": {

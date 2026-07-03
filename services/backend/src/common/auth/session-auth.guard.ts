@@ -225,6 +225,7 @@ export function requestedOrganizationId(request: Request): string | null {
   return (
     stringValue(request.params?.organizationId) ??
     stringValue(request.params?.organization_id) ??
+    organizationIdFromPath(request) ??
     queryValue(request, "organizationId") ??
     queryValue(request, "organization_id") ??
     bodyValue(request, "organizationId") ??
@@ -232,6 +233,13 @@ export function requestedOrganizationId(request: Request): string | null {
     headerValue(request, ORGANIZATION_ID_HEADER) ??
     null
   );
+}
+
+function organizationIdFromPath(request: Request): string | null {
+  const path = request.originalUrl ?? request.url;
+  const match = path.match(/(?:^|\/)api\/v\d+\/organizations\/([^/?#]+)/);
+
+  return match ? decodeURIComponent(match[1]) : null;
 }
 
 export function hashSessionToken(token: string, secret = authHashSecret()): string {
