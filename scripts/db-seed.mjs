@@ -1,10 +1,10 @@
 import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import pg from "pg";
 
-const SEEDS_DIR = "db/seeds";
+const SEEDS_DIR = fileURLToPath(new URL("../db/seeds", import.meta.url));
 
 export async function runSeeds({
   databaseUrl = process.env.DATABASE_URL,

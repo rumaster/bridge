@@ -1,6 +1,7 @@
 import {
   DEMO_ORGANIZATION_SEED,
   ROLE_SEEDS,
+  SEEDED_ADMIN_ROLE_BINDING_SEED,
   SEEDED_ADMIN_USER_SEED,
 } from "../../packages/testing/src/db/m0-seed-data.mjs";
 
@@ -93,6 +94,21 @@ export async function seed(client) {
         SEEDED_ADMIN_USER_SEED.status,
         SEEDED_ADMIN_USER_SEED.created_at,
         SEEDED_ADMIN_USER_SEED.updated_at,
+      ],
+    );
+
+    await client.query(
+      `
+        INSERT INTO user_roles (user_id, role_id, organization_id, created_at)
+        VALUES ($1, $2, $3, $4::timestamptz)
+        ON CONFLICT (user_id, role_id, organization_id) DO UPDATE SET
+          created_at = EXCLUDED.created_at
+      `,
+      [
+        SEEDED_ADMIN_ROLE_BINDING_SEED.user_id,
+        SEEDED_ADMIN_ROLE_BINDING_SEED.role_id,
+        SEEDED_ADMIN_ROLE_BINDING_SEED.organization_id,
+        SEEDED_ADMIN_ROLE_BINDING_SEED.created_at,
       ],
     );
 

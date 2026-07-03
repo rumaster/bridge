@@ -166,6 +166,7 @@ CREATE TABLE auth_sessions (
   id uuid PRIMARY KEY,
   user_id uuid NOT NULL,
   organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
+  token_hash text NOT NULL,
   issued_at timestamptz NOT NULL DEFAULT now(),
   expires_at timestamptz NOT NULL,
   revoked_at timestamptz,
@@ -175,6 +176,8 @@ CREATE TABLE auth_sessions (
     FOREIGN KEY (user_id, organization_id)
     REFERENCES users(id, organization_id)
     ON DELETE CASCADE,
+  CONSTRAINT auth_sessions_token_hash_not_blank CHECK (btrim(token_hash) <> ''),
+  CONSTRAINT auth_sessions_token_hash_unique UNIQUE (token_hash),
   CONSTRAINT auth_sessions_expires_after_issued_check CHECK (expires_at > issued_at),
   CONSTRAINT auth_sessions_revoked_after_issued_check CHECK (
     revoked_at IS NULL OR revoked_at >= issued_at
@@ -192,6 +195,8 @@ CREATE TABLE login_codes (
   purpose text NOT NULL,
   expires_at timestamptz NOT NULL,
   consumed_at timestamptz,
+  attempt_count integer NOT NULL DEFAULT 0,
+  locked_until timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT login_codes_user_organization_fk
     FOREIGN KEY (user_id, organization_id)
@@ -200,8 +205,12 @@ CREATE TABLE login_codes (
   CONSTRAINT login_codes_code_hash_not_blank CHECK (btrim(code_hash) <> ''),
   CONSTRAINT login_codes_purpose_not_blank CHECK (btrim(purpose) <> ''),
   CONSTRAINT login_codes_expires_after_created_check CHECK (expires_at > created_at),
+  CONSTRAINT login_codes_attempt_count_non_negative CHECK (attempt_count >= 0),
   CONSTRAINT login_codes_consumed_after_created_check CHECK (
     consumed_at IS NULL OR consumed_at >= created_at
+  ),
+  CONSTRAINT login_codes_locked_until_after_created_check CHECK (
+    locked_until IS NULL OR locked_until >= created_at
   )
 );
 

@@ -240,6 +240,21 @@ async function assertM1Schema(client, { expectSeedData }) {
   ]);
   assert.equal(seededAdmin.rowCount, 1);
   assert.equal(seededAdmin.rows[0].organization_id, DEMO_ORGANIZATION_SEED.id);
+
+  const seededAdminRoles = await client.query(
+    `
+      SELECT r.code
+      FROM user_roles ur
+      JOIN roles r ON r.id = ur.role_id
+      WHERE ur.user_id = $1 AND ur.organization_id = $2
+      ORDER BY r.code
+    `,
+    [SEEDED_ADMIN_USER_SEED.id, DEMO_ORGANIZATION_SEED.id],
+  );
+  assert.deepEqual(
+    seededAdminRoles.rows.map((row) => row.code),
+    ["administrator"],
+  );
 }
 
 async function assertM1SchemaDropped(client) {
@@ -386,10 +401,19 @@ async function insertM1TenantSlice(client, organizationId) {
   );
   await client.query(
     `
-      INSERT INTO auth_sessions (id, user_id, organization_id, issued_at, expires_at, ip, user_agent)
-      VALUES ($1, $2, $3, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', '127.0.0.1', 'node-test')
+      INSERT INTO auth_sessions (
+        id,
+        user_id,
+        organization_id,
+        token_hash,
+        issued_at,
+        expires_at,
+        ip,
+        user_agent
+      )
+      VALUES ($1, $2, $3, $4, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z', '127.0.0.1', 'node-test')
     `,
-    [fixture.session, fixture.user, organizationId],
+    [fixture.session, fixture.user, organizationId, `session-token-${suffix}`],
   );
   await client.query(
     `

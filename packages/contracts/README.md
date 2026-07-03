@@ -24,6 +24,16 @@
   `POST /internal/egress/messages` для mock handoff Core -> Adapter без реальной
   доставки.
 
+## M1-03: C3.auth для Identity Platform
+
+- `openapi/auth/c3.auth.openapi.json` фиксирует C3.auth v1.0.0 на CP-1:
+  Telegram start/verify, server session, logout.
+- `start` создаёт challenge id, хранит только `code_hash` и отдаёт TTL.
+- `verify` принимает `requestId` или `telegramUsername` вместе с кодом, помечает
+  `login_codes.consumed_at` и возвращает непрозрачный server session token.
+- Session endpoints используют Bearer/cookie token; в БД хранится только
+  `auth_sessions.token_hash`.
+
 ## M0-05: C2/C6 для Integration Platform
 
 - `openapi/c2-internal-api.yaml` фиксирует mock C2: Adapter вызывает Core
