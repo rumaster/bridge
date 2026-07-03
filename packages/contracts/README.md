@@ -87,8 +87,8 @@
 - `events/c7-websocket-event.schema.json` фиксирует общий envelope C7 v1:
   `event_id`, `organization_id`, `sequence_number`, `payload`, `occurred_at` и
   события `message.created`, `message.status_changed`, `typing.started`,
-  `typing.stopped`, `client.status_changed`, `notification.created`,
-  `broadcast.state_changed`, `workflow.state_changed`.
+  `typing.stopped`, `client.status_changed`, `channel.status_changed`,
+  `notification.created`, `broadcast.state_changed`, `workflow.state_changed`.
 - `openapi/edge/c9.edge-tunnel.openapi.json` фиксирует EDGE→CORE tunnel endpoint
   `POST /internal/edge/tunnel/messages`.
 - `json-schema/c9-edge-tunnel-message.schema.json` фиксирует C9 v1 envelope с

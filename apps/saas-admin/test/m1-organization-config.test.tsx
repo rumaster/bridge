@@ -8,8 +8,9 @@ import { createMockSaasAdminApiClient, createMockSaasAdminServices } from "../sr
 import { mockSession } from "../src/api/mocks/fixtures";
 import { createSaasAdminRouter } from "../src/routing/router";
 import type { AdminSession, ProblemDetails } from "../src/api/client/types";
+import type { SaasAdminServiceOverrides } from "../src/state/admin";
 
-function renderRoute(path: string, services = createMockSaasAdminServices()) {
+function renderRoute(path: string, services: SaasAdminServiceOverrides = createMockSaasAdminServices()) {
   const router = createSaasAdminRouter({
     initialEntries: [path],
     services

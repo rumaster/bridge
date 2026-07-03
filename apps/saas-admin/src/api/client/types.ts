@@ -88,6 +88,130 @@ export interface UpdateOrganizationConfigurationRequest {
   retentionDays: number;
 }
 
+export type ChannelStatus = "connected" | "error" | "disabled";
+export type ChannelType = "web_chat" | "telegram" | "max" | "vk" | "whatsapp" | "email" | "sms";
+export type ChannelCapabilityName =
+  | "text"
+  | "image"
+  | "file"
+  | "voice"
+  | "video"
+  | "buttons"
+  | "reactions"
+  | "typing_indicator"
+  | "read_receipt"
+  | "delete"
+  | "edit";
+
+export interface ChannelErrorLogItem {
+  id: string;
+  code: string;
+  message: string;
+  occurred_at: ISODateTime;
+}
+
+export interface Channel {
+  id: string;
+  organization_id: string;
+  channel_type: ChannelType;
+  name: string;
+  status: ChannelStatus;
+  credentials_ref?: string;
+  config: Record<string, unknown>;
+  last_check_at?: ISODateTime;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  error_log?: ChannelErrorLogItem[];
+}
+
+export interface ConnectChannelRequest {
+  organization_id: string;
+  channel_type: "web_chat";
+  name: string;
+  credentials_ref?: string;
+  config?: Record<string, unknown>;
+}
+
+export interface ConnectChannelResponse {
+  channel: Channel;
+}
+
+export interface ChannelCapabilityDescriptor {
+  contract: "C6.CapabilityDescriptor";
+  version: string;
+  channel_type: ChannelType;
+  channel_id: string;
+  adapter: {
+    name: string;
+    version: string;
+  };
+  capabilities: Record<ChannelCapabilityName, { supported: boolean; notes?: string }>;
+  generated_at: ISODateTime;
+}
+
+export interface ChannelTestResult {
+  accepted: true;
+  channel_id: string;
+  status: ChannelStatus;
+  checked_at: ISODateTime;
+  error?: ChannelErrorLogItem;
+}
+
+export type KnowledgeDocumentStatus = "indexing" | "indexed" | "failed";
+
+export interface KnowledgeDocument {
+  id: string;
+  organization_id: string;
+  title: string;
+  source: string | null;
+  status: KnowledgeDocumentStatus;
+  indexed_at: ISODateTime | null;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+  file_name?: string;
+  content_type?: string;
+  size_bytes?: number;
+  error_message?: string;
+}
+
+export interface CreateKnowledgeDocumentRequest {
+  organization_id: string;
+  title: string;
+  source?: string;
+  file_name?: string;
+  content_type?: string;
+  size_bytes?: number;
+}
+
+export interface UpdateKnowledgeDocumentRequest {
+  title: string;
+  source?: string;
+}
+
+export interface ReindexKnowledgeDocumentResponse {
+  accepted: true;
+  document_id: string;
+  status: "indexing";
+  queued_at: ISODateTime;
+}
+
+export interface DeleteKnowledgeDocumentResponse {
+  deleted: true;
+  document_id: string;
+}
+
+export type C7Event =
+  | {
+      type: "channel.status_changed";
+      sequenceNumber: number;
+      payload: {
+        channelId: string;
+        status: ChannelStatus;
+        lastCheckAt?: ISODateTime;
+        error?: ChannelErrorLogItem | null;
+      };
+    };
+
 export interface ProblemDetails {
   type: string;
   title: string;
@@ -117,5 +241,21 @@ export interface SaasAdminApiClient {
       organizationId: string,
       request: UpdateOrganizationConfigurationRequest
     ) => Promise<OrganizationConfiguration>;
+  };
+  channels: {
+    listChannels: () => Promise<Channel[]>;
+    createChannel: (request: ConnectChannelRequest) => Promise<ConnectChannelResponse>;
+    getCapabilities: (channelId: string) => Promise<ChannelCapabilityDescriptor>;
+    testChannel: (channelId: string) => Promise<ChannelTestResult>;
+  };
+  knowledge: {
+    listDocuments: () => Promise<KnowledgeDocument[]>;
+    createDocument: (request: CreateKnowledgeDocumentRequest) => Promise<KnowledgeDocument>;
+    updateDocument: (
+      documentId: string,
+      request: UpdateKnowledgeDocumentRequest
+    ) => Promise<KnowledgeDocument>;
+    reindexDocument: (documentId: string) => Promise<ReindexKnowledgeDocumentResponse>;
+    deleteDocument: (documentId: string) => Promise<DeleteKnowledgeDocumentResponse>;
   };
 }

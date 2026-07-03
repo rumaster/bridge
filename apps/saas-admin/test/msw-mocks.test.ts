@@ -59,4 +59,64 @@ describe("SaaS Administration MSW mocks", () => {
     await expect(api.auth.logout()).resolves.toMatchObject({ loggedOut: true });
     await expect(api.auth.getSession()).rejects.toThrow("Authentication is required.");
   });
+
+  it("serves C3.channels and C3.kb M2 mock contracts", async () => {
+    const api = createSaasAdminApiClient({ baseUrl: "/api/v1" });
+
+    const channels = await api.channels.listChannels();
+    expect(channels.map((channel) => channel.name)).toContain("Основной Web Chat");
+    expect(channels[0]).toHaveProperty("credentials_ref");
+    expect(channels[0]).not.toHaveProperty("token");
+
+    const createdChannel = await api.channels.createChannel({
+      organization_id: "org-demo",
+      channel_type: "web_chat",
+      name: "Витрина Web Chat",
+      credentials_ref: "secret://web-chat/org-demo/storefront",
+      config: {
+        widget_origin: "https://storefront.example.test"
+      }
+    });
+    expect(createdChannel.channel.credentials_ref).toBe("secret://web-chat/org-demo/storefront");
+
+    const capabilities = await api.channels.getCapabilities(createdChannel.channel.id);
+    expect(capabilities.contract).toBe("C6.CapabilityDescriptor");
+    expect(capabilities.capabilities.text.supported).toBe(true);
+
+    await expect(api.channels.testChannel(createdChannel.channel.id)).resolves.toMatchObject({
+      accepted: true,
+      status: "connected"
+    });
+
+    const documents = await api.knowledge.listDocuments();
+    expect(documents.map((document) => document.title)).toContain("FAQ возвратов");
+
+    const createdDocument = await api.knowledge.createDocument({
+      organization_id: "org-demo",
+      title: "Политика гарантий",
+      source: "manual://warranty",
+      file_name: "warranty.md",
+      content_type: "text/markdown",
+      size_bytes: 19
+    });
+    expect(createdDocument.status).toBe("indexing");
+
+    await expect(
+      api.knowledge.updateDocument(createdDocument.id, {
+        title: "Политика гарантий v2",
+        source: "manual://warranty-v2"
+      })
+    ).resolves.toMatchObject({
+      title: "Политика гарантий v2"
+    });
+
+    await expect(api.knowledge.reindexDocument(createdDocument.id)).resolves.toMatchObject({
+      accepted: true,
+      status: "indexing"
+    });
+
+    await expect(api.knowledge.deleteDocument(createdDocument.id)).resolves.toMatchObject({
+      deleted: true
+    });
+  });
 });
