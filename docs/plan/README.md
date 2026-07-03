@@ -745,6 +745,11 @@ M2, точки согласования CP-2 и CP-3) — в документе
 API и AI Onboarding (веха M3, точки согласования CP-4 и CP-5) — в документе
 [parallel-stage-4-prompts.md](./parallel-stage-4-prompts.md).
 
+Пятая серия параллельных задач для массовых коммуникаций, Edge/ПДн и уведомлений —
+Broadcast через ядро, Edge + VPN Tunnel и Notification в Web/Telegram (веха M4,
+точки согласования CP-6, CP-7 и CP-8) — в документе
+[parallel-stage-5-prompts.md](./parallel-stage-5-prompts.md).
+
 | Сервис | План | Точки согласования |
 |--------|------|--------------------|
 | Data Platform | [01-data-platform.md](./services/01-data-platform.md) | все (поставщик схемы) |
