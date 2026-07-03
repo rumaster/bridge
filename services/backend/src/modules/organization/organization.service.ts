@@ -2,11 +2,13 @@ import { NotFoundException, Injectable } from "@nestjs/common";
 
 import { PgDatabase } from "../../common/database/database.service";
 import { AuditService } from "../audit/audit.service";
+import type { AuditActorType } from "../audit/audit.service";
 import { mapOrganization } from "./organization.dto";
 import type { OrganizationRow } from "./organization.dto";
 import type { OrganizationResponseDto, UpdateOrganizationDto } from "./organization.dto";
 
 export interface MutationContext {
+  actorType?: AuditActorType;
   actorUserId?: string;
   requestId?: string;
 }
@@ -86,6 +88,7 @@ export class OrganizationService {
 
       await this.audit.record(client, {
         action: "organization.update",
+        actorType: context.actorType,
         actorUserId: context.actorUserId,
         objectId: id,
         objectType: "organization",
@@ -96,6 +99,7 @@ export class OrganizationService {
       if (payload.status && payload.status !== before.rows[0].status) {
         await this.audit.record(client, {
           action: payload.status === "blocked" ? "organization.block" : "organization.unblock",
+          actorType: context.actorType,
           actorUserId: context.actorUserId,
           metadata: {
             previousStatus: before.rows[0].status,

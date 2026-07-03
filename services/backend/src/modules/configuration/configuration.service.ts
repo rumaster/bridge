@@ -4,6 +4,7 @@ import { Injectable } from "@nestjs/common";
 
 import { PgDatabase } from "../../common/database/database.service";
 import { AuditService } from "../audit/audit.service";
+import type { AuditActorType } from "../audit/audit.service";
 import {
   DEFAULT_CONFIGURATION_KEY,
   emptyConfiguration,
@@ -16,6 +17,7 @@ import type {
 } from "./configuration.dto";
 
 export interface ConfigurationMutationContext {
+  actorType?: AuditActorType;
   actorUserId?: string;
   requestId?: string;
 }
@@ -85,6 +87,7 @@ export class ConfigurationService {
 
       await this.audit.record(client, {
         action: "configuration.put",
+        actorType: context.actorType,
         actorUserId: context.actorUserId,
         metadata: { key, version: result.rows[0].version },
         objectType: "configuration",
