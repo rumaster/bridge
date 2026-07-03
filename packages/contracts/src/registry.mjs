@@ -33,6 +33,12 @@ export const CP1_GATE_REQUIRED_CONTRACT_IDS = Object.freeze([
   "C7",
 ]);
 
+export const CP2_CP3_GATE_REQUIRED_CONTRACT_IDS = Object.freeze([
+  "C2",
+  "C6",
+  "C4",
+]);
+
 export const M0_CONTRACT_REGISTRY = Object.freeze([
   freezeContract({
     id: MESSAGE_MODEL_CONTRACT_ID,
@@ -343,6 +349,91 @@ export const CP1_CONTRACT_FREEZE = Object.freeze([
   }),
 ]);
 
+export const CP2_CP3_CONTRACT_FREEZE = Object.freeze([
+  freezeContract({
+    id: "C2",
+    name: "INT <-> CORE Ingress/Egress",
+    owner: "SVC-CORE",
+    stage: "M2",
+    gate: "CP-2+CP-3",
+    status: "stable_for_m3",
+    version: "1.0.0",
+    artifacts: [
+      "packages/contracts/openapi/communication-core-c2.openapi.json",
+      "packages/contracts/openapi/c2-internal-api.yaml",
+      "packages/contracts/json-schema/c2-ingress-message.schema.json",
+      "packages/contracts/json-schema/c2-egress-delivery.schema.json",
+    ],
+    dtoNames: [
+      "C2.IngressMessage",
+      "C2.IngressAcceptedResponse",
+      "C2.EgressDelivery",
+    ],
+    evidence: [
+      "tests/contract/int-core-m2-adapters.contract.test.mjs",
+      "tests/contract/int-core-c2-c6.test.mjs",
+      "tests/e2e/telegram-cp2.test.mjs",
+      "tests/integration/communication-core-m2.test.mjs",
+      "services/backend/test/unit/communication-core.m2.test.mjs",
+    ],
+  }),
+  freezeContract({
+    id: "C6",
+    name: "Capability Descriptor",
+    owner: "SVC-INT",
+    stage: "M2",
+    gate: "CP-2+CP-3",
+    status: "stable_for_m3",
+    version: C6_VERSION,
+    artifacts: [
+      "packages/contracts/json-schema/c6-capability-descriptor.schema.json",
+      "packages/contracts/src/c6.mjs",
+    ],
+    dtoNames: ["C6.CapabilityDescriptor"],
+    evidence: [
+      "tests/contract/int-core-m2-adapters.contract.test.mjs",
+      "tests/contract/int-core-c2-c6.test.mjs",
+      "services/integration-platform/test/unit/m2-channel-adapters.test.mjs",
+      "services/integration-platform/test/integration/m2-channel-adapters.integration.test.mjs",
+    ],
+  }),
+  freezeContract({
+    id: "C4",
+    name: "AI Platform",
+    owner: "SVC-AI",
+    stage: "M2",
+    gate: "CP-2+CP-3",
+    status: "stable_for_m3",
+    version: C4_VERSION,
+    basePath: "/api/v1",
+    artifacts: [
+      "packages/contracts/openapi/ai/c4.ai.openapi.json",
+      "packages/contracts/json-schema/c4-ai-assistant-suggest-response.schema.json",
+      "packages/contracts/json-schema/c4-ai-onboarding-command.schema.json",
+      "packages/contracts/src/c4.mjs",
+      "packages/contracts/consumer/ai-integration-c4.consumer.v1.json",
+      "packages/contracts/consumer/manager-workspace-c4-c7.consumer.v1.json",
+    ],
+    dtoNames: [
+      "C4.AssistantSuggestRequest",
+      "C4.AssistantSuggestResponse",
+      "C4.OnboardingCommandRequest",
+      "C4.OnboardingCommandResponse",
+      "C4.AiOnboardingCommand",
+    ],
+    evidence: [
+      "tests/contract/c4-ai-contract.test.mjs",
+      "tests/contract/ai-integration-c4-consumer.test.mjs",
+      "tests/contract/manager-workspace-c4-c7-consumer.test.mjs",
+      "tests/e2e/ai-assistant-kb.test.mjs",
+      "tests/integration/ai-rag-kb.test.mjs",
+      "services/backend/test/unit/ai-integration.facade.spec.ts",
+      "services/ai-platform/test/unit/rag-pipeline.test.mjs",
+      "services/ai-platform/test/integration/rag-assistant-server.test.mjs",
+    ],
+  }),
+]);
+
 export function getM0ContractRegistry() {
   return M0_CONTRACT_REGISTRY.map(cloneContract);
 }
@@ -359,6 +450,14 @@ export function findCp1Contract(contractId) {
   return CP1_CONTRACT_FREEZE.find((contract) => contract.id === contractId);
 }
 
+export function getCp2Cp3ContractFreeze() {
+  return CP2_CP3_CONTRACT_FREEZE.map(cloneContract);
+}
+
+export function findCp2Cp3Contract(contractId) {
+  return CP2_CP3_CONTRACT_FREEZE.find((contract) => contract.id === contractId);
+}
+
 export function validateM0ContractRegistry(
   registry = M0_CONTRACT_REGISTRY,
   requiredIds = M0_GATE_REQUIRED_CONTRACT_IDS,
@@ -371,6 +470,13 @@ export function validateCp1ContractFreeze(
   requiredIds = CP1_GATE_REQUIRED_CONTRACT_IDS,
 ) {
   return validateContractRegistry(registry, requiredIds, "CP-1 freeze");
+}
+
+export function validateCp2Cp3ContractFreeze(
+  registry = CP2_CP3_CONTRACT_FREEZE,
+  requiredIds = CP2_CP3_GATE_REQUIRED_CONTRACT_IDS,
+) {
+  return validateContractRegistry(registry, requiredIds, "CP-2/CP-3 freeze");
 }
 
 function validateContractRegistry(registry, requiredIds, registryName) {

@@ -209,6 +209,14 @@ Data Platform **не отдаёт REST наружу** и не имеет соб�
   - *e2e:* CP-3 — БД как зависимость «AI Assistant из KB».
 - **DoD.** § 9.4 + обратимость; изоляция KB-поиска подтверждена.
 
+**Статус реализации M2.** M2-схема Data Platform завершена для gate CP-2/CP-3:
+миграция `db/migrations/20260703124000000_m2_schema.sql` добавляет KB/pgvector,
+`client_identity_links`, `channels` и `adapter_capabilities`; интеграционные
+проверки `tests/integration/data-platform.test.mjs`, `tests/integration/ai-rag-kb.test.mjs`
+и `tests/integration/communication-core-m2.test.mjs` подтверждают tenant-isolated
+KB-поиск, связи identity и данные capabilities. Gate зафиксирован в
+`packages/contracts/cp2-cp3-freeze.v1.json`.
+
 ### 5.4 M3 — Workflow (`workflow_*`)
 
 - **Цель.** Поддержать программируемость (CP-4/CP-5).

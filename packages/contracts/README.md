@@ -47,6 +47,22 @@
 - M2 readiness: стабильные C1/C2/C3/C7; следующий scope — adapters, realtime,
   AI Assistant и identity resolution.
 
+## CP-2/CP-3: заморозка C2/C6/C4 для M3
+
+- `cp2-cp3-freeze.v1.json` фиксирует gate M2 (CP-2 + CP-3) от 2026-07-03:
+  C2, C6 и C4 имеют статус `stable_for_m3`.
+- `src/registry.mjs` экспортирует `CP2_CP3_CONTRACT_FREEZE`,
+  `CP2_CP3_GATE_REQUIRED_CONTRACT_IDS` и `validateCp2Cp3ContractFreeze()` для
+  машинной проверки freeze.
+- CP-2 закрыт e2e «Telegram: приём и ответ» и per-adapter contract INT↔CORE:
+  каждый adapter потребляет C2 Ingress и публикует C6 Capability Descriptor.
+- CP-3 закрыт e2e «AI Assistant из KB» и consumer contract API↔AI: C4
+  сохраняет shape v1, KB-поиск изолирован по `organization_id`, а деградация AI
+  возвращает валидный C4 fallback без блокировки переписки.
+- M3 readiness: стабильные C2/C6/C4; следующий scope — outbox/domain events,
+  FBP/Workflow, AI Onboarding, Notification и фасады `ai-integration`/
+  `fbp-integration` с circuit breaker.
+
 ## CP-3: SVC-MWS consumer C4/C7
 
 - `consumer/manager-workspace-c4-c7.consumer.v1.json` фиксирует потребление

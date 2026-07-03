@@ -266,6 +266,14 @@ KB; M3 — Onboarding, структ. команды; M5 — изоляция, м
   e2e «AI Assistant из KB» зелёный; **C4 заморожен** на CP-3; деградация при
   недоступности LLM работает (ТЗ §5.4; мастер-план §9.4).
 
+**Статус реализации M2.** M2 AI Platform завершён для CP-3: RAG pipeline,
+детерминированный LLM/embedding mock, цитирование KB-источников и fallback при
+недоступности AI покрыты unit/integration тестами `services/ai-platform/test/**`,
+contract-тестами `tests/contract/ai-integration-c4-consumer.test.mjs` и
+сквозным `tests/e2e/ai-assistant-kb.test.mjs`; реальный pgvector/RLS-путь
+дополнительно проверен в `tests/integration/ai-rag-kb.test.mjs`. C4 зафиксирован
+как `stable_for_m3` в `packages/contracts/cp2-cp3-freeze.v1.json`.
+
 ### M3 — AI Onboarding: структурированные команды (CP-5)
 
 - **Цель.** Рабочий **AI Onboarding**: интерпретация запросов администратора в

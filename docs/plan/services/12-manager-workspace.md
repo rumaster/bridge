@@ -258,7 +258,8 @@ Assistant из KB»; проверено, что отключение AI **не �
 `sequence_number`, а также панель AI-подсказок на C4 `POST /ai/assistant:suggest`
 с отображением источников KB и graceful degradation при недоступности AI.
 Проверки этапа покрывают unit-слияние C7, component/MSW C4/C7, consumer contract
-C4/C7 и Playwright e2e «AI Assistant из KB» с realtime-наблюдением.
+C4/C7 и Playwright e2e «AI Assistant из KB» с realtime-наблюдением. C4 включён в
+`packages/contracts/cp2-cp3-freeze.v1.json` как `stable_for_m3`.
 
 ### M3 — Интерфейс уведомлений (CP-8)
 

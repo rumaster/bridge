@@ -502,6 +502,20 @@ C3 для SVC-MWS/SVC-ADMIN. Инварианты gate: RLS-изоляция а�
 аудит изменяющих операций. Готовность M2: стабильные C1/C2/C3/C7; следующий scope
 M2 — adapters, realtime, AI Assistant, identity resolution.
 
+**Статус CP-2/CP-3 (M2-99, 2026-07-03).** Gate M2 выполнен: добавлен
+машинно-читаемый freeze-артефакт `packages/contracts/cp2-cp3-freeze.v1.json`,
+заморожены C2/C6/C4 как `stable_for_m3`. Проверки CP-2 покрывают e2e
+«Telegram: приём и ответ» и per-adapter contract INT↔CORE для Telegram, Email,
+SMS, VK, MAX и WhatsApp: каждый adapter потребляет C2 Ingress и публикует C6
+Capability Descriptor. Проверки CP-3 покрывают e2e «AI Assistant из KB»,
+consumer contract API↔AI и реальный pgvector/RLS-путь KB-поиска через
+Testcontainers. Инварианты gate: маршрутизация по capabilities, а не по имени
+канала; изоляция KB-поиска по `organization_id`; порядок по `sequence_number` в
+рамках endpoint; C7 realtime/reconnect без дублей; деградация AI с валидным C4
+fallback без остановки переписки. Готовность M3: стабильные C2/C6/C4; следующий
+scope M3 — outbox/domain events, FBP/Workflow, AI Onboarding, Notification и
+фасады `ai-integration`/`fbp-integration` с circuit breaker.
+
 ## 6.1 Граф зависимостей вех (упрощённо)
 
 ```text

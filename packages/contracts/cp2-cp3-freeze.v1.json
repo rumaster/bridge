@@ -1,0 +1,100 @@
+{
+  "x-gate": "CP-2+CP-3",
+  "x-stage": "M2",
+  "x-status": "complete",
+  "frozen_at": "2026-07-03",
+  "scope": {
+    "services": [
+      "SVC-INT(Telegram/Email/SMS/VK/MAX/WhatsApp)",
+      "SVC-CORE",
+      "SVC-API(KB/AI-Integration)",
+      "SVC-DATA(KB)",
+      "SVC-AI",
+      "SVC-EDGE",
+      "SVC-MWS",
+      "SVC-CHAT"
+    ],
+    "scenarios": [
+      "Telegram: приём и ответ",
+      "AI Assistant из KB"
+    ],
+    "invariants": [
+      "capability-based channel routing",
+      "tenant-isolated KB search",
+      "endpoint-scoped sequence ordering",
+      "C7 realtime reconnect without duplicates",
+      "AI unavailable degradation keeps messaging usable"
+    ]
+  },
+  "contracts": [
+    {
+      "id": "C2",
+      "version": "1.0.0",
+      "owner": "SVC-CORE",
+      "status": "stable_for_m3",
+      "artifacts": [
+        "packages/contracts/openapi/communication-core-c2.openapi.json",
+        "packages/contracts/openapi/c2-internal-api.yaml",
+        "packages/contracts/json-schema/c2-ingress-message.schema.json",
+        "packages/contracts/json-schema/c2-egress-delivery.schema.json"
+      ],
+      "evidence": [
+        "tests/contract/int-core-m2-adapters.contract.test.mjs",
+        "tests/contract/int-core-c2-c6.test.mjs",
+        "tests/e2e/telegram-cp2.test.mjs",
+        "tests/integration/communication-core-m2.test.mjs",
+        "services/backend/test/unit/communication-core.m2.test.mjs"
+      ]
+    },
+    {
+      "id": "C6",
+      "version": "1.0.0",
+      "owner": "SVC-INT",
+      "status": "stable_for_m3",
+      "artifacts": [
+        "packages/contracts/json-schema/c6-capability-descriptor.schema.json",
+        "packages/contracts/src/c6.mjs"
+      ],
+      "evidence": [
+        "tests/contract/int-core-m2-adapters.contract.test.mjs",
+        "tests/contract/int-core-c2-c6.test.mjs",
+        "services/integration-platform/test/unit/m2-channel-adapters.test.mjs",
+        "services/integration-platform/test/integration/m2-channel-adapters.integration.test.mjs"
+      ]
+    },
+    {
+      "id": "C4",
+      "version": "1.0.0",
+      "owner": "SVC-AI",
+      "status": "stable_for_m3",
+      "artifacts": [
+        "packages/contracts/openapi/ai/c4.ai.openapi.json",
+        "packages/contracts/json-schema/c4-ai-assistant-suggest-response.schema.json",
+        "packages/contracts/json-schema/c4-ai-onboarding-command.schema.json",
+        "packages/contracts/src/c4.mjs",
+        "packages/contracts/consumer/ai-integration-c4.consumer.v1.json",
+        "packages/contracts/consumer/manager-workspace-c4-c7.consumer.v1.json"
+      ],
+      "evidence": [
+        "tests/contract/c4-ai-contract.test.mjs",
+        "tests/contract/ai-integration-c4-consumer.test.mjs",
+        "tests/contract/manager-workspace-c4-c7-consumer.test.mjs",
+        "tests/e2e/ai-assistant-kb.test.mjs",
+        "tests/integration/ai-rag-kb.test.mjs",
+        "services/backend/test/unit/ai-integration.facade.spec.ts",
+        "services/ai-platform/test/unit/rag-pipeline.test.mjs",
+        "services/ai-platform/test/integration/rag-assistant-server.test.mjs"
+      ]
+    }
+  ],
+  "m3_readiness": {
+    "stable_contracts": ["C2", "C6", "C4"],
+    "next_scope": [
+      "outbox/domain events",
+      "FBP/Workflow",
+      "AI Onboarding",
+      "Notification",
+      "ai-integration/fbp-integration facades with circuit breaker"
+    ]
+  }
+}
