@@ -44,9 +44,15 @@ const DATA_PLATFORM_TABLES = [
   "message_delivery_attempts",
   "messages",
   "organizations",
+  "outbox_events",
   "roles",
   "user_roles",
   "users",
+  "workflow_execution_logs",
+  "workflow_instance_state",
+  "workflow_instances",
+  "workflow_versions",
+  "workflows",
 ];
 const TENANT_RLS_TABLES = [
   "adapter_capabilities",
@@ -69,8 +75,14 @@ const TENANT_RLS_TABLES = [
   "message_delivery_attempts",
   "messages",
   "organizations",
+  "outbox_events",
   "user_roles",
   "users",
+  "workflow_execution_logs",
+  "workflow_instance_state",
+  "workflow_instances",
+  "workflow_versions",
+  "workflows",
 ];
 const TENANT_ORGANIZATION_ID_TABLES = TENANT_RLS_TABLES.filter(
   (tableName) => tableName !== "organizations" && tableName !== "users",
@@ -103,6 +115,15 @@ const M1_FIXTURES = {
     identityLinkReplacement: "10000000-0000-4000-8000-000000000c11",
     channel: "10000000-0000-4000-8000-000000000d01",
     capability: "10000000-0000-4000-8000-000000000d11",
+    workflow: "10000000-0000-4000-8000-000000000e01",
+    workflowVersionFirst: "10000000-0000-4000-8000-000000000e11",
+    workflowVersionSecond: "10000000-0000-4000-8000-000000000e12",
+    workflowInstance: "10000000-0000-4000-8000-000000000e21",
+    workflowLogStarted: "10000000-0000-4000-8000-000000000e31",
+    workflowLogFinished: "10000000-0000-4000-8000-000000000e32",
+    outboxEvent: "10000000-0000-4000-8000-000000000f01",
+    outboxMessage: "10000000-0000-4000-8000-000000000f11",
+    outboxCommitEvent: "10000000-0000-4000-8000-000000000f21",
   },
   [ORG_B]: {
     organization: ORG_B,
@@ -128,6 +149,15 @@ const M1_FIXTURES = {
     identityLinkReplacement: "10000000-0000-4000-8000-000000000c12",
     channel: "10000000-0000-4000-8000-000000000d02",
     capability: "10000000-0000-4000-8000-000000000d12",
+    workflow: "10000000-0000-4000-8000-000000000e02",
+    workflowVersionFirst: "10000000-0000-4000-8000-000000000e13",
+    workflowVersionSecond: "10000000-0000-4000-8000-000000000e14",
+    workflowInstance: "10000000-0000-4000-8000-000000000e22",
+    workflowLogStarted: "10000000-0000-4000-8000-000000000e33",
+    workflowLogFinished: "10000000-0000-4000-8000-000000000e34",
+    outboxEvent: "10000000-0000-4000-8000-000000000f02",
+    outboxMessage: "10000000-0000-4000-8000-000000000f12",
+    outboxCommitEvent: "10000000-0000-4000-8000-000000000f22",
   },
 };
 
@@ -166,7 +196,12 @@ function axisEmbedding(firstCoordinate) {
 }
 
 function expectedTenantRowCount(tableName, organizationId) {
-  if (tableName === "messages" || tableName === "knowledge_chunks") {
+  if (
+    tableName === "messages" ||
+    tableName === "knowledge_chunks" ||
+    tableName === "workflow_versions" ||
+    tableName === "workflow_execution_logs"
+  ) {
     return 2;
   }
 
@@ -835,6 +870,144 @@ async function insertM1TenantSlice(client, organizationId) {
     `,
     [fixture.capability, organizationId, fixture.channel],
   );
+
+  await insertM3TenantSlice(client, organizationId);
+}
+
+async function insertM3TenantSlice(client, organizationId) {
+  const fixture = M1_FIXTURES[organizationId];
+  const suffix = organizationId === ORG_A ? "a" : "b";
+
+  await client.query(
+    `
+      INSERT INTO workflows (id, organization_id, name, status, created_at, updated_at)
+      VALUES ($1, $2, $3, 'active', '2026-01-01T00:07:00.000Z', '2026-01-01T00:07:00.000Z')
+    `,
+    [fixture.workflow, organizationId, `Workflow ${suffix.toUpperCase()}`],
+  );
+  await client.query(
+    `
+      INSERT INTO workflow_versions (
+        id,
+        organization_id,
+        workflow_id,
+        version_no,
+        schema,
+        created_by,
+        created_at
+      )
+      VALUES
+        ($1, $2, $3, 1, $4::jsonb, $5, '2026-01-01T00:07:01.000Z'),
+        ($6, $2, $3, 2, $7::jsonb, $5, '2026-01-01T00:07:02.000Z')
+    `,
+    [
+      fixture.workflowVersionFirst,
+      organizationId,
+      fixture.workflow,
+      JSON.stringify({ nodes: ["start"], edges: [] }),
+      fixture.user,
+      fixture.workflowVersionSecond,
+      JSON.stringify({ nodes: ["start", "reply"], edges: [["start", "reply"]] }),
+    ],
+  );
+  await client.query(
+    `
+      UPDATE workflows
+      SET default_version_id = $1, updated_at = '2026-01-01T00:07:03.000Z'
+      WHERE id = $2
+    `,
+    [fixture.workflowVersionSecond, fixture.workflow],
+  );
+  await client.query(
+    `
+      INSERT INTO workflow_instances (
+        id,
+        organization_id,
+        workflow_id,
+        version_id,
+        status,
+        started_at,
+        finished_at,
+        created_at
+      )
+      VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        'running',
+        '2026-01-01T00:07:10.000Z',
+        NULL,
+        '2026-01-01T00:07:10.000Z'
+      )
+    `,
+    [
+      fixture.workflowInstance,
+      organizationId,
+      fixture.workflow,
+      fixture.workflowVersionFirst,
+    ],
+  );
+  await client.query(
+    `
+      INSERT INTO workflow_instance_state (instance_id, organization_id, state, updated_at)
+      VALUES ($1, $2, $3::jsonb, '2026-01-01T00:07:11.000Z')
+    `,
+    [fixture.workflowInstance, organizationId, JSON.stringify({ cursor: "start" })],
+  );
+  await client.query(
+    `
+      INSERT INTO workflow_execution_logs (
+        id,
+        organization_id,
+        instance_id,
+        node_id,
+        event,
+        data,
+        created_at
+      )
+      VALUES
+        ($1, $2, $3, 'start', 'node.started', '{}'::jsonb, '2026-01-01T00:07:12.000Z'),
+        ($4, $2, $3, 'start', 'node.finished', $5::jsonb, '2026-01-01T00:07:13.000Z')
+    `,
+    [
+      fixture.workflowLogStarted,
+      organizationId,
+      fixture.workflowInstance,
+      fixture.workflowLogFinished,
+      JSON.stringify({ output: `ack-${suffix}` }),
+    ],
+  );
+  await client.query(
+    `
+      INSERT INTO outbox_events (
+        id,
+        organization_id,
+        aggregate_type,
+        aggregate_id,
+        event_type,
+        payload,
+        status,
+        created_at
+      )
+      VALUES (
+        $1,
+        $2,
+        'message',
+        $3,
+        'message.received',
+        $4::jsonb,
+        'pending',
+        '2026-01-01T00:07:20.000Z'
+      )
+    `,
+    [
+      fixture.outboxEvent,
+      organizationId,
+      fixture.messageFirst,
+      JSON.stringify({ conversation_id: fixture.conversation }),
+    ],
+  );
 }
 
 async function assertM1Invariants(client) {
@@ -1071,6 +1244,221 @@ async function assertM2Invariants(client) {
   );
 }
 
+async function assertM3Invariants(client) {
+  const fixture = M1_FIXTURES[ORG_A];
+
+  // Version pinning (ТЗ §13.10): default-версия и экземпляр закреплены за версиями.
+  const workflow = await client.query(
+    "SELECT default_version_id FROM workflows WHERE id = $1",
+    [fixture.workflow],
+  );
+  assert.equal(workflow.rows[0].default_version_id, fixture.workflowVersionSecond);
+
+  const instance = await client.query(
+    "SELECT version_id FROM workflow_instances WHERE id = $1",
+    [fixture.workflowInstance],
+  );
+  assert.equal(instance.rows[0].version_id, fixture.workflowVersionFirst);
+
+  // Неизменяемость версии: повторная запись той же version_no отклоняется.
+  await assert.rejects(
+    client.query(
+      `
+        INSERT INTO workflow_versions (id, organization_id, workflow_id, version_no, schema, created_by)
+        VALUES ($1, $2, $3, 1, '{}'::jsonb, $4)
+      `,
+      ["10000000-0000-4000-8000-000000000e91", ORG_A, fixture.workflow, fixture.user],
+    ),
+    /workflow_versions_workflow_version_no_unique|duplicate key value/,
+  );
+
+  // Неизменяемость версии: правка и удаление существующей версии отклоняются.
+  await assert.rejects(
+    client.query(
+      "UPDATE workflow_versions SET schema = '{\"nodes\":[\"tampered\"]}'::jsonb WHERE id = $1",
+      [fixture.workflowVersionFirst],
+    ),
+    /append-only/,
+  );
+  await assert.rejects(
+    client.query("DELETE FROM workflow_versions WHERE id = $1", [
+      fixture.workflowVersionFirst,
+    ]),
+    /append-only/,
+  );
+
+  // Монотонность version_no: неположительный номер отклоняется CHECK-ограничением.
+  await assert.rejects(
+    client.query(
+      `
+        INSERT INTO workflow_versions (id, organization_id, workflow_id, version_no, schema, created_by)
+        VALUES ($1, $2, $3, 0, '{}'::jsonb, $4)
+      `,
+      ["10000000-0000-4000-8000-000000000e92", ORG_A, fixture.workflow, fixture.user],
+    ),
+    /workflow_versions_version_no_positive|violates check constraint/,
+  );
+
+  // Журнал исполнения (ТЗ §24.6): append-only.
+  await assert.rejects(
+    client.query("DELETE FROM workflow_execution_logs WHERE id = $1", [
+      fixture.workflowLogStarted,
+    ]),
+    /append-only/,
+  );
+
+  // Атомарность outbox: событие и изменение агрегата откатываются вместе.
+  await client.query("BEGIN");
+  await client.query(
+    `
+      INSERT INTO messages (
+        id, organization_id, conversation_id, endpoint_id, channel, direction,
+        sender_type, sequence_number, type, content, status, created_at
+      )
+      VALUES ($1, $2, $3, $4, 'web_chat', 'inbound', 'client', 3, 'text', '{"text":"outbox-rollback"}'::jsonb, 'received', '2026-01-01T00:08:00.000Z')
+    `,
+    [fixture.outboxMessage, ORG_A, fixture.conversation, fixture.endpoint],
+  );
+  await client.query(
+    `
+      INSERT INTO outbox_events (id, organization_id, aggregate_type, aggregate_id, event_type, payload, status)
+      VALUES ('10000000-0000-4000-8000-000000000f31', $1, 'message', $2, 'message.received', '{}'::jsonb, 'pending')
+    `,
+    [ORG_A, fixture.outboxMessage],
+  );
+  await client.query("ROLLBACK");
+
+  let persisted = await client.query(
+    "SELECT count(*)::int AS count FROM messages WHERE id = $1",
+    [fixture.outboxMessage],
+  );
+  assert.equal(persisted.rows[0].count, 0);
+  persisted = await client.query(
+    "SELECT count(*)::int AS count FROM outbox_events WHERE aggregate_id = $1",
+    [fixture.outboxMessage],
+  );
+  assert.equal(persisted.rows[0].count, 0);
+
+  // Атомарность outbox: событие и изменение агрегата коммитятся вместе.
+  await client.query("BEGIN");
+  await client.query(
+    `
+      INSERT INTO messages (
+        id, organization_id, conversation_id, endpoint_id, channel, direction,
+        sender_type, sequence_number, type, content, status, created_at
+      )
+      VALUES ($1, $2, $3, $4, 'web_chat', 'inbound', 'client', 3, 'text', '{"text":"outbox-commit"}'::jsonb, 'received', '2026-01-01T00:08:10.000Z')
+    `,
+    [fixture.outboxMessage, ORG_A, fixture.conversation, fixture.endpoint],
+  );
+  await client.query(
+    `
+      INSERT INTO outbox_events (id, organization_id, aggregate_type, aggregate_id, event_type, payload, status)
+      VALUES ($1, $2, 'message', $3, 'conversation.message_appended', '{"delivery":"async"}'::jsonb, 'pending')
+    `,
+    [fixture.outboxCommitEvent, ORG_A, fixture.outboxMessage],
+  );
+  await client.query("COMMIT");
+
+  const committedMessage = await client.query(
+    "SELECT count(*)::int AS count FROM messages WHERE id = $1",
+    [fixture.outboxMessage],
+  );
+  assert.equal(committedMessage.rows[0].count, 1);
+
+  // Выборка pending для доставки в порядке появления.
+  const pending = await client.query(
+    `
+      SELECT id
+      FROM outbox_events
+      WHERE organization_id = $1 AND status = 'pending'
+      ORDER BY created_at
+    `,
+    [ORG_A],
+  );
+  assert.deepEqual(
+    pending.rows.map((row) => row.id),
+    [fixture.outboxEvent, fixture.outboxCommitEvent],
+  );
+
+  // Идемпотентная доставка: публикация выставляет published_at и убирает из pending.
+  await client.query(
+    `
+      UPDATE outbox_events
+      SET status = 'published', published_at = '2026-01-01T00:08:20.000Z'
+      WHERE id = $1
+    `,
+    [fixture.outboxEvent],
+  );
+  const remainingPending = await client.query(
+    "SELECT id FROM outbox_events WHERE organization_id = $1 AND status = 'pending' ORDER BY created_at",
+    [ORG_A],
+  );
+  assert.deepEqual(
+    remainingPending.rows.map((row) => row.id),
+    [fixture.outboxCommitEvent],
+  );
+
+  // published требует published_at (инвариант согласованности статуса).
+  await assert.rejects(
+    client.query("UPDATE outbox_events SET status = 'published' WHERE id = $1", [
+      fixture.outboxCommitEvent,
+    ]),
+    /outbox_events_published_at_consistency_check|violates check constraint/,
+  );
+}
+
+async function assertWorkflowExecutionLogIsolation(adminConfig, adminClient) {
+  const roleName = `wf_log_probe_${process.pid}`;
+  const roleIdentifier = quoteIdentifier(roleName);
+
+  await adminClient.query(`DROP ROLE IF EXISTS ${roleIdentifier}`);
+  await adminClient.query(`CREATE ROLE ${roleIdentifier} LOGIN PASSWORD 'bridge_test'`);
+  await adminClient.query(`GRANT USAGE ON SCHEMA app, public TO ${roleIdentifier}`);
+  await adminClient.query(`GRANT SELECT ON workflow_execution_logs TO ${roleIdentifier}`);
+
+  try {
+    await withClient(connectionConfigFromAdmin(adminConfig, { user: roleName }), async (client) => {
+      // Без контекста арендатора журналы исполнения не видны.
+      let result = await client.query(
+        "SELECT count(*)::int AS count FROM workflow_execution_logs",
+      );
+      assert.equal(result.rows[0].count, 0);
+
+      await client.query("SELECT set_config('app.current_organization_id', $1, false)", [
+        ORG_A,
+      ]);
+      result = await client.query(
+        "SELECT id FROM workflow_execution_logs ORDER BY created_at",
+      );
+      assert.deepEqual(
+        result.rows.map((row) => row.id),
+        [
+          M1_FIXTURES[ORG_A].workflowLogStarted,
+          M1_FIXTURES[ORG_A].workflowLogFinished,
+        ],
+      );
+
+      await client.query("SELECT set_config('app.current_organization_id', $1, false)", [
+        ORG_B,
+      ]);
+      result = await client.query(
+        "SELECT id FROM workflow_execution_logs ORDER BY created_at",
+      );
+      assert.deepEqual(
+        result.rows.map((row) => row.id),
+        [
+          M1_FIXTURES[ORG_B].workflowLogStarted,
+          M1_FIXTURES[ORG_B].workflowLogFinished,
+        ],
+      );
+    });
+  } finally {
+    await adminClient.query(`DROP OWNED BY ${roleIdentifier}`);
+    await adminClient.query(`DROP ROLE IF EXISTS ${roleIdentifier}`);
+  }
+}
+
 async function assertKnowledgeVectorSearchIsolation(adminConfig, adminClient) {
   const roleName = `kb_vector_probe_${process.pid}`;
   const roleIdentifier = quoteIdentifier(roleName);
@@ -1172,6 +1560,8 @@ describe("SVC-DATA M2 migrations", { timeout: 300_000 }, () => {
         await assertM2Invariants(client);
         await assertRlsIsolation(adminConfig, client);
         await assertKnowledgeVectorSearchIsolation(adminConfig, client);
+        await assertWorkflowExecutionLogIsolation(adminConfig, client);
+        await assertM3Invariants(client);
 
         await runMigrations({
           databaseUrl: adminConfig,

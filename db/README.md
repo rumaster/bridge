@@ -24,7 +24,7 @@ DATABASE_URL=postgres://user:password@localhost:5432/bridge npm run db:migrate:d
 npm run test:integration
 ```
 
-## M0/M1/M2 Схема
+## M0/M1/M2/M3 Схема
 
 Миграция `20260702160218000_m0_schema.sql` создаёт:
 
@@ -70,6 +70,26 @@ append-only защиту `audit_events` и `configuration_history`.
 Секреты каналов хранятся только ссылкой `channels.credentials_ref`; top-level
 ключи `token`, `secret`, `password`, `api_key` и близкие варианты запрещены в
 `channels.config`.
+
+Миграция `20260703140000000_m3_schema.sql` добавляет схему Workflow M3 и
+транзакционный outbox:
+
+- `workflows` с закреплённой default-версией (`default_version_id`);
+- `workflow_versions` — неизменяемые версии, `UNIQUE(workflow_id, version_no)`
+  (ТЗ §13.10), `version_no > 0` и append-only защита;
+- `workflow_instances` с version pinning через FK `version_id` (stateless
+  executor запускает конкретную версию);
+- `workflow_instance_state` — состояние вне исполнителя (`instance_id` PK);
+- `workflow_execution_logs` — append-only журнал исполнения (ТЗ §13.9, §24.6)
+  с изоляцией по арендатору;
+- `outbox_events` (C-OUT, master §4.10) со статусами `pending/published/failed`,
+  инвариантом согласованности `published_at`, индексами по `status` и
+  частичным индексом `outbox_events_pending_idx` для выборки к доставке.
+
+Запись `outbox_events` фиксируется в той же транзакции, что и агрегат
+(атомарность outbox): событие и изменение агрегата коммитятся либо
+откатываются вместе. Все шесть таблиц покрыты tenant RLS по
+`organization_id`.
 
 ## RLS Контекст
 
