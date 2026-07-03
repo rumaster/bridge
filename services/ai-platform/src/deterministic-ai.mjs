@@ -7,6 +7,7 @@ import {
   assertAssistantSuggestRequest,
   assertOnboardingCommandRequest,
 } from "./c4-dto.mjs";
+import { interpretOnboardingPrompt } from "./llm.mjs";
 
 const ASSISTANT_FIXTURES = [
   {
@@ -68,7 +69,7 @@ export function createDeterministicAiMock({ now = () => new Date().toISOString()
       const request = assertOnboardingCommandRequest(payload);
       metrics.onboarding_command_total += 1;
 
-      const commandDraft = classifyOnboardingPrompt(request);
+      const commandDraft = interpretOnboardingPrompt(request.prompt);
       const command = createAiOnboardingCommand({
         requestId: request.request_id,
         organizationId: request.organization_id,
@@ -121,86 +122,6 @@ function findAssistantFixture(query) {
     text: DEFAULT_ASSISTANT_TEXT,
     confidence: 0.25,
   };
-}
-
-function classifyOnboardingPrompt(request) {
-  const normalizedPrompt = normalizeText(request.prompt);
-
-  if (normalizedPrompt.includes("telegram") || normalizedPrompt.includes("телеграм")) {
-    return {
-      action: "channel.connect",
-      params: {
-        channel_type: "telegram",
-        display_name: "Telegram",
-        mode: "mock",
-      },
-      requiresConfirmation: true,
-      notes: [
-        "Backend must validate administrator permissions and channel credentials before applying.",
-      ],
-    };
-  }
-
-  if (
-    normalizedPrompt.includes("часовой пояс") ||
-    normalizedPrompt.includes("timezone") ||
-    normalizedPrompt.includes("europe/moscow")
-  ) {
-    return {
-      action: "configuration.upsert",
-      params: {
-        key: "organization.timezone",
-        value: extractTimezone(request.prompt),
-      },
-      requiresConfirmation: true,
-      notes: [
-        "Backend must validate the configuration key, value format and organization scope.",
-      ],
-    };
-  }
-
-  if (normalizedPrompt.includes("пригласи") || normalizedPrompt.includes("invite")) {
-    return {
-      action: "user.invite",
-      params: {
-        role: "manager",
-        delivery: "manual",
-      },
-      requiresConfirmation: true,
-      notes: [
-        "Backend must validate role assignment and invitation target before applying.",
-      ],
-    };
-  }
-
-  if (normalizedPrompt.includes("название") || normalizedPrompt.includes("name")) {
-    return {
-      action: "organization.update_profile",
-      params: {
-        display_name: "M0 Mock Organization",
-      },
-      requiresConfirmation: true,
-      notes: [
-        "Backend must validate organization profile fields before applying.",
-      ],
-    };
-  }
-
-  return {
-    action: "noop",
-    params: {
-      reason: "unsupported_m0_prompt",
-    },
-    requiresConfirmation: false,
-    notes: [
-      "M0 deterministic mock could not map the prompt to a supported Backend operation.",
-    ],
-  };
-}
-
-function extractTimezone(prompt) {
-  const match = prompt.match(/[A-Za-z]+\/[A-Za-z_]+/);
-  return match ? match[0] : "Europe/Moscow";
 }
 
 function normalizeText(value) {
