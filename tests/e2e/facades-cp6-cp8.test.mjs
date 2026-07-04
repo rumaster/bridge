@@ -101,7 +101,8 @@ describe("CP-6/CP-8 facade e2e (contract-level chain)", () => {
 
     assert.equal(startResponse.status, 200);
     assert.equal(started.contract, "C8.StartBroadcastResponse");
-    assert.equal(started.broadcast.status, "running");
+    // CP-6/M4: :start прогоняет кампанию через единый механизм ядра до конца.
+    assert.equal(started.broadcast.status, "done");
     assert.equal(
       validateBroadcastCoreDeliveryDraft(started.core_delivery_draft).valid,
       true,
@@ -125,8 +126,8 @@ describe("CP-6/CP-8 facade e2e (contract-level chain)", () => {
     assert.equal(statsResponse.status, 200);
     assert.equal(stats.contract, "C8.BroadcastStatsResponse");
     assert.equal(stats.broadcast_id, created.broadcast.id);
-    assert.equal(stats.status, "running");
-    assert.equal(stats.stats.sent, 4);
+    assert.equal(stats.status, "done");
+    assert.equal(stats.stats.sent, 3);
   });
 
   it("CP-8: accepts a producer event, exposes the notification, marks it read and keeps settings mutable", async () => {
