@@ -7,9 +7,14 @@ import { resetMockMessages } from "../src/mocks/handlers";
 import { server } from "../src/mocks/server";
 import {
   DEFAULT_CONVERSATION_ID,
+  DEFAULT_ENDPOINT_ID,
   DEFAULT_ORGANIZATION_ID,
 } from "../src/platform/apiClient";
-import type { WebChatWebSocketLike } from "../src/types";
+import type {
+  C7WebSocketEvent,
+  WebChatMessage,
+  WebChatWebSocketLike,
+} from "../src/types";
 
 // Интеграционный сценарий CP-7 «Потеря соединения» (ТЗ §5.5, §7.9, §7.10):
 // виджет РФ идёт через Edge, при разрыве складывает реплики в буфер и
@@ -138,6 +143,46 @@ describe("Bridge Web Chat — устойчивость через Edge (CP-7)", 
       texts.indexOf("Второе сообщение"),
     );
   });
+
+  it("догоняет первый realtime gap относительно уже загруженной истории", async () => {
+    const sockets: FakeWebSocket[] = [];
+    const mountPoint = createMountPoint();
+    const first = createMessage("edge-message-1", 1, "История 1");
+    const second = createMessage("edge-message-2", 2, "История 2");
+    const missed = createMessage("edge-message-3", 3, "Буфер Edge 3", "manager");
+    const live = createMessage("edge-message-4", 4, "Буфер Edge 4", "manager");
+    resetMockMessages([first, second]);
+
+    await renderWebChatWidget(mountPoint, {
+      apiBaseUrl: "http://localhost/api/v1",
+      edgeBaseUrl: "http://edge.rf.local/api/v1",
+      conversationId: DEFAULT_CONVERSATION_ID,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      outboundQueueStorage: null,
+      webSocketFactory: createWebSocketFactory(sockets),
+    });
+
+    expect(await screen.findByText("История 1")).toBeInTheDocument();
+    expect(await screen.findByText("История 2")).toBeInTheDocument();
+
+    // Пока виджет держал историю до sequence=2, Edge восстановил буфер 3..4.
+    resetMockMessages([first, second, missed, live]);
+    await act(async () => {
+      sockets[0]?.open();
+      sockets[0]?.emit(createC7MessageCreatedEvent(live));
+      await wait(10);
+    });
+
+    expect(await screen.findByText("Буфер Edge 3")).toBeInTheDocument();
+    expect(await screen.findByText("Буфер Edge 4")).toBeInTheDocument();
+    expect(screen.getAllByText("Буфер Edge 4")).toHaveLength(1);
+    expect(messageTexts(mountPoint)).toEqual([
+      "История 1",
+      "История 2",
+      "Буфер Edge 3",
+      "Буфер Edge 4",
+    ]);
+  });
 });
 
 function createWebSocketFactory(sockets: FakeWebSocket[]) {
@@ -176,6 +221,10 @@ class FakeWebSocket implements WebChatWebSocketLike {
     this.onopen?.(undefined);
   }
 
+  emit(payload: unknown) {
+    this.onmessage?.({ data: JSON.stringify(payload) });
+  }
+
   send() {}
 }
 
@@ -183,4 +232,45 @@ function wait(ms: number) {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function createMessage(
+  id: string,
+  sequenceNumber: number,
+  text: string,
+  authorType: WebChatMessage["author"]["type"] = "visitor",
+): WebChatMessage {
+  return {
+    id,
+    conversationId: DEFAULT_CONVERSATION_ID,
+    endpointId: DEFAULT_ENDPOINT_ID,
+    organizationId: DEFAULT_ORGANIZATION_ID,
+    channel: "web_chat",
+    author: {
+      type: authorType,
+      displayName: authorType === "manager" ? "Менеджер" : "Посетитель",
+    },
+    body: {
+      type: "text",
+      text,
+    },
+    createdAt: `2026-07-04T12:0${sequenceNumber}:00.000Z`,
+    sequenceNumber,
+    status: authorType === "visitor" ? "delivered" : "sent",
+  };
+}
+
+function createC7MessageCreatedEvent(message: WebChatMessage): C7WebSocketEvent {
+  return {
+    contract: "C7.WebSocketEvent",
+    version: "1.0.0",
+    event: "message.created",
+    event_id: `edge-event-${message.sequenceNumber}`,
+    organization_id: message.organizationId,
+    sequence_number: message.sequenceNumber ?? 0,
+    occurred_at: message.createdAt,
+    payload: {
+      message,
+    },
+  };
 }

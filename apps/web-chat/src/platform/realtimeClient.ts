@@ -19,6 +19,7 @@ export type WebChatRealtimeReconnectState = {
 
 export type WebChatRealtimeClientOptions = {
   conversationId: string;
+  initialSequenceNumber?: number;
   organizationId: string;
   reconnectDelayMs?: number;
   url: string;
@@ -35,6 +36,7 @@ export type WebChatRealtimeClientOptions = {
 
 export function createWebChatRealtimeClient({
   conversationId,
+  initialSequenceNumber = 0,
   organizationId,
   reconnectDelayMs = 1_000,
   url,
@@ -49,7 +51,7 @@ export function createWebChatRealtimeClient({
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let socket: WebChatWebSocketLike | null = null;
   let lastEventId: string | null = null;
-  let lastSequenceNumber = 0;
+  let lastSequenceNumber = normalizeInitialSequenceNumber(initialSequenceNumber);
   let hasConnectedOnce = false;
   const observedEventIds = new Set<string>();
 
@@ -355,6 +357,10 @@ function safeNormalizeMessage(value: unknown) {
   } catch {
     return null;
   }
+}
+
+function normalizeInitialSequenceNumber(value: number): number {
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
 }
 
 function normalizeStatus(value: string | undefined): WebChatMessageStatus | undefined {
