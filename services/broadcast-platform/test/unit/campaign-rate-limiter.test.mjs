@@ -134,3 +134,50 @@ describe("SVC-BCAST M4 — учёт Capability каналов в лимите (C
     );
   });
 });
+
+describe("SVC-BCAST M5 — нагрузочный пробник rate limiter (ТЗ §25.11)", () => {
+  it("держит заданный каналом темп на крупной серии токенов и фиксирует измерения", async () => {
+    const clock = createControllableClock();
+    const limiter = createBroadcastRateLimiter({
+      now: clock.now,
+      sleep: async (ms) => clock.advance(ms),
+    });
+
+    const totalMessages = 1_000;
+    const messagesPerMinute = 120;
+    const burst = 20;
+
+    for (let index = 0; index < totalMessages; index += 1) {
+      await limiter.acquire("org-load:web_chat", {
+        messagesPerMinute,
+        burst,
+        maxWaitMs: 600_000,
+      });
+    }
+
+    const metrics = limiter.getMetrics();
+    const measurement = {
+      total_messages: totalMessages,
+      messages_per_minute: messagesPerMinute,
+      burst,
+      throttled_messages: totalMessages - burst,
+      virtual_wait_ms: clock.now(),
+      acquired_total: metrics.acquired_total,
+      throttled_total: metrics.throttled_total,
+      backpressure_waits_total: metrics.backpressure_waits_total,
+      backpressure_wait_ms_total: metrics.backpressure_wait_ms_total,
+    };
+
+    assert.deepEqual(measurement, {
+      total_messages: 1_000,
+      messages_per_minute: 120,
+      burst: 20,
+      throttled_messages: 980,
+      virtual_wait_ms: 490_000,
+      acquired_total: 1_000,
+      throttled_total: 980,
+      backpressure_waits_total: 980,
+      backpressure_wait_ms_total: 490_000,
+    });
+  });
+});
