@@ -30,8 +30,8 @@
       "base_path": "/api/v1",
       "openapi": {
         "artifact": "packages/contracts/openapi/backend-core/openapi.json",
-        "generated_operation_count": 49,
-        "generated_path_count": 42,
+        "generated_operation_count": 60,
+        "generated_path_count": 50,
         "metadata": {
           "x-contract-id": "C3",
           "x-owner": "SVC-API",
@@ -78,7 +78,9 @@
         "services/backend/src/modules/communication-core/communication-core.controller.ts",
         "services/backend/src/modules/ai-integration/ai-integration.controller.ts",
         "services/backend/src/modules/fbp-integration/fbp-integration.controller.ts",
-        "services/backend/src/modules/backend-api/backend-api.controller.ts"
+        "services/backend/src/modules/backend-api/backend-api.controller.ts",
+        "services/backend/src/modules/knowledge-base/knowledge-base.controller.ts",
+        "services/backend/src/modules/workflow/workflow.controller.ts"
       ],
       "evidence": [
         "services/backend/test/unit/openapi-decorators.spec.ts",
