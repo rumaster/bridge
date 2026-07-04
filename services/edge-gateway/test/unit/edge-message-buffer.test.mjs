@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  EdgeMessageBufferBackpressureError,
   EdgeMessageBufferError,
   createInMemoryEdgeMessageBufferStore,
 } from "../../src/edge-message-buffer.mjs";
@@ -114,6 +115,53 @@ describe("Edge message buffer store (RF-буфер §7.9/§7.14, CP-7)", () => {
 
     assert.deepEqual(pending.map((r) => r.idempotency_key), ["fresh"]);
     assert.deepEqual(expired.map((r) => r.idempotency_key), ["stale"]);
+  });
+
+  it("при исчерпании ёмкости сигнализирует backpressure и не подтверждает новую фиксацию", async () => {
+    const notifications = [];
+    const store = createInMemoryEdgeMessageBufferStore({
+      capacity: 2,
+      highWatermarkRatio: 0.5,
+      notify: (event) => notifications.push(event),
+    });
+
+    await store.enqueue(entry({ idempotency_key: "msg-1", sequence_number: 1 }));
+    await store.enqueue(entry({ idempotency_key: "msg-2", sequence_number: 2 }));
+
+    await assert.rejects(
+      () => store.enqueue(entry({ idempotency_key: "msg-3", sequence_number: 3 })),
+      EdgeMessageBufferBackpressureError,
+    );
+
+    assert.equal(await store.size(), 2, "переполненная запись не фиксируется в RF-буфере");
+    assert.equal(store.getMetrics().capacity_rejected_total, 1);
+    assert.equal(store.getMetrics().backpressure_total, 1);
+    assert.ok(
+      notifications.some((event) => event.type === "edge_buffer_capacity_high_watermark"),
+      "достижение high-watermark должно быть заметно мониторингу",
+    );
+    assert.ok(
+      notifications.some((event) => event.type === "edge_buffer_capacity_exhausted"),
+      "исчерпание ёмкости должно быть заметно мониторингу",
+    );
+  });
+
+  it("оповещает мониторинг о просроченных TTL записях как о RPO-границе буфера", async () => {
+    const notifications = [];
+    const store = createInMemoryEdgeMessageBufferStore({
+      notify: (event) => notifications.push(event),
+    });
+    await store.enqueue(entry({ idempotency_key: "fresh", sequence_number: 1, ttl: TWO_HOURS_LATER }));
+    await store.enqueue(entry({ idempotency_key: "stale", sequence_number: 2, ttl: HOUR_LATER }));
+
+    const expired = await store.listExpired({ now: "2026-07-04T11:30:00.000Z" });
+
+    assert.deepEqual(expired.map((r) => r.idempotency_key), ["stale"]);
+    assert.equal(store.getMetrics().expired_total, 1);
+    assert.deepEqual(
+      notifications.find((event) => event.type === "edge_buffer_ttl_expired")?.idempotency_keys,
+      ["stale"],
+    );
   });
 
   it("purgeForwarded удаляет только подтверждённые записи и освобождает (endpoint,seq)", async () => {

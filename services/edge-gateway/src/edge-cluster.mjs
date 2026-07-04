@@ -1,6 +1,9 @@
 import { createEdgeTunnelMessage } from "../../../packages/contracts/src/c9.mjs";
 
-import { createInMemoryEdgeMessageBufferStore } from "./edge-message-buffer.mjs";
+import {
+  EdgeMessageBufferBackpressureError,
+  createInMemoryEdgeMessageBufferStore,
+} from "./edge-message-buffer.mjs";
 import { createEdgeSequencer } from "./edge-sequencer.mjs";
 import { VpnTunnelBackpressureError, VpnTunnelChannelDownError } from "./vpn-tunnel.mjs";
 
@@ -54,7 +57,10 @@ export function createEdgeCluster({
     buffered_offline_total: 0,
     drained_total: 0,
     backpressure_total: 0,
+    buffer_backpressure_total: 0,
     channel_down_total: 0,
+    recovery_total: 0,
+    expired_skipped_total: 0,
   };
 
   function aadFor(record) {
@@ -67,6 +73,37 @@ export function createEdgeCluster({
 
   function ttlFrom(receivedAt) {
     return new Date(new Date(receivedAt).getTime() + bufferTtlMs).toISOString();
+  }
+
+  function getBufferCapacityPolicy() {
+    if (typeof bufferStore.getCapacityPolicy !== "function") {
+      return {
+        capacity: Number.POSITIVE_INFINITY,
+        highWatermark: Number.POSITIVE_INFINITY,
+        highWatermarkRatio: 0.8,
+      };
+    }
+    return bufferStore.getCapacityPolicy();
+  }
+
+  async function pendingCountAt(at) {
+    if (typeof bufferStore.pendingCount === "function") {
+      return bufferStore.pendingCount({ now: at });
+    }
+    return (await bufferStore.listPendingDrain({ now: at })).length;
+  }
+
+  function rtoMs(startedAt, completedAt) {
+    const started = Date.parse(startedAt);
+    const completed = Date.parse(completedAt);
+    if (Number.isNaN(started) || Number.isNaN(completed)) {
+      return 0;
+    }
+    return Math.max(0, completed - started);
+  }
+
+  function isTunnelConnected() {
+    return typeof tunnel.isConnected === "function" ? tunnel.isConnected() : true;
   }
 
   /** Пересылает C9-сообщение через туннель; возвращает {forwarded, ack, reason}. */
@@ -91,6 +128,63 @@ export function createEdgeCluster({
     }
   }
 
+  async function drainPending() {
+    const startedAt = now();
+    if (typeof tunnel.ensureConnected === "function") {
+      await tunnel.ensureConnected();
+    }
+
+    const expired =
+      typeof bufferStore.listExpired === "function"
+        ? await bufferStore.listExpired({ now: startedAt })
+        : [];
+    const pending = await bufferStore.listPendingDrain({ now: startedAt });
+    const forwarded = [];
+    let interruptedReason;
+
+    for (const record of pending) {
+      const payload = cipher.decrypt(record.payload_encrypted, { aad: aadFor(record) });
+      const result = await tryForward(payload);
+      if (!result.forwarded) {
+        // Канал снова недоступен/перегружен — оставляем остаток в буфере.
+        interruptedReason = result.reason;
+        break;
+      }
+      await bufferStore.markForwarded(record.idempotency_key, now());
+      metrics.drained_total += 1;
+      forwarded.push({
+        endpoint_id: record.endpoint_id,
+        sequence_number: record.sequence_number,
+        idempotency_key: record.idempotency_key,
+        ack: result.ack,
+      });
+    }
+
+    const completedAt = now();
+    const pendingAfter = await pendingCountAt(completedAt);
+    metrics.recovery_total += 1;
+    metrics.expired_skipped_total += expired.length;
+
+    return {
+      drained: forwarded.length,
+      forwarded,
+      reason: interruptedReason,
+      recovery: {
+        started_at: startedAt,
+        completed_at: completedAt,
+        rto_ms: rtoMs(startedAt, completedAt),
+        pending_before: pending.length,
+        pending_after: pendingAfter,
+        expired_skipped: expired.length,
+        rpo: {
+          capacity: getBufferCapacityPolicy().capacity,
+          ttl_ms: bufferTtlMs,
+          ttl_expired: expired.length,
+        },
+      },
+    };
+  }
+
   return {
     region,
 
@@ -111,6 +205,7 @@ export function createEdgeCluster({
       const endpointId = message.endpoint_id;
       const idempotencyKey = message.idempotency_key ?? message.id;
       const receivedAt = now();
+      const backlogBefore = await pendingCountAt(receivedAt);
 
       // §7.10 — присвоение sequence_number на входе Edge (ключ endpoint_id).
       const sequenceNumber = sequencer.assign(endpointId);
@@ -128,14 +223,22 @@ export function createEdgeCluster({
       // §7.9/§7.14 — шифруем payload и фиксируем в RF-контуре ДО пересылки.
       const payloadEncrypted = cipher.encrypt(payload, { aad });
 
-      const enqueueResult = await bufferStore.enqueue({
-        endpoint_id: endpointId,
-        sequence_number: sequenceNumber,
-        idempotency_key: idempotencyKey,
-        payload_encrypted: payloadEncrypted,
-        received_at: receivedAt,
-        ttl: ttlFrom(receivedAt),
-      });
+      let enqueueResult;
+      try {
+        enqueueResult = await bufferStore.enqueue({
+          endpoint_id: endpointId,
+          sequence_number: sequenceNumber,
+          idempotency_key: idempotencyKey,
+          payload_encrypted: payloadEncrypted,
+          received_at: receivedAt,
+          ttl: ttlFrom(receivedAt),
+        });
+      } catch (error) {
+        if (error instanceof EdgeMessageBufferBackpressureError) {
+          metrics.buffer_backpressure_total += 1;
+        }
+        throw error;
+      }
 
       metrics.ingested_total += 1;
 
@@ -154,6 +257,26 @@ export function createEdgeCluster({
       }
 
       metrics.fixed_in_rf_total += 1;
+
+      if (backlogBefore > 0 && isTunnelConnected()) {
+        const drainResult = await drainPending();
+        const currentForward = drainResult.forwarded.find(
+          (item) => item.idempotency_key === idempotencyKey,
+        );
+
+        return {
+          endpoint_id: endpointId,
+          idempotency_key: idempotencyKey,
+          sequence_number: sequenceNumber,
+          duplicate: false,
+          fixed_in_rf: true,
+          forwarded: Boolean(currentForward),
+          reason: currentForward ? undefined : drainResult.reason,
+          ack: currentForward?.ack,
+          auto_drained: drainResult.drained,
+          recovery: drainResult.recovery,
+        };
+      }
 
       const forwardResult = await tryForward(payload);
       if (forwardResult.forwarded) {
@@ -182,34 +305,11 @@ export function createEdgeCluster({
      * и финальный дедуп — на приёмнике (ядро, §7.10/§11.12).
      */
     async drain() {
-      if (typeof tunnel.ensureConnected === "function") {
-        await tunnel.ensureConnected();
-      }
-
-      const pending = await bufferStore.listPendingDrain({ now: now() });
-      const forwarded = [];
-      for (const record of pending) {
-        const payload = cipher.decrypt(record.payload_encrypted, { aad: aadFor(record) });
-        const result = await tryForward(payload);
-        if (!result.forwarded) {
-          // Канал снова недоступен/перегружен — оставляем остаток в буфере.
-          break;
-        }
-        await bufferStore.markForwarded(record.idempotency_key, now());
-        metrics.drained_total += 1;
-        forwarded.push({
-          endpoint_id: record.endpoint_id,
-          sequence_number: record.sequence_number,
-          idempotency_key: record.idempotency_key,
-          ack: result.ack,
-        });
-      }
-
-      return { drained: forwarded.length, forwarded };
+      return drainPending();
     },
 
     isConnected() {
-      return typeof tunnel.isConnected === "function" ? tunnel.isConnected() : true;
+      return isTunnelConnected();
     },
 
     async pendingCount() {
