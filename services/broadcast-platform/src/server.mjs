@@ -58,7 +58,7 @@ export function createBroadcastPlatformServer({
       if (request.method === "POST" && startMatch) {
         const broadcastId = decodeURIComponent(startMatch[1]);
         const payload = await readJson(request);
-        sendJson(response, 200, mockBroadcast.startBroadcast(broadcastId, payload));
+        sendJson(response, 200, await mockBroadcast.startBroadcast(broadcastId, payload));
         return;
       }
 

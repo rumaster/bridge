@@ -112,9 +112,16 @@ describe("Broadcast Platform C8 deterministic mock server", () => {
 
     assert.equal(startResponse.status, 200);
     assert.equal(started.contract, "C8.StartBroadcastResponse");
-    assert.equal(started.broadcast.status, "running");
+    // Кампания доставлена синхронно через единый механизм ядра (CP-6) — статус done.
+    assert.equal(started.broadcast.status, "done");
     assert.equal(started.core_delivery_draft.sender_type, "broadcast");
     assert.equal(started.core_delivery_draft.delivery_path, "C1/C2");
+    // Все получатели сегмента сформированы в отдельные C1-черновики.
+    assert.equal(started.core_delivery_drafts.length, 3);
+    // События C7 broadcast.state_changed на переходах running -> done.
+    assert.equal(started.state_changed_events.length, 2);
+    assert.equal(started.state_changed_events[0].status, "running");
+    assert.equal(started.state_changed_events[1].status, "done");
 
     const statsResponse = await fetch(
       `${baseUrl}/api/v1/broadcasts/broadcast-1/stats?organization_id=org-1`,
@@ -124,7 +131,9 @@ describe("Broadcast Platform C8 deterministic mock server", () => {
     assert.equal(statsResponse.status, 200);
     assert.equal(stats.contract, "C8.BroadcastStatsResponse");
     assert.equal(stats.broadcast_id, "broadcast-1");
-    assert.equal(stats.stats.prepared, 10);
-    assert.equal(stats.stats.sent, 4);
+    assert.equal(stats.status, "done");
+    assert.equal(stats.stats.prepared, 3);
+    assert.equal(stats.stats.sent, 3);
+    assert.equal(stats.stats.failed, 0);
   });
 });
