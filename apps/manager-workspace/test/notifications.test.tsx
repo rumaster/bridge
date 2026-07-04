@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 import { createMockManagerWorkspaceApiClient } from "../src/api/mocks/client";
 import { createMockC7RealtimeClient } from "../src/api/client/realtime";
 import { mockC7Events } from "../src/api/mocks/fixtures";
+import type { C7RealtimeClient } from "../src/api/client/realtime";
+import type { C7Event } from "../src/api/client/types";
 import type { ManagerWorkspaceServices } from "../src/state/workspace";
 import { createManagerWorkspaceRouter } from "../src/routing/router";
 
@@ -56,9 +58,10 @@ describe("Manager Workspace CP-8 центр уведомлений", () => {
   });
 
   it("увеличивает счётчик по realtime-событию C7 notification.created", async () => {
+    const notificationEvents = mockC7Events.filter((event) => event.event === "notification.created");
     const services: ManagerWorkspaceServices = {
       api: createMockManagerWorkspaceApiClient(),
-      realtime: createMockC7RealtimeClient(mockC7Events)
+      realtime: createDelayedRealtimeClient(notificationEvents, 120)
     };
     renderNotifications(services);
 
@@ -99,3 +102,31 @@ describe("Manager Workspace CP-8 центр уведомлений", () => {
     expect(badge).toHaveTextContent("1");
   });
 });
+
+function createDelayedRealtimeClient(events: C7Event[], delayMs: number): C7RealtimeClient {
+  return {
+    connect(onEvent, onStatus) {
+      let closed = false;
+      onStatus?.("connected");
+
+      const timers = events.map((event, index) =>
+        globalThis.setTimeout(() => {
+          if (!closed) {
+            onEvent(event);
+          }
+        }, delayMs + index * 10)
+      );
+
+      return {
+        close() {
+          closed = true;
+          timers.forEach((timer) => globalThis.clearTimeout(timer));
+          onStatus?.("offline");
+        }
+      };
+    },
+    async collectInitialEvents() {
+      return [...events];
+    }
+  };
+}
