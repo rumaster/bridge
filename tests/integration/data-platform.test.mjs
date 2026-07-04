@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { execFile } from "node:child_process";
+import { performance } from "node:perf_hooks";
 import { describe, it } from "node:test";
+import { promisify } from "node:util";
 
 import pg from "pg";
 import { GenericContainer, Wait } from "testcontainers";
@@ -16,6 +19,7 @@ import {
   TEST_EMBEDDING_DIMENSIONS,
 } from "../../packages/testing/src/db/factories.mjs";
 
+const execFileAsync = promisify(execFile);
 const POSTGRES_PORT = 5432;
 const POSTGRES_IMAGE = "pgvector/pgvector:pg16";
 const TEST_DB = {
@@ -23,6 +27,9 @@ const TEST_DB = {
   user: "bridge_test",
   password: "bridge_test",
 };
+const RESTORE_DB = "bridge_restore";
+const APP_BACKUP_FILE = "/tmp/bridge-app-m5.dump";
+const RF_BACKUP_FILE = "/tmp/bridge-rf-m5.dump";
 const EDGE_RF_TABLES = ["edge_message_buffer"];
 const EDGE_FIXTURES = {
   endpoint: "20000000-0000-4000-8000-000000000401",
@@ -313,6 +320,9 @@ async function assertDataPlatformSchema(client, { expectSeedData }) {
       SELECT to_regclass('public.conversations_organization_client_idx') AS conversations_organization_client_idx,
              to_regclass('public.messages_endpoint_sequence_number_idx') AS messages_endpoint_sequence_number_idx,
              to_regclass('public.knowledge_chunks_embedding_hnsw_idx') AS knowledge_chunks_embedding_hnsw_idx,
+             to_regclass('public.clients_anonymized_at_idx') AS clients_anonymized_at_idx,
+             to_regclass('public.communication_endpoints_client_channel_idx') AS communication_endpoints_client_channel_idx,
+             to_regclass('public.audit_events_object_lookup_idx') AS audit_events_object_lookup_idx,
              to_regclass('public.broadcast_messages_message_id_idx') AS broadcast_messages_message_id_idx,
              to_regclass('public.broadcast_recipients_status_idx') AS broadcast_recipients_status_idx,
              to_regclass('public.notifications_status_created_at_idx') AS notifications_status_created_at_idx,
@@ -331,6 +341,15 @@ async function assertDataPlatformSchema(client, { expectSeedData }) {
   assert.equal(
     indexes.rows[0].knowledge_chunks_embedding_hnsw_idx,
     "knowledge_chunks_embedding_hnsw_idx",
+  );
+  assert.equal(indexes.rows[0].clients_anonymized_at_idx, "clients_anonymized_at_idx");
+  assert.equal(
+    indexes.rows[0].communication_endpoints_client_channel_idx,
+    "communication_endpoints_client_channel_idx",
+  );
+  assert.equal(
+    indexes.rows[0].audit_events_object_lookup_idx,
+    "audit_events_object_lookup_idx",
   );
   assert.equal(
     indexes.rows[0].broadcast_messages_message_id_idx,
@@ -374,6 +393,18 @@ async function assertDataPlatformSchema(client, { expectSeedData }) {
   );
   assert.match(vectorIndex.rows[0].indexdef, /USING hnsw/);
   assert.match(vectorIndex.rows[0].indexdef, /vector_l2_ops/);
+
+  const functions = await client.query(
+    `
+      SELECT to_regprocedure(
+               'app.anonymize_client_personal_data(uuid,uuid,uuid,text,text)'
+             ) AS anonymize_client_personal_data
+    `,
+  );
+  assert.equal(
+    functions.rows[0].anonymize_client_personal_data,
+    "app.anonymize_client_personal_data(uuid,uuid,uuid,text,text)",
+  );
 
   const channelColumns = await client.query(
     `
@@ -439,6 +470,7 @@ async function assertDataPlatformSchemaDropped(client) {
       ${objectColumns},
       to_regprocedure('app.current_organization_id()') AS current_organization_id,
       to_regprocedure('app.is_platform_operator()') AS is_platform_operator,
+      to_regprocedure('app.anonymize_client_personal_data(uuid,uuid,uuid,text,text)') AS anonymize_client_personal_data,
       to_regprocedure('app.reject_append_only_mutation()') AS reject_append_only_mutation,
       to_regprocedure('app.record_configuration_history()') AS record_configuration_history
   `);
@@ -447,6 +479,7 @@ async function assertDataPlatformSchemaDropped(client) {
     ...Object.fromEntries(DATA_PLATFORM_TABLES.map((tableName) => [tableName, null])),
     current_organization_id: null,
     is_platform_operator: null,
+    anonymize_client_personal_data: null,
     reject_append_only_mutation: null,
     record_configuration_history: null,
   });
@@ -547,6 +580,19 @@ function connectionConfigFromAdmin(adminConfig, overrides = {}) {
 async function insertM1TenantSlice(client, organizationId) {
   const fixture = M1_FIXTURES[organizationId];
   const suffix = organizationId === ORG_A ? "a" : "b";
+  const person = organizationId === ORG_A
+    ? {
+      name: "Alice Example",
+      email: "alice@example.bridge.local",
+      phone: "+79000000001",
+      attachment: "passport-a.png",
+    }
+    : {
+      name: "Bob Example",
+      email: "bob@example.bridge.local",
+      phone: "+79000000002",
+      attachment: "passport-b.png",
+    };
 
   await client.query(
     `
@@ -680,7 +726,7 @@ async function insertM1TenantSlice(client, organizationId) {
   );
   await client.query(
     "INSERT INTO clients (id, organization_id, display_name) VALUES ($1, $2, $3)",
-    [fixture.client, organizationId, `Client ${suffix.toUpperCase()}`],
+    [fixture.client, organizationId, `${person.name} ${person.phone}`],
   );
   await client.query(
     "INSERT INTO client_notes (id, organization_id, client_id, author_user_id, body) VALUES ($1, $2, $3, $4, $5)",
@@ -689,7 +735,7 @@ async function insertM1TenantSlice(client, organizationId) {
       organizationId,
       fixture.client,
       fixture.user,
-      `Client note ${suffix.toUpperCase()}`,
+      `Client note ${suffix.toUpperCase()}: ${person.name}, ${person.email}, ${person.phone}`,
     ],
   );
   await client.query(
@@ -698,7 +744,7 @@ async function insertM1TenantSlice(client, organizationId) {
       fixture.clientTag,
       organizationId,
       fixture.client,
-      `segment-${suffix}`,
+      `segment-${suffix}-${person.name.toLowerCase().replace(" ", "-")}`,
       fixture.user,
     ],
   );
@@ -716,7 +762,7 @@ async function insertM1TenantSlice(client, organizationId) {
       )
       VALUES ($1, $2, $3, 'web_chat', $4, true, '2026-01-01T00:00:00.000Z', '{}'::jsonb)
     `,
-    [fixture.endpoint, organizationId, fixture.client, `web-chat-${suffix}`],
+    [fixture.endpoint, organizationId, fixture.client, `web-chat-${suffix}:${person.email}:${person.phone}`],
   );
   await client.query(
     "INSERT INTO conversations (id, organization_id, client_id, status, created_at) VALUES ($1, $2, $3, 'open', '2026-01-01T00:00:00.000Z')",
@@ -739,23 +785,31 @@ async function insertM1TenantSlice(client, organizationId) {
         created_at
       )
       VALUES
-        ($1, $2, $3, $4, 'web_chat', 'inbound', 'client', 1, 'text', '{"text":"first"}'::jsonb, 'received', '2026-01-01T00:00:01.000Z'),
-        ($5, $2, $3, $4, 'web_chat', 'outbound', 'manager', 2, 'text', '{"text":"second"}'::jsonb, 'sent', '2026-01-01T00:00:02.000Z')
+        ($1, $2, $3, $4, 'web_chat', 'inbound', 'client', 1, 'text', $5::jsonb, 'received', '2026-01-01T00:00:01.000Z'),
+        ($6, $2, $3, $4, 'web_chat', 'outbound', 'manager', 2, 'text', $7::jsonb, 'sent', '2026-01-01T00:00:02.000Z')
     `,
     [
       fixture.messageFirst,
       organizationId,
       fixture.conversation,
       fixture.endpoint,
+      JSON.stringify({ text: `first from ${person.name} ${person.email} ${person.phone}` }),
       fixture.messageSecond,
+      JSON.stringify({ text: `second to ${person.name}` }),
     ],
   );
   await client.query(
     `
       INSERT INTO attachments (id, organization_id, message_id, kind, storage_ref, mime, size, metadata)
-      VALUES ($1, $2, $3, 'image', 's3://bridge-test/m1.png', 'image/png', 128, '{}'::jsonb)
+      VALUES ($1, $2, $3, 'image', $4, 'image/png', 128, $5::jsonb)
     `,
-    [fixture.attachment, organizationId, fixture.messageFirst],
+    [
+      fixture.attachment,
+      organizationId,
+      fixture.messageFirst,
+      `s3://bridge-test/${person.attachment}`,
+      JSON.stringify({ original_file_name: person.attachment, email: person.email }),
+    ],
   );
   await client.query(
     `
@@ -766,11 +820,12 @@ async function insertM1TenantSlice(client, organizationId) {
         adapter,
         attempt_no,
         status,
+        error,
         created_at
       )
-      VALUES ($1, $2, $3, 'web_chat', 1, 'sent', '2026-01-01T00:00:03.000Z')
+      VALUES ($1, $2, $3, 'web_chat', 1, 'sent', $4, '2026-01-01T00:00:03.000Z')
     `,
-    [fixture.attempt, organizationId, fixture.messageSecond],
+    [fixture.attempt, organizationId, fixture.messageSecond, `delivery trace for ${person.email}`],
   );
 
   const vectorOffsets = organizationId === ORG_A
@@ -857,7 +912,12 @@ async function insertM1TenantSlice(client, organizationId) {
       fixture.client,
       fixture.endpoint,
       organizationId === ORG_A ? "manual" : "automatic",
-      JSON.stringify({ source: "integration-test", confidence: 1 }),
+      JSON.stringify({
+        source: "integration-test",
+        confidence: 1,
+        email: person.email,
+        phone: person.phone,
+      }),
       fixture.user,
     ],
   );
@@ -1284,7 +1344,7 @@ async function assertM1Invariants(client) {
           channel,
           external_id
         )
-        VALUES ($1, $2, $3, 'web_chat', 'web-chat-a')
+        VALUES ($1, $2, $3, 'web_chat', 'web-chat-a:alice@example.bridge.local:+79000000001')
       `,
       ["10000000-0000-4000-8000-000000000499", ORG_A, fixture.client],
     ),
@@ -1802,6 +1862,371 @@ async function assertM4Invariants(client) {
   );
 }
 
+async function assertM5Invariants(client) {
+  const fixture = M1_FIXTURES[ORG_A];
+
+  await client.query("DELETE FROM configurations WHERE id = $1", [fixture.config]);
+  const history = await client.query(
+    `
+      SELECT version, value
+      FROM configuration_history
+      WHERE organization_id = $1 AND config_key = 'core.routing'
+      ORDER BY version
+    `,
+    [ORG_A],
+  );
+  assert.deepEqual(
+    history.rows.map((row) => [row.version, row.value.mode, row.value.deleted === true]),
+    [
+      [1, "manual", false],
+      [2, "auto", false],
+      [3, "auto", true],
+    ],
+  );
+
+  await assert.rejects(
+    client.query(
+      `
+        INSERT INTO configurations (id, organization_id, key, value, version, updated_by)
+        VALUES ('10000000-0000-4000-8000-000000000998', $1, 'core.routing', '{"mode":"reset"}'::jsonb, 1, $2)
+      `,
+      [ORG_A, fixture.user],
+    ),
+    /configuration_history_organization_key_version_unique|duplicate key value/,
+  );
+
+  await assert.rejects(
+    client.query(
+      "SELECT * FROM app.anonymize_client_personal_data($1, $2, $3, $4, $5)",
+      [ORG_A, fixture.client, fixture.user, "request-with-pii", "bad reason with raw text"],
+    ),
+    /reason_code/,
+  );
+  await assert.rejects(
+    client.query(
+      "SELECT * FROM app.anonymize_client_personal_data($1, $2, $3, $4, $5)",
+      [ORG_A, fixture.client, fixture.user, "alice@example.bridge.local", "subject_erasure_request"],
+    ),
+    /request_id/,
+  );
+
+  const anonymized = await client.query(
+    "SELECT * FROM app.anonymize_client_personal_data($1, $2, $3, $4, $5)",
+    [ORG_A, fixture.client, fixture.user, "request-m5-anonymize-a", "subject_erasure_request"],
+  );
+  assert.equal(anonymized.rowCount, 1);
+  assert.equal(anonymized.rows[0].client_id, fixture.client);
+  assert.equal(anonymized.rows[0].endpoints, 1);
+  assert.equal(anonymized.rows[0].identity_links, 2);
+  assert.equal(anonymized.rows[0].messages, 3);
+  assert.equal(anonymized.rows[0].attachments, 1);
+  assert.equal(anonymized.rows[0].delivery_attempts, 1);
+  assert.equal(anonymized.rows[0].notes, 1);
+  assert.equal(anonymized.rows[0].tags, 1);
+
+  const clientRow = await client.query(
+    "SELECT display_name, anonymized_at IS NOT NULL AS anonymized FROM clients WHERE id = $1",
+    [fixture.client],
+  );
+  assert.deepEqual(clientRow.rows[0], {
+    display_name: null,
+    anonymized: true,
+  });
+
+  const endpoints = await client.query(
+    `
+      SELECT external_id, verified, verified_at, metadata
+      FROM communication_endpoints
+      WHERE client_id = $1
+    `,
+    [fixture.client],
+  );
+  assert.equal(endpoints.rows[0].external_id.startsWith("anonymous:"), true);
+  assert.equal(endpoints.rows[0].verified, false);
+  assert.equal(endpoints.rows[0].verified_at, null);
+  assert.equal(endpoints.rows[0].metadata.anonymized, true);
+
+  const messages = await client.query(
+    `
+      SELECT content
+      FROM messages
+      WHERE organization_id = $1 AND conversation_id = $2
+      ORDER BY sequence_number
+    `,
+    [ORG_A, fixture.conversation],
+  );
+  assert.deepEqual(
+    messages.rows.map((row) => row.content),
+    [
+      { anonymized: true },
+      { anonymized: true },
+      { anonymized: true },
+    ],
+  );
+
+  const attachment = await client.query(
+    "SELECT storage_ref, metadata FROM attachments WHERE id = $1",
+    [fixture.attachment],
+  );
+  assert.equal(attachment.rows[0].storage_ref.startsWith("anonymized://attachment/"), true);
+  assert.equal(attachment.rows[0].metadata.anonymized, true);
+
+  const deliveryAttempt = await client.query(
+    "SELECT error FROM message_delivery_attempts WHERE id = $1",
+    [fixture.attempt],
+  );
+  assert.equal(deliveryAttempt.rows[0].error, null);
+
+  const notes = await client.query("SELECT body FROM client_notes WHERE id = $1", [
+    fixture.clientNote,
+  ]);
+  assert.equal(notes.rows[0].body, "[anonymized]");
+
+  const tags = await client.query("SELECT tag FROM client_tags WHERE id = $1", [
+    fixture.clientTag,
+  ]);
+  assert.equal(tags.rows[0].tag.startsWith("anonymized:"), true);
+
+  const identityLinks = await client.query(
+    `
+      SELECT evidence, reverted_reason
+      FROM client_identity_links
+      WHERE organization_id = $1 AND client_id = $2
+      ORDER BY created_at
+    `,
+    [ORG_A, fixture.client],
+  );
+  assert.deepEqual(
+    identityLinks.rows.map((row) => [row.evidence, row.reverted_reason]),
+    [
+      [{ anonymized: true }, "anonymized"],
+      [{ anonymized: true }, null],
+    ],
+  );
+
+  const audit = await client.query(
+    `
+      SELECT actor_user_id, actor_type, action, object_type, object_id, result, request_id, metadata
+      FROM audit_events
+      WHERE id = $1
+    `,
+    [anonymized.rows[0].audit_event_id],
+  );
+  assert.deepEqual(audit.rows[0], {
+    actor_user_id: fixture.user,
+    actor_type: "user",
+    action: "client.anonymized",
+    object_type: "client",
+    object_id: fixture.client,
+    result: "success",
+    request_id: "request-m5-anonymize-a",
+    metadata: {
+      attachments: 1,
+      client_id: fixture.client,
+      delivery_attempts: 1,
+      endpoints: 1,
+      identity_links: 2,
+      messages: 3,
+      notes: 1,
+      reason_code: "subject_erasure_request",
+      tags: 1,
+    },
+  });
+
+  const orgBClient = await client.query("SELECT display_name FROM clients WHERE id = $1", [
+    M1_FIXTURES[ORG_B].client,
+  ]);
+  assert.match(orgBClient.rows[0].display_name, /Bob Example/);
+
+  const snapshot = JSON.stringify({
+    client: clientRow.rows,
+    endpoints: endpoints.rows,
+    messages: messages.rows,
+    attachment: attachment.rows,
+    deliveryAttempt: deliveryAttempt.rows,
+    notes: notes.rows,
+    tags: tags.rows,
+    identityLinks: identityLinks.rows,
+    audit: audit.rows,
+  });
+  for (const token of [
+    "Alice Example",
+    "alice@example.bridge.local",
+    "+79000000001",
+    "passport-a.png",
+    "segment-a-alice-example",
+    "web-chat-a:alice",
+  ]) {
+    assert.equal(snapshot.includes(token), false, `${token} must be erased`);
+  }
+}
+
+async function runDockerExec(container, args) {
+  return execFileAsync("docker", [
+    "exec",
+    "-e",
+    `PGPASSWORD=${TEST_DB.password}`,
+    container.getId(),
+    ...args,
+  ]);
+}
+
+async function recreateDatabase(container, databaseName) {
+  await withClient(connectionConfig(container, { database: "postgres" }), async (client) => {
+    await client.query(`DROP DATABASE IF EXISTS ${quoteIdentifier(databaseName)} WITH (FORCE)`);
+    await client.query(
+      `CREATE DATABASE ${quoteIdentifier(databaseName)} OWNER ${quoteIdentifier(TEST_DB.user)}`,
+    );
+  });
+}
+
+async function dropDatabase(container, databaseName) {
+  await withClient(connectionConfig(container, { database: "postgres" }), async (client) => {
+    await client.query(`DROP DATABASE IF EXISTS ${quoteIdentifier(databaseName)} WITH (FORCE)`);
+  });
+}
+
+async function readCriticalDataCounts(client) {
+  const counts = await client.query(`
+    SELECT
+      (SELECT count(*)::int FROM organizations) AS organizations,
+      (SELECT count(*)::int FROM clients) AS clients,
+      (SELECT count(*)::int FROM communication_endpoints) AS communication_endpoints,
+      (SELECT count(*)::int FROM conversations) AS conversations,
+      (SELECT count(*)::int FROM messages) AS messages,
+      (SELECT count(*)::int FROM configuration_history) AS configuration_history,
+      (SELECT count(*)::int FROM audit_events) AS audit_events,
+      (SELECT count(*)::int FROM outbox_events) AS outbox_events
+  `);
+
+  return counts.rows[0];
+}
+
+async function assertApplicationBackupRestore(container, sourceClient) {
+  const expectedCounts = await readCriticalDataCounts(sourceClient);
+
+  await recreateDatabase(container, RESTORE_DB);
+  try {
+    const backupStartedAt = performance.now();
+    await runDockerExec(container, [
+      "pg_dump",
+      "-U",
+      TEST_DB.user,
+      "-d",
+      TEST_DB.database,
+      "--format=custom",
+      "--file",
+      APP_BACKUP_FILE,
+      "--no-owner",
+      "--no-privileges",
+    ]);
+    const backupMs = performance.now() - backupStartedAt;
+
+    const restoreStartedAt = performance.now();
+    await runDockerExec(container, [
+      "pg_restore",
+      "-U",
+      TEST_DB.user,
+      "-d",
+      RESTORE_DB,
+      "--no-owner",
+      "--no-privileges",
+      APP_BACKUP_FILE,
+    ]);
+    const restoreMs = performance.now() - restoreStartedAt;
+
+    await withClient(connectionConfig(container, { database: RESTORE_DB }), async (restoreClient) => {
+      await assertDataPlatformSchema(restoreClient, { expectSeedData: true });
+      assert.deepEqual(await readCriticalDataCounts(restoreClient), expectedCounts);
+
+      const restoredClient = await restoreClient.query(
+        "SELECT display_name, anonymized_at IS NOT NULL AS anonymized FROM clients WHERE id = $1",
+        [M1_FIXTURES[ORG_A].client],
+      );
+      assert.deepEqual(restoredClient.rows[0], {
+        display_name: null,
+        anonymized: true,
+      });
+    });
+
+    assert.ok(backupMs + restoreMs < 300_000);
+    console.log(
+      JSON.stringify({
+        target: "app",
+        backupSeconds: Number((backupMs / 1000).toFixed(3)),
+        restoreSeconds: Number((restoreMs / 1000).toFixed(3)),
+      }),
+    );
+  } finally {
+    await runDockerExec(container, ["rm", "-f", APP_BACKUP_FILE]).catch(() => {});
+    await dropDatabase(container, RESTORE_DB);
+  }
+}
+
+async function readRfDataCounts(client) {
+  const counts = await client.query(`
+    SELECT
+      count(*)::int AS buffered_messages,
+      count(*) FILTER (WHERE forwarded_at IS NULL)::int AS pending_messages,
+      count(*) FILTER (WHERE forwarded_at IS NOT NULL)::int AS forwarded_messages
+    FROM edge_message_buffer
+  `);
+
+  return counts.rows[0];
+}
+
+async function assertRfBackupRestore(container, sourceClient) {
+  const expectedCounts = await readRfDataCounts(sourceClient);
+
+  await recreateDatabase(container, RESTORE_DB);
+  try {
+    const backupStartedAt = performance.now();
+    await runDockerExec(container, [
+      "pg_dump",
+      "-U",
+      TEST_DB.user,
+      "-d",
+      TEST_DB.database,
+      "--format=custom",
+      "--file",
+      RF_BACKUP_FILE,
+      "--no-owner",
+      "--no-privileges",
+    ]);
+    const backupMs = performance.now() - backupStartedAt;
+
+    const restoreStartedAt = performance.now();
+    await runDockerExec(container, [
+      "pg_restore",
+      "-U",
+      TEST_DB.user,
+      "-d",
+      RESTORE_DB,
+      "--no-owner",
+      "--no-privileges",
+      RF_BACKUP_FILE,
+    ]);
+    const restoreMs = performance.now() - restoreStartedAt;
+
+    await withClient(connectionConfig(container, { database: RESTORE_DB }), async (restoreClient) => {
+      await assertEdgeRfSchema(restoreClient);
+      assert.deepEqual(await readRfDataCounts(restoreClient), expectedCounts);
+    });
+
+    assert.ok(backupMs + restoreMs < 300_000);
+    console.log(
+      JSON.stringify({
+        target: "rf",
+        backupSeconds: Number((backupMs / 1000).toFixed(3)),
+        restoreSeconds: Number((restoreMs / 1000).toFixed(3)),
+      }),
+    );
+  } finally {
+    await runDockerExec(container, ["rm", "-f", RF_BACKUP_FILE]).catch(() => {});
+    await dropDatabase(container, RESTORE_DB);
+  }
+}
+
 async function assertWorkflowExecutionLogIsolation(adminConfig, adminClient) {
   const roleName = `wf_log_probe_${process.pid}`;
   const roleIdentifier = quoteIdentifier(roleName);
@@ -2133,7 +2558,7 @@ async function assertEdgeMessageBufferInvariants(client) {
   );
 }
 
-describe("SVC-DATA M4 migrations", { timeout: 300_000 }, () => {
+describe("SVC-DATA M5 migrations", { timeout: 300_000 }, () => {
   it("runs up, seeds deterministic data, enforces RLS, then runs down and up again", async () => {
     const container = await new GenericContainer(POSTGRES_IMAGE)
       .withEnvironment({
@@ -2161,6 +2586,8 @@ describe("SVC-DATA M4 migrations", { timeout: 300_000 }, () => {
         await assertWorkflowExecutionLogIsolation(adminConfig, client);
         await assertM3Invariants(client);
         await assertM4Invariants(client);
+        await assertM5Invariants(client);
+        await assertApplicationBackupRestore(container, client);
 
         await runMigrations({
           databaseUrl: adminConfig,
@@ -2195,6 +2622,7 @@ describe("SVC-DATA M4 migrations", { timeout: 300_000 }, () => {
         await runMigrations({ databaseUrl: adminConfig, direction: "up", target: "rf" });
         await assertEdgeRfSchema(client);
         await assertEdgeMessageBufferInvariants(client);
+        await assertRfBackupRestore(container, client);
 
         await runMigrations({
           databaseUrl: adminConfig,
