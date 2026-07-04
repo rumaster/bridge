@@ -10,7 +10,7 @@ import {
   UseGuards,
   Version,
 } from "@nestjs/common";
-import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiCreatedResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { Request } from "express";
 
 import { Roles } from "../../common/auth/roles.decorator";
@@ -46,6 +46,7 @@ export class FbpIntegrationController {
   @Version("1")
   @Roles("manager")
   @ApiOperation({ summary: "Start a Workflow instance (initiated by the Backend, degrades safely)" })
+  @ApiCreatedResponse({ description: "C5.StartWorkflowInstanceResponse" })
   startWorkflow(
     @Param("workflowId") workflowId: string,
     @Body() body: StartWorkflowRequestDto,

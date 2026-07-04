@@ -9,7 +9,7 @@ import {
   UseGuards,
   Version,
 } from "@nestjs/common";
-import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiCreatedResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 import type { Request } from "express";
 
 import { Roles } from "../../common/auth/roles.decorator";
@@ -49,6 +49,7 @@ export class AiIntegrationController {
   @Version("1")
   @Roles("manager")
   @ApiOperation({ summary: "Request an AI assistant suggestion (degrades to a safe fallback)" })
+  @ApiCreatedResponse({ description: "C4.AssistantSuggestResponse" })
   suggestAssistant(
     @Body() body: AiAssistantSuggestRequestDto,
     @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: HeaderValue,
@@ -73,6 +74,7 @@ export class AiIntegrationController {
   @Version("1")
   @Roles("administrator")
   @ApiOperation({ summary: "Generate a structured AI onboarding command (never auto-applied)" })
+  @ApiCreatedResponse({ description: "C4.OnboardingCommandResponse" })
   createOnboardingCommand(
     @Body() body: AiOnboardingCommandRequestDto,
     @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: HeaderValue,
