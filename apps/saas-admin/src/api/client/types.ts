@@ -70,13 +70,16 @@ export interface UpdateOrganizationRequest {
 
 export interface OrganizationConfiguration {
   organizationId: string;
+  key?: string;
   defaultLanguage: string;
   aiAssistantEnabled: boolean;
   workflowAutomationEnabled: boolean;
   monthlyMessageLimit: number;
   notificationEmail: string;
   retentionDays: number;
-  updatedAt: ISODateTime;
+  version?: number;
+  updatedBy?: string | null;
+  updatedAt: ISODateTime | null;
 }
 
 export interface UpdateOrganizationConfigurationRequest {

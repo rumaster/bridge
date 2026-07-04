@@ -73,6 +73,28 @@ describe("SaaS Administration M3 AI Onboarding (C4)", () => {
     });
   });
 
+  it("показывает заглушку, когда конфигурация загружена без месячного лимита", async () => {
+    const api = createMockSaasAdminApiClient();
+    vi.spyOn(api.org, "getConfiguration").mockResolvedValue({
+      organizationId: "org-demo",
+      aiAssistantEnabled: null,
+      workflowAutomationEnabled: undefined,
+      defaultLanguage: null,
+      monthlyMessageLimit: undefined,
+      notificationEmail: "admin@example.test",
+      retentionDays: 90,
+      updatedAt: "2026-07-03T09:12:00.000Z"
+    } as unknown as Awaited<ReturnType<typeof api.org.getConfiguration>>);
+
+    renderRoute("/onboarding", { api, realtime: createMockC7RealtimeClient([]) });
+
+    const configPanel = await screen.findByRole("complementary", { name: "Текущая конфигурация" });
+    const monthlyLimit = within(configPanel).getByText("Месячный лимит сообщений").closest("div");
+
+    expect(monthlyLimit).not.toBeNull();
+    expect(within(monthlyLimit as HTMLElement).getByText("—")).toBeInTheDocument();
+  });
+
   it("не применяет изменения, если администратор отклоняет команду", async () => {
     const api = createMockSaasAdminApiClient();
     const applyCommand = vi.spyOn(api.onboarding, "applyCommand");

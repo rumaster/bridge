@@ -121,15 +121,19 @@ describe("SVC-API M3 facades (C4/C5)", () => {
       .set("x-organization-id", ORG_A)
       .send({
         command: buildCommand("configuration.upsert", {
-          key: "organization.timezone",
-          value: { timezone: "Europe/Moscow" },
+          key: "organization.configuration",
+          value: { monthlyMessageLimit: 50000 },
         }),
       })
       .expect(201)
       .expect(({ body }) => {
+        expect(body.contract).toBe("C4.OnboardingApplyResponse");
         expect(body.applied).toBe(true);
+        expect(body.result.applied).toBe(true);
         expect(body.status).toBe("applied");
-        expect(body.detail.key).toBe("organization.timezone");
+        expect(body.detail.key).toBe("default");
+        expect(body.configuration.monthlyMessageLimit).toBe(50000);
+        expect(body.configuration.defaultLanguage).toBe("ru");
       });
 
     const audits = await auditRows(databaseUrl, "ai_onboarding.apply");

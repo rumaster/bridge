@@ -398,22 +398,22 @@ function OnboardingConfigurationPanel({
         <div>
           <dt>AI-ассистент</dt>
           <dd>
-            <Badge tone={configuration?.aiAssistantEnabled ? "success" : "neutral"}>
-              {configuration?.aiAssistantEnabled ? "Включен" : "Отключен"}
+            <Badge tone={configuration?.aiAssistantEnabled === true ? "success" : "neutral"}>
+              {enabledLabel(configuration?.aiAssistantEnabled, "Включен", "Отключен")}
             </Badge>
           </dd>
         </div>
         <div>
           <dt>Автоматизация Workflow</dt>
           <dd>
-            <Badge tone={configuration?.workflowAutomationEnabled ? "success" : "neutral"}>
-              {configuration?.workflowAutomationEnabled ? "Включена" : "Отключена"}
+            <Badge tone={configuration?.workflowAutomationEnabled === true ? "success" : "neutral"}>
+              {enabledLabel(configuration?.workflowAutomationEnabled, "Включена", "Отключена")}
             </Badge>
           </dd>
         </div>
         <div>
           <dt>Месячный лимит сообщений</dt>
-          <dd>{configuration ? configuration.monthlyMessageLimit.toLocaleString("ru-RU") : "—"}</dd>
+          <dd>{formatOptionalNumber(configuration?.monthlyMessageLimit)}</dd>
         </div>
         <div>
           <dt>Язык по умолчанию</dt>
@@ -422,6 +422,18 @@ function OnboardingConfigurationPanel({
       </dl>
     </Panel>
   );
+}
+
+function enabledLabel(value: boolean | null | undefined, enabled: string, disabled: string) {
+  if (value == null) {
+    return "—";
+  }
+
+  return value ? enabled : disabled;
+}
+
+function formatOptionalNumber(value: number | null | undefined) {
+  return typeof value === "number" ? value.toLocaleString("ru-RU") : "—";
 }
 
 function describeApplyResult(result: OnboardingApplyResult) {

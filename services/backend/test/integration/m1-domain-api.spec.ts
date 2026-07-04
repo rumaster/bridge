@@ -87,13 +87,34 @@ describe("SVC-API M1 domain API", () => {
       });
 
     await request(app.getHttpServer())
+      .get(`/api/v1/organizations/${ORG_A}/configuration`)
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.defaultLanguage).toBe("ru");
+        expect(body.aiAssistantEnabled).toBe(false);
+        expect(body.workflowAutomationEnabled).toBe(false);
+        expect(body.monthlyMessageLimit).toBe(10000);
+        expect(body.key).toBe("default");
+        expect(body.version).toBe(0);
+      });
+
+    await request(app.getHttpServer())
       .put(`/api/v1/organizations/${ORG_A}/configuration`)
       .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-actor-user-id", USER_A)
-      .send({ value: { ai: { enabled: true } } })
+      .send({
+        defaultLanguage: "ru",
+        aiAssistantEnabled: true,
+        workflowAutomationEnabled: true,
+        monthlyMessageLimit: 50000,
+        notificationEmail: "admin-a@example.bridge.local",
+        retentionDays: 90,
+      })
       .expect(200)
       .expect(({ body }) => {
-        expect(body.key).toBe("default");
+        expect(body.aiAssistantEnabled).toBe(true);
+        expect(body.monthlyMessageLimit).toBe(50000);
         expect(body.version).toBe(1);
       });
 
@@ -101,9 +122,18 @@ describe("SVC-API M1 domain API", () => {
       .put(`/api/v1/organizations/${ORG_A}/configuration`)
       .set("authorization", `Bearer ${USER_A_TOKEN}`)
       .set("x-actor-user-id", USER_A)
-      .send({ value: { ai: { enabled: false } } })
+      .send({
+        defaultLanguage: "ru",
+        aiAssistantEnabled: false,
+        workflowAutomationEnabled: true,
+        monthlyMessageLimit: 25000,
+        notificationEmail: "admin-a@example.bridge.local",
+        retentionDays: 90,
+      })
       .expect(200)
       .expect(({ body }) => {
+        expect(body.aiAssistantEnabled).toBe(false);
+        expect(body.monthlyMessageLimit).toBe(25000);
         expect(body.version).toBe(2);
       });
 
@@ -218,7 +248,10 @@ describe("SVC-API M1 domain API", () => {
 
     await withClient(databaseUrl, async (client) => {
       await setTenant(client, ORG_A);
-      const history = await client.query<{ value: { ai: { enabled: boolean } }; version: number }>(
+      const history = await client.query<{
+        value: { aiAssistantEnabled: boolean; monthlyMessageLimit: number };
+        version: number;
+      }>(
         `
           SELECT version, value
           FROM configuration_history
@@ -227,9 +260,13 @@ describe("SVC-API M1 domain API", () => {
         `,
         [ORG_A],
       );
-      expect(history.rows.map((row) => [row.version, row.value.ai.enabled])).toEqual([
-        [1, true],
-        [2, false],
+      expect(history.rows.map((row) => [
+        row.version,
+        row.value.aiAssistantEnabled,
+        row.value.monthlyMessageLimit,
+      ])).toEqual([
+        [1, true, 50000],
+        [2, false, 25000],
       ]);
 
       const audit = await client.query(

@@ -8,13 +8,21 @@ import { SessionAuthGuard } from "../../common/auth/session-auth.guard";
 import { getRequiredOrganizationId, ORGANIZATION_ID_HEADER } from "../../common/request-context";
 import type { HeaderValue } from "../../common/request-context";
 import type { RequestWithRequestId } from "../../common/request-id.middleware";
+import { ConfigurationService } from "../configuration/configuration.service";
+import { OrganizationService } from "../organization/organization.service";
 import { BackendApiNodeInvokeDto, OnboardingApplyDto } from "./backend-api.dto";
 import { WorkflowActionApplierService } from "./workflow-action-applier.service";
 import type { AppliedActionResult } from "./workflow-action-applier.service";
 
 interface AppliedActionResponse extends AppliedActionResult {
+  applied_at: string;
+  configuration: unknown;
+  contract: "C4.OnboardingApplyResponse";
+  organization: unknown;
   organization_id: string;
   request_id: string;
+  result: AppliedActionResult;
+  version: "1.0.0";
 }
 
 interface BackendApiNodeResponse extends AppliedActionResult {
@@ -41,7 +49,11 @@ interface BackendApiNodeResponse extends AppliedActionResult {
 @UseGuards(SessionAuthGuard, RolesGuard)
 @Controller()
 export class BackendApiController {
-  constructor(private readonly applier: WorkflowActionApplierService) {}
+  constructor(
+    private readonly applier: WorkflowActionApplierService,
+    private readonly configuration: ConfigurationService,
+    private readonly organizations: OrganizationService,
+  ) {}
 
   @Post("ai/onboarding\\:apply")
   @Version("1")
@@ -66,7 +78,22 @@ export class BackendApiController {
       requestId,
     });
 
-    return { ...result, organization_id: organizationId, request_id: requestId ?? "" };
+    const [organization, configuration] = await Promise.all([
+      this.organizations.getOrganization(organizationId),
+      this.configuration.getOrganizationConfiguration(organizationId),
+    ]);
+
+    return {
+      contract: "C4.OnboardingApplyResponse",
+      version: "1.0.0",
+      ...result,
+      applied_at: new Date().toISOString(),
+      configuration,
+      organization,
+      organization_id: organizationId,
+      request_id: requestId ?? "",
+      result,
+    };
   }
 
   @Post("workflows/backend-api-node\\:invoke")

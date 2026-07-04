@@ -3,7 +3,9 @@ import { validate } from "class-validator";
 
 import {
   DEFAULT_CONFIGURATION_KEY,
+  PutOrganizationConfigurationDto,
   PutConfigurationDto,
+  normalizeOrganizationConfigurationValue,
   nextConfigurationVersion,
 } from "../../src/modules/configuration/configuration.dto";
 import { CreateClientDto, mapClient } from "../../src/modules/client/client.dto";
@@ -26,6 +28,36 @@ describe("M1 domain DTO validators and mappers", () => {
     const errors = await validate(dto);
 
     expect(errors.some((error) => error.property === "value")).toBe(true);
+  });
+
+  it("requires explicit organization configuration fields", async () => {
+    const dto = plainToInstance(PutOrganizationConfigurationDto, {
+      defaultLanguage: "ru",
+      aiAssistantEnabled: true,
+      workflowAutomationEnabled: false,
+      notificationEmail: "admin@example.test",
+      retentionDays: 90,
+    });
+
+    const errors = await validate(dto);
+
+    expect(errors.some((error) => error.property === "monthlyMessageLimit")).toBe(true);
+  });
+
+  it("normalizes missing organization configuration fields to defaults", () => {
+    expect(
+      normalizeOrganizationConfigurationValue({
+        aiAssistantEnabled: true,
+        monthlyMessageLimit: null,
+      }),
+    ).toEqual({
+      aiAssistantEnabled: true,
+      defaultLanguage: "ru",
+      monthlyMessageLimit: 10000,
+      notificationEmail: "",
+      retentionDays: 90,
+      workflowAutomationEnabled: false,
+    });
   });
 
   it("maps client rows from PostgreSQL shape to API shape", () => {
