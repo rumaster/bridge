@@ -58,8 +58,19 @@ describe("SVC-API M5 OpenAPI contract", () => {
     expect(versionedExpressOperations(app)).toEqual(openApiOperations(generated));
   });
 
-  it("keeps only operational health and metrics aliases outside /api/v1", () => {
-    expect(unversionedExpressOperations(app)).toEqual(["GET /health", "GET /metrics"]);
+  it("keeps only operational aliases and internal service-to-service routes outside /api/v1", () => {
+    // GET /health, /metrics — операционные алиасы. POST /internal/* — внутренний
+    // messaging-путь (issue #189): integration-platform вызывает эти маршруты по
+    // фиксированным путям без префикса `api`/версии (CORE_INGRESS_URL и т.п.),
+    // поэтому они намеренно исключены из глобального префикса и не публикуются в
+    // backend-core OpenAPI (тесты byte-for-byte и versioned-routes это подтверждают).
+    expect(unversionedExpressOperations(app)).toEqual([
+      "GET /health",
+      "GET /metrics",
+      "POST /internal/delivery/attempts",
+      "POST /internal/egress/messages",
+      "POST /internal/ingress/messages",
+    ]);
   });
 
   it("documents C3 v1 compatibility and the no-breaking-change policy for CP-9", () => {

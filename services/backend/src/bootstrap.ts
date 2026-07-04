@@ -1,6 +1,6 @@
 import "reflect-metadata";
 
-import { VersioningType } from "@nestjs/common";
+import { RequestMethod, VersioningType } from "@nestjs/common";
 import type { LogLevel } from "@nestjs/common";
 import type { INestApplication } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
@@ -30,7 +30,17 @@ export function configureBackendApp(
   app: INestApplication,
   options: BackendAppOptions = {},
 ): void {
-  app.setGlobalPrefix("api");
+  // Внутренние service-to-service маршруты messaging-пути (issue #189) вызывает
+  // integration-platform по фиксированным путям без префикса `api` и без версии
+  // (CORE_INGRESS_URL=/internal/ingress/messages и т.п.), поэтому исключаем их
+  // из глобального префикса.
+  app.setGlobalPrefix("api", {
+    exclude: [
+      { path: "internal/ingress/messages", method: RequestMethod.POST },
+      { path: "internal/egress/messages", method: RequestMethod.POST },
+      { path: "internal/delivery/attempts", method: RequestMethod.POST },
+    ],
+  });
   app.enableVersioning({
     defaultVersion: "1",
     type: VersioningType.URI,

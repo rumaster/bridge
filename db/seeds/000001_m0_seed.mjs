@@ -70,16 +70,18 @@ export async function seed(client) {
           id,
           organization_id,
           telegram_username,
+          telegram_id,
           email,
           display_name,
           status,
           created_at,
           updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz, $8::timestamptz)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $9::timestamptz)
         ON CONFLICT (id) DO UPDATE SET
           organization_id = EXCLUDED.organization_id,
           telegram_username = EXCLUDED.telegram_username,
+          telegram_id = EXCLUDED.telegram_id,
           email = EXCLUDED.email,
           display_name = EXCLUDED.display_name,
           status = EXCLUDED.status,
@@ -89,6 +91,7 @@ export async function seed(client) {
         SEEDED_ADMIN_USER_SEED.id,
         SEEDED_ADMIN_USER_SEED.organization_id,
         SEEDED_ADMIN_USER_SEED.telegram_username,
+        SEEDED_ADMIN_USER_SEED.telegram_id,
         SEEDED_ADMIN_USER_SEED.email,
         SEEDED_ADMIN_USER_SEED.display_name,
         SEEDED_ADMIN_USER_SEED.status,

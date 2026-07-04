@@ -71,7 +71,17 @@ services:
     environment:
       PORT: ${BACKEND_PORT:-3000}
       DATABASE_URL: ${DATABASE_URL:-postgres://bridge:bridge@postgres:5432/bridge}
-      BRIDGE_AUTH_SECRET: ${BRIDGE_AUTH_SECRET:?укажите BRIDGE_AUTH_SECRET в .env, см. .env.example}
+      # Секрет хеширования сессий и одноразовых кодов входа. Backend читает
+      # AUTH_HASH_SECRET, поэтому пробрасываем сюда значение из BRIDGE_AUTH_SECRET
+      # (имя переменной в .env сохранено для обратной совместимости).
+      AUTH_HASH_SECRET: ${BRIDGE_AUTH_SECRET:?укажите BRIDGE_AUTH_SECRET в .env, см. .env.example}
+      # Токен Telegram-бота для доставки одноразовых кодов входа. Если пусто —
+      # код генерируется, но не отправляется (см. .env.example).
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-https://api.telegram.org}
+      # URL, по которому backend пересылает исходящие сообщения (C2.EgressDelivery)
+      # в integration-platform. Пусто — статус фиксируется только в БД (см. .env.example).
+      INTEGRATION_EGRESS_URL: ${INTEGRATION_EGRESS_URL:-http://integration-platform:3005/internal/egress/deliveries}
     ports:
       - "${BACKEND_PORT:-3000}:${BACKEND_PORT:-3000}"
     depends_on:

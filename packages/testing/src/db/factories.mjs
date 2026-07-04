@@ -77,6 +77,7 @@ export function createTestUser(overrides = {}) {
     id: randomUUID(),
     organization_id: randomUUID(),
     telegram_username: null,
+    telegram_id: null,
     email: "user@example.bridge.local",
     display_name: "Test User",
     status: "active",
