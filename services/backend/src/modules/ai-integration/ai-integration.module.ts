@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 
+import { AiDegradationGuard } from "./ai-degradation.guard";
 import { AiIntegrationController } from "./ai-integration.controller";
 import { AiIntegrationFacade } from "./ai-integration.facade";
 
@@ -7,11 +8,13 @@ import { AiIntegrationFacade } from "./ai-integration.facade";
   controllers: [AiIntegrationController],
   exports: [AiIntegrationFacade],
   providers: [
+    AiDegradationGuard,
     {
-      // The facade constructor takes a plain resilience-options object (not an
-      // injectable), so it is built via a factory rather than class autowiring.
+      // The facade remains manually constructible with plain options, so Nest
+      // receives the injectable guard through a factory.
       provide: AiIntegrationFacade,
-      useFactory: () => new AiIntegrationFacade(),
+      inject: [AiDegradationGuard],
+      useFactory: (guard: AiDegradationGuard) => new AiIntegrationFacade(guard),
     },
   ],
 })

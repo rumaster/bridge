@@ -30,6 +30,7 @@ import {
 } from "./message-status";
 import {
   buildC2EgressDelivery,
+  type CanonicalIngressMessage,
   normalizeDeliveryAttempt,
   normalizeEgressRequest,
   normalizeIngressEnvelope,
@@ -42,6 +43,17 @@ import type {
   IngressEnvelope,
   NormalizedIngress,
 } from "./internal-messaging.dto";
+import {
+  type BroadcastDeliveryDraft,
+  normalizeBroadcastDeliveryDraft,
+} from "./communication-core-m4.dto";
+import {
+  AdapterFailureCoordinator,
+  type AdapterDeliveryOutcome,
+  type AdapterFailureDeliveryResult,
+  CommunicationCoreLoadProbeService,
+} from "./communication-core-m5.service";
+import type { MessageStatus } from "./message-status";
 
 interface EndpointRow {
   id: string;
@@ -65,6 +77,17 @@ interface MessageRow {
   direction: string;
   type: string;
   content: Record<string, unknown>;
+  status: string;
+  sequence_number: string;
+}
+
+interface DeliveryAttemptRow {
+  attempt_no: number;
+  status: MessageStatus;
+  error: string | null;
+}
+
+interface BroadcastMessageRow {
   status: string;
 }
 
@@ -95,6 +118,8 @@ export interface EgressHandoffResult {
   adapter: string;
   attempt_no: number;
   forwarded: boolean;
+  degraded: boolean;
+  error: string | null;
   delivery: C2EgressDelivery;
   sent_at: string;
 }
@@ -110,6 +135,26 @@ export interface DeliveryAttemptResult {
   occurred_at: string;
 }
 
+export interface BroadcastDeliveryResult {
+  duplicate: boolean;
+  delivered: boolean;
+  degraded: boolean;
+  broadcast_id: string;
+  message_id: string;
+  conversation_id: string;
+  endpoint_id: string;
+  sequence_number: number;
+  status: string;
+  broadcast_message_status: string | null;
+  error: string | null;
+  forwarded: boolean;
+  attempts: Array<{
+    attempt_no: number;
+    status: string;
+    error: string | null;
+  }>;
+}
+
 @Injectable()
 export class InternalMessagingService {
   private readonly logger = new Logger(InternalMessagingService.name);
@@ -117,6 +162,8 @@ export class InternalMessagingService {
   constructor(
     private readonly database: PgDatabase,
     private readonly audit: AuditService,
+    private readonly adapterFailures: AdapterFailureCoordinator,
+    private readonly loadProbe: CommunicationCoreLoadProbeService,
   ) {}
 
   private now(): string {
@@ -128,111 +175,121 @@ export class InternalMessagingService {
    * в статусе `routed` и связывает с клиентом/endpoint-ом/диалогом. Порт
    * `acceptIngressMessage` + `recordInboundMessage` (Postgres-хранилище m1).
    */
-  async acceptIngress(payload: IngressEnvelope): Promise<IngressAcceptResult> {
-    const ingress = normalizeIngressEnvelope(payload, () => this.now());
-    // Валидируем переход received -> routed портированной машиной состояний C1
-    // до записи: сообщение сохраняется сразу в статусе routed, т.к. в схеме нет
-    // отдельных колонок routed_at/sent_at (см. миграцию m1_schema).
-    assertMessageStatusTransition(MESSAGE_STATUS.RECEIVED, MESSAGE_STATUS.ROUTED);
+  async acceptIngress(payload: IngressEnvelope | CanonicalIngressMessage): Promise<IngressAcceptResult> {
+    const finish = this.loadProbe.startTimer();
+    try {
+      const ingress = normalizeIngressEnvelope(payload, () => this.now());
+      // Валидируем переход received -> routed портированной машиной состояний C1
+      // до записи: сообщение сохраняется сразу в статусе routed, т.к. в схеме нет
+      // отдельных колонок routed_at/sent_at (см. миграцию m1_schema).
+      assertMessageStatusTransition(MESSAGE_STATUS.RECEIVED, MESSAGE_STATUS.ROUTED);
 
-    return this.database.withTenant(ingress.organizationId, async (client) => {
-      const existing = await this.findMessage(client, ingress.organizationId, ingress.message.id);
-      if (existing) {
-        return this.duplicateIngressResult(client, ingress, existing);
-      }
+      const result = await this.database.withTenant(ingress.organizationId, async (client) => {
+        const existing = await this.findMessage(client, ingress.organizationId, ingress.message.id);
+        if (existing) {
+          return this.duplicateIngressResult(client, ingress, existing);
+        }
 
-      const endpoint = await this.resolveEndpoint(client, ingress);
-      await this.lockEndpointPartition(client, ingress.organizationId, endpoint.id);
+        const endpoint = await this.resolveEndpoint(client, ingress);
+        await this.lockEndpointPartition(client, ingress.organizationId, endpoint.id);
 
-      const existingAfterLock = await this.findMessage(
-        client,
-        ingress.organizationId,
-        ingress.message.id,
-      );
-      if (existingAfterLock) {
-        return this.duplicateIngressResult(client, ingress, existingAfterLock);
-      }
-
-      const conversation = await this.resolveConversation(
-        client,
-        ingress.organizationId,
-        endpoint.client_id,
-        ingress.occurredAt,
-      );
-      const sequenceNumber =
-        ingress.message.sequenceNumber ??
-        (await this.nextSequenceNumber(client, ingress.organizationId, endpoint.id));
-
-      await client.query(
-        `
-          INSERT INTO messages (
-            id,
-            organization_id,
-            conversation_id,
-            endpoint_id,
-            channel,
-            direction,
-            sender_type,
-            sequence_number,
-            type,
-            content,
-            status,
-            created_at
-          )
-          VALUES ($1, $2, $3, $4, $5, 'inbound', 'client', $6, $7, $8::jsonb, 'routed', $9::timestamptz)
-        `,
-        [
-          ingress.message.id,
+        const existingAfterLock = await this.findMessage(
+          client,
           ingress.organizationId,
-          conversation.id,
-          endpoint.id,
-          endpoint.channel,
-          sequenceNumber,
-          ingress.message.type,
-          JSON.stringify(ingress.message.content),
+          ingress.message.id,
+        );
+        if (existingAfterLock) {
+          return this.duplicateIngressResult(client, ingress, existingAfterLock);
+        }
+
+        const conversation = await this.resolveConversation(
+          client,
+          ingress.organizationId,
+          endpoint.client_id,
           ingress.occurredAt,
-        ],
-      );
+          ingress.conversationId,
+        );
+        const sequenceNumber =
+          ingress.message.sequenceNumber ??
+          (await this.nextSequenceNumber(client, ingress.organizationId, endpoint.id));
 
-      await client.query(
-        `
-          UPDATE conversations
-          SET last_message_at = GREATEST($3::timestamptz, COALESCE(last_message_at, $3::timestamptz)),
-              updated_at = now()
-          WHERE organization_id = $1 AND id = $2
-        `,
-        [ingress.organizationId, conversation.id, ingress.occurredAt],
-      );
+        await client.query(
+          `
+            INSERT INTO messages (
+              id,
+              organization_id,
+              conversation_id,
+              endpoint_id,
+              channel,
+              direction,
+              sender_type,
+              sequence_number,
+              type,
+              content,
+              status,
+              created_at
+            )
+            VALUES ($1, $2, $3, $4, $5, 'inbound', 'client', $6, $7, $8::jsonb, 'routed', $9::timestamptz)
+          `,
+          [
+            ingress.message.id,
+            ingress.organizationId,
+            conversation.id,
+            endpoint.id,
+            endpoint.channel,
+            sequenceNumber,
+            ingress.message.type,
+            JSON.stringify(ingress.message.content),
+            ingress.occurredAt,
+          ],
+        );
 
-      await this.audit.record(client, {
-        action: "message.ingress",
-        actorType: "system",
-        metadata: {
-          adapter: ingress.channel,
-          idempotencyKey: ingress.idempotencyKey,
-          sequenceNumber,
-        },
-        objectId: ingress.message.id,
-        objectType: "message",
-        organizationId: ingress.organizationId,
+        await client.query(
+          `
+            UPDATE conversations
+            SET last_message_at = GREATEST($3::timestamptz, COALESCE(last_message_at, $3::timestamptz)),
+                updated_at = now()
+            WHERE organization_id = $1 AND id = $2
+          `,
+          [ingress.organizationId, conversation.id, ingress.occurredAt],
+        );
+
+        await this.audit.record(client, {
+          action: "message.ingress",
+          actorType: "system",
+          metadata: {
+            adapter: ingress.channel,
+            idempotencyKey: ingress.idempotencyKey,
+            sequenceNumber,
+          },
+          objectId: ingress.message.id,
+          objectType: "message",
+          organizationId: ingress.organizationId,
+        });
+
+        return {
+          accepted: true,
+          duplicate: false,
+          message_id: ingress.message.id,
+          idempotency_key: ingress.idempotencyKey,
+          organization_id: ingress.organizationId,
+          client_id: endpoint.client_id,
+          conversation_id: conversation.id,
+          endpoint_id: endpoint.id,
+          sequence_number: sequenceNumber,
+          status: MESSAGE_STATUS.ROUTED,
+          routed_to: "manager",
+          received_at: ingress.occurredAt,
+          routed_at: ingress.routedAt,
+        };
       });
+      this.loadProbe.recordIngress(result, finish());
 
-      return {
-        accepted: true,
-        duplicate: false,
-        message_id: ingress.message.id,
-        idempotency_key: ingress.idempotencyKey,
-        organization_id: ingress.organizationId,
-        client_id: endpoint.client_id,
-        conversation_id: conversation.id,
-        endpoint_id: endpoint.id,
-        sequence_number: sequenceNumber,
-        status: MESSAGE_STATUS.ROUTED,
-        routed_to: "manager",
-        received_at: ingress.occurredAt,
-        routed_at: ingress.routedAt,
-      };
-    });
+      return result;
+    } catch (error) {
+      this.loadProbe.recordIngressFailure(finish());
+      throw error;
+    }
   }
 
   /**
@@ -277,49 +334,29 @@ export class InternalMessagingService {
         },
       );
 
-      const attemptNo = await this.nextAttemptNo(
-        client,
-        request.organizationId,
-        message.id,
-        request.adapter,
-      );
       const occurredAt = this.now();
-
-      await client.query(
-        `
-          INSERT INTO message_delivery_attempts (
-            id, organization_id, message_id, adapter, attempt_no, status, created_at
-          )
-          VALUES ($1, $2, $3, $4, $5, 'sent', $6::timestamptz)
-        `,
-        [randomUUID(), request.organizationId, message.id, request.adapter, attemptNo, occurredAt],
-      );
-      await client.query(
-        `UPDATE messages SET status = 'sent' WHERE organization_id = $1 AND id = $2`,
-        [request.organizationId, message.id],
-      );
-      await this.audit.record(client, {
-        action: "message.egress",
-        actorType: "system",
-        metadata: { adapter: request.adapter, attemptNo },
-        objectId: message.id,
-        objectType: "message",
+      const deliveryResult = await this.deliverWithAdapterFailure(client, {
+        adapter: request.adapter,
+        delivery,
+        maxAttempts: request.maxAttempts,
+        message,
         organizationId: request.organizationId,
+        timeoutMs: request.timeoutMs,
       });
 
-      const forwarded = await this.forwardEgressDelivery(delivery);
-
       return {
-        accepted: true,
+        accepted: deliveryResult.accepted,
         message_id: message.id,
         organization_id: request.organizationId,
         conversation_id: message.conversation_id,
         endpoint_id: message.endpoint_id,
         channel: message.channel,
-        status: MESSAGE_STATUS.SENT,
+        status: deliveryResult.status,
         adapter: request.adapter,
-        attempt_no: attemptNo,
-        forwarded,
+        attempt_no: deliveryResult.attempt_count,
+        forwarded: deliveryResult.forwarded,
+        degraded: deliveryResult.degraded,
+        error: deliveryResult.error,
         delivery,
         sent_at: occurredAt,
       };
@@ -410,14 +447,223 @@ export class InternalMessagingService {
   }
 
   /**
-   * Пересылает конверт C2.EgressDelivery в integration-platform, если задан
-   * `INTEGRATION_EGRESS_URL`. Без URL пересылка отключена (статус фиксируется
-   * только в БД) — это осознанная деградация, см. .env.example.
+   * C8 Broadcast Delivery Coordinator: SVC-BCAST передаёт канонический C1
+   * outbound draft, а CORE фиксирует связь broadcast_messages -> messages и
+   * доставляет через тот же C2 egress/adapter-failure путь.
    */
-  private async forwardEgressDelivery(delivery: C2EgressDelivery): Promise<boolean> {
+  async deliverBroadcast(payload: BroadcastDeliveryDraft): Promise<BroadcastDeliveryResult> {
+    const draft = normalizeBroadcastDeliveryDraft(payload);
+
+    return this.database.withTenant(draft.organizationId, async (client) => {
+      const existing = await this.findMessage(client, draft.organizationId, draft.message.id);
+      if (existing) {
+        const link = await this.findBroadcastMessage(
+          client,
+          draft.organizationId,
+          draft.broadcastId,
+          draft.message.id,
+        );
+
+        return {
+          duplicate: true,
+          delivered: existing.status === MESSAGE_STATUS.SENT,
+          degraded: false,
+          broadcast_id: draft.broadcastId,
+          message_id: existing.id,
+          conversation_id: existing.conversation_id,
+          endpoint_id: existing.endpoint_id,
+          sequence_number: Number(existing.sequence_number),
+          status: existing.status,
+          broadcast_message_status: link?.status ?? null,
+          error: null,
+          forwarded: false,
+          attempts: [],
+        };
+      }
+
+      const conversation = await this.requireConversationById(
+        client,
+        draft.organizationId,
+        draft.message.conversation_id,
+      );
+      const endpoint = await this.requireEndpointById(
+        client,
+        draft.organizationId,
+        draft.message.endpoint_id,
+      );
+      await this.ensureBroadcast(client, {
+        broadcastId: draft.broadcastId,
+        name: draft.broadcastName,
+        occurredAt: draft.message.created_at,
+        organizationId: draft.organizationId,
+      });
+      await this.lockEndpointPartition(client, draft.organizationId, endpoint.id);
+
+      const existingAfterLock = await this.findMessage(client, draft.organizationId, draft.message.id);
+      if (existingAfterLock) {
+        const link = await this.findBroadcastMessage(
+          client,
+          draft.organizationId,
+          draft.broadcastId,
+          draft.message.id,
+        );
+
+        return {
+          duplicate: true,
+          delivered: existingAfterLock.status === MESSAGE_STATUS.SENT,
+          degraded: false,
+          broadcast_id: draft.broadcastId,
+          message_id: existingAfterLock.id,
+          conversation_id: existingAfterLock.conversation_id,
+          endpoint_id: existingAfterLock.endpoint_id,
+          sequence_number: Number(existingAfterLock.sequence_number),
+          status: existingAfterLock.status,
+          broadcast_message_status: link?.status ?? null,
+          error: null,
+          forwarded: false,
+          attempts: [],
+        };
+      }
+
+      const sequenceNumber = await this.nextSequenceNumber(client, draft.organizationId, endpoint.id);
+      await client.query(
+        `
+          INSERT INTO messages (
+            id,
+            organization_id,
+            conversation_id,
+            endpoint_id,
+            channel,
+            direction,
+            sender_type,
+            sequence_number,
+            type,
+            content,
+            status,
+            created_at
+          )
+          VALUES ($1, $2, $3, $4, $5, 'outbound', 'broadcast', $6, $7, $8::jsonb, 'routed', $9::timestamptz)
+        `,
+        [
+          draft.message.id,
+          draft.organizationId,
+          conversation.id,
+          endpoint.id,
+          endpoint.channel,
+          sequenceNumber,
+          draft.message.type,
+          JSON.stringify(draft.message.content),
+          draft.message.created_at,
+        ],
+      );
+      await client.query(
+        `
+          UPDATE conversations
+          SET last_message_at = GREATEST($3::timestamptz, COALESCE(last_message_at, $3::timestamptz)),
+              updated_at = now()
+          WHERE organization_id = $1 AND id = $2
+        `,
+        [draft.organizationId, conversation.id, draft.message.created_at],
+      );
+
+      await client.query(
+        `
+          INSERT INTO broadcast_messages (
+            id,
+            organization_id,
+            broadcast_id,
+            message_id,
+            status,
+            created_at,
+            updated_at
+          )
+          VALUES ($1, $2, $3, $4, 'prepared', $5::timestamptz, $5::timestamptz)
+          ON CONFLICT (organization_id, broadcast_id, message_id) DO NOTHING
+        `,
+        [
+          uuidFromText(
+            `${draft.organizationId}:broadcast_message:${draft.broadcastId}:${draft.message.id}`,
+          ),
+          draft.organizationId,
+          draft.broadcastId,
+          draft.message.id,
+          draft.message.created_at,
+        ],
+      );
+
+      const message = await this.requireMessage(client, draft.organizationId, draft.message.id);
+      const delivery = buildC2EgressDelivery(
+        {
+          id: message.id,
+          organization_id: message.organization_id,
+          conversation_id: message.conversation_id,
+          channel: message.channel,
+          type: message.type,
+          content: message.content,
+        },
+        {
+          channel: endpoint.channel,
+          external_id: endpoint.external_id,
+          metadata: endpoint.metadata,
+        },
+      );
+      const deliveryResult = await this.deliverWithAdapterFailure(client, {
+        adapter: "broadcast",
+        delivery,
+        maxAttempts: null,
+        message,
+        organizationId: draft.organizationId,
+        timeoutMs: null,
+      });
+      const broadcastMessageStatus =
+        deliveryResult.status === MESSAGE_STATUS.SENT ? "sent" : "failed";
+      const link = await this.updateBroadcastMessageStatus(client, {
+        broadcastId: draft.broadcastId,
+        messageId: message.id,
+        occurredAt: this.now(),
+        organizationId: draft.organizationId,
+        status: broadcastMessageStatus,
+      });
+
+      await this.audit.record(client, {
+        action: "message.broadcast_delivery",
+        actorType: "system",
+        metadata: {
+          broadcastId: draft.broadcastId,
+          deliveryStatus: deliveryResult.status,
+        },
+        objectId: message.id,
+        objectType: "message",
+        organizationId: draft.organizationId,
+      });
+
+      return {
+        duplicate: false,
+        delivered: deliveryResult.status === MESSAGE_STATUS.SENT,
+        degraded: deliveryResult.degraded,
+        broadcast_id: draft.broadcastId,
+        message_id: message.id,
+        conversation_id: conversation.id,
+        endpoint_id: endpoint.id,
+        sequence_number: sequenceNumber,
+        status: deliveryResult.status,
+        broadcast_message_status: link.status,
+        error: deliveryResult.error,
+        forwarded: deliveryResult.forwarded,
+        attempts: deliveryResult.attempts,
+      };
+    });
+  }
+
+  /**
+   * Пересылает конверт C2.EgressDelivery в integration-platform, если задан
+   * `INTEGRATION_EGRESS_URL`. Без URL пересылка отключена, а доставка
+   * принимается локально: статус фиксируется только в БД для dev/test-режима.
+   */
+  private async forwardEgressDelivery(delivery: C2EgressDelivery): Promise<AdapterDeliveryOutcome> {
     const url = process.env.INTEGRATION_EGRESS_URL;
     if (!url || url.trim() === "") {
-      return false;
+      return { accepted: true, error: null, forwarded: false };
     }
 
     try {
@@ -430,22 +676,160 @@ export class InternalMessagingService {
         this.logger.warn(
           `integration-platform отклонил egress-доставку HTTP ${response.status} (${delivery.idempotency_key})`,
         );
-        return false;
+        return {
+          accepted: false,
+          error: `integration-platform returned HTTP ${response.status}`,
+          forwarded: false,
+        };
       }
 
-      return true;
+      return { accepted: true, error: null, forwarded: true };
     } catch (error) {
       this.logger.warn(
         `Не удалось переслать egress-доставку в integration-platform: ${String(error)}`,
       );
-      return false;
+      return {
+        accepted: false,
+        error: error instanceof Error ? error.message : String(error),
+        forwarded: false,
+      };
     }
+  }
+
+  private async deliverWithAdapterFailure(
+    client: PoolClient,
+    {
+      adapter,
+      delivery,
+      maxAttempts,
+      message,
+      organizationId,
+      timeoutMs,
+    }: {
+      adapter: string;
+      delivery: C2EgressDelivery;
+      maxAttempts?: number | null;
+      message: MessageRow;
+      organizationId: string;
+      timeoutMs?: number | null;
+    },
+  ): Promise<AdapterFailureDeliveryResult> {
+    const firstAttemptNo = await this.nextAttemptNo(client, organizationId, message.id, adapter);
+
+    return this.adapterFailures.deliver({
+      callAdapter: () => this.forwardEgressDelivery(delivery),
+      maxAttempts,
+      timeoutMs,
+      recordAttempt: async ({ attemptNo, final, status, error }) => {
+        const absoluteAttemptNo = firstAttemptNo + attemptNo - 1;
+        const occurredAt = this.now();
+        const deliveryAttempt = await this.insertDeliveryAttempt(client, {
+          adapter,
+          attemptNo: absoluteAttemptNo,
+          error,
+          messageId: message.id,
+          occurredAt,
+          organizationId,
+          status,
+        });
+
+        let messageStatus = message.status as MessageStatus;
+        if (final) {
+          if (messageStatus !== status) {
+            assertMessageStatusTransition(messageStatus, status);
+            messageStatus = status;
+            await client.query(
+              `UPDATE messages SET status = $3 WHERE organization_id = $1 AND id = $2`,
+              [organizationId, message.id, messageStatus],
+            );
+          }
+          message.status = messageStatus;
+
+          await this.audit.record(client, {
+            action: "message.egress",
+            actorType: "system",
+            metadata: {
+              adapter,
+              attemptNo: absoluteAttemptNo,
+              attemptStatus: status,
+              error,
+              forwarded: deliveryAttempt.status === MESSAGE_STATUS.SENT,
+            },
+            objectId: message.id,
+            objectType: "message",
+            organizationId,
+          });
+        }
+
+        return {
+          attempt_no: deliveryAttempt.attempt_no,
+          status: deliveryAttempt.status,
+          error: deliveryAttempt.error,
+          messageStatus,
+        };
+      },
+    });
+  }
+
+  private async insertDeliveryAttempt(
+    queryable: Queryable,
+    {
+      adapter,
+      attemptNo,
+      error,
+      messageId,
+      occurredAt,
+      organizationId,
+      status,
+    }: {
+      adapter: string;
+      attemptNo: number;
+      error: string | null;
+      messageId: string;
+      occurredAt: string;
+      organizationId: string;
+      status: MessageStatus;
+    },
+  ): Promise<DeliveryAttemptRow> {
+    const attemptId = uuidFromText(
+      `${organizationId}:delivery_attempt:${messageId}:${adapter}:${attemptNo}`,
+    );
+    const result = await queryable.query<DeliveryAttemptRow>(
+      `
+        INSERT INTO message_delivery_attempts (
+          id, organization_id, message_id, adapter, attempt_no, status, error, created_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz)
+        ON CONFLICT (message_id, adapter, attempt_no) DO UPDATE SET
+          status = EXCLUDED.status,
+          error = EXCLUDED.error
+        RETURNING attempt_no, status, error
+      `,
+      [attemptId, organizationId, messageId, adapter, attemptNo, status, error, occurredAt],
+    );
+
+    return result.rows[0];
   }
 
   private async resolveEndpoint(
     client: PoolClient,
     ingress: NormalizedIngress,
   ): Promise<EndpointRow> {
+    if (ingress.endpointId) {
+      const byId = await client.query<EndpointRow>(
+        `
+          SELECT id, client_id, channel, external_id, metadata
+          FROM communication_endpoints
+          WHERE organization_id = $1 AND id = $2
+          LIMIT 1
+        `,
+        [ingress.organizationId, ingress.endpointId],
+      );
+      if (byId.rowCount && byId.rowCount > 0) {
+        return byId.rows[0];
+      }
+    }
+
     const existing = await client.query<EndpointRow>(
       `
         SELECT id, client_id, channel, external_id, metadata
@@ -459,12 +843,16 @@ export class InternalMessagingService {
       return existing.rows[0];
     }
 
-    const clientId = uuidFromText(
-      `${ingress.organizationId}:client:${ingress.channel}:${ingress.endpointExternalId}`,
-    );
-    const endpointId = uuidFromText(
-      `${ingress.organizationId}:endpoint:${ingress.channel}:${ingress.endpointExternalId}`,
-    );
+    const clientId =
+      ingress.clientId ??
+      uuidFromText(
+        `${ingress.organizationId}:client:${ingress.channel}:${ingress.endpointExternalId}`,
+      );
+    const endpointId =
+      ingress.endpointId ??
+      uuidFromText(
+        `${ingress.organizationId}:endpoint:${ingress.channel}:${ingress.endpointExternalId}`,
+      );
 
     await client.query(
       `
@@ -509,7 +897,23 @@ export class InternalMessagingService {
     organizationId: string,
     clientId: string,
     occurredAt: string,
+    requestedConversationId?: string | null,
   ): Promise<ConversationRow> {
+    if (requestedConversationId) {
+      const requested = await client.query<ConversationRow>(
+        `
+          SELECT id, client_id
+          FROM conversations
+          WHERE organization_id = $1 AND id = $2
+          FOR UPDATE
+        `,
+        [organizationId, requestedConversationId],
+      );
+      if (requested.rowCount && requested.rowCount > 0) {
+        return requested.rows[0];
+      }
+    }
+
     const open = await client.query<ConversationRow>(
       `
         SELECT id, client_id
@@ -531,7 +935,7 @@ export class InternalMessagingService {
         VALUES ($1, $2, $3, 'open', $4::timestamptz, $4::timestamptz)
         RETURNING id, client_id
       `,
-      [randomUUID(), organizationId, clientId, occurredAt],
+      [requestedConversationId ?? randomUUID(), organizationId, clientId, occurredAt],
     );
 
     return created.rows[0];
@@ -544,7 +948,17 @@ export class InternalMessagingService {
   ): Promise<MessageRow | null> {
     const result = await queryable.query<MessageRow>(
       `
-        SELECT id, organization_id, conversation_id, endpoint_id, channel, direction, type, content, status
+        SELECT
+          id,
+          organization_id,
+          conversation_id,
+          endpoint_id,
+          channel,
+          direction,
+          type,
+          content,
+          status,
+          sequence_number
         FROM messages
         WHERE organization_id = $1 AND id = $2
       `,
@@ -589,6 +1003,112 @@ export class InternalMessagingService {
         code: "RESOURCE_NOT_FOUND",
         description: `communication endpoint ${endpointId} was not found`,
         humanMessage: "Endpoint не найден.",
+      });
+    }
+
+    return result.rows[0];
+  }
+
+  private async requireConversationById(
+    queryable: Queryable,
+    organizationId: string,
+    conversationId: string,
+  ): Promise<ConversationRow> {
+    const result = await queryable.query<ConversationRow>(
+      `
+        SELECT id, client_id
+        FROM conversations
+        WHERE organization_id = $1 AND id = $2
+      `,
+      [organizationId, conversationId],
+    );
+    if (result.rowCount === 0) {
+      throw new NotFoundException({
+        code: "RESOURCE_NOT_FOUND",
+        description: `conversation ${conversationId} was not found`,
+        humanMessage: "Диалог не найден.",
+      });
+    }
+
+    return result.rows[0];
+  }
+
+  private async findBroadcastMessage(
+    queryable: Queryable,
+    organizationId: string,
+    broadcastId: string,
+    messageId: string,
+  ): Promise<BroadcastMessageRow | null> {
+    const result = await queryable.query<BroadcastMessageRow>(
+      `
+        SELECT status
+        FROM broadcast_messages
+        WHERE organization_id = $1 AND broadcast_id = $2 AND message_id = $3
+      `,
+      [organizationId, broadcastId, messageId],
+    );
+
+    return result.rowCount && result.rowCount > 0 ? result.rows[0] : null;
+  }
+
+  private async ensureBroadcast(
+    queryable: Queryable,
+    {
+      broadcastId,
+      name,
+      occurredAt,
+      organizationId,
+    }: {
+      broadcastId: string;
+      name: string | null;
+      occurredAt: string;
+      organizationId: string;
+    },
+  ): Promise<void> {
+    const trimmedName = typeof name === "string" ? name.trim() : "";
+    const resolvedName = trimmedName === "" ? `Broadcast ${broadcastId}` : trimmedName;
+
+    await queryable.query(
+      `
+        INSERT INTO broadcasts (id, organization_id, name, status, created_at, updated_at)
+        VALUES ($1, $2, $3, 'running', $4::timestamptz, $4::timestamptz)
+        ON CONFLICT (id) DO NOTHING
+      `,
+      [broadcastId, organizationId, resolvedName, occurredAt],
+    );
+  }
+
+  private async updateBroadcastMessageStatus(
+    queryable: Queryable,
+    {
+      broadcastId,
+      messageId,
+      occurredAt,
+      organizationId,
+      status,
+    }: {
+      broadcastId: string;
+      messageId: string;
+      occurredAt: string;
+      organizationId: string;
+      status: string;
+    },
+  ): Promise<BroadcastMessageRow> {
+    const result = await queryable.query<BroadcastMessageRow>(
+      `
+        UPDATE broadcast_messages
+        SET status = $1,
+            updated_at = GREATEST($2::timestamptz, updated_at)
+        WHERE organization_id = $3 AND broadcast_id = $4 AND message_id = $5
+        RETURNING status
+      `,
+      [status, occurredAt, organizationId, broadcastId, messageId],
+    );
+    if (result.rowCount === 0) {
+      throw new NotFoundException({
+        code: "RESOURCE_NOT_FOUND",
+        description: `broadcast message link ${broadcastId}/${messageId} was not found`,
+        humanMessage: "Связь рассылки с сообщением не найдена.",
       });
     }
 

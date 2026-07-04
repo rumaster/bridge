@@ -5,8 +5,12 @@
 
 ## Пробник приёма/маршрутизации
 
-`createCommunicationCoreLoadProbe` принимает массив C2 `IngressMessage` и
-ограничение параллелизма. Результат содержит:
+В production NestJS путь подключён через `CommunicationCoreLoadProbeService`:
+обычный ingress обновляет counters/latency, а `/metrics` экспортирует
+`bridge_backend_communication_core_ingress_*`. Compatibility factory
+`createCommunicationCoreLoadProbe` в `communication-core/index.mjs` сохраняет
+старые `.mjs` регрессии и принимает массив C2 `IngressMessage` с ограничением
+параллелизма. Результат содержит:
 
 - `total`, `accepted`, `duplicates`, `failed`;
 - `concurrency`, `peak_in_flight`;
@@ -21,7 +25,9 @@
 
 ## Деградация адаптеров
 
-`createAdapterFailureCoordinator` ограничивает каждый вызов адаптера таймаутом и
+Production egress использует `AdapterFailureCoordinator`; compatibility factory
+`createAdapterFailureCoordinator` сохранена в `communication-core/index.mjs` для
+старых `.mjs` тестов. Координатор ограничивает каждый вызов адаптера таймаутом и
 конечным числом попыток. Промежуточные неуспешные попытки записываются в
 `message_delivery_attempts`; финальная неуспешная попытка переводит сообщение из
 `routed` в `failed`. Ошибка адаптера не блокирует приём сообщений из другого
@@ -29,7 +35,9 @@
 
 ## Деградация AI
 
-`createAiDegradationGuard` изолирует SVC-AI как вспомогательную подсистему:
+Production AI path использует `AiDegradationGuard`; compatibility factory
+`createAiDegradationGuard` сохранена в `communication-core/index.mjs`.
+Guard изолирует SVC-AI как вспомогательную подсистему:
 отсутствующий клиент, ошибка или timeout возвращают структурированный degraded
 fallback, а Communication Core продолжает приём и маршрутизацию сообщений.
 

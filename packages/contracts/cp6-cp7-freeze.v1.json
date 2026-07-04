@@ -38,7 +38,8 @@
       ],
       "artifacts": [
         "packages/contracts/src/c8.mjs",
-        "services/backend/src/modules/communication-core/communication-core-m4.mjs",
+        "services/backend/src/modules/communication-core/communication-core-m4.dto.ts",
+        "services/backend/src/modules/communication-core/internal-messaging.service.ts",
         "services/backend/src/modules/communication-core/communication-core-m1.mjs",
         "services/backend/src/modules/communication-core/index.mjs"
       ],
@@ -61,7 +62,8 @@
       "artifacts": [
         "packages/contracts/src/c9.mjs",
         "services/edge-gateway/src/buffered-gateway.mjs",
-        "services/backend/src/modules/communication-core/communication-core-m4.mjs",
+        "services/backend/src/modules/communication-core/communication-core-m4.dto.ts",
+        "services/backend/src/modules/communication-core/edge-intake.service.ts",
         "services/backend/src/modules/communication-core/index.mjs"
       ],
       "evidence": [

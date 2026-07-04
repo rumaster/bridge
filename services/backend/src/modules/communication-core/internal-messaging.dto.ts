@@ -14,7 +14,7 @@ import { createHash } from "node:crypto";
 
 import { BadRequestException } from "@nestjs/common";
 
-import { MESSAGE_DIRECTION } from "./message-status";
+import { MESSAGE_DIRECTION, MESSAGE_SENDER_TYPE, MESSAGE_STATUS } from "./message-status";
 
 export const C2_VERSION = "1.0.0";
 export const C2_INGRESS_CONTRACT = "C2.IngressMessage";
@@ -80,6 +80,26 @@ export interface IngressEnvelope {
   [key: string]: unknown;
 }
 
+export interface CanonicalIngressMessage {
+  id?: unknown;
+  idempotency_key?: unknown;
+  organization_id?: unknown;
+  conversation_id?: unknown;
+  client_id?: unknown;
+  endpoint_id?: unknown;
+  channel?: unknown;
+  direction?: unknown;
+  sender_type?: unknown;
+  sequence_number?: unknown;
+  type?: unknown;
+  content?: unknown;
+  status?: unknown;
+  created_at?: unknown;
+  received_at?: unknown;
+  metadata?: unknown;
+  [key: string]: unknown;
+}
+
 export interface NormalizedIngress {
   idempotencyKey: string;
   organizationId: string;
@@ -88,6 +108,9 @@ export interface NormalizedIngress {
   endpointExternalId: string;
   conversationRef: string | null;
   senderRef: string | null;
+  clientId: string | null;
+  conversationId: string | null;
+  endpointId: string | null;
   occurredAt: string;
   routedAt: string;
   message: {
@@ -103,6 +126,8 @@ export interface EgressRequestBody {
   message_id?: unknown;
   adapter?: unknown;
   adapter_endpoint_id?: unknown;
+  max_attempts?: unknown;
+  timeout_ms?: unknown;
   [key: string]: unknown;
 }
 
@@ -111,6 +136,8 @@ export interface NormalizedEgressRequest {
   messageId: string;
   adapter: string;
   adapterEndpointId: string | null;
+  maxAttempts: number | null;
+  timeoutMs: number | null;
 }
 
 export interface DeliveryAttemptBody {
@@ -219,14 +246,30 @@ function normalizeTimestamp(value: unknown): string {
   return date.toISOString();
 }
 
+function optionalString(value: unknown): string | null {
+  return isNonBlankString(value) ? value : null;
+}
+
+function normalizePositiveInteger(value: unknown, field: string): number {
+  if (!Number.isInteger(value) || (value as number) < 1) {
+    throw messagingBadRequest(`${field} must be a positive integer`);
+  }
+
+  return value as number;
+}
+
 /**
  * Нормализует конверт C2.IngressMessage. Портирован из
  * `normalizeC2IngressEnvelope` (communication-core-m1.mjs).
  */
 export function normalizeIngressEnvelope(
-  payload: IngressEnvelope,
+  payload: IngressEnvelope | CanonicalIngressMessage,
   now: () => string,
 ): NormalizedIngress {
+  if (isPlainObject(payload) && payload.contract !== C2_INGRESS_CONTRACT && "id" in payload) {
+    return normalizeCanonicalIngressMessage(payload, now);
+  }
+
   const errors: string[] = [];
   if (payload.contract !== undefined && payload.contract !== C2_INGRESS_CONTRACT) {
     errors.push(`contract must equal ${JSON.stringify(C2_INGRESS_CONTRACT)}`);
@@ -309,6 +352,9 @@ export function normalizeIngressEnvelope(
     endpointExternalId,
     conversationRef,
     senderRef,
+    clientId: null,
+    conversationId: null,
+    endpointId: null,
     occurredAt,
     routedAt: now(),
     message: {
@@ -319,6 +365,86 @@ export function normalizeIngressEnvelope(
         message.sequence_number === undefined || message.sequence_number === null
           ? null
           : Number(message.sequence_number),
+    },
+  };
+}
+
+function normalizeCanonicalIngressMessage(
+  payload: CanonicalIngressMessage,
+  now: () => string,
+): NormalizedIngress {
+  const errors: string[] = [];
+  if (!isUuid(payload.id)) {
+    errors.push("id must be a UUID string");
+  }
+  if (!isUuid(payload.idempotency_key)) {
+    errors.push("idempotency_key must be a UUID string");
+  }
+  if (isUuid(payload.id) && isUuid(payload.idempotency_key) && payload.id !== payload.idempotency_key) {
+    errors.push("idempotency_key must match id");
+  }
+  if (!isUuid(payload.organization_id)) {
+    errors.push("organization_id must be a UUID string");
+  }
+  if (!isUuid(payload.conversation_id)) {
+    errors.push("conversation_id must be a UUID string");
+  }
+  if (payload.client_id !== undefined && payload.client_id !== null && !isUuid(payload.client_id)) {
+    errors.push("client_id must be a UUID string");
+  }
+  if (!isUuid(payload.endpoint_id)) {
+    errors.push("endpoint_id must be a UUID string");
+  }
+  if (payload.direction !== MESSAGE_DIRECTION.INBOUND) {
+    errors.push(`direction must equal ${JSON.stringify(MESSAGE_DIRECTION.INBOUND)}`);
+  }
+  if (payload.sender_type !== MESSAGE_SENDER_TYPE.CLIENT) {
+    errors.push(`sender_type must equal ${JSON.stringify(MESSAGE_SENDER_TYPE.CLIENT)}`);
+  }
+  if (payload.status !== MESSAGE_STATUS.RECEIVED) {
+    errors.push(`status must equal ${JSON.stringify(MESSAGE_STATUS.RECEIVED)}`);
+  }
+  if (!Number.isSafeInteger(payload.sequence_number) || (payload.sequence_number as number) < 1) {
+    errors.push("sequence_number must be a positive integer");
+  }
+  if (!isPlainObject(payload.content)) {
+    errors.push("content must be an object");
+  }
+
+  if (errors.length > 0) {
+    throw messagingBadRequest(`Invalid C1 ingress: ${errors.join("; ")}`);
+  }
+
+  const metadata = isPlainObject(payload.metadata) ? payload.metadata : {};
+  const channel = normalizeChannel(payload.channel);
+  const type = normalizeMessageType(payload.type);
+  const occurredAt = normalizeTimestamp(payload.created_at ?? payload.received_at ?? now());
+  const endpointId = payload.endpoint_id as string;
+  const endpointExternalId = optionalString(metadata.external_id) ?? endpointId;
+  const channelId = optionalString(metadata.channel_id) ?? endpointExternalId;
+  const conversationId = payload.conversation_id as string;
+  const conversationRef = optionalString(metadata.conversation_ref) ?? conversationId;
+  const senderRef = optionalString(metadata.sender_ref);
+  const content = payload.content as Record<string, unknown>;
+
+  return {
+    idempotencyKey: payload.idempotency_key as string,
+    organizationId: payload.organization_id as string,
+    channel,
+    channelId,
+    endpointExternalId,
+    conversationRef,
+    senderRef,
+    clientId: isUuid(payload.client_id) ? payload.client_id : null,
+    conversationId,
+    endpointId,
+    occurredAt,
+    routedAt: now(),
+    message: {
+      id: payload.id as string,
+      type,
+      content: { ...content, type },
+      sequenceNumber: Number(payload.sequence_number),
     },
   };
 }
@@ -339,12 +465,22 @@ export function normalizeEgressRequest(payload: EgressRequestBody): NormalizedEg
   const adapterEndpointId = isNonBlankString(payload.adapter_endpoint_id)
     ? payload.adapter_endpoint_id
     : null;
+  const maxAttempts =
+    payload.max_attempts === undefined || payload.max_attempts === null
+      ? null
+      : normalizePositiveInteger(payload.max_attempts, "max_attempts");
+  const timeoutMs =
+    payload.timeout_ms === undefined || payload.timeout_ms === null
+      ? null
+      : normalizePositiveInteger(payload.timeout_ms, "timeout_ms");
 
   return {
     organizationId: payload.organization_id,
     messageId: payload.message_id,
     adapter,
     adapterEndpointId,
+    maxAttempts,
+    timeoutMs,
   };
 }
 

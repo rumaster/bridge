@@ -67,7 +67,9 @@ describe("SVC-API M5 OpenAPI contract", () => {
     expect(unversionedExpressOperations(app)).toEqual([
       "GET /health",
       "GET /metrics",
+      "POST /internal/broadcast/deliveries",
       "POST /internal/delivery/attempts",
+      "POST /internal/edge/tunnel/messages",
       "POST /internal/egress/messages",
       "POST /internal/ingress/messages",
     ]);

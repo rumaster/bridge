@@ -281,15 +281,14 @@ resolution, endpoint-scoped `sequence_number`, gap detection, C7 публика�
 - **DoD.** Нет потерь/дублей и перестановок в рамках Endpoint при ретраях и
   разрывах; кампании идут через ядро.
 
-> ⚠️ **Статус в продакшн-сборке (issue #189).** Логика M4 ниже реализована только
-> в прототипе `services/backend/src/communication-core/communication-core-m4.mjs`
-> и **не** входит в исполняемый NestJS-артефакт `dist/main.js` (Docker запускает
-> `node dist/main.js`, собранный из `.ts`). `createEdgeIntakeCoordinator` (C9) и
-> `createBroadcastDeliveryCoordinator` (C8) в `.ts` пока не портированы —
-> требуют портирования в отдельной задаче. Подробности и таблица вердиктов:
-> `docs/audit/backend-mjs-production-audit.md` (пункт 4).
+> **Статус в продакшн-сборке (issue #191).** M4-путь портирован в исполняемый
+> NestJS/TypeScript: C9 edge intake доступен как
+> `POST /internal/edge/tunnel/messages`, C8 broadcast delivery — как
+> `POST /internal/broadcast/deliveries`. Реализация живёт в
+> `communication-core-m4.dto.ts`, `edge-intake.service.ts` и
+> `internal-messaging.service.ts`; отдельный `communication-core-m4.mjs` удалён.
 
-**Статус реализации M4 (прототип `.mjs`).** M4 Communication Core завершён для CP-6 и CP-7.
+**Статус реализации M4.** M4 Communication Core завершён для CP-6 и CP-7.
 Сквозная идемпотентность опирается на `messages.id = idempotency_key =
 message_id`: повторная передача уже обработанного сообщения отбрасывается на
 Ingress, приёме из буфера Edge и при доставке кампаний. `message_delivery_attempts`
@@ -326,19 +325,18 @@ C9↔C1) зафиксированы в `packages/contracts/cp6-cp7-freeze.v1.jso
   (регрессия, CP-9).
 - **DoD.** Пройдены нагрузка/деградация; критерии приёмки ядра (мастер §9.4, CP-9).
 
-> ⚠️ **Статус в продакшн-сборке (issue #189).** Модуль `communication-core-m5.mjs`
-> — прототип: он **не** компилируется в `dist/main.js` и не подключён к реальному
-> пути сообщений (даже внутри `.mjs` координаторы исполняются только в `node --test`).
-> `createAdapterFailureCoordinator`, `createAiDegradationGuard` и
-> `createCommunicationCoreLoadProbe` в `.ts` не портированы — требуют портирования
-> в отдельной задаче. Подробности: `docs/audit/backend-mjs-production-audit.md` (пункт 5).
+> **Статус в продакшн-сборке (issue #191).** M5-путь портирован в исполняемый
+> NestJS/TypeScript: `AdapterFailureCoordinator` подключён к egress/broadcast
+> delivery, `AiDegradationGuard` подключён к `AiIntegrationFacade`, а
+> `CommunicationCoreLoadProbeService` экспортирует ingress counters/latency через
+> `/metrics`. Отдельный `communication-core-m5.mjs` удалён.
 
-**Статус реализации M5 (прототип `.mjs`).** Добавлен модуль `communication-core-m5.mjs`:
-`createCommunicationCoreLoadProbe` измеряет приём/маршрутизацию без новых типов
-сообщений, `createAdapterFailureCoordinator` ограничивает вызовы адаптеров
-таймаутом/ретраями и переводит финальный отказ в `status=failed`,
-`createAiDegradationGuard` возвращает структурированный fallback при недоступном
-AI. Для общей PostgreSQL-модели добавлена повторная проверка idempotency после
+**Статус реализации M5.** `CommunicationCoreLoadProbeService` измеряет
+приём/маршрутизацию без новых типов сообщений, `AdapterFailureCoordinator`
+ограничивает вызовы адаптеров таймаутом/ретраями и переводит финальный отказ в
+`status=failed`, `AiDegradationGuard` возвращает структурированный fallback при
+недоступном AI. Для общей PostgreSQL-модели добавлена повторная проверка
+idempotency после
 endpoint-lock: несколько экземпляров ядра используют единый `idempotency_key` и
 сохраняют монотонный `sequence_number` в рамках endpoint. Контракты C1/C2/C7 и
 route/message-типы не менялись. Покрытие: `communication-core.m5.test.mjs`,
