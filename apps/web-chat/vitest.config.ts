@@ -8,5 +8,7 @@ export default defineConfig({
     globals: true,
     setupFiles: ["./test/setup.ts"],
     restoreMocks: true,
+    // e2e-сценарии CP-7 исполняются Playwright, а не Vitest.
+    exclude: ["**/node_modules/**", "**/dist/**", "test/e2e/**"],
   },
 });
