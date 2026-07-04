@@ -6,8 +6,11 @@ import type {
   ManagerWorkspaceApiClient,
   TelegramLoginStartResponse
 } from "../api/client/types";
+import { MANAGER_WORKSPACE_SESSION_STORAGE_KEY } from "./session-storage";
 
 type AuthStatus = "loading" | "anonymous" | "authenticated";
+
+export { MANAGER_WORKSPACE_SESSION_STORAGE_KEY } from "./session-storage";
 
 interface AuthContextValue {
   session: ManagerSession | null;
@@ -24,22 +27,41 @@ export interface AuthProviderProps extends PropsWithChildren {
 }
 
 export function AuthProvider({ api, children }: AuthProviderProps) {
-  const [session, setSession] = useState<ManagerSession | null>(null);
-  const [status, setStatus] = useState<AuthStatus>("loading");
+  const [session, setSession] = useState<ManagerSession | null>(() => readStoredSession());
+  const [status, setStatus] = useState<AuthStatus>(() =>
+    readStoredSession() ? "authenticated" : "loading"
+  );
+
+  const applySession = useCallback((nextSession: ManagerSession) => {
+    storeSession(nextSession);
+    setSession(nextSession);
+    setStatus("authenticated");
+    return nextSession;
+  }, []);
+
+  const clearSession = useCallback(() => {
+    removeStoredSession();
+    setSession(null);
+    setStatus("anonymous");
+  }, []);
 
   useEffect(() => {
     let active = true;
+    const storedSession = readStoredSession();
 
     api.auth
       .getSession()
       .then((nextSession) => {
         if (active) {
-          setSession(nextSession);
-          setStatus("authenticated");
+          applySession(nextSession);
         }
       })
       .catch(() => {
         if (active) {
+          if (storedSession) {
+            removeStoredSession();
+            setSession(null);
+          }
           setStatus("anonymous");
         }
       });
@@ -47,7 +69,7 @@ export function AuthProvider({ api, children }: AuthProviderProps) {
     return () => {
       active = false;
     };
-  }, [api]);
+  }, [api, applySession]);
 
   const startTelegramLogin = useCallback(
     (telegramUsername: string) => api.auth.startTelegramLogin({ telegramUsername }),
@@ -57,18 +79,18 @@ export function AuthProvider({ api, children }: AuthProviderProps) {
   const verifyTelegramLogin = useCallback(
     async (requestId: string, code: string) => {
       const nextSession = await api.auth.verifyTelegramLogin({ requestId, code });
-      setSession(nextSession);
-      setStatus("authenticated");
-      return nextSession;
+      return applySession(nextSession);
     },
-    [api]
+    [api, applySession]
   );
 
   const logout = useCallback(async () => {
-    await api.auth.logout();
-    setSession(null);
-    setStatus("anonymous");
-  }, [api]);
+    try {
+      await api.auth.logout();
+    } finally {
+      clearSession();
+    }
+  }, [api, clearSession]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -92,4 +114,45 @@ export function useAuth() {
   }
 
   return value;
+}
+
+function readStoredSession() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const stored = window.localStorage.getItem(MANAGER_WORKSPACE_SESSION_STORAGE_KEY);
+  if (!stored) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(stored) as ManagerSession;
+    if (isExpired(parsed)) {
+      removeStoredSession();
+      return null;
+    }
+
+    return parsed;
+  } catch {
+    removeStoredSession();
+    return null;
+  }
+}
+
+function storeSession(session: ManagerSession) {
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem(MANAGER_WORKSPACE_SESSION_STORAGE_KEY, JSON.stringify(session));
+  }
+}
+
+function removeStoredSession() {
+  if (typeof window !== "undefined") {
+    window.localStorage.removeItem(MANAGER_WORKSPACE_SESSION_STORAGE_KEY);
+  }
+}
+
+function isExpired(session: ManagerSession) {
+  const expiresAtMs = Date.parse(session.expiresAt);
+  return Number.isFinite(expiresAtMs) && expiresAtMs <= Date.now();
 }

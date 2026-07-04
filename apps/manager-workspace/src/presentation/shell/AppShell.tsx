@@ -1,4 +1,4 @@
-import { Bell, Inbox, LogIn, LogOut, MessageSquare } from "lucide-react";
+import { Bell, Inbox, LogIn, LogOut } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 
 import { useAuth } from "../../state/auth";
@@ -7,7 +7,6 @@ import { Badge, Button } from "../../shared/ui-kit";
 
 const navItems = [
   { to: "/queue", label: "Очередь", icon: Inbox },
-  { to: "/dialogs/conv-1", label: "Диалог", icon: MessageSquare },
   { to: "/notifications", label: "Уведомления", icon: Bell, showUnread: true }
 ];
 

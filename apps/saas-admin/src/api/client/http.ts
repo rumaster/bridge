@@ -48,10 +48,15 @@ export interface SaasAdminApiClientOptions {
 }
 
 const DEFAULT_BASE_URL = "/api/v1";
+const SAAS_ADMIN_SESSION_STORAGE_KEY = "bridge.saas-admin.session";
+const TENANT_HEADER = "x-organization-id";
+const UUID_V4_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function createSaasAdminApiClient(options: SaasAdminApiClientOptions = {}): SaasAdminApiClient {
   const { requestJson } = createJsonApiClient({
     baseUrl: options.baseUrl ?? DEFAULT_BASE_URL,
+    defaultHeaders: readTenantHeaders,
     fetcher: options.fetcher
   });
 
@@ -190,4 +195,30 @@ export function createSaasAdminApiClient(options: SaasAdminApiClientOptions = {}
         })
     }
   };
+}
+
+function readTenantHeaders(): HeadersInit {
+  const organizationId = readStoredOrganizationId();
+
+  return organizationId ? { [TENANT_HEADER]: organizationId } : {};
+}
+
+function readStoredOrganizationId() {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+
+  const storedSession = window.localStorage.getItem(SAAS_ADMIN_SESSION_STORAGE_KEY);
+  if (!storedSession) {
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(storedSession) as Partial<AdminSession>;
+    const organizationId = parsed.organization?.id ?? parsed.user?.organizationId;
+
+    return organizationId && UUID_V4_PATTERN.test(organizationId) ? organizationId : undefined;
+  } catch {
+    return undefined;
+  }
 }

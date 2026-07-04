@@ -36,6 +36,30 @@ describe("@bridge/api-client JSON helper", () => {
     assert.equal(calls[0].init.headers.get("accept"), "application/json");
   });
 
+  it("resolves dynamic default headers for each request", async () => {
+    const calls = [];
+    let organizationId = "30000000-0000-4000-8000-000000000101";
+    const api = createJsonApiClient({
+      fetcher: async (_url, init) => {
+        calls.push(init.headers.get("x-organization-id"));
+        return new Response(JSON.stringify({ ok: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+      defaultHeaders: () => ({ "x-organization-id": organizationId }),
+    });
+
+    await api.requestJson("/channels");
+    organizationId = "30000000-0000-4000-8000-000000000102";
+    await api.requestJson("/broadcasts");
+
+    assert.deepEqual(calls, [
+      "30000000-0000-4000-8000-000000000101",
+      "30000000-0000-4000-8000-000000000102",
+    ]);
+  });
+
   it("raises BridgeApiError with parsed error body", async () => {
     const api = createJsonApiClient({
       fetcher: async () =>

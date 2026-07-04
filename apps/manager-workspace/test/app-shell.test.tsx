@@ -27,6 +27,8 @@ describe("Manager Workspace M1 flow", () => {
       await screen.findByRole("heading", { name: "Очередь диалогов" })
     ).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Рабочее место менеджера" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Очередь" })).toHaveAttribute("href", "/queue");
+    expect(screen.queryByRole("link", { name: "Диалог" })).not.toBeInTheDocument();
   });
 
   it("authenticates against the C3.auth contract", async () => {

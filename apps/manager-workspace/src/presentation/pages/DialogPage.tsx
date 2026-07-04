@@ -43,7 +43,7 @@ const MESSAGE_WINDOW_OVERSCAN = 8;
 const MESSAGE_VIEWPORT_FALLBACK_HEIGHT_PX = 520;
 
 export default function DialogPage() {
-  const { conversationId = "conv-1" } = useParams();
+  const { conversationId = "" } = useParams();
   const api = useManagerWorkspaceApi();
   const realtime = useC7RealtimeClient();
   const { session } = useAuth();
