@@ -100,6 +100,9 @@
 - `openapi/notifications/c10.notifications.openapi.json` фиксирует C10 v1:
   `GET /notifications`, `POST /notifications/{id}:read`,
   `GET/PUT /notifications/settings`.
+- `consumer/telegram-console-cp8.consumer.v1.json` фиксирует CP-8/M4
+  потребление SVC-TGC: Telegram login/session, C10 Telegram cards, C3
+  dialogs/messages и C4 AI suggestions с graceful degradation.
 - `events/notification-created.schema.json` описывает WS-событие C7
   `notification.created` для SVC-MWS/SVC-ADMIN.
 - `events/notification-trigger.schema.json` фиксирует M0-заготовку события
