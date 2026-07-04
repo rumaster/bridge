@@ -71,7 +71,14 @@ describe("M0 integration contract gate", () => {
 
       assert.equal(health.statusCode, 200);
       assert.equal(health.body.status, "ok");
-      assert.deepEqual(health.body.contracts, ["C3.base", "C3.auth", "C1", "C2"]);
+      assert.deepEqual(health.body.contracts, [
+        "C3.base",
+        "C3.auth",
+        "C3.platform",
+        "C3.users",
+        "C1",
+        "C2",
+      ]);
 
       const authStart = await fetchJson(
         `${baseUrl}/api/v1/auth/login/telegram/start`,
