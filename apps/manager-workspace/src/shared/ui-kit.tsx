@@ -36,8 +36,10 @@ export function Button(props: ButtonProps) {
   return <button className={className} {...rest} />;
 }
 
+export type BadgeTone = "neutral" | "success" | "warning" | "info" | "danger";
+
 interface BadgeProps extends PropsWithChildren {
-  tone?: "neutral" | "success" | "warning";
+  tone?: BadgeTone;
 }
 
 export function Badge({ children, tone = "neutral" }: BadgeProps) {

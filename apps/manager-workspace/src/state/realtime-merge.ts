@@ -145,8 +145,49 @@ export function applyC7EventToNotifications(notifications: NotificationItem[], e
     return notifications;
   }
 
-  return [event.payload.notification, ...notifications].sort((left, right) =>
-    right.createdAt.localeCompare(left.createdAt)
+  return [event.payload.notification, ...notifications].sort(compareNotificationsByCreatedAt);
+}
+
+export function sortNotificationsByCreatedAt(notifications: NotificationItem[]) {
+  return [...notifications].sort(compareNotificationsByCreatedAt);
+}
+
+/**
+ * Объединяет снимок ленты C10 `GET /notifications` с текущим состоянием так,
+ * чтобы realtime-уведомления C7, пришедшие во время загрузки, не терялись.
+ * Снимок C10 является источником истины для своих элементов, а элементы из
+ * текущего состояния, которых нет в снимке, сохраняются как realtime-приходы.
+ */
+export function mergeNotificationsById(
+  snapshot: NotificationItem[],
+  current: NotificationItem[]
+): NotificationItem[] {
+  const byId = new Map(snapshot.map((notification) => [notification.id, notification]));
+
+  for (const notification of current) {
+    if (!byId.has(notification.id)) {
+      byId.set(notification.id, notification);
+    }
+  }
+
+  return [...byId.values()].sort(compareNotificationsByCreatedAt);
+}
+
+export function countUnreadNotifications(notifications: NotificationItem[]) {
+  return notifications.filter((notification) => notification.status === "new").length;
+}
+
+export function markNotificationReadById(
+  notifications: NotificationItem[],
+  notificationId: string
+): NotificationItem[] {
+  return notifications.map((notification) =>
+    notification.id === notificationId
+      ? {
+          ...notification,
+          status: "read"
+        }
+      : notification
   );
 }
 
@@ -156,4 +197,8 @@ function compareMessagesByCreatedAt(left: Message, right: Message) {
 
 function compareConversationsByLastMessageAt(left: Conversation, right: Conversation) {
   return right.lastMessageAt.localeCompare(left.lastMessageAt);
+}
+
+function compareNotificationsByCreatedAt(left: NotificationItem, right: NotificationItem) {
+  return right.createdAt.localeCompare(left.createdAt);
 }
