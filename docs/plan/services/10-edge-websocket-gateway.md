@@ -284,6 +284,27 @@ Backend↔WebSocket ТЗ §26.4), contract
 - **DoD.** Пройдены отказоустойчивость Edge, целевые RPO/RTO и нагрузка на WS;
   критерии приёмки (мастер §9.4, CP-9).
 
+**Статус реализации M5.** SVC-EDGE закрывает стабилизацию CP-9 без изменения
+замороженного C9. RF-буфер получил предельную ёмкость, high-watermark и
+оповещения мониторинга о `edge_buffer_capacity_high_watermark`,
+`edge_buffer_capacity_exhausted` и `edge_buffer_ttl_expired`
+(`services/edge-gateway/src/edge-message-buffer.mjs`); при переполнении новая
+запись не подтверждается и Edge сигнализирует backpressure на приём. Оркестратор
+Edge возвращает измерения восстановления в `drain().recovery`
+(`pending_before`, `pending_after`, `expired_skipped`, `rpo.capacity`,
+`rpo.ttl_ms`, `rto_ms`) и при новом входящем сообщении после восстановления
+канала автоматически синхронизирует накопленный backlog
+(`services/edge-gateway/src/edge-cluster.mjs`). Нагрузка WS покрыта
+детерминированным пробником mock C7 (`services/edge-gateway/src/ws-load-probe.mjs`)
+и CLI `npm run probe:edge:ws` (`EDGE_WS_PROBE_CONNECTIONS`,
+`EDGE_WS_PROBE_EVENTS`). Тесты: unit
+`services/edge-gateway/test/unit/edge-message-buffer.test.mjs`,
+`services/edge-gateway/test/unit/ws-load-probe.test.mjs`; integration
+`services/edge-gateway/test/integration/edge-resilience-rpo-rto.test.mjs`; e2e
+`tests/e2e/edge-resilience-cp9.test.mjs` (отказ одного Edge не блокирует другой,
+backlog доставляется после восстановления без потерь/дублей, порядок сохраняется
+внутри Endpoint).
+
 ---
 
 ## 6. Точки согласования
