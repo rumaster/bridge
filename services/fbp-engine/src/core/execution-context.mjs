@@ -39,6 +39,8 @@ export class ExecutionContext {
     workflowId,
     workflowVersionId,
     input = {},
+    outputs = null,
+    seq = 0,
     now = () => new Date().toISOString(),
   }) {
     if (typeof organizationId !== "string" || organizationId.trim() === "") {
@@ -58,6 +60,75 @@ export class ExecutionContext {
     this.#workflowVersionId = workflowVersionId;
     this.#params = input ?? {};
     this.#now = now;
+    // Восстановление результатов ранее исполненных узлов из внешнего состояния
+    // (stateless executor, ТЗ §25.3): любой узел-исполнитель поднимает контекст
+    // из `workflow_instance_state`, не полагаясь на память между шагами.
+    if (isRecord(outputs)) {
+      for (const [nodeId, value] of Object.entries(outputs)) {
+        if (!DANGEROUS_KEYS.has(nodeId)) {
+          this.#outputs.set(nodeId, clone(value));
+        }
+      }
+    }
+    this.#seq = Number.isInteger(seq) && seq >= 0 ? seq : 0;
+  }
+
+  /**
+   * Восстановить контекст экземпляра из внешнего состояния (ТЗ §25.3). Снимок
+   * (`snapshot()`) хранится в `workflow_instance_state` через Backend; любой
+   * узел-исполнитель может поднять по нему контекст и продолжить экземпляр —
+   * исполнитель не держит состояние между шагами.
+   */
+  static fromSnapshot(snapshot, { now } = {}) {
+    if (!isRecord(snapshot)) {
+      throw new WorkflowExecutionError(
+        "invalid_instance_state",
+        "Снимок состояния экземпляра должен быть объектом (workflow_instance_state).",
+      );
+    }
+    return new ExecutionContext({
+      organizationId: snapshot.organization_id,
+      actorUserId: snapshot.actor_user_id ?? null,
+      trigger: snapshot.trigger ?? null,
+      roles: snapshot.roles ?? [],
+      correlationId: snapshot.correlation_id ?? null,
+      locale: snapshot.locale ?? null,
+      instanceId: snapshot.instance_id,
+      workflowId: snapshot.workflow_id ?? null,
+      workflowVersionId: snapshot.workflow_version_id ?? null,
+      input: snapshot.input ?? {},
+      outputs: snapshot.outputs ?? null,
+      seq: snapshot.seq ?? 0,
+      ...(now ? { now } : {}),
+    });
+  }
+
+  /**
+   * Снимок состояния экземпляра для внешнего хранения (`workflow_instance_state`,
+   * ТЗ §25.3). Содержит ВСЁ, что нужно другому узлу-исполнителю, чтобы продолжить
+   * экземпляр: арендатор/актор/триггер, входные параметры, результаты уже
+   * исполненных узлов и порядковый счётчик журнала. Журнал сюда НЕ входит — он
+   * копится в `workflow_execution_logs` и сохраняется Backend отдельно.
+   */
+  snapshot() {
+    const outputs = {};
+    for (const [nodeId, value] of this.#outputs) {
+      outputs[nodeId] = clone(value);
+    }
+    return {
+      organization_id: this.#organizationId,
+      actor_user_id: this.#actorUserId,
+      trigger: this.#trigger,
+      roles: [...this.#roles],
+      ...(this.#correlationId ? { correlation_id: this.#correlationId } : {}),
+      ...(this.#locale ? { locale: this.#locale } : {}),
+      instance_id: this.#instanceId,
+      workflow_id: this.#workflowId,
+      workflow_version_id: this.#workflowVersionId,
+      input: clone(this.#params),
+      outputs,
+      seq: this.#seq,
+    };
   }
 
   get organizationId() {
