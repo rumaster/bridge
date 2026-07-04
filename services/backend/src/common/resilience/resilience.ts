@@ -1,10 +1,10 @@
 /**
- * Facade resilience primitives shared by the AI (C4) and FBP (C5) integration
- * facades (ТЗ §11.2): a timeout, a circuit breaker (closed/open/half-open) and a
- * bulkhead (bounded concurrency + queue). The primitives are framework-agnostic
- * and deterministic — every time-dependent branch reads an injectable `now`
- * clock so unit tests can drive open/half-open/closed transitions without real
- * timers.
+ * Facade resilience primitives shared by external-service facades (ТЗ §11.2): a
+ * timeout, a circuit breaker (closed/open/half-open), a bulkhead (bounded
+ * concurrency + queue) and a bounded retry queue. The primitives are
+ * framework-agnostic and deterministic — every time-dependent branch reads an
+ * injectable `now` clock so unit tests can drive open/half-open/closed
+ * transitions without real timers.
  */
 
 export type ResilienceRejectionReason =
@@ -12,6 +12,7 @@ export type ResilienceRejectionReason =
   | "timeout"
   | "circuit_open"
   | "bulkhead_full"
+  | "retry_queue_full"
   | "error";
 
 export type ResilienceOutcome<TValue> =
@@ -221,11 +222,88 @@ export class Bulkhead {
 export interface FacadeResilienceOptions {
   circuitBreaker?: CircuitBreakerOptions;
   bulkhead?: BulkheadOptions;
+  retry?: RetryQueueOptions;
   /** Default per-call timeout when a call does not override it. */
   defaultTimeoutMs?: number;
 }
 
 const DEFAULT_TIMEOUT_MS = 250;
+
+export interface RetryQueueOptions {
+  /** Total attempts, including the first call. */
+  maxAttempts?: number;
+  /** Maximum retry waiters admitted at once. */
+  maxQueue?: number;
+  /** Delay before every retry attempt. */
+  delayMs?: number;
+}
+
+const DEFAULT_RETRY_ATTEMPTS = 1;
+const DEFAULT_RETRY_QUEUE = 16;
+const DEFAULT_RETRY_DELAY_MS = 0;
+
+export class RetryQueueFullError extends Error {
+  constructor() {
+    super("Retry queue is full.");
+    this.name = "RetryQueueFullError";
+  }
+}
+
+/**
+ * Bounded retry helper for facade calls. A facade may retry transient failures,
+ * but retries are capped so an unavailable dependency cannot build an
+ * unbounded in-process backlog.
+ */
+export class RetryQueue {
+  private queuedRetries = 0;
+  private readonly maxAttempts: number;
+  private readonly maxQueue: number;
+  private readonly delayMs: number;
+
+  constructor(options: RetryQueueOptions = {}) {
+    this.maxAttempts = Math.max(1, options.maxAttempts ?? DEFAULT_RETRY_ATTEMPTS);
+    this.maxQueue = Math.max(0, options.maxQueue ?? DEFAULT_RETRY_QUEUE);
+    this.delayMs = Math.max(0, options.delayMs ?? DEFAULT_RETRY_DELAY_MS);
+  }
+
+  async execute<TValue>(call: () => Promise<TValue>): Promise<TValue> {
+    let lastError: unknown;
+
+    for (let attempt = 1; attempt <= this.maxAttempts; attempt += 1) {
+      try {
+        return await call();
+      } catch (error) {
+        lastError = error;
+        if (attempt >= this.maxAttempts) {
+          break;
+        }
+
+        await this.waitForRetrySlot();
+      }
+    }
+
+    throw lastError;
+  }
+
+  get queuedCount(): number {
+    return this.queuedRetries;
+  }
+
+  private async waitForRetrySlot(): Promise<void> {
+    if (this.queuedRetries >= this.maxQueue) {
+      throw new RetryQueueFullError();
+    }
+
+    this.queuedRetries += 1;
+    try {
+      if (this.delayMs > 0) {
+        await sleep(this.delayMs);
+      }
+    } finally {
+      this.queuedRetries = Math.max(0, this.queuedRetries - 1);
+    }
+  }
+}
 
 /**
  * Composes a bulkhead, a circuit breaker and a timeout into a single guard for
@@ -237,11 +315,13 @@ const DEFAULT_TIMEOUT_MS = 250;
 export class FacadeResilience {
   private readonly breaker: CircuitBreaker;
   private readonly bulkhead: Bulkhead;
+  private readonly retryQueue: RetryQueue;
   private readonly defaultTimeoutMs: number;
 
   constructor(options: FacadeResilienceOptions = {}) {
     this.breaker = new CircuitBreaker(options.circuitBreaker);
     this.bulkhead = new Bulkhead(options.bulkhead);
+    this.retryQueue = new RetryQueue(options.retry);
     this.defaultTimeoutMs = Math.max(1, options.defaultTimeoutMs ?? DEFAULT_TIMEOUT_MS);
   }
 
@@ -269,14 +349,17 @@ export class FacadeResilience {
     }
 
     try {
-      const value = await withTimeout(call(), options.timeoutMs ?? this.defaultTimeoutMs);
+      const value = await withTimeout(
+        this.retryQueue.execute(call),
+        options.timeoutMs ?? this.defaultTimeoutMs,
+      );
       this.breaker.onSuccess();
       return { ok: true, value };
     } catch (error) {
       this.breaker.onFailure();
       return {
         ok: false,
-        reason: error instanceof FacadeTimeoutError ? "timeout" : "error",
+        reason: rejectionReason(error),
         error,
       };
     } finally {
@@ -305,4 +388,23 @@ export async function withTimeout<TValue>(
       clearTimeout(timer);
     }
   }
+}
+
+function rejectionReason(error: unknown): Exclude<ResilienceRejectionReason, "no_client" | "circuit_open" | "bulkhead_full"> {
+  if (error instanceof FacadeTimeoutError) {
+    return "timeout";
+  }
+
+  if (error instanceof RetryQueueFullError) {
+    return "retry_queue_full";
+  }
+
+  return "error";
+}
+
+async function sleep(delayMs: number): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, delayMs);
+    timer.unref();
+  });
 }

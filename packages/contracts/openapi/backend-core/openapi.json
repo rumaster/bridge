@@ -122,6 +122,102 @@
         ]
       }
     },
+    "/api/v1/broadcasts": {
+      "get": {
+        "operationId": "BroadcastFacadeController_listBroadcasts_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "C8.ListBroadcastsResponse"
+          }
+        },
+        "summary": "List broadcasts through SVC-BCAST facade",
+        "tags": [
+          "broadcasts"
+        ]
+      },
+      "post": {
+        "operationId": "BroadcastFacadeController_createBroadcast_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBroadcastRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "C8.CreateBroadcastResponse"
+          }
+        },
+        "summary": "Create a broadcast campaign through SVC-BCAST facade",
+        "tags": [
+          "broadcasts"
+        ]
+      }
+    },
+    "/api/v1/broadcasts/{id}:start": {
+      "post": {
+        "operationId": "BroadcastFacadeController_startBroadcast_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartBroadcastRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "C8.StartBroadcastResponse"
+          }
+        },
+        "summary": "Start a broadcast campaign through SVC-BCAST facade",
+        "tags": [
+          "broadcasts"
+        ]
+      }
+    },
+    "/api/v1/broadcasts/{id}/stats": {
+      "get": {
+        "operationId": "BroadcastFacadeController_getBroadcastStats_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "C8.BroadcastStatsResponse"
+          }
+        },
+        "summary": "Read broadcast campaign stats through SVC-BCAST facade",
+        "tags": [
+          "broadcasts"
+        ]
+      }
+    },
     "/api/v1/channels": {
       "get": {
         "operationId": "ChannelsController_listChannels_v1",
@@ -222,6 +318,133 @@
         "summary": "Test a connected channel",
         "tags": [
           "channels"
+        ]
+      }
+    },
+    "/api/v1/notifications": {
+      "get": {
+        "operationId": "NotificationFacadeController_listNotifications_v1",
+        "parameters": [
+          {
+            "name": "status",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "new",
+              "type": "string",
+              "enum": [
+                "new",
+                "read"
+              ]
+            }
+          },
+          {
+            "name": "category",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "critical",
+              "type": "string",
+              "enum": [
+                "info",
+                "warning",
+                "error",
+                "critical",
+                "admin"
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "example": "cursor-1",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "example": 50,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "C10.ListNotificationsResponse"
+          }
+        },
+        "summary": "List current-user notifications through SVC-NOTIF facade",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/{id}:read": {
+      "post": {
+        "operationId": "NotificationFacadeController_markNotificationRead_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "C10.MarkNotificationReadResponse"
+          }
+        },
+        "summary": "Mark a current-user notification read through SVC-NOTIF facade",
+        "tags": [
+          "notifications"
+        ]
+      }
+    },
+    "/api/v1/notifications/settings": {
+      "get": {
+        "operationId": "NotificationFacadeController_getNotificationSettings_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "C10.NotificationSettingsResponse"
+          }
+        },
+        "summary": "Read current-user notification settings through SVC-NOTIF facade",
+        "tags": [
+          "notifications"
+        ]
+      },
+      "put": {
+        "operationId": "NotificationFacadeController_updateNotificationSettings_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNotificationSettingsRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "C10.NotificationSettingsResponse"
+          }
+        },
+        "summary": "Update current-user notification settings through SVC-NOTIF facade",
+        "tags": [
+          "notifications"
         ]
       }
     },
@@ -1229,6 +1452,193 @@
           "actor_user_id"
         ]
       },
+      "BroadcastTemplateDto": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "text"
+            ],
+            "example": "text"
+          },
+          "body": {
+            "type": "string",
+            "example": "Здравствуйте, {{client.name}}"
+          },
+          "locale": {
+            "type": "string",
+            "example": "ru-RU"
+          },
+          "variables": {
+            "example": [
+              "client.name"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "type",
+          "body"
+        ]
+      },
+      "BroadcastFilterDto": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "all",
+              "tags",
+              "segment",
+              "custom"
+            ],
+            "example": "all"
+          },
+          "channels": {
+            "example": [
+              "web_chat"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tags": {
+            "example": [
+              "vip"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "segment_ids": {
+            "example": [
+              "segment-a"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "criteria": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "BroadcastScheduleDto": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "manual",
+              "immediate",
+              "scheduled",
+              "event",
+              "workflow"
+            ],
+            "example": "manual"
+          },
+          "scheduled_for": {
+            "type": "string",
+            "example": "2026-07-04T12:00:00.000Z"
+          },
+          "timezone": {
+            "type": "string",
+            "example": "Europe/Moscow"
+          },
+          "trigger": {
+            "type": "string",
+            "example": "workflow.completed"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
+      "BroadcastRateLimitDto": {
+        "type": "object",
+        "properties": {
+          "messages_per_minute": {
+            "type": "number",
+            "example": 120,
+            "minimum": 1
+          },
+          "burst": {
+            "type": "number",
+            "example": 20,
+            "minimum": 1
+          },
+          "strategy": {
+            "type": "string",
+            "enum": [
+              "fixed",
+              "channel_capability"
+            ],
+            "example": "fixed"
+          }
+        },
+        "required": [
+          "messages_per_minute"
+        ]
+      },
+      "CreateBroadcastRequestDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Июльская рассылка"
+          },
+          "template": {
+            "$ref": "#/components/schemas/BroadcastTemplateDto"
+          },
+          "filter": {
+            "$ref": "#/components/schemas/BroadcastFilterDto"
+          },
+          "schedule": {
+            "$ref": "#/components/schemas/BroadcastScheduleDto"
+          },
+          "rate_limit": {
+            "$ref": "#/components/schemas/BroadcastRateLimitDto"
+          }
+        },
+        "required": [
+          "name",
+          "template",
+          "filter",
+          "schedule",
+          "rate_limit"
+        ]
+      },
+      "StartBroadcastRequestDto": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "immediate",
+              "scheduled"
+            ],
+            "example": "immediate"
+          },
+          "scheduled_for": {
+            "type": "string",
+            "example": "2026-07-04T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "mode"
+        ]
+      },
       "ChannelResponseDto": {
         "type": "object",
         "properties": {
@@ -1349,6 +1759,55 @@
         },
         "required": [
           "channel"
+        ]
+      },
+      "NotificationSettingDto": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "info",
+              "warning",
+              "error",
+              "critical",
+              "admin"
+            ],
+            "example": "critical"
+          },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "web",
+              "telegram",
+              "email",
+              "push"
+            ],
+            "example": "telegram"
+          },
+          "enabled": {
+            "type": "boolean",
+            "example": true
+          }
+        },
+        "required": [
+          "category",
+          "channel",
+          "enabled"
+        ]
+      },
+      "UpdateNotificationSettingsRequestDto": {
+        "type": "object",
+        "properties": {
+          "settings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NotificationSettingDto"
+            }
+          }
+        },
+        "required": [
+          "settings"
         ]
       },
       "OrganizationResponseDto": {
