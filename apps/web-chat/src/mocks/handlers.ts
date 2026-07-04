@@ -15,6 +15,10 @@ const chatEvents = ws.link("*/api/v1/ws");
 const mockMessages: WebChatMessage[] = [];
 const mockSessions = new Map<string, WebChatSession>();
 let mockEventSequenceNumber = 0;
+// Флаг эмуляции разрыва канала до Edge (CP-7): при true REST-отправка падает, а
+// WS-подключения немедленно закрываются — так e2e воспроизводит «Потерю
+// соединения» из ТЗ §5.5 без изменения контрактов.
+let edgeOutage = false;
 
 export function resetMockMessages(messages: WebChatMessage[] = []) {
   mockMessages.splice(
@@ -29,6 +33,21 @@ export function resetMockMessages(messages: WebChatMessage[] = []) {
   );
   mockSessions.clear();
   mockEventSequenceNumber = 0;
+  edgeOutage = false;
+}
+
+/**
+ * Управление эмуляцией разрыва Edge для e2e-сценария CP-7 «Потеря соединения».
+ * При включении обрывает активные WS-подключения; при выключении виджет
+ * переподключается и автоматически переотправляет буфер исходящих.
+ */
+export function setWebChatEdgeOutage(value: boolean) {
+  edgeOutage = value;
+  if (value) {
+    for (const client of chatEvents.clients) {
+      client.close(1012, "edge-outage");
+    }
+  }
 }
 
 export const webChatMockHandlers = [
@@ -83,6 +102,11 @@ export const webChatMockHandlers = [
   }),
 
   http.post("*/api/v1/messages", async ({ request }) => {
+    if (edgeOutage) {
+      // Канал до Edge оборван: отправка не доходит, реплика остаётся в буфере.
+      return HttpResponse.error();
+    }
+
     const payload = (await request.json()) as {
       conversation_id?: string;
       organization_id?: string;
@@ -118,6 +142,12 @@ export const webChatMockHandlers = [
   }),
 
   chatEvents.addEventListener("connection", ({ client }) => {
+    if (edgeOutage) {
+      // Пока длится разрыв — не даём подключению закрепиться.
+      client.close(1012, "edge-outage");
+      return;
+    }
+
     client.send(
       JSON.stringify({
         type: "mock.connected",
