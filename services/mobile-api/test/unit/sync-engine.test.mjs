@@ -141,4 +141,31 @@ describe("SVC-MOB sync-engine (offline→online, §19.3)", () => {
     assert.equal(page.has_more, true);
     assert.equal(page.limit, 2);
   });
+
+  it("builds dialog deltas only up to the page watermark during partial sync", () => {
+    const { backend, engine } = harness();
+    sendMessage(backend, "message-1", "one");
+    sendMessage(backend, "message-2", "two");
+    sendMessage(backend, "message-3", "three");
+
+    const firstPage = engine.sync({ limit: 2 });
+    assert.equal(firstPage.has_more, true);
+    assert.deepEqual(
+      firstPage.deltas.messages.map((message) => message.message_id),
+      ["message-1", "message-2"],
+    );
+    assert.equal(
+      firstPage.deltas.dialogs[0].last_message.message_id,
+      "message-2",
+      "page 1 dialog preview must not expose message-3 before its delta is delivered",
+    );
+
+    const secondPage = engine.sync({ cursor: firstPage.cursor, limit: 2 });
+    assert.equal(secondPage.has_more, false);
+    assert.deepEqual(
+      secondPage.deltas.messages.map((message) => message.message_id),
+      ["message-3"],
+    );
+    assert.equal(secondPage.deltas.dialogs[0].last_message.message_id, "message-3");
+  });
 });

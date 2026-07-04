@@ -142,7 +142,12 @@ function buildDeltas({ backend, organizationId, changes, watermarkSequence, now 
     }
   }
 
-  const dialogs = buildDialogDeltas({ backend, organizationId, touchedConversations });
+  const dialogs = buildDialogDeltas({
+    backend,
+    organizationId,
+    touchedConversations,
+    watermarkSequence,
+  });
 
   // Ватермарка: контрольная точка синхронизации до достигнутого sequence.
   statuses.push({
@@ -159,7 +164,12 @@ function buildDeltas({ backend, organizationId, changes, watermarkSequence, now 
   };
 }
 
-function buildDialogDeltas({ backend, organizationId, touchedConversations }) {
+function buildDialogDeltas({
+  backend,
+  organizationId,
+  touchedConversations,
+  watermarkSequence,
+}) {
   if (touchedConversations.size === 0) {
     return [];
   }
@@ -178,7 +188,11 @@ function buildDialogDeltas({ backend, organizationId, touchedConversations }) {
           organization_id: organizationId,
           client_id: null,
         };
-      const messages = backend.listConversationMessages({ organizationId, conversationId });
+      const messages = backend.listConversationMessages({
+        organizationId,
+        conversationId,
+        maxSyncSequence: watermarkSequence,
+      });
       const client = conversation.client_id
         ? backend.getClient({ organizationId, clientId: conversation.client_id })
         : null;
