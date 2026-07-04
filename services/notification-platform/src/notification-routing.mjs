@@ -39,8 +39,30 @@ export const NOTIFICATION_CATEGORY_CHANNELS = Object.freeze({
   admin: Object.freeze(["web", "telegram", "email"]),
 });
 
+export const PRIORITY_NOTIFICATION_CATEGORIES = Object.freeze(["critical", "admin"]);
+
+// M5: приоритетные категории получают несколько попыток доставки, остальные
+// деградируют быстро и не блокируют доступные каналы.
+export const NOTIFICATION_DELIVERY_POLICIES = Object.freeze({
+  info: Object.freeze({ max_attempts: 1 }),
+  warning: Object.freeze({ max_attempts: 1 }),
+  error: Object.freeze({ max_attempts: 2 }),
+  critical: Object.freeze({ max_attempts: 3 }),
+  admin: Object.freeze({ max_attempts: 3 }),
+});
+
 export function eligibleChannelsForCategory(category) {
   return [...(NOTIFICATION_CATEGORY_CHANNELS[category] ?? ["web"])];
+}
+
+export function isPriorityNotificationCategory(category) {
+  return PRIORITY_NOTIFICATION_CATEGORIES.includes(category);
+}
+
+export function deliveryPolicyForCategory(category) {
+  return {
+    ...(NOTIFICATION_DELIVERY_POLICIES[category] ?? NOTIFICATION_DELIVERY_POLICIES.info),
+  };
 }
 
 /**

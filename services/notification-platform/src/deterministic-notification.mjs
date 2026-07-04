@@ -13,7 +13,11 @@ import {
   assertNotificationTriggerEventPayload,
   assertUpdateNotificationSettingsRequest,
 } from "./c10-dto.mjs";
-import { resolveTargetChannels, routeProducerEvent } from "./notification-routing.mjs";
+import {
+  deliveryPolicyForCategory,
+  resolveTargetChannels,
+  routeProducerEvent,
+} from "./notification-routing.mjs";
 
 export class C10NotificationNotFoundError extends Error {
   constructor(notificationId) {
@@ -47,6 +51,12 @@ export function createDeterministicNotificationMock({
     delivery_telegram_total: 0,
     delivery_email_total: 0,
     delivery_push_total: 0,
+    delivery_failed_total: 0,
+    delivery_web_failed_total: 0,
+    delivery_telegram_failed_total: 0,
+    delivery_email_failed_total: 0,
+    delivery_push_failed_total: 0,
+    delivery_retry_total: 0,
     delivery_skipped_total: 0,
   };
 
@@ -92,24 +102,39 @@ export function createDeterministicNotificationMock({
 
   function deliver(notification, targetChannels) {
     const deliveries = [];
+    const failedDeliveries = [];
     let webEvent = null;
+    const policy = deliveryPolicyForCategory(notification.category);
 
     for (const channel of targetChannels) {
       const adapter = channels[channel];
-      if (!adapter) {
-        continue;
-      }
-      const record = adapter.deliver({ notification });
+      const { record, retryCount } = deliverToChannel({
+        adapter,
+        channel,
+        notification,
+        policy,
+        now,
+      });
       deliveries.push(record);
-      metrics.delivery_total += 1;
-      metrics[`delivery_${channel}_total`] += 1;
-      if (channel === "web" && record.event) {
+
+      metrics.delivery_retry_total += retryCount;
+
+      if (record.status === "sent") {
+        metrics.delivery_total += 1;
+        metrics[`delivery_${channel}_total`] += 1;
+      } else {
+        failedDeliveries.push(record);
+        metrics.delivery_failed_total += 1;
+        metrics[`delivery_${channel}_failed_total`] += 1;
+      }
+
+      if (channel === "web" && record.status === "sent" && record.event) {
         webEvent = record.event;
       }
     }
 
     deliveriesByNotification.set(notification.id, deliveries);
-    return { deliveries, webEvent };
+    return { deliveries, failedDeliveries, webEvent };
   }
 
   return {
@@ -200,7 +225,10 @@ export function createDeterministicNotificationMock({
         ]);
       }
 
-      settingsByUser.set(userKey(context), request.settings.map((setting) => ({ ...setting })));
+      settingsByUser.set(
+        userKey(context),
+        mergeSettings(getSettingsForUser(settingsByUser, context), request.settings),
+      );
       metrics.settings_update_total += 1;
 
       return {
@@ -236,7 +264,10 @@ export function createDeterministicNotificationMock({
           notification: existing,
           duplicate: true,
           deliveries,
-          webEvent: deliveries.find((record) => record.channel === "web")?.event ?? null,
+          webEvent:
+            deliveries.find(
+              (record) => record.channel === "web" && record.status === "sent",
+            )?.event ?? null,
         });
       }
 
@@ -274,13 +305,17 @@ export function createDeterministicNotificationMock({
       );
       metrics.delivery_skipped_total += skipped.length;
 
-      const { deliveries, webEvent } = deliver(notification, targetChannels);
+      const { deliveries, failedDeliveries, webEvent } = deliver(
+        notification,
+        targetChannels,
+      );
 
       return acceptResponse({
         event,
         notification,
         duplicate: false,
         deliveries,
+        failedDeliveries,
         webEvent,
         skippedChannels: skipped,
       });
@@ -303,9 +338,14 @@ function acceptResponse({
   notification,
   duplicate,
   deliveries,
+  failedDeliveries,
   webEvent,
   skippedChannels = [],
 }) {
+  const failureRecords =
+    failedDeliveries ?? deliveries.filter((record) => record.status === "failed");
+  const publicFailedDeliveries = failureRecords.map((record) => publicDelivery(record));
+
   return {
     contract: "C10.AcceptNotificationTriggerResponse",
     version: C10_VERSION,
@@ -313,8 +353,10 @@ function acceptResponse({
     organization_id: event.organization_id,
     accepted: true,
     duplicate,
+    degraded: publicFailedDeliveries.length > 0,
     notification,
     deliveries: deliveries.map((record) => publicDelivery(record)),
+    failed_deliveries: publicFailedDeliveries,
     skipped_channels: skippedChannels,
     notification_created_event: webEvent,
   };
@@ -325,13 +367,73 @@ function publicDelivery(record) {
   return { ...rest };
 }
 
-function getSettingsForUser(settingsByUser, context) {
-  const existing = settingsByUser.get(userKey(context));
-  if (existing) {
-    return existing.map((setting) => ({ ...setting }));
+function deliverToChannel({ adapter, channel, notification, policy, now }) {
+  const maxAttempts = Math.max(1, policy.max_attempts ?? 1);
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      if (!adapter || typeof adapter.deliver !== "function") {
+        throw new Error(`Channel adapter ${channel} is not configured.`);
+      }
+
+      return {
+        record: {
+          ...adapter.deliver({ notification, attempt }),
+          attempts: attempt,
+          max_attempts: maxAttempts,
+        },
+        retryCount: attempt - 1,
+      };
+    } catch (error) {
+      lastError = error;
+    }
   }
 
-  return createDefaultSettings();
+  return {
+    record: failedDeliveryRecord({
+      channel,
+      notification,
+      attempts: maxAttempts,
+      maxAttempts,
+      error: lastError,
+      now,
+    }),
+    retryCount: maxAttempts - 1,
+  };
+}
+
+function failedDeliveryRecord({
+  channel,
+  notification,
+  attempts,
+  maxAttempts,
+  error,
+  now,
+}) {
+  return {
+    channel,
+    status: "failed",
+    provider: `${channel}-adapter`,
+    provider_ref: `${channel}:${notification.id}:failed`,
+    dispatched_at: now(),
+    attempts,
+    max_attempts: maxAttempts,
+    error: errorMessage(error),
+  };
+}
+
+function errorMessage(error) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return String(error ?? "Unknown delivery error");
+}
+
+function getSettingsForUser(settingsByUser, context) {
+  const existing = settingsByUser.get(userKey(context));
+  return normalizeSettings(existing ?? []);
 }
 
 function createDefaultSettings() {
@@ -342,6 +444,27 @@ function createDefaultSettings() {
       enabled: channel === "web" || channel === "telegram",
     })),
   );
+}
+
+function mergeSettings(baseSettings, overrides) {
+  return normalizeSettings([...baseSettings, ...overrides]);
+}
+
+function normalizeSettings(settings) {
+  const defaults = createDefaultSettings();
+  const byPair = new Map(
+    defaults.map((setting) => [settingKey(setting), { ...setting }]),
+  );
+
+  for (const setting of settings) {
+    byPair.set(settingKey(setting), { ...setting });
+  }
+
+  return defaults.map((setting) => ({ ...byPair.get(settingKey(setting)) }));
+}
+
+function settingKey(setting) {
+  return `${setting.category}:${setting.channel}`;
 }
 
 function userKey(context) {
