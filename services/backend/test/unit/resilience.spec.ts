@@ -3,6 +3,7 @@ import {
   CircuitBreaker,
   FacadeResilience,
   FacadeTimeoutError,
+  RetryQueue,
   withTimeout,
 } from "../../src/common/resilience/resilience";
 
@@ -157,6 +158,30 @@ describe("Bulkhead", () => {
   });
 });
 
+describe("RetryQueue", () => {
+  it("retries a failed call within the configured attempt budget", async () => {
+    const retryQueue = new RetryQueue({ maxAttempts: 2 });
+    const call = jest
+      .fn<Promise<string>, []>()
+      .mockRejectedValueOnce(new Error("transient"))
+      .mockResolvedValueOnce("ok");
+
+    await expect(retryQueue.execute(call)).resolves.toBe("ok");
+    expect(call).toHaveBeenCalledTimes(2);
+  });
+
+  it("surfaces the last error after attempts are exhausted", async () => {
+    const retryQueue = new RetryQueue({ maxAttempts: 2 });
+    const error = new Error("still down");
+
+    await expect(
+      retryQueue.execute(async () => {
+        throw error;
+      }),
+    ).rejects.toBe(error);
+  });
+});
+
 describe("withTimeout", () => {
   it("resolves fast calls unchanged", async () => {
     await expect(withTimeout(Promise.resolve("value"), 50)).resolves.toBe("value");
@@ -198,6 +223,17 @@ describe("FacadeResilience", () => {
         throw new Error("boom");
       }),
     ).resolves.toMatchObject({ ok: false, reason: "error" });
+  });
+
+  it("retries transient errors before reporting success when retry is enabled", async () => {
+    const resilience = new FacadeResilience({ retry: { maxAttempts: 2 } });
+    const call = jest
+      .fn<Promise<number>, []>()
+      .mockRejectedValueOnce(new Error("transient"))
+      .mockResolvedValueOnce(7);
+
+    await expect(resilience.execute(call)).resolves.toEqual({ ok: true, value: 7 });
+    expect(call).toHaveBeenCalledTimes(2);
   });
 
   it("short-circuits with circuit_open once the breaker trips", async () => {

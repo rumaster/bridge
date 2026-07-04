@@ -1,8 +1,6 @@
 import { BroadcastFacade } from "../../src/modules/broadcast-facade/broadcast-facade.facade";
 import type {
   BroadcastCreateFacadeResponse,
-  BroadcastStartFacadeResponse,
-  BroadcastStatsFacadeResponse,
 } from "../../src/modules/broadcast-facade/broadcast-facade.facade";
 
 const fixedNow = () => "2026-07-02T16:30:00.000Z";
@@ -59,7 +57,7 @@ describe("BroadcastFacade", () => {
         },
         { now: fixedNow },
       ),
-    ).resolves.toMatchObject<Partial<BroadcastStartFacadeResponse>>({
+    ).resolves.toMatchObject({
       contract: "C8.StartBroadcastResponse",
       degraded: true,
       fallback_reason: "unavailable",
@@ -88,7 +86,7 @@ describe("BroadcastFacade", () => {
           now: fixedNow,
         },
       ),
-    ).resolves.toMatchObject<Partial<BroadcastStatsFacadeResponse>>({
+    ).resolves.toMatchObject({
       contract: "C8.BroadcastStatsResponse",
       degraded: true,
       fallback_reason: "timeout",
@@ -102,5 +100,56 @@ describe("BroadcastFacade", () => {
         updated_at: "2026-07-02T16:30:00.000Z",
       },
     });
+  });
+
+  it("returns controlled unavailable fallback when the broadcast bulkhead is full", async () => {
+    const facade = new BroadcastFacade({
+      bulkhead: {
+        maxConcurrent: 1,
+        maxQueue: 0,
+      },
+    });
+    const pending = facade.startBroadcast(
+      {
+        request_id: "req-broadcast-start-pending",
+        organization_id: "org-1",
+        broadcast_id: "broadcast-1",
+        started_by: "manager-1",
+      },
+      {
+        call: () => new Promise(() => undefined),
+        timeoutMs: 50,
+        now: fixedNow,
+      },
+    );
+    const rejectedCall = jest.fn(async () => {
+      throw new Error("bulkhead should reject before the upstream call");
+    });
+
+    await expect(
+      facade.createBroadcast(
+        {
+          request_id: "req-broadcast-create-bulkhead",
+          organization_id: "org-1",
+          created_by: "manager-1",
+          name: "Bulkhead fallback",
+        },
+        {
+          call: rejectedCall,
+          now: fixedNow,
+        },
+      ),
+    ).resolves.toMatchObject({
+      contract: "C8.CreateBroadcastResponse",
+      degraded: true,
+      fallback_reason: "unavailable",
+      broadcast: {
+        name: "Bulkhead fallback",
+        status: "failed",
+      },
+    });
+    expect(rejectedCall).not.toHaveBeenCalled();
+
+    await pending;
   });
 });

@@ -1,5 +1,10 @@
 import { Injectable } from "@nestjs/common";
 
+import { FacadeResilience } from "../../common/resilience/resilience";
+import type {
+  FacadeResilienceOptions,
+  ResilienceRejectionReason,
+} from "../../common/resilience/resilience";
 import type { FacadeStatusDto } from "../ai-integration/ai-integration.facade";
 
 export type BroadcastFacadeDegradationReason = "timeout" | "unavailable";
@@ -24,6 +29,11 @@ export interface BroadcastSummaryFacade {
   organization_id?: string;
   status: BroadcastStatus;
   updated_at?: string;
+}
+
+export interface BroadcastListFacadeRequest {
+  request_id: string;
+  organization_id: string;
 }
 
 export interface BroadcastCreateFacadeRequest {
@@ -52,6 +62,21 @@ export interface BroadcastStatsFacadeRequest {
   broadcast_id: string;
 }
 
+export interface BroadcastListFacadeResponse {
+  contract: "C8.ListBroadcastsResponse";
+  version: "1.0.0";
+  request_id?: string;
+  organization_id: string;
+  items: BroadcastCampaignFacade[];
+  page: {
+    limit: number;
+    offset: number;
+    total: number;
+  };
+  degraded?: boolean;
+  fallback_reason?: BroadcastFacadeDegradationReason | null;
+}
+
 export interface BroadcastCreateFacadeResponse {
   contract: "C8.CreateBroadcastResponse";
   version: "1.0.0";
@@ -67,7 +92,7 @@ export interface BroadcastStartFacadeResponse {
   version: "1.0.0";
   request_id: string;
   organization_id: string;
-  broadcast: BroadcastSummaryFacade;
+  broadcast: BroadcastCampaignFacade;
   degraded: boolean;
   fallback_reason: BroadcastFacadeDegradationReason | null;
   core_delivery_draft: Record<string, unknown> | null;
@@ -104,6 +129,20 @@ const DEFAULT_BROADCAST_TIMEOUT_MS = 250;
 
 @Injectable()
 export class BroadcastFacade {
+  private readonly resilience: FacadeResilience;
+
+  constructor(options: FacadeResilienceOptions = {}) {
+    this.resilience = new FacadeResilience({
+      defaultTimeoutMs: DEFAULT_BROADCAST_TIMEOUT_MS,
+      retry: {
+        delayMs: 1,
+        maxAttempts: 2,
+        maxQueue: 16,
+      },
+      ...options,
+    });
+  }
+
   getStatus(): FacadeStatusDto {
     return {
       mode: "mock",
@@ -113,71 +152,80 @@ export class BroadcastFacade {
     };
   }
 
-  async createBroadcast(
-    request: BroadcastCreateFacadeRequest,
-    options: BroadcastFacadeCallOptions<BroadcastCreateFacadeResponse> = {},
-  ): Promise<BroadcastCreateFacadeResponse> {
-    const result = await this.callBroadcast(options);
+  async listBroadcasts(
+    request: BroadcastListFacadeRequest,
+    options: BroadcastFacadeCallOptions<BroadcastListFacadeResponse> = {},
+  ): Promise<BroadcastListFacadeResponse> {
+    const result = await this.resilience.execute(options.call, {
+      timeoutMs: options.timeoutMs,
+    });
     if (result.ok) {
       return result.value;
     }
 
-    return this.createBroadcastFallback(request, result.reason, options.now);
+    return this.createListFallback(request, toDegradationReason(result.reason));
+  }
+
+  async createBroadcast(
+    request: BroadcastCreateFacadeRequest,
+    options: BroadcastFacadeCallOptions<BroadcastCreateFacadeResponse> = {},
+  ): Promise<BroadcastCreateFacadeResponse> {
+    const result = await this.resilience.execute(options.call, {
+      timeoutMs: options.timeoutMs,
+    });
+    if (result.ok) {
+      return result.value;
+    }
+
+    return this.createBroadcastFallback(request, toDegradationReason(result.reason), options.now);
   }
 
   async startBroadcast(
     request: BroadcastStartFacadeRequest,
     options: BroadcastFacadeCallOptions<BroadcastStartFacadeResponse> = {},
   ): Promise<BroadcastStartFacadeResponse> {
-    const result = await this.callBroadcast(options);
+    const result = await this.resilience.execute(options.call, {
+      timeoutMs: options.timeoutMs,
+    });
     if (result.ok) {
       return result.value;
     }
 
-    return this.createStartFallback(request, result.reason, options.now);
+    return this.createStartFallback(request, toDegradationReason(result.reason), options.now);
   }
 
   async getBroadcastStats(
     request: BroadcastStatsFacadeRequest,
     options: BroadcastFacadeCallOptions<BroadcastStatsFacadeResponse> = {},
   ): Promise<BroadcastStatsFacadeResponse> {
-    const result = await this.callBroadcast(options);
+    const result = await this.resilience.execute(options.call, {
+      timeoutMs: options.timeoutMs,
+    });
     if (result.ok) {
       return result.value;
     }
 
-    return this.createStatsFallback(request, result.reason, options.now);
+    return this.createStatsFallback(request, toDegradationReason(result.reason), options.now);
   }
 
-  private async callBroadcast<TResponse>(
-    options: BroadcastFacadeCallOptions<TResponse>,
-  ): Promise<
-    | { ok: true; value: TResponse }
-    | { ok: false; reason: BroadcastFacadeDegradationReason }
-  > {
-    if (!options.call) {
-      return {
-        ok: false,
-        reason: "unavailable",
-      };
-    }
-
-    try {
-      const value = await withTimeout(
-        options.call(),
-        options.timeoutMs ?? DEFAULT_BROADCAST_TIMEOUT_MS,
-      );
-      return {
-        ok: true,
-        value,
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        reason:
-          error instanceof BroadcastFacadeTimeoutError ? "timeout" : "unavailable",
-      };
-    }
+  private createListFallback(
+    request: BroadcastListFacadeRequest,
+    reason: BroadcastFacadeDegradationReason,
+  ): BroadcastListFacadeResponse {
+    return {
+      contract: "C8.ListBroadcastsResponse",
+      version: C8_VERSION,
+      request_id: request.request_id,
+      organization_id: request.organization_id,
+      items: [],
+      page: {
+        limit: 50,
+        offset: 0,
+        total: 0,
+      },
+      degraded: true,
+      fallback_reason: reason,
+    };
   }
 
   private createBroadcastFallback(
@@ -215,22 +263,26 @@ export class BroadcastFacade {
     reason: BroadcastFacadeDegradationReason,
     now = () => new Date().toISOString(),
   ): BroadcastStartFacadeResponse {
+    const timestamp = now();
+
     return {
       contract: "C8.StartBroadcastResponse",
       version: C8_VERSION,
       request_id: request.request_id,
       organization_id: request.organization_id,
-      broadcast: {
+      broadcast: createFallbackBroadcastCampaign({
         id: request.broadcast_id,
-        organization_id: request.organization_id,
+        organizationId: request.organization_id,
+        name: `Unavailable broadcast ${request.broadcast_id}`,
+        actorUserId: request.started_by,
         status: "failed",
-        updated_at: now(),
-      },
+        timestamp,
+      }),
       degraded: true,
       fallback_reason: reason,
       core_delivery_draft: null,
       state_changed_event: null,
-      created_at: now(),
+      created_at: timestamp,
     };
   }
 
@@ -259,30 +311,53 @@ export class BroadcastFacade {
   }
 }
 
-async function withTimeout<TValue>(
-  promise: Promise<TValue>,
-  timeoutMs: number,
-): Promise<TValue> {
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => {
-      reject(new BroadcastFacadeTimeoutError());
-    }, Math.max(1, timeoutMs));
-    timer.unref();
-  });
-
-  try {
-    return await Promise.race([promise, timeout]);
-  } finally {
-    if (timer) {
-      clearTimeout(timer);
-    }
-  }
+function createFallbackBroadcastCampaign({
+  actorUserId,
+  id,
+  name,
+  organizationId,
+  status,
+  timestamp,
+}: {
+  actorUserId: string;
+  id: string;
+  name: string;
+  organizationId: string;
+  status: BroadcastStatus;
+  timestamp: string;
+}): BroadcastCampaignFacade {
+  return {
+    id,
+    organization_id: organizationId,
+    name,
+    status,
+    template: {
+      type: "text",
+      body: "",
+      variables: [],
+    },
+    filter: {
+      mode: "all",
+      channels: [],
+      tags: [],
+      segment_ids: [],
+      criteria: {},
+    },
+    schedule: {
+      mode: "manual",
+    },
+    rate_limit: {
+      messages_per_minute: 1,
+      strategy: "fixed",
+    },
+    created_by: actorUserId,
+    created_at: timestamp,
+    updated_at: timestamp,
+  };
 }
 
-class BroadcastFacadeTimeoutError extends Error {
-  constructor() {
-    super("Broadcast facade call timed out.");
-    this.name = "BroadcastFacadeTimeoutError";
-  }
+function toDegradationReason(
+  reason: ResilienceRejectionReason,
+): BroadcastFacadeDegradationReason {
+  return reason === "timeout" ? "timeout" : "unavailable";
 }
