@@ -210,11 +210,20 @@ SVC-DATA). Ниже — ключевые поля и этап появления
   зелёный; C3.auth заморожен; аудит входов/ошибок аутентификации пишется
   (ТЗ §9.9) — базовый минимум, полный аудит управления доступом — M3.
 
-**Статус реализации CP-1.** M1 Identity завершён: C3.auth опубликован в
-`packages/contracts/openapi/auth/c3.auth.openapi.json`, одноразовые коды и
-серверные сессии покрыты `services/backend/test/unit/identity-service.test.mjs`
-и `services/backend/test/integration/identity-postgres.test.mjs`, а e2e
-«Авторизация» закреплён в `apps/saas-admin/test/e2e/saas-admin.auth.spec.ts`.
+**Статус реализации CP-1.** M1 Identity реализован в исполняемом
+NestJS/TypeScript-коде (компилируется в `dist/main.js`, issue #189): маршруты
+`POST /api/v1/auth/login/telegram/start`, `/verify` и `GET /api/v1/auth/session`
+— `src/modules/identity/telegram-auth.controller.ts` +
+`telegram-auth.service.ts`; доставка кода — `telegram-bot.service.ts` (реальный
+Telegram Bot API `sendMessage` при заданном `TELEGRAM_BOT_TOKEN`, иначе
+задокументированная деградация). C3.auth опубликован в
+`packages/contracts/openapi/auth/c3.auth.openapi.json`, e2e «Авторизация» —
+`apps/saas-admin/test/e2e/saas-admin.auth.spec.ts`. Прототипные `.mjs`-наборы
+(`identity-service.test.mjs`, `identity-postgres.test.mjs`) валидируют
+изолированный `.mjs`-прототип (`identity-service.mjs`), а не production-код;
+см. `docs/audit/backend-mjs-production-audit.md` (пункты 6–9). **Открытый гэп:**
+rate-limiting (429) на start/verify из `identity-service.mjs` в
+`telegram-auth.service.ts` пока не портирован.
 
 ### M2 — Полноценный RBAC по ролям §9.3
 
@@ -302,7 +311,14 @@ append-only базой для bootstrap/приглашений и будущих
   интерфейсов (ТЗ §9.6); отзыв сессий доступен из UI; критерии приёмки по
   безопасности пройдены.
 
-**Статус реализации M5.** M5 Identity завершён: в `identity-service.mjs`
+> ⚠️ **Статус в продакшн-сборке (issue #189).** Описанная ниже логика M5 (registry
+> провайдеров входа, лимиты/локаут перебора, массовый отзыв сессий) реализована в
+> прототипе `services/backend/src/identity/identity-service.mjs` и **не** входит в
+> исполняемый `dist/main.js`. В production-коде `telegram-auth.service.ts`
+> rate-limiting (429) на start/verify **не портирован** — открытый гэп. Подробности:
+> `docs/audit/backend-mjs-production-audit.md` (пункты 6, 10).
+
+**Статус реализации M5 (прототип `.mjs`).** M5 Identity завершён: в `identity-service.mjs`
 выделен registry подключаемых провайдеров входа, где Telegram остаётся
 единственным включённым MVP-провайдером, а email зарегистрирован как отключённая
 точка расширения с `email_login`; `login_codes.purpose` допускает

@@ -197,14 +197,23 @@ Endpoint (ТЗ §8.5); (2) `sequence_number` монотонен в предел�
 - **DoD.** Срез M1 проходит e2e; изоляция арендатора и серверная валидация
   (мастер §9.4).
 
-**Статус реализации CP-1.** M1 Communication Core завершён: C2 Ingress,
-Conversation/messages, идемпотентный `POST /messages`, переходы
-`received -> routed -> sent` и `message_delivery_attempts` покрыты
-`services/backend/test/unit/communication-core.m1.test.mjs`,
-`tests/integration/communication-core-m1.test.mjs` и
-`tests/contract/int-core.m1.contract.test.mjs`. C2 Egress сохраняет
-`channel_type` и `conversation_ref`, чтобы Web Chat adapter доставлял ответ в ту
-же сессию CP-1.
+**Статус реализации CP-1.** M1 Communication Core реализован в исполняемом
+NestJS/TypeScript-коде (компилируется в `dist/main.js`, issue #189): C2 Ingress
+`POST /internal/ingress/messages` и Egress `POST /internal/egress/messages` —
+`src/modules/communication-core/internal-messaging.controller.ts` +
+`internal-messaging.service.ts` + `internal-messaging.dto.ts`; конечный автомат
+`received→routed→sent→delivered/failed` — `message-status.ts`; чтение диалогов и
+идемпотентный `POST /messages` — `communication-core-proxy.service.ts` +
+`communication-core.controller.ts`. Покрытие: unit
+`test/unit/message-status.spec.ts`, `test/unit/internal-messaging.dto.spec.ts`;
+end-to-end на реальном Postgres (testcontainers, реальный `AppModule` = код
+`dist/main.js`) — `test/integration/internal-messaging.spec.ts`. C2 Egress
+сохраняет `channel_type`/`conversation_ref`, чтобы Web Chat adapter доставлял
+ответ в ту же сессию CP-1. Прежние прототипные `.mjs`-наборы
+(`communication-core.m1.test.mjs`, `tests/integration/communication-core-m1.test.mjs`,
+`tests/contract/int-core.m1.contract.test.mjs`) валидируют изолированный
+`.mjs`-прототип, а не production-код (см. `docs/audit/backend-mjs-production-audit.md`,
+пункты 3 и 12).
 
 ### M2 — Identity resolution, порядок, realtime
 
@@ -272,7 +281,15 @@ resolution, endpoint-scoped `sequence_number`, gap detection, C7 публика�
 - **DoD.** Нет потерь/дублей и перестановок в рамках Endpoint при ретраях и
   разрывах; кампании идут через ядро.
 
-**Статус реализации M4.** M4 Communication Core завершён для CP-6 и CP-7.
+> ⚠️ **Статус в продакшн-сборке (issue #189).** Логика M4 ниже реализована только
+> в прототипе `services/backend/src/communication-core/communication-core-m4.mjs`
+> и **не** входит в исполняемый NestJS-артефакт `dist/main.js` (Docker запускает
+> `node dist/main.js`, собранный из `.ts`). `createEdgeIntakeCoordinator` (C9) и
+> `createBroadcastDeliveryCoordinator` (C8) в `.ts` пока не портированы —
+> требуют портирования в отдельной задаче. Подробности и таблица вердиктов:
+> `docs/audit/backend-mjs-production-audit.md` (пункт 4).
+
+**Статус реализации M4 (прототип `.mjs`).** M4 Communication Core завершён для CP-6 и CP-7.
 Сквозная идемпотентность опирается на `messages.id = idempotency_key =
 message_id`: повторная передача уже обработанного сообщения отбрасывается на
 Ingress, приёме из буфера Edge и при доставке кампаний. `message_delivery_attempts`
@@ -309,7 +326,14 @@ C9↔C1) зафиксированы в `packages/contracts/cp6-cp7-freeze.v1.jso
   (регрессия, CP-9).
 - **DoD.** Пройдены нагрузка/деградация; критерии приёмки ядра (мастер §9.4, CP-9).
 
-**Статус реализации M5.** Добавлен модуль `communication-core-m5.mjs`:
+> ⚠️ **Статус в продакшн-сборке (issue #189).** Модуль `communication-core-m5.mjs`
+> — прототип: он **не** компилируется в `dist/main.js` и не подключён к реальному
+> пути сообщений (даже внутри `.mjs` координаторы исполняются только в `node --test`).
+> `createAdapterFailureCoordinator`, `createAiDegradationGuard` и
+> `createCommunicationCoreLoadProbe` в `.ts` не портированы — требуют портирования
+> в отдельной задаче. Подробности: `docs/audit/backend-mjs-production-audit.md` (пункт 5).
+
+**Статус реализации M5 (прототип `.mjs`).** Добавлен модуль `communication-core-m5.mjs`:
 `createCommunicationCoreLoadProbe` измеряет приём/маршрутизацию без новых типов
 сообщений, `createAdapterFailureCoordinator` ограничивает вызовы адаптеров
 таймаутом/ретраями и переводит финальный отказ в `status=failed`,

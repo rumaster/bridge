@@ -79,6 +79,9 @@ services:
       # код генерируется, но не отправляется (см. .env.example).
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-https://api.telegram.org}
+      # URL, по которому backend пересылает исходящие сообщения (C2.EgressDelivery)
+      # в integration-platform. Пусто — статус фиксируется только в БД (см. .env.example).
+      INTEGRATION_EGRESS_URL: ${INTEGRATION_EGRESS_URL:-http://integration-platform:3005/internal/egress/deliveries}
     ports:
       - "${BACKEND_PORT:-3000}:${BACKEND_PORT:-3000}"
     depends_on:
