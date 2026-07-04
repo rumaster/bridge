@@ -229,6 +229,13 @@ contract `tests/contract/mobile-api-contract.test.mjs`.
 - **DoD.** Независимое версионирование подтверждено (старые клиенты не сломаны, ТЗ
   §19.6); NFR §25.2 соблюдены; синхронизация устойчива; приёмка (мастер §9.4, CP-9).
 
+**Статус реализации M5 (M5-99).** На интеграционном gate CP-9 SVC-API-MOB принят:
+приёмка и NFR §25.2 подтверждены (`docs/operations/mobile-api-m5-acceptance.md`),
+сценарий «Потеря соединения» для мобильных клиентов зелёный
+(`tests/e2e/mobile-connection-loss-cp7.test.mjs`). Контракт **MOBILE.v1** финально
+заморожен как `released_v1` на независимой линии `1.1.0` (совместимость с `1.0.0`) в
+`packages/contracts/cp9-freeze.v1.json` (скреплено `tests/contract/m5-gate-freeze.test.mjs`).
+
 ---
 
 ## 6. Точки согласования

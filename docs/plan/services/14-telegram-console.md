@@ -255,6 +255,13 @@ C10/`notification.created` зафиксированы `stable_for_m5`
 - **DoD.** Ограничения Telegram соблюдены (без блокировки бота), дублей нет,
   привязка безопасна; критерии приёмки (мастер §9.4, CP-9).
 
+**Статус реализации M5 (M5-99).** На интеграционном gate CP-9 SVC-TGC принят:
+telegram-часть сценария «Notification в Web + Telegram» зелёная
+(`tests/e2e/telegram-console-cp8.test.mjs`, `tests/e2e/notification-delivery-cp9.test.mjs`),
+ответ клиенту идемпотентен. Потребляемый контракт **C10** финально заморожен как
+`released_v1` в `packages/contracts/cp9-freeze.v1.json` (скреплено
+`tests/contract/m5-gate-freeze.test.mjs`).
+
 ---
 
 ## 6. Точки согласования
