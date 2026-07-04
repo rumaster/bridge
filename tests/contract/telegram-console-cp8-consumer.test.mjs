@@ -11,6 +11,13 @@ import {
 } from "../../clients/telegram-console/src/index.mjs";
 
 const root = process.cwd();
+const noTelegramWaits = Object.freeze({
+  limits: Object.freeze({
+    globalIntervalMs: 0,
+    perChatIntervalMs: 0,
+    groupChatIntervalMs: 0,
+  }),
+});
 
 function readJson(path) {
   return JSON.parse(readFileSync(join(root, path), "utf8"));
@@ -21,17 +28,30 @@ function readContract() {
 }
 
 describe("SVC-TGC CP-8 Telegram Console consumer contract", () => {
-  it("publishes the CP-8/M4 consumer contract for C3.auth, C3, C4 and C10", () => {
+  it("publishes the CP-8/M5 consumer contract for C3.auth, C3, C4 and C10", () => {
     const contract = readContract();
 
     assert.equal(contract["x-contract-id"], "CP8.telegram-console.consumer");
     assert.equal(contract["x-consumer"], "SVC-TGC");
-    assert.equal(contract["x-stage"], "M4");
+    assert.equal(contract["x-stage"], "M5");
     assert.deepEqual(contract.upstream_contracts, ["C3.auth", "C3", "C4", "C10"]);
-    assert.deepEqual(contract.out_of_scope.deferred_to_m5, [
-      "telegram rate limits",
-      "mass notification throttling",
+    assert.deepEqual(contract.out_of_scope.deferred_to_m5, []);
+    assert.equal(contract.m5_hardening.telegram_delivery.queue, true);
+    assert.deepEqual(contract.m5_hardening.telegram_delivery.throttling, [
+      "global",
+      "private_chat",
+      "group_chat",
     ]);
+    assert.equal(
+      contract.m5_hardening.backend_resilience.messageRetryKeepsIdempotencyKey,
+      true,
+    );
+    assert.equal(
+      contract.m5_hardening.backend_resilience.activeConversationRestoredFromBackend,
+      true,
+    );
+    assert.equal(contract.m5_hardening.account_security.verifyTelegramAccountOwnership, true);
+    assert.equal(contract.m5_hardening.account_security.revokeAccessWhenSessionEnds, true);
   });
 
   it("uses published C3.auth login endpoints and stores a server session", () => {
@@ -147,7 +167,12 @@ describe("SVC-TGC CP-8 Telegram Console consumer contract", () => {
   it("proves idempotent reply behavior against the SVC-TGC Backend mock", async () => {
     const telegramApi = createMockTelegramApiAdapter({ now: fixedNow });
     const backendApi = createMockTelegramConsoleBackendApi({ now: fixedNow });
-    const router = createTelegramConsoleRouter({ telegramApi, backendApi, now: fixedNow });
+    const router = createTelegramConsoleRouter({
+      telegramApi,
+      backendApi,
+      now: fixedNow,
+      telegramDelivery: noTelegramWaits,
+    });
 
     await router.handleUpdate(startUpdate());
     await router.handleUpdate(callbackUpdate("reply-prompt", "reply.prompt:conv-1"));

@@ -8,6 +8,9 @@ export function createMockTelegramConsoleBackendApi({
 } = {}) {
   const recordedRequests = [];
   const messagesByIdempotencyKey = new Map();
+  const loginRequestsById = new Map();
+  const sessionsByToken = new Map();
+  const activeConversationByToken = new Map();
   const conversations = createConversations();
   const messages = createMessages();
   const notifications = createNotifications(now);
@@ -20,11 +23,23 @@ export function createMockTelegramConsoleBackendApi({
         if (!isNonEmptyString(telegramUsername)) {
           throw new MockBackendApiError("telegram username is required", 400);
         }
+        const user = findManagerByTelegramUsername(telegramUsername);
+        if (!user) {
+          throw new MockBackendApiError("telegram account is not linked to a manager", 403);
+        }
+
+        const requestId = `telegram-login-request-${loginRequestsById.size + 1}`;
+        loginRequestsById.set(requestId, {
+          request_id: requestId,
+          telegram_username: normalizeUsername(telegramUsername),
+          telegram_user_id: request.telegram_user?.id ?? null,
+          chat_id: request.chat_id ?? null,
+        });
 
         return {
-          request_id: "telegram-login-request-1",
+          request_id: requestId,
           delivery: "telegram",
-          expires_at: "2026-07-03T22:45:00.000Z",
+          expires_at: addMs(now(), 5 * 60_000),
           proxied_to: "C3.auth",
           upstream_operation: "POST /auth/login/telegram/start",
           mock: true,
@@ -36,8 +51,55 @@ export function createMockTelegramConsoleBackendApi({
         if (!isNonEmptyString(request.request_id) || !isNonEmptyString(request.code)) {
           throw new MockBackendApiError("request_id and code are required", 400);
         }
+        const loginRequest = loginRequestsById.get(request.request_id);
+        if (!loginRequest) {
+          throw new MockBackendApiError("telegram login request not found", 404);
+        }
+        assertSameTelegramUser(loginRequest, request);
 
-        return createSession(now);
+        const session = createSession(now, {
+          telegram_username: loginRequest.telegram_username,
+          telegram_user_id: loginRequest.telegram_user_id,
+          chat_id: loginRequest.chat_id,
+        });
+        sessionsByToken.set(session.token, clone(session));
+        return clone(session);
+      },
+
+      async getSession({ token } = {}) {
+        record("GET", "/auth/session", { token });
+        const session = sessionsByToken.get(token);
+        if (!session) {
+          throw new MockBackendApiError("session not found", 401);
+        }
+        if (isSessionEnded(session, now())) {
+          throw new MockBackendApiError("session expired or revoked", 401);
+        }
+        return clone({
+          ...session,
+          telegram_console: {
+            active_conversation_id: activeConversationByToken.get(token) ?? null,
+          },
+        });
+      },
+
+      async logout({ token } = {}) {
+        record("POST", "/auth/logout", { token });
+        const session = sessionsByToken.get(token);
+        if (!session) {
+          return { logged_out: true, session_mode: "missing" };
+        }
+        session.revoked_at = now();
+        activeConversationByToken.delete(token);
+        return { logged_out: true, session_mode: "server", revoked_at: session.revoked_at };
+      },
+
+      revokeSession(token) {
+        const session = sessionsByToken.get(token);
+        if (session) {
+          session.revoked_at = now();
+          activeConversationByToken.delete(token);
+        }
       },
     },
 
@@ -175,12 +237,47 @@ export function createMockTelegramConsoleBackendApi({
       },
     },
 
+    telegramConsole: {
+      async setActiveConversation({ session_token, conversation_id } = {}) {
+        record("PUT", "/telegram-console/active-conversation", {
+          session_token,
+          conversation_id,
+        });
+        assertActiveSession(session_token, sessionsByToken, now);
+        findById(conversations, conversation_id, "Conversation");
+        activeConversationByToken.set(session_token, conversation_id);
+        return clone({
+          contract: "TGC.ActiveConversationState",
+          version: "1.0.0",
+          conversation_id,
+          updated_at: now(),
+        });
+      },
+
+      async getActiveConversation({ session_token } = {}) {
+        record("GET", "/telegram-console/active-conversation", { session_token });
+        assertActiveSession(session_token, sessionsByToken, now);
+        return clone({
+          contract: "TGC.ActiveConversationState",
+          version: "1.0.0",
+          conversation_id: activeConversationByToken.get(session_token) ?? null,
+          restored_from: "Backend",
+        });
+      },
+    },
+
     getRecordedRequests() {
       return recordedRequests.map(clone);
     },
 
     getFixtures() {
-      return clone({ conversations, clients: CLIENTS, messages, notifications });
+      return clone({
+        conversations,
+        clients: CLIENTS,
+        messages,
+        notifications,
+        active_conversations: Object.fromEntries(activeConversationByToken),
+      });
     },
   };
 
@@ -204,7 +301,7 @@ export class MockBackendApiError extends Error {
   }
 }
 
-function createSession(now) {
+function createSession(now, { telegram_username, telegram_user_id, chat_id }) {
   return {
     contract: "TGC.ManagerSession",
     version: "1.0.0",
@@ -213,14 +310,17 @@ function createSession(now) {
       id: DEFAULT_MANAGER_ID,
       display_name: "Демо Менеджер",
       role: "manager",
-      telegram_username: DEFAULT_MANAGER_USERNAME,
+      telegram_username,
+      telegram_user_id,
     },
     organization: {
       id: DEFAULT_ORGANIZATION_ID,
       name: "Bridge Demo",
     },
-    expires_at: "2026-07-04T00:00:00.000Z",
+    chat_id,
+    expires_at: addMs(now(), 8 * 60 * 60_000),
     created_at: now(),
+    revoked_at: null,
     proxied_to: "C3.auth",
     upstream_operation: "POST /auth/login/telegram/verify",
     mock: true,
@@ -363,6 +463,59 @@ const CLIENTS = Object.freeze([
   },
 ]);
 
+function findManagerByTelegramUsername(username) {
+  if (normalizeUsername(username) !== normalizeUsername(DEFAULT_MANAGER_USERNAME)) {
+    return null;
+  }
+
+  return {
+    id: DEFAULT_MANAGER_ID,
+    organization_id: DEFAULT_ORGANIZATION_ID,
+    role: "manager",
+    telegram_username: DEFAULT_MANAGER_USERNAME,
+  };
+}
+
+function assertSameTelegramUser(loginRequest, verifyRequest) {
+  const verifyUsername = normalizeUsername(
+    verifyRequest.telegram_username ?? verifyRequest.telegram_user?.username,
+  );
+  if (verifyUsername && verifyUsername !== loginRequest.telegram_username) {
+    throw new MockBackendApiError("telegram account ownership mismatch", 403);
+  }
+
+  const verifyUserId = verifyRequest.telegram_user?.id ?? null;
+  if (
+    loginRequest.telegram_user_id !== null &&
+    verifyUserId !== null &&
+    loginRequest.telegram_user_id !== verifyUserId
+  ) {
+    throw new MockBackendApiError("telegram account ownership mismatch", 403);
+  }
+
+  if (
+    loginRequest.chat_id !== null &&
+    verifyRequest.chat_id !== undefined &&
+    loginRequest.chat_id !== verifyRequest.chat_id
+  ) {
+    throw new MockBackendApiError("telegram login chat mismatch", 403);
+  }
+}
+
+function assertActiveSession(token, sessionsByToken, now) {
+  if (!isNonEmptyString(token)) {
+    throw new MockBackendApiError("session token is required", 401);
+  }
+
+  const session = sessionsByToken.get(token);
+  if (!session) {
+    throw new MockBackendApiError("session not found", 401);
+  }
+  if (isSessionEnded(session, now())) {
+    throw new MockBackendApiError("session expired or revoked", 401);
+  }
+}
+
 function validateManagerMessageRequest(request) {
   if (!isNonEmptyString(request.idempotency_key)) {
     throw new MockBackendApiError("idempotency_key is required", 400);
@@ -427,6 +580,21 @@ function findById(items, id, label) {
 
 function isNonEmptyString(value) {
   return typeof value === "string" && value.trim() !== "";
+}
+
+function isSessionEnded(session, timestamp) {
+  return Boolean(session.revoked_at) || Date.parse(session.expires_at) <= Date.parse(timestamp);
+}
+
+function addMs(isoTimestamp, ms) {
+  return new Date(Date.parse(isoTimestamp) + ms).toISOString();
+}
+
+function normalizeUsername(username) {
+  if (!isNonEmptyString(username)) {
+    return null;
+  }
+  return username.replace(/^@/, "").trim().toLowerCase();
 }
 
 function clone(value) {
