@@ -7,11 +7,18 @@ export {
   CommunicationCoreM1ValidationError,
   InMemoryCommunicationCoreStore,
   assertStatusTransition,
+  buildC2EgressDelivery,
   createCommunicationCoreM1Service,
   createFbpWorkflowOutboxPublisher,
   createHttpC2EgressAdapter,
   createInMemoryC7EventPublisher,
   createMockC2EgressAdapter,
   createPostgresCommunicationCoreStore,
+  uuidFromText,
 } from "./communication-core-m1.mjs";
+export {
+  CommunicationCoreM4ValidationError,
+  createBroadcastDeliveryCoordinator,
+  createEdgeIntakeCoordinator,
+} from "./communication-core-m4.mjs";
 export { createCommunicationCoreModule } from "./communication-core-module.mjs";
