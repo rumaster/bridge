@@ -375,7 +375,9 @@ async function loadCapabilities(api: ReturnType<typeof useSaasAdminApi>, channel
   return Object.fromEntries(entries.filter(Boolean) as Array<[string, ChannelCapabilityDescriptor]>);
 }
 
-function applyChannelStatusEvent(channels: Channel[], event: C7Event) {
+type ChannelStatusEvent = Extract<C7Event, { type: "channel.status_changed" }>;
+
+function applyChannelStatusEvent(channels: Channel[], event: ChannelStatusEvent) {
   return channels.map((channel) => {
     if (channel.id !== event.payload.channelId) {
       return channel;
@@ -392,10 +394,16 @@ function applyChannelStatusEvent(channels: Channel[], event: C7Event) {
 }
 
 function applyChannelStatusEvents(channels: Channel[], events: C7Event[]) {
-  return events.reduce((currentChannels, event) => applyChannelStatusEvent(currentChannels, event), channels);
+  return events.reduce(
+    (currentChannels, event) =>
+      event.type === "channel.status_changed"
+        ? applyChannelStatusEvent(currentChannels, event)
+        : currentChannels,
+    channels
+  );
 }
 
-function prependChannelError(channel: Channel, error: NonNullable<C7Event["payload"]["error"]>) {
+function prependChannelError(channel: Channel, error: NonNullable<ChannelStatusEvent["payload"]["error"]>) {
   return [error, ...(channel.error_log ?? []).filter((item) => item.id !== error.id)];
 }
 

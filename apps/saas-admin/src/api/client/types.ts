@@ -383,6 +383,200 @@ export interface OnboardingApplyResponse {
   applied_at: ISODateTime;
 }
 
+// ── Broadcast (C8, SVC-BCAST) ─────────────────────────────────────────────
+// UI-слой управляет массовыми коммуникациями через фасад C8 (CP-6): черновик
+// кампании, запуск и статистика. UI НЕ реализует логику доставки — материализация
+// получателей, планирование и рассылка остаются за SVC-BCAST/ядром (ТЗ §21.5),
+// а фасад лишь принимает описание кампании и возвращает C8 ответы.
+export type BroadcastStatus = "draft" | "scheduled" | "running" | "done" | "failed";
+
+export interface BroadcastTemplate {
+  type: "text";
+  body: string;
+  locale?: string;
+  variables?: string[];
+}
+
+export type BroadcastFilterMode = "all" | "tags" | "segment" | "custom";
+
+export interface BroadcastFilter {
+  mode: BroadcastFilterMode;
+  channels?: string[];
+  tags?: string[];
+  segment_ids?: string[];
+  criteria?: Record<string, unknown>;
+}
+
+export type BroadcastScheduleMode = "manual" | "immediate" | "scheduled" | "event" | "workflow";
+
+export interface BroadcastSchedule {
+  mode: BroadcastScheduleMode;
+  scheduled_for?: ISODateTime;
+  timezone?: string;
+  trigger?: string;
+}
+
+export type BroadcastRateLimitStrategy = "fixed" | "channel_capability";
+
+export interface BroadcastRateLimit {
+  messages_per_minute: number;
+  burst?: number;
+  strategy?: BroadcastRateLimitStrategy;
+}
+
+export interface BroadcastCampaign {
+  id: string;
+  organization_id: string;
+  name: string;
+  status: BroadcastStatus;
+  template: BroadcastTemplate;
+  filter: BroadcastFilter;
+  schedule: BroadcastSchedule;
+  rate_limit: BroadcastRateLimit;
+  created_by: string;
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+
+export interface BroadcastStats {
+  prepared: number;
+  sent: number;
+  delivered: number;
+  failed: number;
+  updated_at: ISODateTime;
+}
+
+export interface CreateBroadcastRequest {
+  organization_id: string;
+  created_by: string;
+  name: string;
+  template: BroadcastTemplate;
+  filter: BroadcastFilter;
+  schedule: BroadcastSchedule;
+  rate_limit: BroadcastRateLimit;
+}
+
+export interface ListBroadcastsResponse {
+  contract: "C8.ListBroadcastsResponse";
+  version: string;
+  request_id?: string;
+  organization_id: string;
+  items: BroadcastCampaign[];
+  page: {
+    limit: number;
+    offset: number;
+    total: number;
+  };
+}
+
+export interface CreateBroadcastResponse {
+  contract: "C8.CreateBroadcastResponse";
+  version: string;
+  request_id: string;
+  organization_id: string;
+  broadcast: BroadcastCampaign;
+}
+
+export type BroadcastStartMode = "immediate" | "scheduled";
+
+export interface StartBroadcastRequest {
+  organization_id: string;
+  started_by: string;
+  mode: BroadcastStartMode;
+  scheduled_for?: ISODateTime;
+  idempotency_key?: string;
+}
+
+export interface StartBroadcastResponse {
+  contract: "C8.StartBroadcastResponse";
+  version: string;
+  request_id: string;
+  organization_id: string;
+  broadcast: BroadcastCampaign;
+  degraded: boolean;
+  fallback_reason: "timeout" | "unavailable" | null;
+  core_delivery_draft: Record<string, unknown>;
+  state_changed_event: Record<string, unknown>;
+  created_at: ISODateTime;
+}
+
+export interface BroadcastStatsResponse {
+  contract: "C8.BroadcastStatsResponse";
+  version: string;
+  request_id: string;
+  organization_id: string;
+  broadcast_id: string;
+  status: BroadcastStatus;
+  stats: BroadcastStats;
+}
+
+// ── Notification (C10, SVC-NOTIF) ─────────────────────────────────────────
+// UI отображает ленту уведомлений текущего пользователя, отмечает «прочитано» и
+// управляет настройками категорий/каналов доставки (CP-8, ТЗ §15.4). Генерация и
+// доставка уведомлений — вне UI (ТЗ §21.5); UI лишь вызывает фасад C10.
+export type NotificationCategory = "info" | "warning" | "error" | "critical" | "admin";
+export type NotificationChannel = "web" | "telegram" | "email" | "push";
+export type NotificationStatus = "new" | "read";
+
+export interface Notification {
+  contract: "C10.Notification";
+  version: string;
+  id: string;
+  organization_id: string;
+  recipient_user_id: string;
+  category: NotificationCategory;
+  title: string;
+  body: string;
+  payload: Record<string, unknown>;
+  status: NotificationStatus;
+  channels: NotificationChannel[];
+  created_at: ISODateTime;
+  read_at: ISODateTime | null;
+  dedupe_key?: string;
+}
+
+export interface NotificationSetting {
+  category: NotificationCategory;
+  channel: NotificationChannel;
+  enabled: boolean;
+}
+
+export interface ListNotificationsResponse {
+  contract: "C10.ListNotificationsResponse";
+  version: string;
+  request_id: string;
+  organization_id: string;
+  recipient_user_id: string;
+  items: Notification[];
+  page: {
+    limit: number;
+    next_cursor: string | null;
+  };
+}
+
+export interface MarkNotificationReadResponse {
+  contract: "C10.MarkNotificationReadResponse";
+  version: string;
+  request_id: string;
+  organization_id: string;
+  notification: Notification;
+}
+
+export interface UpdateNotificationSettingsRequest {
+  organization_id: string;
+  user_id: string;
+  settings: NotificationSetting[];
+}
+
+export interface NotificationSettingsResponse {
+  contract: "C10.NotificationSettingsResponse";
+  version: string;
+  request_id: string;
+  organization_id: string;
+  user_id: string;
+  settings: NotificationSetting[];
+}
+
 export type C7Event =
   | {
       type: "channel.status_changed";
@@ -392,6 +586,22 @@ export type C7Event =
         status: ChannelStatus;
         lastCheckAt?: ISODateTime;
         error?: ChannelErrorLogItem | null;
+      };
+    }
+  | {
+      type: "broadcast.state_changed";
+      sequenceNumber: number;
+      payload: {
+        broadcastId: string;
+        status: BroadcastStatus;
+        stats?: BroadcastStats;
+      };
+    }
+  | {
+      type: "notification.created";
+      sequenceNumber: number;
+      payload: {
+        notification: Notification;
       };
     };
 
@@ -455,5 +665,22 @@ export interface SaasAdminApiClient {
   onboarding: {
     createCommand: (request: OnboardingCommandRequest) => Promise<OnboardingCommandResponse>;
     applyCommand: (request: OnboardingApplyRequest) => Promise<OnboardingApplyResponse>;
+  };
+  broadcasts: {
+    listBroadcasts: () => Promise<ListBroadcastsResponse>;
+    createBroadcast: (request: CreateBroadcastRequest) => Promise<CreateBroadcastResponse>;
+    startBroadcast: (
+      broadcastId: string,
+      request: StartBroadcastRequest
+    ) => Promise<StartBroadcastResponse>;
+    getStats: (broadcastId: string) => Promise<BroadcastStatsResponse>;
+  };
+  notifications: {
+    listNotifications: () => Promise<ListNotificationsResponse>;
+    markRead: (notificationId: string) => Promise<MarkNotificationReadResponse>;
+    getSettings: () => Promise<NotificationSettingsResponse>;
+    updateSettings: (
+      request: UpdateNotificationSettingsRequest
+    ) => Promise<NotificationSettingsResponse>;
   };
 }

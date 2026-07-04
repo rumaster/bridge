@@ -1,16 +1,23 @@
 import { createJsonApiClient } from "@bridge/api-client";
 import type {
   AdminSession,
+  BroadcastStatsResponse,
   Channel,
   ChannelCapabilityDescriptor,
   ChannelTestResult,
   ConnectChannelRequest,
   ConnectChannelResponse,
+  CreateBroadcastRequest,
+  CreateBroadcastResponse,
   CreateKnowledgeDocumentRequest,
   CreateWorkflowVersionRequest,
   DeleteKnowledgeDocumentResponse,
   KnowledgeDocument,
+  ListBroadcastsResponse,
+  ListNotificationsResponse,
   LogoutResponse,
+  MarkNotificationReadResponse,
+  NotificationSettingsResponse,
   OnboardingApplyRequest,
   OnboardingApplyResponse,
   OnboardingCommandRequest,
@@ -19,10 +26,13 @@ import type {
   OrganizationConfiguration,
   ReindexKnowledgeDocumentResponse,
   SaasAdminApiClient,
+  StartBroadcastRequest,
+  StartBroadcastResponse,
   TelegramLoginStartRequest,
   TelegramLoginStartResponse,
   TelegramLoginVerifyRequest,
   UpdateKnowledgeDocumentRequest,
+  UpdateNotificationSettingsRequest,
   UpdateOrganizationConfigurationRequest,
   UpdateOrganizationRequest,
   UpdateWorkflowRequest,
@@ -147,6 +157,35 @@ export function createSaasAdminApiClient(options: SaasAdminApiClientOptions = {}
       applyCommand: (request: OnboardingApplyRequest) =>
         requestJson<OnboardingApplyResponse>("/ai/onboarding:apply", {
           method: "POST",
+          body: JSON.stringify(request)
+        })
+    },
+    broadcasts: {
+      listBroadcasts: () => requestJson<ListBroadcastsResponse>("/broadcasts"),
+      createBroadcast: (request: CreateBroadcastRequest) =>
+        requestJson<CreateBroadcastResponse>("/broadcasts", {
+          method: "POST",
+          body: JSON.stringify(request)
+        }),
+      startBroadcast: (broadcastId: string, request: StartBroadcastRequest) =>
+        requestJson<StartBroadcastResponse>(`/broadcasts/${broadcastId}:start`, {
+          method: "POST",
+          body: JSON.stringify(request)
+        }),
+      getStats: (broadcastId: string) =>
+        requestJson<BroadcastStatsResponse>(`/broadcasts/${broadcastId}/stats`)
+    },
+    notifications: {
+      listNotifications: () => requestJson<ListNotificationsResponse>("/notifications"),
+      markRead: (notificationId: string) =>
+        requestJson<MarkNotificationReadResponse>(`/notifications/${notificationId}:read`, {
+          method: "POST",
+          body: JSON.stringify({})
+        }),
+      getSettings: () => requestJson<NotificationSettingsResponse>("/notifications/settings"),
+      updateSettings: (request: UpdateNotificationSettingsRequest) =>
+        requestJson<NotificationSettingsResponse>("/notifications/settings", {
+          method: "PUT",
           body: JSON.stringify(request)
         })
     }

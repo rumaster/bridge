@@ -1,11 +1,17 @@
 import type {
   AdminRole,
   AdminSession,
+  BroadcastCampaign,
+  BroadcastStats,
   C7Event,
   Channel,
   ChannelCapabilityDescriptor,
   ChannelCapabilityName,
   KnowledgeDocument,
+  Notification,
+  NotificationCategory,
+  NotificationChannel,
+  NotificationSetting,
   OnboardingApplyResult,
   OnboardingCommand,
   OnboardingCommandAction,
@@ -467,6 +473,210 @@ export function cloneWorkflowInstance(instance: WorkflowInstance): WorkflowInsta
 
 export function cloneWorkflowInstanceDetail(detail: WorkflowInstanceDetail): WorkflowInstanceDetail {
   return { ...detail, logs: detail.logs.map((entry) => ({ ...entry })) };
+}
+
+// ── Broadcast fixtures (C8, SVC-BCAST) ─────────────────────────────────────
+// Кампании массовых коммуникаций для раздела Broadcast (CP-6). UI отображает
+// список и статистику, но не выполняет доставку — рассылка идёт через ядро (C1/C2)
+// на стороне SVC-BCAST (ТЗ §21.5).
+export const mockBroadcasts: BroadcastCampaign[] = [
+  {
+    id: "broadcast-welcome",
+    organization_id: "org-demo",
+    name: "Приветственная серия",
+    status: "done",
+    template: {
+      type: "text",
+      body: "Здравствуйте, {{name}}! Спасибо, что подключились к нашему сервису.",
+      locale: "ru",
+      variables: ["name"]
+    },
+    filter: {
+      mode: "all",
+      channels: ["channel-web-chat-main"]
+    },
+    schedule: {
+      mode: "immediate",
+      timezone: "Europe/Moscow"
+    },
+    rate_limit: {
+      messages_per_minute: 60,
+      strategy: "fixed"
+    },
+    created_by: "Демо Администратор",
+    created_at: "2026-07-01T09:00:00.000Z",
+    updated_at: "2026-07-01T09:30:00.000Z"
+  },
+  {
+    id: "broadcast-promo-july",
+    organization_id: "org-demo",
+    name: "Июльская акция",
+    status: "scheduled",
+    template: {
+      type: "text",
+      body: "Только до конца июля: скидка 20% по промокоду JULY.",
+      locale: "ru",
+      variables: []
+    },
+    filter: {
+      mode: "tags",
+      channels: ["channel-web-chat-main", "channel-telegram-main"],
+      tags: ["vip", "active"]
+    },
+    schedule: {
+      mode: "scheduled",
+      scheduled_for: "2026-07-10T08:00:00.000Z",
+      timezone: "Europe/Moscow"
+    },
+    rate_limit: {
+      messages_per_minute: 120,
+      burst: 50,
+      strategy: "channel_capability"
+    },
+    created_by: "Демо Администратор",
+    created_at: "2026-07-03T11:00:00.000Z",
+    updated_at: "2026-07-03T11:05:00.000Z"
+  }
+];
+
+export const mockBroadcastStats: Record<string, BroadcastStats> = {
+  "broadcast-welcome": {
+    prepared: 1200,
+    sent: 1200,
+    delivered: 1180,
+    failed: 20,
+    updated_at: "2026-07-01T09:30:00.000Z"
+  },
+  "broadcast-promo-july": {
+    prepared: 340,
+    sent: 0,
+    delivered: 0,
+    failed: 0,
+    updated_at: "2026-07-03T11:05:00.000Z"
+  }
+};
+
+export function cloneBroadcastTemplate(
+  template: BroadcastCampaign["template"]
+): BroadcastCampaign["template"] {
+  return {
+    ...template,
+    variables: template.variables ? [...template.variables] : undefined
+  };
+}
+
+export function cloneBroadcastFilter(
+  filter: BroadcastCampaign["filter"]
+): BroadcastCampaign["filter"] {
+  return {
+    ...filter,
+    channels: filter.channels ? [...filter.channels] : undefined,
+    tags: filter.tags ? [...filter.tags] : undefined,
+    segment_ids: filter.segment_ids ? [...filter.segment_ids] : undefined,
+    criteria: filter.criteria ? { ...filter.criteria } : undefined
+  };
+}
+
+export function cloneBroadcast(campaign: BroadcastCampaign): BroadcastCampaign {
+  return {
+    ...campaign,
+    template: cloneBroadcastTemplate(campaign.template),
+    filter: cloneBroadcastFilter(campaign.filter),
+    schedule: { ...campaign.schedule },
+    rate_limit: { ...campaign.rate_limit }
+  };
+}
+
+export function cloneBroadcastStats(stats: BroadcastStats): BroadcastStats {
+  return { ...stats };
+}
+
+// ── Notification fixtures (C10, SVC-NOTIF) ─────────────────────────────────
+// Лента уведомлений текущего пользователя и настройки категорий/каналов доставки
+// (CP-8, ТЗ §15.4). UI не генерирует и не доставляет уведомления — только
+// отображает их и вызывает фасад C10.
+export const notificationCategories: NotificationCategory[] = [
+  "info",
+  "warning",
+  "error",
+  "critical",
+  "admin"
+];
+
+export const notificationChannels: NotificationChannel[] = ["web", "telegram", "email", "push"];
+
+export const mockNotifications: Notification[] = [
+  {
+    contract: "C10.Notification",
+    version: "1.0.0",
+    id: "notif-broadcast-welcome",
+    organization_id: "org-demo",
+    recipient_user_id: "00000000-0000-4000-8000-000000000101",
+    category: "info",
+    title: "Кампания «Приветственная серия» завершена",
+    body: "Доставлено 1180 из 1200 сообщений.",
+    payload: { broadcast_id: "broadcast-welcome" },
+    status: "new",
+    channels: ["web", "telegram"],
+    created_at: "2026-07-01T09:30:00.000Z",
+    read_at: null
+  },
+  {
+    contract: "C10.Notification",
+    version: "1.0.0",
+    id: "notif-channel-telegram-error",
+    organization_id: "org-demo",
+    recipient_user_id: "00000000-0000-4000-8000-000000000101",
+    category: "error",
+    title: "Канал Telegram Support недоступен",
+    body: "Webhook не ответил за 5 секунд. Проверьте настройки канала.",
+    payload: { channel_id: "channel-telegram-main" },
+    status: "new",
+    channels: ["web"],
+    created_at: "2026-07-03T09:55:00.000Z",
+    read_at: null
+  },
+  {
+    contract: "C10.Notification",
+    version: "1.0.0",
+    id: "notif-quota-warning",
+    organization_id: "org-demo",
+    recipient_user_id: "00000000-0000-4000-8000-000000000101",
+    category: "warning",
+    title: "Использовано 80% месячного лимита сообщений",
+    body: "Осталось 2000 сообщений из 10000 в текущем месяце.",
+    payload: {},
+    status: "read",
+    channels: ["web", "email"],
+    created_at: "2026-07-02T18:00:00.000Z",
+    read_at: "2026-07-02T18:05:00.000Z"
+  }
+];
+
+export const mockNotificationSettings: NotificationSetting[] = notificationCategories.flatMap(
+  (category) =>
+    notificationChannels.map((channel) => ({
+      category,
+      channel,
+      // Web включён для всех категорий; email — только для важных; telegram — для
+      // ошибок и критических; push по умолчанию выключен.
+      enabled:
+        channel === "web" ||
+        (channel === "email" && (category === "warning" || category === "critical")) ||
+        (channel === "telegram" && (category === "error" || category === "critical"))
+    }))
+);
+
+export function cloneNotification(notification: Notification): Notification {
+  return {
+    ...notification,
+    payload: { ...notification.payload },
+    channels: [...notification.channels]
+  };
+}
+
+export function cloneNotificationSettings(settings: NotificationSetting[]): NotificationSetting[] {
+  return settings.map((setting) => ({ ...setting }));
 }
 
 // ── Deterministic mock-AI onboarding (C4, SVC-AI) ──────────────────────────
