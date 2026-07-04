@@ -49,6 +49,8 @@ export type WebChatApiClient = {
 export type WebChatApiClientOptions = {
   baseUrl?: string;
   fetcher?: Fetcher;
+  /** Заголовки по умолчанию (например, C9-туннель Edge, ТЗ §7.6). */
+  defaultHeaders?: Record<string, string>;
 };
 
 export function createWebChatApiClient(
@@ -57,6 +59,7 @@ export function createWebChatApiClient(
   const { requestJson } = createJsonApiClient({
     baseUrl: options.baseUrl ?? DEFAULT_API_BASE_URL,
     fetcher: options.fetcher,
+    defaultHeaders: options.defaultHeaders,
   });
 
   return {
