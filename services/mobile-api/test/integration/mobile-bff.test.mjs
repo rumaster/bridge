@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
 
+import { MOBILE_API_VERSION } from "../../../../packages/contracts/src/mobile.mjs";
 import { createMobileBff } from "../../src/mobile-bff.mjs";
 import { createMockPushProvider } from "../../src/push-provider.mjs";
 import { createMobileApiServer } from "../../src/server.mjs";
@@ -132,6 +133,7 @@ describe("SVC-MOB BFF integration — idempotent send dedup (§11.12)", () => {
 
     assert.equal(first.status, 202);
     assert.equal(first.body.duplicate, false);
+    assert.equal(first.body.version, MOBILE_API_VERSION);
     assert.equal(retry.status, 202);
     assert.equal(retry.body.duplicate, true);
     assert.equal(retry.body.sequence_number, first.body.sequence_number, "no new sequence on retry");
@@ -196,6 +198,45 @@ describe("SVC-MOB BFF integration — push delivery via mock provider (§19.4)",
 
     const metrics = await (await fetch(`${baseUrl}/metrics`)).text();
     assert.match(metrics, /mobile_api_push_delivered_total 1/);
+  });
+
+  it("retries transient provider failures before a successful push delivery", () => {
+    const transientProvider = createMockPushProvider({
+      now: incrementingClock(),
+      transientTokens: ["fcm-token-transient", "fcm-token-transient"],
+    });
+    const retryBff = createMobileBff({ now: incrementingClock(), pushProvider: transientProvider });
+    retryBff.deviceRegistry.register({
+      organizationId: "org-1",
+      userId: "manager-1",
+      deviceId: "device-transient",
+      platform: "android",
+      pushProvider: "fcm",
+      pushToken: "fcm-token-transient",
+    });
+
+    const outcome = retryBff.handleRealtimeEvent({
+      event: "notification.created",
+      event_id: "evt-transient",
+      organization_id: "org-1",
+      notification: {
+        id: "notification-transient",
+        organization_id: "org-1",
+        recipient_user_id: "manager-1",
+        category: "warning",
+        title: "Transient provider",
+        body: "Retry before delivery",
+        payload: {},
+        status: "new",
+        created_at: "2026-07-04T12:00:00.000Z",
+        read_at: null,
+      },
+    });
+
+    assert.equal(outcome.pushed.results[0].status, "delivered");
+    assert.equal(outcome.pushed.results[0].attempts, 3);
+    assert.equal(transientProvider.getMetrics().transient_failure_total, 2);
+    assert.equal(retryBff.pushDispatcher.getMetrics().push_retry_total, 2);
   });
 
   it("deactivates a dead push token reported by the provider", async () => {

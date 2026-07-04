@@ -126,14 +126,17 @@
 - `src/c7.mjs` и `src/c9.mjs` содержат M0-константы и лёгкие валидаторы для unit
   и contract smoke-тестов.
 
-## M0-14: MOBILE.v1 для Mobile API
+## M5-14: MOBILE.v1 для Mobile API
 
 - `openapi/mobile/mobile.v1.openapi.json` фиксирует независимый мобильный API
-  v1.0.0 под `/mobile/v1`: auth proxy, aggregated dialogs/messages/
-  notifications, `GET /sync`, `POST /devices` и отзыв устройства.
-- `mobile/consumer-contracts.v1.json` содержит M0-заготовки consumer-driven
+  под `/mobile/v1`: auth proxy, aggregated dialogs/messages/notifications,
+  `GET /sync`, `POST /devices` и отзыв устройства. M5 поднимает текущую minor
+  версию до v1.1.0, но явно сохраняет поддержку опубликованных клиентов v1.0.0
+  через `x-supported-versions`.
+- `mobile/consumer-contracts.v1.json` содержит M5 consumer-driven
   контрактов для mobile app ↔ SVC-MOB и потребления SVC-MOB контрактов
-  C3.auth, C3.conversations/messages/clients, C7, C9 и C10.notifications.
+  C3.auth, C3.conversations/messages/clients, C7, C9 и C10.notifications; M5
+  фиксирует тот же список поддерживаемых версий.
 - `src/mobile.mjs` содержит semver, base path, contract id и проверку формы
   sync cursor `mob1.<base64url-json>`.
 

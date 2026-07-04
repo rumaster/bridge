@@ -13,7 +13,7 @@ function readJson(path) {
   return JSON.parse(readFileSync(join(root, path), "utf8"));
 }
 
-describe("Mobile app <-> SVC-MOB M0 contract", () => {
+describe("Mobile app <-> SVC-MOB M5 contract", () => {
   let server;
   let baseUrl;
 
@@ -37,8 +37,9 @@ describe("Mobile app <-> SVC-MOB M0 contract", () => {
 
     assert.equal(openApi["x-contract-id"], "MOBILE.v1");
     assert.equal(openApi["x-owner"], "SVC-MOB");
-    assert.equal(openApi["x-stage"], "M0");
-    assert.equal(openApi.info.version, "1.0.0");
+    assert.equal(openApi["x-stage"], "M5");
+    assert.equal(openApi.info.version, "1.1.0");
+    assert.deepEqual(openApi["x-supported-versions"], ["1.0.0", "1.1.0"]);
     assert.deepEqual(openApi.servers, [{ url: "/mobile/v1" }]);
     assert.deepEqual(Object.entries(openApi.paths).map(([path, methods]) => [
       path,
@@ -70,7 +71,8 @@ describe("Mobile app <-> SVC-MOB M0 contract", () => {
     );
 
     assert.equal(stubs.contract, "MOBILE.ConsumerContracts");
-    assert.equal(stubs.version, "1.0.0");
+    assert.equal(stubs.version, "1.1.0");
+    assert.deepEqual(stubs.supported_versions, ["1.0.0", "1.1.0"]);
     assert.ok(appInteractions.length >= 5);
     assert.ok(upstreamContracts.has("C3.auth"));
     assert.ok(upstreamContracts.has("C7"));

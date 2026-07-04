@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { MOBILE_API_VERSION } from "../../../../packages/contracts/src/mobile.mjs";
 import {
   validateDeviceRegistrationRequest,
   validateSendMessageRequest,
@@ -26,6 +27,47 @@ describe("MOBILE.v1 DTO validators", () => {
 
     assert.equal(result.ok, true);
     assert.equal(result.value.push_provider, "fcm");
+  });
+
+  it("accepts both the previous published version and the current MOBILE.v1 minor", () => {
+    const previous = validateSendMessageRequest({
+      contract: "MOBILE.SendMessageRequest",
+      version: "1.0.0",
+      request_id: "req-message-old-client",
+      organization_id: "org-1",
+      conversation_id: "conversation-1",
+      message_id: "message-old-client",
+      idempotency_key: "message-old-client",
+      sender_user_id: "manager-1",
+      text: "Old published client still works",
+    });
+    const current = validateSendMessageRequest({
+      contract: "MOBILE.SendMessageRequest",
+      version: MOBILE_API_VERSION,
+      request_id: "req-message-current-client",
+      organization_id: "org-1",
+      conversation_id: "conversation-1",
+      message_id: "message-current-client",
+      idempotency_key: "message-current-client",
+      sender_user_id: "manager-1",
+      text: "Current client works",
+    });
+    const unsupported = validateSendMessageRequest({
+      contract: "MOBILE.SendMessageRequest",
+      version: "2.0.0",
+      request_id: "req-message-v2-client",
+      organization_id: "org-1",
+      conversation_id: "conversation-1",
+      message_id: "message-v2-client",
+      idempotency_key: "message-v2-client",
+      sender_user_id: "manager-1",
+      text: "Unsupported major",
+    });
+
+    assert.equal(previous.ok, true);
+    assert.equal(current.ok, true);
+    assert.equal(unsupported.ok, false);
+    assert.match(unsupported.errors.map((error) => error.field).join(","), /version/);
   });
 
   it("rejects incompatible platform and push provider pairs", () => {

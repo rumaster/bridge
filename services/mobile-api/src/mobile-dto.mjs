@@ -1,5 +1,6 @@
 import {
-  MOBILE_API_VERSION,
+  MOBILE_API_SUPPORTED_VERSIONS,
+  isSupportedMobileApiVersion,
   isMobileSyncCursor,
 } from "../../../packages/contracts/src/mobile.mjs";
 
@@ -51,7 +52,7 @@ export function validateDeviceRegistrationRequest(input) {
 
   rejectUnknownFields(errors, input, DEVICE_REGISTRATION_FIELDS);
   expectConst(errors, input.contract, "MOBILE.RegisterDeviceRequest", "contract");
-  expectConst(errors, input.version, MOBILE_API_VERSION, "version");
+  expectSupportedMobileVersion(errors, input.version, "version");
   expectNonEmptyString(errors, input.request_id, "request_id");
   expectNonEmptyString(errors, input.organization_id, "organization_id");
   expectNonEmptyString(errors, input.user_id, "user_id");
@@ -102,7 +103,7 @@ export function validateSendMessageRequest(input) {
 
   rejectUnknownFields(errors, input, SEND_MESSAGE_FIELDS);
   expectConst(errors, input.contract, "MOBILE.SendMessageRequest", "contract");
-  expectConst(errors, input.version, MOBILE_API_VERSION, "version");
+  expectSupportedMobileVersion(errors, input.version, "version");
   expectNonEmptyString(errors, input.request_id, "request_id");
   expectNonEmptyString(errors, input.organization_id, "organization_id");
   expectNonEmptyString(errors, input.conversation_id, "conversation_id");
@@ -233,6 +234,16 @@ function expectConst(errors, value, expected, field) {
     errors.push({
       field,
       message: `Field must equal ${JSON.stringify(expected)}.`,
+    });
+  }
+}
+
+function expectSupportedMobileVersion(errors, value, field) {
+  expectNonEmptyString(errors, value, field);
+  if (typeof value === "string" && !isSupportedMobileApiVersion(value)) {
+    errors.push({
+      field,
+      message: `Field must be one of ${MOBILE_API_SUPPORTED_VERSIONS.join(", ")}.`,
     });
   }
 }
