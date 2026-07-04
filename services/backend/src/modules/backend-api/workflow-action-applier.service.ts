@@ -12,6 +12,10 @@ import type {
   AiOnboardingCommand,
   AiOnboardingCommandAction,
 } from "../ai-integration/ai-onboarding-command.schema";
+import {
+  DEFAULT_CONFIGURATION_KEY,
+  ORGANIZATION_CONFIGURATION_FIELDS,
+} from "../configuration/configuration.dto";
 import { ConfigurationService } from "../configuration/configuration.service";
 import { OrganizationService } from "../organization/organization.service";
 
@@ -123,11 +127,17 @@ export class WorkflowActionApplierService {
     switch (command.action) {
       case "configuration.upsert": {
         const { key, value } = this.extractConfigurationParams(command.params);
-        const config = await this.configuration.putConfiguration(
-          input.organizationId,
-          { key, value },
-          mutationContext,
-        );
+        const config = this.isOrganizationConfigurationUpsert(key, value)
+          ? await this.configuration.patchOrganizationConfiguration(
+              input.organizationId,
+              value,
+              mutationContext,
+            )
+          : await this.configuration.putConfiguration(
+              input.organizationId,
+              { key, value },
+              mutationContext,
+            );
         return {
           action: command.action,
           applied: true,
@@ -180,6 +190,9 @@ export class WorkflowActionApplierService {
     if (!Object.hasOwn(params, "value")) {
       throw this.paramsError("configuration.upsert requires a 'value' parameter.");
     }
+    if (!isRecord(params.value)) {
+      throw this.paramsError("configuration.upsert 'value' must be a JSON object.");
+    }
 
     const key = params.key;
     if (key !== undefined && (typeof key !== "string" || key.trim() === "")) {
@@ -188,8 +201,24 @@ export class WorkflowActionApplierService {
 
     return {
       key: typeof key === "string" ? key : undefined,
-      value: params.value as Record<string, unknown>,
+      value: params.value,
     };
+  }
+
+  private isOrganizationConfigurationUpsert(
+    key: string | undefined,
+    value: Record<string, unknown>,
+  ): boolean {
+    const normalizedKey = key?.trim();
+    const targetsOrganizationConfiguration =
+      normalizedKey === undefined ||
+      normalizedKey === DEFAULT_CONFIGURATION_KEY ||
+      normalizedKey === "organization.configuration";
+
+    return (
+      targetsOrganizationConfiguration &&
+      ORGANIZATION_CONFIGURATION_FIELDS.some((field) => Object.hasOwn(value, field))
+    );
   }
 
   private extractOrganizationParams(
@@ -249,4 +278,8 @@ export class WorkflowActionApplierService {
       }),
     );
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

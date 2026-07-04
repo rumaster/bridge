@@ -78,7 +78,14 @@ describe("SVC-IDN M2 RBAC", () => {
     await request(app.getHttpServer())
       .put(`/api/v1/organizations/${ORG_A}/configuration`)
       .set("authorization", `Bearer ${MANAGER_TOKEN}`)
-      .send({ value: { ai: { enabled: true } } })
+      .send({
+        defaultLanguage: "ru",
+        aiAssistantEnabled: true,
+        workflowAutomationEnabled: false,
+        monthlyMessageLimit: 10000,
+        notificationEmail: "admin-a@example.bridge.local",
+        retentionDays: 90,
+      })
       .expect(403);
   });
 
@@ -104,10 +111,18 @@ describe("SVC-IDN M2 RBAC", () => {
       .put(`/api/v1/organizations/${ORG_A}/configuration`)
       .set("authorization", `Bearer ${ADMIN_TOKEN}`)
       .set("x-actor-user-id", ADMIN_A)
-      .send({ value: { ai: { enabled: false } } })
+      .send({
+        defaultLanguage: "ru",
+        aiAssistantEnabled: false,
+        workflowAutomationEnabled: true,
+        monthlyMessageLimit: 25000,
+        notificationEmail: "admin-a@example.bridge.local",
+        retentionDays: 90,
+      })
       .expect(200)
       .expect(({ body }) => {
         expect(body.organizationId).toBe(ORG_A);
+        expect(body.monthlyMessageLimit).toBe(25000);
       });
   });
 });

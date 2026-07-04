@@ -25,6 +25,15 @@ interface OrganizationFormState {
 
 type FieldErrors = Partial<Record<keyof OrganizationFormState, string>>;
 
+const DEFAULT_CONFIGURATION_FORM_STATE = {
+  defaultLanguage: "ru",
+  aiAssistantEnabled: false,
+  workflowAutomationEnabled: false,
+  monthlyMessageLimit: "10000",
+  notificationEmail: "",
+  retentionDays: "90"
+};
+
 export default function OrganizationPage() {
   const { session } = useAuth();
   const api = useSaasAdminApi();
@@ -268,12 +277,22 @@ function toFormState(
     description: organization.description,
     timezone: organization.timezone,
     locale: organization.locale,
-    defaultLanguage: configuration.defaultLanguage,
-    aiAssistantEnabled: configuration.aiAssistantEnabled,
-    workflowAutomationEnabled: configuration.workflowAutomationEnabled,
-    monthlyMessageLimit: String(configuration.monthlyMessageLimit),
-    notificationEmail: configuration.notificationEmail,
-    retentionDays: String(configuration.retentionDays)
+    defaultLanguage: configuration.defaultLanguage ?? DEFAULT_CONFIGURATION_FORM_STATE.defaultLanguage,
+    aiAssistantEnabled:
+      configuration.aiAssistantEnabled ?? DEFAULT_CONFIGURATION_FORM_STATE.aiAssistantEnabled,
+    workflowAutomationEnabled:
+      configuration.workflowAutomationEnabled ??
+      DEFAULT_CONFIGURATION_FORM_STATE.workflowAutomationEnabled,
+    monthlyMessageLimit:
+      configuration.monthlyMessageLimit != null
+        ? String(configuration.monthlyMessageLimit)
+        : DEFAULT_CONFIGURATION_FORM_STATE.monthlyMessageLimit,
+    notificationEmail:
+      configuration.notificationEmail ?? DEFAULT_CONFIGURATION_FORM_STATE.notificationEmail,
+    retentionDays:
+      configuration.retentionDays != null
+        ? String(configuration.retentionDays)
+        : DEFAULT_CONFIGURATION_FORM_STATE.retentionDays
   };
 }
 

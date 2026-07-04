@@ -777,7 +777,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConfigurationResponseDto"
+                  "$ref": "#/components/schemas/OrganizationConfigurationResponseDto"
                 }
               }
             }
@@ -805,7 +805,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PutConfigurationDto"
+                "$ref": "#/components/schemas/PutOrganizationConfigurationDto"
               }
             }
           }
@@ -816,7 +816,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConfigurationResponseDto"
+                  "$ref": "#/components/schemas/OrganizationConfigurationResponseDto"
                 }
               }
             }
@@ -2467,9 +2467,33 @@
           }
         }
       },
-      "ConfigurationResponseDto": {
+      "OrganizationConfigurationResponseDto": {
         "type": "object",
         "properties": {
+          "defaultLanguage": {
+            "type": "string",
+            "example": "ru"
+          },
+          "aiAssistantEnabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "workflowAutomationEnabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "monthlyMessageLimit": {
+            "type": "number",
+            "example": 10000
+          },
+          "notificationEmail": {
+            "type": "string",
+            "example": "admin@example.test"
+          },
+          "retentionDays": {
+            "type": "number",
+            "example": 90
+          },
           "organizationId": {
             "type": "string",
             "example": "00000000-0000-4000-8000-000000000101"
@@ -2478,56 +2502,68 @@
             "type": "string",
             "example": "default"
           },
-          "value": {
-            "type": "object",
-            "example": {
-              "ai": {
-                "enabled": true
-              }
-            }
-          },
           "version": {
             "type": "number",
             "example": 2
           },
           "updatedBy": {
-            "type": "object",
+            "type": "string",
             "example": "00000000-0000-4000-8000-000000000201",
             "nullable": true
           },
           "updatedAt": {
-            "type": "object",
+            "type": "string",
             "example": "2026-01-01T00:00:00.000Z",
             "nullable": true
           }
         },
         "required": [
+          "defaultLanguage",
+          "aiAssistantEnabled",
+          "workflowAutomationEnabled",
+          "monthlyMessageLimit",
+          "notificationEmail",
+          "retentionDays",
           "organizationId",
           "key",
-          "value",
           "version"
         ]
       },
-      "PutConfigurationDto": {
+      "PutOrganizationConfigurationDto": {
         "type": "object",
         "properties": {
-          "value": {
-            "type": "object",
-            "example": {
-              "ai": {
-                "enabled": true
-              },
-              "locale": "ru-RU"
-            }
-          },
-          "key": {
+          "defaultLanguage": {
             "type": "string",
-            "default": "default",
-            "example": "default"
+            "example": "ru"
+          },
+          "aiAssistantEnabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "workflowAutomationEnabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "monthlyMessageLimit": {
+            "type": "number",
+            "example": 10000
+          },
+          "notificationEmail": {
+            "type": "string",
+            "example": "admin@example.test"
+          },
+          "retentionDays": {
+            "type": "number",
+            "example": 90
           }
         },
         "required": [
-          "value"
+          "defaultLanguage",
+          "aiAssistantEnabled",
+          "workflowAutomationEnabled",
+          "monthlyMessageLimit",
+          "notificationEmail",
+          "retentionDays"
         ]
       },
       "Object": {

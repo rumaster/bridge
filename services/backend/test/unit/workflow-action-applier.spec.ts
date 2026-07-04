@@ -14,7 +14,7 @@ const ACTOR = "00000000-0000-4000-8000-000000000201";
 interface Mocks {
   database: { withTenant: jest.Mock };
   audit: { record: jest.Mock };
-  configuration: { putConfiguration: jest.Mock };
+  configuration: { patchOrganizationConfiguration: jest.Mock; putConfiguration: jest.Mock };
   organization: { updateOrganization: jest.Mock };
 }
 
@@ -48,6 +48,9 @@ function createService(): { service: WorkflowActionApplierService; mocks: Mocks 
     },
     audit: { record: jest.fn().mockResolvedValue(undefined) },
     configuration: {
+      patchOrganizationConfiguration: jest
+        .fn()
+        .mockResolvedValue({ key: "default", version: 4 }),
       putConfiguration: jest.fn().mockResolvedValue({ key: "organization.timezone", version: 3 }),
     },
     organization: {
@@ -110,6 +113,29 @@ describe("WorkflowActionApplierService", () => {
         objectType: "ai_onboarding_command",
       }),
     );
+  });
+
+  it("merges organization configuration patches without replacing the whole value", async () => {
+    const { service, mocks } = createService();
+    const command = buildCommand("configuration.upsert", {
+      key: "organization.configuration",
+      value: { monthlyMessageLimit: 50000 },
+    });
+
+    const result = await service.apply(input(command, ["administrator"], "ai"));
+
+    expect(result).toEqual({
+      action: "configuration.upsert",
+      applied: true,
+      status: "applied",
+      detail: { key: "default", version: 4 },
+    });
+    expect(mocks.configuration.patchOrganizationConfiguration).toHaveBeenCalledWith(
+      ORG,
+      { monthlyMessageLimit: 50000 },
+      { actorType: "ai", actorUserId: ACTOR, requestId: "req-1" },
+    );
+    expect(mocks.configuration.putConfiguration).not.toHaveBeenCalled();
   });
 
   it("maps display_name to name for organization.update_profile and audits workflow actor", async () => {
