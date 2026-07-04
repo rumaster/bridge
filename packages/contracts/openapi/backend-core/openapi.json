@@ -3139,6 +3139,11 @@
             "example": "seeded_admin",
             "nullable": true
           },
+          "telegramId": {
+            "type": "string",
+            "example": "555000111",
+            "nullable": true
+          },
           "email": {
             "type": "object",
             "example": "seeded-admin@example.bridge.local",
@@ -3212,6 +3217,10 @@
           "telegramUsername": {
             "type": "string",
             "example": "manager_user"
+          },
+          "telegramId": {
+            "type": "string",
+            "example": "555000111"
           },
           "status": {
             "type": "string",
@@ -3325,6 +3334,11 @@
           "telegramUsername": {
             "type": "object",
             "example": "manager_user"
+          },
+          "telegramId": {
+            "type": "string",
+            "example": "555000111",
+            "nullable": true
           },
           "status": {
             "type": "string",

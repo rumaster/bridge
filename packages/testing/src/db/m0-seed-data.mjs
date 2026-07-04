@@ -42,6 +42,7 @@ export const SEEDED_ADMIN_USER_SEED = {
   id: "00000000-0000-4000-8000-000000000201",
   organization_id: DEMO_ORGANIZATION_SEED.id,
   telegram_username: "seeded_admin",
+  telegram_id: "555000111",
   email: "seeded-admin@example.bridge.local",
   display_name: "Seeded Admin",
   status: "active",

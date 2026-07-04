@@ -11,6 +11,7 @@ import {
 } from "class-validator";
 
 const USER_STATUSES = ["active", "blocked"] as const;
+const TELEGRAM_ID_PATTERN = /^-?\d{1,19}$/;
 
 export class CreateUserDto {
   @ApiProperty({ example: "Manager User" })
@@ -31,6 +32,13 @@ export class CreateUserDto {
   @MaxLength(128)
   @IsOptional()
   telegramUsername?: string;
+
+  @ApiPropertyOptional({ example: "555000111" })
+  @IsString()
+  @Matches(TELEGRAM_ID_PATTERN)
+  @MaxLength(20)
+  @IsOptional()
+  telegramId?: string;
 
   @ApiPropertyOptional({ enum: USER_STATUSES, example: "active" })
   @IsIn(USER_STATUSES)
@@ -66,6 +74,13 @@ export class PatchUserDto {
   @IsOptional()
   telegramUsername?: string | null;
 
+  @ApiPropertyOptional({ example: "555000111", nullable: true, type: String })
+  @IsString()
+  @Matches(TELEGRAM_ID_PATTERN)
+  @MaxLength(20)
+  @IsOptional()
+  telegramId?: string | null;
+
   @ApiPropertyOptional({ enum: USER_STATUSES, example: "blocked" })
   @IsIn(USER_STATUSES)
   @IsOptional()
@@ -88,6 +103,9 @@ export class UserResponseDto {
 
   @ApiPropertyOptional({ example: "seeded_admin", nullable: true })
   telegramUsername!: null | string;
+
+  @ApiPropertyOptional({ example: "555000111", nullable: true, type: String })
+  telegramId!: null | string;
 
   @ApiPropertyOptional({ example: "seeded-admin@example.bridge.local", nullable: true })
   email!: null | string;
@@ -183,6 +201,7 @@ export interface UserRow {
   organization_id: string;
   role_codes: null | string[];
   status: string;
+  telegram_id: null | string;
   telegram_username: null | string;
   updated_at: Date | string;
 }
@@ -207,6 +226,7 @@ export function mapUser(row: UserRow): UserResponseDto {
     organizationId: row.organization_id,
     roleCodes: row.role_codes ?? [],
     status: row.status,
+    telegramId: row.telegram_id,
     telegramUsername: row.telegram_username,
     updatedAt: toIso(row.updated_at),
   };

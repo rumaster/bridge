@@ -10,6 +10,7 @@ import type { StartedTestContainer } from "testcontainers";
 import { AppModule } from "../../src/app.module";
 import { configureBackendApp } from "../../src/bootstrap";
 import { TelegramCodeDeliveryService } from "../../src/modules/identity/telegram-bot.service";
+import type { TelegramCodeDelivery } from "../../src/modules/identity/telegram-bot.service";
 
 jest.setTimeout(300_000);
 
@@ -21,6 +22,7 @@ const DB = {
   user: "bridge_telegram_auth_test",
 };
 const SEEDED_ADMIN_TELEGRAM = "seeded_admin";
+const SEEDED_ADMIN_TELEGRAM_ID = "555000111";
 const DEMO_ORG = "00000000-0000-4000-8000-000000000101";
 const SEEDED_ADMIN_ID = "00000000-0000-4000-8000-000000000201";
 
@@ -90,6 +92,11 @@ describe("SVC-IDN Telegram authentication (login/telegram/start + verify)", () =
       .then((response) => response.body as { requestId: string });
 
     expect(typeof start.requestId).toBe("string");
+    const retained = delivery.consumeDelivery(start.requestId);
+    expect(retained).toBeDefined();
+    expect((retained as TelegramCodeDelivery & { telegramId?: string }).telegramId).toBe(
+      SEEDED_ADMIN_TELEGRAM_ID,
+    );
   });
 
   it("verifies a code by requestId (manager-workspace contract) and issues a working session", async () => {

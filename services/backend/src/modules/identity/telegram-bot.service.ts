@@ -8,6 +8,7 @@ export interface TelegramCodeDelivery {
   expiresAt: string;
   purpose: string;
   requestId: string;
+  telegramId?: null | string;
   telegramUsername: string;
   userId: string;
 }
@@ -78,12 +79,11 @@ const GET_UPDATES_LIMIT = 100;
  * сервис вызывает Telegram Bot API `sendMessage`.
  *
  * Ключевой момент (регресс #187): Telegram Bot API **не умеет** писать приватному
- * пользователю по `@username` — адресата можно найти только по числовому
- * `chat_id`, который бот узнаёт, когда пользователь сам открыл диалог и нажал
- * Start. Поэтому сервис резолвит `@username` → числовой `chat_id` через
- * `getUpdates` (там видны пользователи, недавно писавшие боту, включая /start) и
- * кэширует найденную пару. Это повторяет рабочую схему из проекта fbp-engine, где
- * код всегда отправляется на числовой telegram_id.
+ * пользователю по `@username` — адресата нужно хранить и передавать как числовой
+ * `users.telegram_id`/`chat_id`. Если `telegram_id` ещё не заполнен, сервис
+ * оставляет старые fallback-ветки: числовой `telegram_username` используется как
+ * `chat_id`, а при `chat not found` по `@username` выполняется best-effort
+ * резолвинг через `getUpdates`.
  *
  * Когда токен не задан (локальная разработка/CI), код не отправляется наружу,
  * а удерживается в памяти, чтобы автотесты могли его прочитать через
@@ -173,10 +173,10 @@ export class TelegramCodeDeliveryService {
   }
 
   private async sendViaBotApi(delivery: TelegramCodeDelivery): Promise<string> {
-    // Первая попытка: числовой telegram_username используется как chat_id
-    // напрямую, ранее найденный через getUpdates id берётся из кэша, иначе —
-    // fallback на @username (сработает только для публичных каналов/супергрупп).
-    const primaryChatId = this.resolveChatId(delivery.telegramUsername);
+    // Первая попытка: сохранённый users.telegram_id используется как chat_id
+    // напрямую. Остальные ветки оставлены для обратной совместимости и диагностики
+    // старых записей, где chat_id ещё не заполнен.
+    const primaryChatId = this.resolveChatId(delivery);
     const primary = await this.sendMessage(primaryChatId, delivery);
 
     if (primary.ok) {
@@ -243,11 +243,18 @@ export class TelegramCodeDeliveryService {
   }
 
   /**
-   * Строит начальное значение chat_id для sendMessage. Числовой telegram_username
-   * трактуется как chat_id напрямую; иначе используется ранее найденный числовой
-   * id из кэша, а при его отсутствии — @username.
+   * Строит начальное значение chat_id для sendMessage. users.telegram_id имеет
+   * приоритет. Числовой telegram_username трактуется как legacy chat_id напрямую;
+   * иначе используется ранее найденный числовой id из кэша, а при его отсутствии —
+   * @username.
    */
-  private resolveChatId(telegramUsername: string): string {
+  private resolveChatId(delivery: TelegramCodeDelivery): string {
+    const telegramId = delivery.telegramId?.trim();
+    if (telegramId) {
+      return telegramId;
+    }
+
+    const telegramUsername = delivery.telegramUsername;
     if (/^-?\d+$/.test(telegramUsername)) {
       return telegramUsername;
     }
@@ -304,7 +311,7 @@ export class TelegramCodeDeliveryService {
         `getUpdates unavailable for numeric chat_id resolution (HTTP ${response.status}` +
           `${payload?.error_code ? `, error_code ${payload.error_code}` : ""}): ${
             payload?.description ?? response.statusText ?? "unknown error"
-          }. If a webhook is configured, store the numeric chat_id in telegram_username instead.`,
+          }. If a webhook is configured, store the numeric chat_id in users.telegram_id.`,
       );
 
       return;
@@ -404,9 +411,9 @@ function buildDeliveryHint(chatId: string, description: string): string | undefi
   if (/chat not found/i.test(description)) {
     return (
       `Telegram не может доставить код на ${chatId}: бот пишет приватным пользователям ` +
-      `только по числовому chat_id, а не по @username. Попросите пользователя открыть ` +
-      `диалог с ботом и нажать Start (тогда chat_id подхватится из getUpdates), убедитесь, ` +
-      `что у бота не включён webhook, либо сохраните числовой chat_id в поле telegram_username.`
+      `только по числовому chat_id, а не по @username. Сохраните числовой chat_id ` +
+      `в users.telegram_id; для старых записей можно попросить пользователя открыть ` +
+      `диалог с ботом и нажать Start, чтобы fallback попытался подхватить chat_id из getUpdates.`
     );
   }
 

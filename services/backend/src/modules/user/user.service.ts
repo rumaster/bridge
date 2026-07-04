@@ -91,16 +91,18 @@ export class UserService {
             id,
             organization_id,
             telegram_username,
+            telegram_id,
             email,
             display_name,
             status
           )
-          VALUES ($1, $2, $3, $4, $5, $6)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
         `,
         [
           userId,
           organizationId,
           payload.telegramUsername ?? null,
+          payload.telegramId ?? null,
           payload.email ?? null,
           payload.displayName,
           payload.status ?? "active",
@@ -140,9 +142,10 @@ export class UserService {
           UPDATE users
           SET
             telegram_username = CASE WHEN $3 THEN $4 ELSE telegram_username END,
-            email = CASE WHEN $5 THEN $6 ELSE email END,
-            display_name = COALESCE($7, display_name),
-            status = COALESCE($8, status),
+            telegram_id = CASE WHEN $5 THEN $6 ELSE telegram_id END,
+            email = CASE WHEN $7 THEN $8 ELSE email END,
+            display_name = COALESCE($9, display_name),
+            status = COALESCE($10, status),
             updated_at = now()
           WHERE organization_id = $1 AND id = $2
         `,
@@ -151,6 +154,8 @@ export class UserService {
           userId,
           Object.hasOwn(payload, "telegramUsername"),
           payload.telegramUsername ?? null,
+          Object.hasOwn(payload, "telegramId"),
+          payload.telegramId ?? null,
           Object.hasOwn(payload, "email"),
           payload.email ?? null,
           payload.displayName ?? null,
@@ -354,6 +359,7 @@ function userSelectSql(whereClause: string): string {
       u.id,
       u.organization_id,
       u.telegram_username,
+      u.telegram_id,
       u.email,
       u.display_name,
       u.status,

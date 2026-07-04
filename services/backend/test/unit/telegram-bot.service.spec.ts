@@ -77,6 +77,27 @@ describe("TelegramCodeDeliveryService (issue #187)", () => {
     expect(service.consumeDelivery("req-1")).toMatchObject({ code: "123456" });
   });
 
+  it("uses telegram_id from users as the primary private chat_id", async () => {
+    process.env.TELEGRAM_BOT_TOKEN = "test-token";
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValue(jsonResponse(200, { ok: true, result: { message_id: 1 } }));
+    mockFetch(fetchMock);
+
+    const service = new TelegramCodeDeliveryService();
+    silenceLogger(service);
+
+    const result = await service.deliver({
+      ...delivery,
+      telegramId: "555000111",
+    } as TelegramCodeDelivery & { telegramId: string });
+
+    expect(result).toEqual({ delivered: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+    expect(body.chat_id).toBe("555000111");
+  });
+
   it("resolves @username → numeric chat_id via getUpdates and re-delivers (root cause of #187)", async () => {
     process.env.TELEGRAM_BOT_TOKEN = "test-token";
     const fetchMock = jest.fn().mockImplementation((url: string, init: { body: string }) => {

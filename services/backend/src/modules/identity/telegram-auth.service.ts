@@ -43,6 +43,7 @@ interface TelegramUserRecord {
   organizationName: string;
   organizationStatus: string;
   roleCodes: RoleCode[];
+  telegramId: null | string;
   telegramUsername: null | string;
   userId: string;
   userStatus: string;
@@ -143,6 +144,7 @@ export class TelegramAuthService {
           code,
           expiresAt: expiresAt.toISOString(),
           requestId: id,
+          telegramId: user.telegramId,
           telegramUsername: user.telegramUsername ?? telegramUsername,
           userId: user.userId,
         };
@@ -155,6 +157,7 @@ export class TelegramAuthService {
       expiresAt: prepared.expiresAt,
       purpose: TELEGRAM_LOGIN_PURPOSE,
       requestId: prepared.requestId,
+      telegramId: prepared.telegramId,
       telegramUsername: prepared.telegramUsername,
       userId: prepared.userId,
     });
@@ -483,6 +486,7 @@ interface UserJoinRow {
   organization_name: string;
   organization_status: string;
   role_codes: string[];
+  telegram_id: null | string;
   telegram_username: null | string;
   user_id: string;
   user_status: string;
@@ -496,6 +500,7 @@ const userSelectSql = `
     u.id AS user_id,
     u.organization_id,
     u.telegram_username,
+    u.telegram_id,
     u.email,
     u.display_name,
     u.status AS user_status,
@@ -543,6 +548,7 @@ function mapUserRecord(row: UserJoinRow): TelegramUserRecord {
     organizationName: row.organization_name,
     organizationStatus: row.organization_status,
     roleCodes: [...new Set((row.role_codes ?? []).filter(isRoleCode))],
+    telegramId: row.telegram_id,
     telegramUsername: row.telegram_username,
     userId: row.user_id,
     userStatus: row.user_status,
