@@ -7,6 +7,7 @@ import { assertWorkflowSchema, validateWorkflowSchema } from "./schema/validate-
 import { createVersionRegistry } from "./versions/version-registry.mjs";
 import { createInstanceStore } from "./state/instance-store.mjs";
 import { createInstanceRuntime } from "./runtime/instance-runtime.mjs";
+import { createWorkflowMetrics } from "./metrics/workflow-metrics.mjs";
 
 /**
  * Фасад движка Workflow (форк fbp-engine, ТЗ §13.13). Предоставляет две операции:
@@ -92,6 +93,7 @@ export function createFbpRuntime({
   now,
   versions = createVersionRegistry({ ...(now ? { now } : {}) }),
   instances = createInstanceStore({ ...(now ? { now } : {}) }),
+  metrics = createWorkflowMetrics(),
   limits = {},
 } = {}) {
   if (!backendClient || typeof backendClient.call !== "function") {
@@ -99,10 +101,11 @@ export function createFbpRuntime({
       "createFbpRuntime требует backendClient с методом call — данные идут только через Backend API (C3).",
     );
   }
-  const runtime = createInstanceRuntime({ backendClient, versions, instances, limits, ...(now ? { now } : {}) });
+  const runtime = createInstanceRuntime({ backendClient, versions, instances, metrics, limits, ...(now ? { now } : {}) });
   return {
     versions,
     instances,
+    metrics,
     /** Опубликовать версию схемы (неизменяемо, ТЗ §13.10). */
     publishVersion: (args) => versions.publishVersion(args),
     /** Переключить версию по умолчанию — конфигурацией (ТЗ §13.10). */
@@ -111,6 +114,8 @@ export function createFbpRuntime({
     start: (args) => runtime.start(args),
     /** Продолжить ожидающий экземпляр (stateless, возможно на другом узле). */
     resume: (args) => runtime.resume(args),
+    /** Снимок метрик исполнения Workflow (ТЗ §24.6). */
+    getMetrics: () => metrics.snapshot(),
   };
 }
 
@@ -118,6 +123,7 @@ export { validateWorkflowSchema, assertWorkflowSchema } from "./schema/validate-
 export { createVersionRegistry } from "./versions/version-registry.mjs";
 export { createInstanceStore } from "./state/instance-store.mjs";
 export { createInstanceRuntime } from "./runtime/instance-runtime.mjs";
+export { createWorkflowMetrics, renderWorkflowMetrics } from "./metrics/workflow-metrics.mjs";
 
 function createContext({ context, schema, input, instanceId, now }) {
   if (!context || typeof context.organization_id !== "string" || context.organization_id.trim() === "") {

@@ -27,6 +27,7 @@ export function createInstanceRuntime({
   backendClient,
   versions,
   instances,
+  metrics = null,
   limits = {},
   now = () => new Date().toISOString(),
 } = {}) {
@@ -63,6 +64,9 @@ export function createInstanceRuntime({
       instanceId: resolvedInstanceId,
       status: "running",
     });
+    // Метрика §24.6: запуск считается ОДИН раз на старте; `resume` — продолжение
+    // того же экземпляра и заново `runs` не инкрементирует.
+    metrics?.recordStart({ workflowId });
 
     const ctx = createContext({ context, org, version, input, instanceId: resolvedInstanceId });
     return execute({ ctx, version, instanceId: resolvedInstanceId, organizationId: org });
@@ -134,7 +138,9 @@ export function createInstanceRuntime({
         nodeId: error?.nodeId ?? null,
         data: { reason: error?.reason ?? "error", message: error?.message ?? String(error) },
       });
-      instances.updateInstance({ organizationId, instanceId, status: "failed", finishedAt: now() });
+      const finishedAt = now();
+      instances.updateInstance({ organizationId, instanceId, status: "failed", finishedAt });
+      recordTerminal({ organizationId, instanceId, workflowId: version.workflow_id, status: "failed", finishedAt });
       return {
         instance_id: instanceId,
         organization_id: organizationId,
@@ -171,8 +177,10 @@ export function createInstanceRuntime({
       };
     }
 
-    instances.updateInstance({ organizationId, instanceId, status: "completed", finishedAt: now() });
+    const finishedAt = now();
+    instances.updateInstance({ organizationId, instanceId, status: "completed", finishedAt });
     instances.clearState({ organizationId, instanceId });
+    recordTerminal({ organizationId, instanceId, workflowId: version.workflow_id, status: "completed", finishedAt });
     return {
       instance_id: instanceId,
       organization_id: organizationId,
@@ -185,6 +193,22 @@ export function createInstanceRuntime({
   }
 
   return { start, resume };
+
+  // Метрика §24.6: перевод экземпляра в терминальное состояние. Длительность —
+  // разница меток `started_at`/`finished_at` (детерминирована при инъекции `now`).
+  function recordTerminal({ organizationId, instanceId, workflowId, status, finishedAt }) {
+    if (!metrics) {
+      return;
+    }
+    let durationMs = 0;
+    try {
+      const instance = instances.getInstance({ organizationId, instanceId });
+      durationMs = durationBetween(instance.started_at, finishedAt);
+    } catch {
+      durationMs = 0;
+    }
+    metrics.recordCompletion({ workflowId, status, durationMs });
+  }
 
   function createContext({ context, org, version, input, instanceId }) {
     return new ExecutionContext({
@@ -219,6 +243,17 @@ function requireId(value, field) {
     throw new WorkflowStoreError("invalid_argument", `${field} должен быть непустой строкой.`);
   }
   return value;
+}
+
+// Длительность между ISO-метками в миллисекундах; неотрицательна и устойчива к
+// некорректным/равным меткам (при фиксированном `now` в тестах даёт 0).
+function durationBetween(startedAt, finishedAt) {
+  const start = Date.parse(startedAt);
+  const finish = Date.parse(finishedAt);
+  if (!Number.isFinite(start) || !Number.isFinite(finish)) {
+    return 0;
+  }
+  return Math.max(0, finish - start);
 }
 
 // Детерминированная сериализация с сортировкой ключей — instance_id одинаков при
