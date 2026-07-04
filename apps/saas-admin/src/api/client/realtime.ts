@@ -1,5 +1,12 @@
 import { mockC7Events } from "../mocks/fixtures";
-import type { C7Event, ChannelErrorLogItem, ChannelStatus } from "./types";
+import type {
+  BroadcastStats,
+  BroadcastStatus,
+  C7Event,
+  ChannelErrorLogItem,
+  ChannelStatus,
+  Notification
+} from "./types";
 
 export type RealtimeConnectionStatus = "connected" | "reconnecting" | "offline";
 
@@ -101,29 +108,73 @@ function parseC7Envelope(data: unknown): C7Event | null {
       payload?: {
         channel_id?: string;
         channelId?: string;
-        status?: ChannelStatus;
+        status?: ChannelStatus | BroadcastStatus;
         last_check_at?: string;
         lastCheckAt?: string;
         error?: ChannelErrorLogItem | null;
+        broadcast_id?: string;
+        broadcastId?: string;
+        stats?: BroadcastStats;
+        notification?: Notification;
       };
     };
 
     const payload = envelope.payload;
-    const channelId = payload?.channel_id ?? payload?.channelId;
-    if (envelope.event !== "channel.status_changed" || !payload || !channelId) {
+    const sequenceNumber = envelope.sequence_number ?? 0;
+    if (!payload) {
       return null;
     }
 
-    return {
-      type: "channel.status_changed",
-      sequenceNumber: envelope.sequence_number ?? 0,
-      payload: {
-        channelId,
-        status: payload.status ?? "disabled",
-        lastCheckAt: payload.last_check_at ?? payload.lastCheckAt,
-        error: payload.error
+    if (envelope.event === "channel.status_changed") {
+      const channelId = payload.channel_id ?? payload.channelId;
+      if (!channelId) {
+        return null;
       }
-    };
+
+      return {
+        type: "channel.status_changed",
+        sequenceNumber,
+        payload: {
+          channelId,
+          status: (payload.status as ChannelStatus) ?? "disabled",
+          lastCheckAt: payload.last_check_at ?? payload.lastCheckAt,
+          error: payload.error
+        }
+      };
+    }
+
+    if (envelope.event === "broadcast.state_changed") {
+      const broadcastId = payload.broadcast_id ?? payload.broadcastId;
+      if (!broadcastId || !payload.status) {
+        return null;
+      }
+
+      return {
+        type: "broadcast.state_changed",
+        sequenceNumber,
+        payload: {
+          broadcastId,
+          status: payload.status as BroadcastStatus,
+          stats: payload.stats
+        }
+      };
+    }
+
+    if (envelope.event === "notification.created") {
+      if (!payload.notification) {
+        return null;
+      }
+
+      return {
+        type: "notification.created",
+        sequenceNumber,
+        payload: {
+          notification: payload.notification
+        }
+      };
+    }
+
+    return null;
   } catch {
     return null;
   }

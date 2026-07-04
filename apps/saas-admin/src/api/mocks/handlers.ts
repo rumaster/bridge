@@ -2,6 +2,12 @@ import { HttpResponse, http } from "msw";
 
 import {
   applyOnboardingCommand,
+  cloneBroadcast,
+  cloneBroadcastFilter,
+  cloneBroadcastStats,
+  cloneBroadcastTemplate,
+  cloneNotification,
+  cloneNotificationSettings,
   cloneWorkflow,
   cloneWorkflowInstance,
   cloneWorkflowInstanceDetail,
@@ -9,9 +15,13 @@ import {
   cloneWorkflowVersion,
   createMockCapabilityDescriptor,
   deriveOnboardingCommand,
+  mockBroadcasts,
+  mockBroadcastStats,
   mockChannels,
   mockConfiguration,
   mockKnowledgeDocuments,
+  mockNotifications,
+  mockNotificationSettings,
   mockOrganization,
   mockSession,
   mockWorkflowInstanceLogs,
@@ -21,17 +31,25 @@ import {
 } from "./fixtures";
 import type {
   AdminSession,
+  BroadcastCampaign,
+  BroadcastStats,
+  BroadcastTemplate,
   Channel,
   ConnectChannelRequest,
+  CreateBroadcastRequest,
   CreateKnowledgeDocumentRequest,
   CreateWorkflowVersionRequest,
   KnowledgeDocument,
+  Notification,
+  NotificationSetting,
   OnboardingApplyRequest,
   OnboardingCommandRequest,
   Organization,
   OrganizationConfiguration,
   ProblemDetails,
+  StartBroadcastRequest,
   UpdateKnowledgeDocumentRequest,
+  UpdateNotificationSettingsRequest,
   UpdateOrganizationConfigurationRequest,
   UpdateOrganizationRequest,
   UpdateWorkflowRequest,
@@ -52,11 +70,17 @@ let currentDocuments: KnowledgeDocument[] = cloneDocuments(mockKnowledgeDocument
 let currentWorkflows: Workflow[] = mockWorkflows.map(cloneWorkflow);
 let currentVersions: WorkflowVersion[] = mockWorkflowVersions.map(cloneWorkflowVersion);
 let currentInstances: WorkflowInstance[] = mockWorkflowInstances.map(cloneWorkflowInstance);
+let currentBroadcasts: BroadcastCampaign[] = mockBroadcasts.map(cloneBroadcast);
+let currentBroadcastStats: Record<string, BroadcastStats> = cloneBroadcastStatsMap(mockBroadcastStats);
+let currentNotifications: Notification[] = mockNotifications.map(cloneNotification);
+let currentNotificationSettings: NotificationSetting[] =
+  cloneNotificationSettings(mockNotificationSettings);
 let nextChannelNumber = 1;
 let nextDocumentNumber = 1;
 let nextWorkflowVersionNumber = 1;
 let nextOnboardingNumber = 1;
 let nextConfigurationVersion = 2;
+let nextBroadcastNumber = 1;
 
 export const handlers = [
   http.get(`${API_PREFIX}/auth/session`, () => {
@@ -537,6 +561,219 @@ export const handlers = [
       organization,
       applied_at: "2026-07-03T11:00:05.000Z"
     });
+  }),
+
+  http.get(`${API_PREFIX}/broadcasts`, () => {
+    return HttpResponse.json({
+      contract: "C8.ListBroadcastsResponse",
+      version: "1.0.0",
+      request_id: "broadcast-list-req",
+      organization_id: currentOrganization.id,
+      items: currentBroadcasts.map(cloneBroadcast),
+      page: {
+        limit: 50,
+        offset: 0,
+        total: currentBroadcasts.length
+      }
+    });
+  }),
+
+  http.post(`${API_PREFIX}/broadcasts`, async ({ request }) => {
+    const body = (await request.json()) as Partial<CreateBroadcastRequest>;
+    const errors = validateCreateBroadcast(body);
+    if (errors.length > 0) {
+      return validationProblem(errors, "Request payload does not match C8.CreateBroadcastRequest DTO.");
+    }
+
+    const createdAt = "2026-07-03T12:00:00.000Z";
+    const broadcast: BroadcastCampaign = {
+      id: `broadcast-created-${nextBroadcastNumber++}`,
+      organization_id: body.organization_id ?? mockOrganization.id,
+      name: body.name!.trim(),
+      status: "draft",
+      template: cloneBroadcastTemplate(body.template as BroadcastTemplate),
+      filter: cloneBroadcastFilter(body.filter ?? { mode: "all" }),
+      schedule: { ...(body.schedule ?? { mode: "manual" }) },
+      rate_limit: { ...(body.rate_limit ?? { messages_per_minute: 60 }) },
+      created_by: body.created_by ?? mockSession.user.displayName,
+      created_at: createdAt,
+      updated_at: createdAt
+    };
+
+    currentBroadcasts = [broadcast, ...currentBroadcasts];
+    currentBroadcastStats = {
+      ...currentBroadcastStats,
+      [broadcast.id]: { prepared: 0, sent: 0, delivered: 0, failed: 0, updated_at: createdAt }
+    };
+
+    return HttpResponse.json(
+      {
+        contract: "C8.CreateBroadcastResponse",
+        version: "1.0.0",
+        request_id: "broadcast-create-req",
+        organization_id: broadcast.organization_id,
+        broadcast: cloneBroadcast(broadcast)
+      },
+      { status: 201 }
+    );
+  }),
+
+  http.post(/\/api\/v1\/broadcasts\/([^/]+):start$/, async ({ request }) => {
+    const broadcastId = getLastPathMatch(request.url, /\/broadcasts\/([^/]+):start$/);
+    const existing = currentBroadcasts.find((item) => item.id === broadcastId);
+    if (!existing) {
+      return problem(404, "Not Found", "Broadcast not found.");
+    }
+
+    const body = (await request.json()) as Partial<StartBroadcastRequest>;
+    const errors = validateStartBroadcast(body);
+    if (errors.length > 0) {
+      return validationProblem(errors, "Request payload does not match C8.StartBroadcastRequest DTO.");
+    }
+
+    const startedAt = "2026-07-03T12:05:00.000Z";
+    const nextStatus = body.mode === "scheduled" ? "scheduled" : "running";
+    const updated: BroadcastCampaign = {
+      ...cloneBroadcast(existing),
+      status: nextStatus,
+      schedule: {
+        ...existing.schedule,
+        mode: body.mode!,
+        ...(body.scheduled_for ? { scheduled_for: body.scheduled_for } : {})
+      },
+      updated_at: startedAt
+    };
+    currentBroadcasts = currentBroadcasts.map((item) => (item.id === broadcastId ? updated : item));
+
+    return HttpResponse.json({
+      contract: "C8.StartBroadcastResponse",
+      version: "1.0.0",
+      request_id: "broadcast-start-req",
+      organization_id: updated.organization_id,
+      broadcast: cloneBroadcast(updated),
+      degraded: false,
+      fallback_reason: null,
+      core_delivery_draft: {
+        contract: "C8.CoreDeliveryDraft",
+        broadcast_id: broadcastId,
+        transport: "core:C1/C2",
+        mode: body.mode
+      },
+      state_changed_event: {
+        type: "broadcast.state_changed",
+        broadcast_id: broadcastId,
+        status: nextStatus
+      },
+      created_at: startedAt
+    });
+  }),
+
+  http.get(/\/api\/v1\/broadcasts\/([^/]+)\/stats$/, ({ request }) => {
+    const broadcastId = getLastPathMatch(request.url, /\/broadcasts\/([^/]+)\/stats$/);
+    const broadcast = currentBroadcasts.find((item) => item.id === broadcastId);
+    if (!broadcast) {
+      return problem(404, "Not Found", "Broadcast not found.");
+    }
+
+    const stats = currentBroadcastStats[broadcastId] ?? {
+      prepared: 0,
+      sent: 0,
+      delivered: 0,
+      failed: 0,
+      updated_at: broadcast.updated_at
+    };
+
+    return HttpResponse.json({
+      contract: "C8.BroadcastStatsResponse",
+      version: "1.0.0",
+      request_id: "broadcast-stats-req",
+      organization_id: broadcast.organization_id,
+      broadcast_id: broadcastId,
+      status: broadcast.status,
+      stats: cloneBroadcastStats(stats)
+    });
+  }),
+
+  http.get(`${API_PREFIX}/notifications/settings`, () => {
+    return HttpResponse.json({
+      contract: "C10.NotificationSettingsResponse",
+      version: "1.0.0",
+      request_id: "notification-settings-req",
+      organization_id: currentOrganization.id,
+      user_id: mockSession.user.id,
+      settings: cloneNotificationSettings(currentNotificationSettings)
+    });
+  }),
+
+  http.put(`${API_PREFIX}/notifications/settings`, async ({ request }) => {
+    const body = (await request.json()) as Partial<UpdateNotificationSettingsRequest>;
+    if (!Array.isArray(body.settings) || body.settings.length === 0) {
+      return validationProblem(
+        [{ field: "settings", message: "Нужно передать хотя бы одну настройку." }],
+        "Request payload does not match C10.UpdateNotificationSettingsRequest DTO."
+      );
+    }
+
+    const overrides = new Map(
+      body.settings.map((setting) => [`${setting.category}:${setting.channel}`, setting.enabled])
+    );
+    currentNotificationSettings = currentNotificationSettings.map((setting) => {
+      const key = `${setting.category}:${setting.channel}`;
+      return overrides.has(key) ? { ...setting, enabled: Boolean(overrides.get(key)) } : setting;
+    });
+
+    return HttpResponse.json({
+      contract: "C10.NotificationSettingsResponse",
+      version: "1.0.0",
+      request_id: "notification-settings-update-req",
+      organization_id: currentOrganization.id,
+      user_id: body.user_id ?? mockSession.user.id,
+      settings: cloneNotificationSettings(currentNotificationSettings)
+    });
+  }),
+
+  http.get(`${API_PREFIX}/notifications`, () => {
+    return HttpResponse.json({
+      contract: "C10.ListNotificationsResponse",
+      version: "1.0.0",
+      request_id: "notification-list-req",
+      organization_id: currentOrganization.id,
+      recipient_user_id: mockSession.user.id,
+      items: currentNotifications.map(cloneNotification),
+      page: {
+        limit: 50,
+        next_cursor: null
+      }
+    });
+  }),
+
+  http.post(/\/api\/v1\/notifications\/([^/]+):read$/, ({ request }) => {
+    const notificationId = getLastPathMatch(request.url, /\/notifications\/([^/]+):read$/);
+    let updated: Notification | null = null;
+    currentNotifications = currentNotifications.map((notification) => {
+      if (notification.id !== notificationId) {
+        return notification;
+      }
+
+      updated = {
+        ...cloneNotification(notification),
+        status: "read",
+        read_at: "2026-07-03T12:10:00.000Z"
+      };
+      return updated;
+    });
+
+    if (!updated) {
+      return problem(404, "Not Found", "Notification not found.");
+    }
+
+    return HttpResponse.json({
+      contract: "C10.MarkNotificationReadResponse",
+      version: "1.0.0",
+      request_id: "notification-read-req",
+      organization_id: currentOrganization.id,
+      notification: cloneNotification(updated)
+    });
   })
 ];
 
@@ -549,11 +786,16 @@ export function resetMockBackendState() {
   currentWorkflows = mockWorkflows.map(cloneWorkflow);
   currentVersions = mockWorkflowVersions.map(cloneWorkflowVersion);
   currentInstances = mockWorkflowInstances.map(cloneWorkflowInstance);
+  currentBroadcasts = mockBroadcasts.map(cloneBroadcast);
+  currentBroadcastStats = cloneBroadcastStatsMap(mockBroadcastStats);
+  currentNotifications = mockNotifications.map(cloneNotification);
+  currentNotificationSettings = cloneNotificationSettings(mockNotificationSettings);
   nextChannelNumber = 1;
   nextDocumentNumber = 1;
   nextWorkflowVersionNumber = 1;
   nextOnboardingNumber = 1;
   nextConfigurationVersion = 2;
+  nextBroadcastNumber = 1;
 }
 
 function validateWorkflowVersionPayload(schema: WorkflowSchema | undefined) {
@@ -702,6 +944,48 @@ function cloneChannel(channel: Channel): Channel {
 
 function cloneKnowledgeDocument(document: KnowledgeDocument): KnowledgeDocument {
   return { ...document };
+}
+
+function cloneBroadcastStatsMap(stats: Record<string, BroadcastStats>): Record<string, BroadcastStats> {
+  return Object.fromEntries(
+    Object.entries(stats).map(([key, value]) => [key, cloneBroadcastStats(value)])
+  );
+}
+
+function validateCreateBroadcast(input: Partial<CreateBroadcastRequest>) {
+  const errors: NonNullable<ProblemDetails["errors"]> = [];
+
+  if (!input.organization_id) {
+    errors.push({ field: "organization_id", message: "organization_id is required" });
+  }
+
+  if (!input.name || input.name.trim().length < 2) {
+    errors.push({ field: "name", message: "Название кампании должно содержать минимум 2 символа." });
+  }
+
+  if (!input.template || typeof input.template.body !== "string" || input.template.body.trim().length === 0) {
+    errors.push({ field: "template", message: "Текст сообщения обязателен." });
+  }
+
+  if (!input.rate_limit || !Number.isFinite(input.rate_limit.messages_per_minute) || Number(input.rate_limit.messages_per_minute) < 1) {
+    errors.push({ field: "rate_limit", message: "Лимит сообщений в минуту должен быть положительным числом." });
+  }
+
+  return errors;
+}
+
+function validateStartBroadcast(input: Partial<StartBroadcastRequest>) {
+  const errors: NonNullable<ProblemDetails["errors"]> = [];
+
+  if (input.mode !== "immediate" && input.mode !== "scheduled") {
+    errors.push({ field: "mode", message: "Режим запуска должен быть immediate или scheduled." });
+  }
+
+  if (input.mode === "scheduled" && !input.scheduled_for) {
+    errors.push({ field: "scheduled_for", message: "Для запланированного запуска нужно указать дату и время." });
+  }
+
+  return errors;
 }
 
 function problem(status: number, title: string, detail: string) {

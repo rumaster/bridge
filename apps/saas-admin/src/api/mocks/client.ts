@@ -1,19 +1,26 @@
 import type {
   AdminSession,
+  BroadcastCampaign,
+  BroadcastStats,
   Channel,
   ChannelStatus,
   ConnectChannelRequest,
+  CreateBroadcastRequest,
   CreateKnowledgeDocumentRequest,
   CreateWorkflowVersionRequest,
   KnowledgeDocument,
+  Notification,
+  NotificationSetting,
   OnboardingApplyRequest,
   OnboardingCommandRequest,
   Organization,
   OrganizationConfiguration,
   SaasAdminApiClient,
+  StartBroadcastRequest,
   TelegramLoginStartRequest,
   TelegramLoginVerifyRequest,
   UpdateKnowledgeDocumentRequest,
+  UpdateNotificationSettingsRequest,
   UpdateOrganizationConfigurationRequest,
   UpdateOrganizationRequest,
   UpdateWorkflowRequest,
@@ -25,6 +32,12 @@ import { createMockC7RealtimeClient } from "../client/realtime";
 import type { C7RealtimeClient } from "../client/realtime";
 import {
   applyOnboardingCommand,
+  cloneBroadcast,
+  cloneBroadcastFilter,
+  cloneBroadcastStats,
+  cloneBroadcastTemplate,
+  cloneNotification,
+  cloneNotificationSettings,
   cloneWorkflow,
   cloneWorkflowInstance,
   cloneWorkflowInstanceDetail,
@@ -32,10 +45,14 @@ import {
   cloneWorkflowVersion,
   createMockCapabilityDescriptor,
   deriveOnboardingCommand,
+  mockBroadcasts,
+  mockBroadcastStats,
   mockC7Events,
   mockChannels,
   mockConfiguration,
   mockKnowledgeDocuments,
+  mockNotifications,
+  mockNotificationSettings,
   mockOrganization,
   mockSession,
   mockWorkflowInstanceLogs,
@@ -62,11 +79,17 @@ export function createMockSaasAdminApiClient(
   let currentWorkflows: Workflow[] = mockWorkflows.map(cloneWorkflow);
   let currentVersions: WorkflowVersion[] = mockWorkflowVersions.map(cloneWorkflowVersion);
   let currentInstances: WorkflowInstance[] = mockWorkflowInstances.map(cloneWorkflowInstance);
+  let currentBroadcasts: BroadcastCampaign[] = mockBroadcasts.map(cloneBroadcast);
+  let currentBroadcastStats: Record<string, BroadcastStats> = cloneMockBroadcastStats();
+  let currentNotifications: Notification[] = mockNotifications.map(cloneNotification);
+  let currentNotificationSettings: NotificationSetting[] =
+    cloneNotificationSettings(mockNotificationSettings);
   let nextChannelNumber = 1;
   let nextDocumentNumber = 1;
   let nextVersionNumber = 1;
   let nextOnboardingNumber = 1;
   let nextConfigurationVersion = 2;
+  let nextBroadcastNumber = 1;
 
   return {
     auth: {
@@ -428,8 +451,222 @@ export function createMockSaasAdminApiClient(
           applied_at: "2026-07-03T11:00:05.000Z"
         };
       }
+    },
+    broadcasts: {
+      async listBroadcasts() {
+        return {
+          contract: "C8.ListBroadcastsResponse",
+          version: "1.0.0",
+          request_id: "broadcast-list-req",
+          organization_id: currentOrganization.id,
+          items: currentBroadcasts.map(cloneBroadcast),
+          page: {
+            limit: 50,
+            offset: 0,
+            total: currentBroadcasts.length
+          }
+        };
+      },
+      async createBroadcast(request: CreateBroadcastRequest) {
+        if (!request.name.trim()) {
+          throw new Error("Broadcast name is required");
+        }
+        if (!request.template.body.trim()) {
+          throw new Error("Broadcast template body is required");
+        }
+        if (request.rate_limit.messages_per_minute < 1) {
+          throw new Error("Broadcast rate limit must be at least 1 message per minute");
+        }
+
+        const createdAt = "2026-07-03T12:00:00.000Z";
+        const broadcast: BroadcastCampaign = {
+          id: `broadcast-created-${nextBroadcastNumber++}`,
+          organization_id: request.organization_id,
+          name: request.name.trim(),
+          status: "draft",
+          template: cloneBroadcastTemplate(request.template),
+          filter: cloneBroadcastFilter(request.filter),
+          schedule: { ...request.schedule },
+          rate_limit: { ...request.rate_limit },
+          created_by: request.created_by,
+          created_at: createdAt,
+          updated_at: createdAt
+        };
+
+        currentBroadcasts = [broadcast, ...currentBroadcasts];
+        currentBroadcastStats = {
+          ...currentBroadcastStats,
+          [broadcast.id]: {
+            prepared: 0,
+            sent: 0,
+            delivered: 0,
+            failed: 0,
+            updated_at: createdAt
+          }
+        };
+
+        return {
+          contract: "C8.CreateBroadcastResponse",
+          version: "1.0.0",
+          request_id: "broadcast-create-req",
+          organization_id: broadcast.organization_id,
+          broadcast: cloneBroadcast(broadcast)
+        };
+      },
+      async startBroadcast(broadcastId: string, request: StartBroadcastRequest) {
+        const existing = currentBroadcasts.find((item) => item.id === broadcastId);
+        if (!existing) {
+          throw new Error("Broadcast not found");
+        }
+        if (request.mode === "scheduled" && !request.scheduled_for) {
+          throw new Error("scheduled_for is required for scheduled broadcasts");
+        }
+
+        const startedAt = "2026-07-03T12:05:00.000Z";
+        const nextStatus = request.mode === "scheduled" ? "scheduled" : "running";
+        const updated: BroadcastCampaign = {
+          ...cloneBroadcast(existing),
+          status: nextStatus,
+          schedule: {
+            ...existing.schedule,
+            mode: request.mode,
+            ...(request.scheduled_for ? { scheduled_for: request.scheduled_for } : {})
+          },
+          updated_at: startedAt
+        };
+        currentBroadcasts = currentBroadcasts.map((item) =>
+          item.id === broadcastId ? updated : item
+        );
+
+        return {
+          contract: "C8.StartBroadcastResponse",
+          version: "1.0.0",
+          request_id: "broadcast-start-req",
+          organization_id: updated.organization_id,
+          broadcast: cloneBroadcast(updated),
+          degraded: false,
+          fallback_reason: null,
+          core_delivery_draft: {
+            contract: "C8.CoreDeliveryDraft",
+            broadcast_id: broadcastId,
+            transport: "core:C1/C2",
+            mode: request.mode
+          },
+          state_changed_event: {
+            type: "broadcast.state_changed",
+            broadcast_id: broadcastId,
+            status: nextStatus
+          },
+          created_at: startedAt
+        };
+      },
+      async getStats(broadcastId: string) {
+        const broadcast = currentBroadcasts.find((item) => item.id === broadcastId);
+        if (!broadcast) {
+          throw new Error("Broadcast not found");
+        }
+
+        const stats = currentBroadcastStats[broadcastId] ?? {
+          prepared: 0,
+          sent: 0,
+          delivered: 0,
+          failed: 0,
+          updated_at: broadcast.updated_at
+        };
+
+        return {
+          contract: "C8.BroadcastStatsResponse",
+          version: "1.0.0",
+          request_id: "broadcast-stats-req",
+          organization_id: broadcast.organization_id,
+          broadcast_id: broadcastId,
+          status: broadcast.status,
+          stats: cloneBroadcastStats(stats)
+        };
+      }
+    },
+    notifications: {
+      async listNotifications() {
+        return {
+          contract: "C10.ListNotificationsResponse",
+          version: "1.0.0",
+          request_id: "notification-list-req",
+          organization_id: currentOrganization.id,
+          recipient_user_id: initialSession.user.id,
+          items: currentNotifications.map(cloneNotification),
+          page: {
+            limit: 50,
+            next_cursor: null
+          }
+        };
+      },
+      async markRead(notificationId: string) {
+        let updated: Notification | null = null;
+        currentNotifications = currentNotifications.map((notification) => {
+          if (notification.id !== notificationId) {
+            return notification;
+          }
+
+          updated = {
+            ...cloneNotification(notification),
+            status: "read",
+            read_at: "2026-07-03T12:10:00.000Z"
+          };
+          return updated;
+        });
+
+        if (!updated) {
+          throw new Error("Notification not found");
+        }
+
+        return {
+          contract: "C10.MarkNotificationReadResponse",
+          version: "1.0.0",
+          request_id: "notification-read-req",
+          organization_id: currentOrganization.id,
+          notification: cloneNotification(updated)
+        };
+      },
+      async getSettings() {
+        return {
+          contract: "C10.NotificationSettingsResponse",
+          version: "1.0.0",
+          request_id: "notification-settings-req",
+          organization_id: currentOrganization.id,
+          user_id: initialSession.user.id,
+          settings: cloneNotificationSettings(currentNotificationSettings)
+        };
+      },
+      async updateSettings(request: UpdateNotificationSettingsRequest) {
+        if (request.settings.length === 0) {
+          throw new Error("At least one notification setting is required");
+        }
+
+        const overrides = new Map(
+          request.settings.map((setting) => [`${setting.category}:${setting.channel}`, setting.enabled])
+        );
+        currentNotificationSettings = currentNotificationSettings.map((setting) => {
+          const key = `${setting.category}:${setting.channel}`;
+          return overrides.has(key) ? { ...setting, enabled: overrides.get(key)! } : setting;
+        });
+
+        return {
+          contract: "C10.NotificationSettingsResponse",
+          version: "1.0.0",
+          request_id: "notification-settings-update-req",
+          organization_id: currentOrganization.id,
+          user_id: request.user_id,
+          settings: cloneNotificationSettings(currentNotificationSettings)
+        };
+      }
     }
   };
+}
+
+function cloneMockBroadcastStats(): Record<string, BroadcastStats> {
+  return Object.fromEntries(
+    Object.entries(mockBroadcastStats).map(([id, stats]) => [id, cloneBroadcastStats(stats)])
+  );
 }
 
 function requireWorkflow(workflows: Workflow[], workflowId: string): Workflow {
