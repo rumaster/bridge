@@ -1,6 +1,9 @@
 export type WebChatAuthorType = "visitor" | "manager" | "ai" | "system";
 
 export type WebChatMessageStatus =
+  // Клиентские статусы буфера исходящих (CP-7): "queued" — в очереди на
+  // переотправку; "failed" — попытка не удалась, реплика ждёт восстановления.
+  | "queued"
   | "received"
   | "routed"
   | "sent"
@@ -123,6 +126,13 @@ export type WebChatMountOptions = {
   realtimeReconnectDelayMs?: number;
   realtimeUrl?: string;
   webSocketFactory?: WebChatWebSocketFactory;
+  /**
+   * База Edge Cluster для клиентов РФ (CP-7, ТЗ §18.7). Если задана — REST/WS
+   * прозрачно идут через Edge; контракты не меняются.
+   */
+  edgeBaseUrl?: string;
+  /** Хранилище буфера исходящих (по умолчанию sessionStorage вкладки). */
+  outboundQueueStorage?: Pick<Storage, "getItem" | "setItem" | "removeItem"> | null;
 };
 
 export type WebChatInstance = {
