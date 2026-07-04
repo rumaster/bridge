@@ -1,0 +1,64 @@
+{
+  "x-contract-id": "CP8.manager-workspace.consumer",
+  "x-consumer": "SVC-MWS",
+  "x-stage": "M3",
+  "upstream_contracts": ["C10", "C7"],
+  "interactions": [
+    {
+      "name": "list current-user notifications",
+      "contract": "C10",
+      "operationId": "listNotifications",
+      "method": "GET",
+      "path": "/notifications",
+      "request": {
+        "optional": ["status", "category", "limit", "cursor"]
+      },
+      "response": {
+        "item": "C10.Notification",
+        "consumed_fields": ["id", "category", "title", "body", "status", "created_at"],
+        "categories": ["info", "warning", "error", "critical", "admin"],
+        "statuses": ["new", "read"]
+      }
+    },
+    {
+      "name": "mark a notification read",
+      "contract": "C10",
+      "operationId": "markNotificationRead",
+      "method": "POST",
+      "path": "/notifications/{id}:read",
+      "request": {
+        "required": ["id"]
+      },
+      "response": {
+        "item": "C10.Notification",
+        "consumed_fields": ["id", "status"],
+        "consumer_behavior": {
+          "setStatusRead": true,
+          "syncUnreadCounter": true,
+          "revertOnError": true
+        }
+      }
+    }
+  ],
+  "events": [
+    {
+      "name": "notification.created",
+      "contract": "C7",
+      "payload": {
+        "required": ["notification"]
+      },
+      "consumer_behavior": {
+        "prependNotification": true,
+        "incrementUnreadCounter": true,
+        "deduplicateBy": "payload.notification.id",
+        "catchUpCursor": "sequence_number"
+      }
+    }
+  ],
+  "reconnect": {
+    "transportCursor": "last_event_id",
+    "eventDeduplication": "event_id",
+    "notificationDeduplication": "payload.notification.id",
+    "gapDetection": "sequence_number"
+  }
+}

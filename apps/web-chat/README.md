@@ -35,8 +35,50 @@ Chat как первый канал будущего CP-1: вертикальн�
 `packages/ui-kit` и `packages/api-client` пока не экспортируют готовые API, поэтому
 внутри приложения есть локальные временные заглушки с TODO на замену в M1.
 
+## M4 scope — CP-7 «Подключение клиентов РФ через Edge Cluster»
+
+Реализует §5.5 плана `docs/plan/services/13-web-chat.md`: устойчивое подключение
+клиента РФ к Backend через **Edge Cluster** (ТЗ §18.7, §7.6, §5.2). Серверный
+буфер Edge/C9 остаётся зоной ответственности SVC-EDGE — виджет его только
+потребляет.
+
+- **Прозрачный проход через Edge.** Если задан `edgeBaseUrl`, REST и WebSocket
+  трафик виджета идёт через Edge Cluster без изменения контрактов C3.messages/C7.
+  В заголовке виджета появляется отметка «· через Edge».
+- **Устойчивость к разрыву.** Клиентский буфер исходящих реплик
+  (`outboundQueue`, FIFO) удерживает неотправленные сообщения при обрыве канала;
+  после восстановления соединения виджет **автоматически переотправляет** буфер.
+- **Идемпотентность / дедупликация.** Каждая реплика несёт сквозной
+  `idempotency_key` (= `message_id`, ТЗ §11.12), стабильный между попытками, —
+  повторная отправка не создаёт дублей, сервер возвращает уже созданное
+  сообщение.
+- **Порядок без разрывов.** Реплики сохраняют FIFO-порядок в рамках
+  Conversation/Endpoint (ТЗ §7.10); после переподключения лента докручивается по
+  `sequence_number` без пропусков.
+
+### Опции монтирования (CP-7)
+
+- `edgeBaseUrl?: string` — база Edge Cluster для клиентов РФ. Если задана,
+  REST/WS прозрачно идут через Edge; контракты не меняются.
+- `outboundQueueStorage?: Storage | null` — хранилище буфера исходящих (по
+  умолчанию `sessionStorage` вкладки); `null` отключает персистентность.
+- `realtimeReconnectDelayMs?: number` — задержка автопереподключения WS, после
+  которого запускается переотправка буфера.
+
+### Тесты
+
+- **unit** — `outboundQueue` (буфер/переотправка/дедуп/порядок).
+- **integration** — `test/web-chat-edge-resilience.test.tsx`: эмуляция разрыва
+  (mock Backend/WS), переотправка без дублей, корректный порядок нескольких
+  реплик.
+- **e2e (Playwright)** — `test/e2e/web-chat.cp7.spec.ts`, сценарий CP-7 «Потеря
+  соединения»: разрыв канала до Edge → буферизация реплики → восстановление →
+  автопереотправка без дублей и с ответом менеджера.
+
 ## Commands
 
 - `npm run dev --workspace @bridge/web-chat` — локальный стенд с MSW в dev mode.
-- `npm test --workspace @bridge/web-chat` — unit/MSW smoke tests.
+  Параметр `?edge=1` включает прохождение через Edge Cluster (CP-7).
+- `npm test --workspace @bridge/web-chat` — unit/integration тесты (Vitest).
+- `npm run test:e2e --workspace @bridge/web-chat` — e2e-сценарий CP-7 (Playwright).
 - `npm run build --workspace @bridge/web-chat` — сборка widget bundle.

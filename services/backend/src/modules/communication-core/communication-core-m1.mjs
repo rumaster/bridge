@@ -722,6 +722,8 @@ export class InMemoryCommunicationCoreStore {
     this.identityLinks = new Map();
     this.channels = new Map();
     this.outboxEvents = new Map();
+    this.broadcasts = new Map();
+    this.broadcastMessages = new Map();
   }
 
   async recordInboundMessage(ingress) {
@@ -893,6 +895,186 @@ export class InMemoryCommunicationCoreStore {
       ),
       deliveryAttempt: clone(attempt),
     };
+  }
+
+  async recordDeliveryAttempt({
+    organizationId,
+    messageId,
+    adapter,
+    attemptNo,
+    status,
+    error,
+    occurredAt,
+  }) {
+    const key = messageKey(organizationId, messageId);
+    const message = this.messages.get(key);
+    if (!message) {
+      throw new CommunicationCoreM1NotFoundError("Message was not found.");
+    }
+
+    const attempt = {
+      id: uuidFromText(
+        `${organizationId}:delivery_attempt:${messageId}:${adapter}:${attemptNo}`,
+      ),
+      organization_id: organizationId,
+      message_id: messageId,
+      adapter,
+      attempt_no: attemptNo,
+      status,
+      error: error ?? null,
+      created_at: occurredAt,
+    };
+    const attempts = this.deliveryAttempts.get(key) ?? [];
+    const existingIndex = attempts.findIndex(
+      (item) => item.adapter === adapter && item.attempt_no === attemptNo,
+    );
+    if (existingIndex >= 0) {
+      attempts[existingIndex] = attempt;
+    } else {
+      attempts.push(attempt);
+    }
+    this.deliveryAttempts.set(key, attempts);
+
+    return { deliveryAttempt: clone(attempt) };
+  }
+
+  async recordBroadcastDelivery({
+    organizationId,
+    broadcastId,
+    broadcastName,
+    draft,
+    occurredAt,
+  }) {
+    const source = draft.message;
+    const existing = this.messages.get(messageKey(organizationId, source.id));
+    if (existing) {
+      const link = this.broadcastMessages.get(
+        broadcastMessageKey(organizationId, broadcastId, source.id),
+      );
+      const attempts = this.deliveryAttempts.get(messageKey(organizationId, source.id)) ?? [];
+
+      return {
+        duplicate: true,
+        message: clone(existing),
+        conversation: clone(
+          this.conversations.get(conversationKey(organizationId, existing.conversation_id)),
+        ),
+        endpoint: clone(
+          this.endpoints.get(endpointKey(organizationId, existing.endpoint_id)),
+        ),
+        broadcastMessage: clone(link ?? null),
+        nextAttemptNo: attempts.length + 1,
+      };
+    }
+
+    const conversation = this.conversations.get(
+      conversationKey(organizationId, source.conversation_id),
+    );
+    if (!conversation) {
+      throw new CommunicationCoreM1NotFoundError("Conversation was not found.");
+    }
+
+    const endpoint = this.endpoints.get(endpointKey(organizationId, source.endpoint_id));
+    if (!endpoint) {
+      throw new CommunicationCoreM1NotFoundError("Communication endpoint was not found.");
+    }
+
+    this.ensureBroadcast({
+      organizationId,
+      broadcastId,
+      name: broadcastName,
+      occurredAt,
+    });
+
+    const stored = {
+      ...source,
+      organization_id: organizationId,
+      client_id: endpoint.client_id,
+      conversation_id: conversation.id,
+      endpoint_id: endpoint.id,
+      channel: endpoint.channel,
+      direction: MESSAGE_DIRECTION.OUTBOUND,
+      sender_type: "broadcast",
+      sequence_number: this.nextSequenceNumber(organizationId, endpoint.id),
+      status: MESSAGE_STATUS.ROUTED,
+      created_at: source.created_at ?? occurredAt,
+    };
+
+    this.messages.set(messageKey(organizationId, stored.id), stored);
+    this.attachments.set(messageKey(organizationId, stored.id), []);
+    this.updateConversationLastMessage(conversation, stored.created_at, occurredAt);
+
+    const link = {
+      id: uuidFromText(`${organizationId}:broadcast_message:${broadcastId}:${stored.id}`),
+      organization_id: organizationId,
+      broadcast_id: broadcastId,
+      message_id: stored.id,
+      status: "prepared",
+      created_at: occurredAt,
+      updated_at: occurredAt,
+    };
+    this.broadcastMessages.set(
+      broadcastMessageKey(organizationId, broadcastId, stored.id),
+      link,
+    );
+
+    this.appendOutboxEvents([
+      createMessageCreatedOutboxEvent(stored, { clientId: endpoint.client_id }),
+    ]);
+
+    return {
+      duplicate: false,
+      message: clone(stored),
+      conversation: clone(conversation),
+      endpoint: clone(endpoint),
+      broadcastMessage: clone(link),
+      nextAttemptNo: 1,
+    };
+  }
+
+  async updateBroadcastMessageStatus({
+    organizationId,
+    broadcastId,
+    messageId,
+    status,
+    occurredAt,
+  }) {
+    const key = broadcastMessageKey(organizationId, broadcastId, messageId);
+    const link = this.broadcastMessages.get(key);
+    if (!link) {
+      throw new CommunicationCoreM1NotFoundError("Broadcast message link was not found.");
+    }
+
+    link.status = status;
+    link.updated_at = occurredAt ?? link.updated_at;
+    this.broadcastMessages.set(key, link);
+
+    return clone(link);
+  }
+
+  ensureBroadcast({ organizationId, broadcastId, name, occurredAt }) {
+    const key = broadcastKey(organizationId, broadcastId);
+    if (!this.broadcasts.has(key)) {
+      const trimmedName = typeof name === "string" ? name.trim() : "";
+      this.broadcasts.set(key, {
+        id: broadcastId,
+        organization_id: organizationId,
+        name: trimmedName === "" ? `Broadcast ${broadcastId}` : name,
+        status: "running",
+        created_at: occurredAt,
+        updated_at: occurredAt,
+      });
+    }
+
+    return clone(this.broadcasts.get(key));
+  }
+
+  getBroadcasts() {
+    return Array.from(this.broadcasts.values()).map(clone);
+  }
+
+  getBroadcastMessages() {
+    return Array.from(this.broadcastMessages.values()).map(clone);
   }
 
   async listConversations({ organizationId, limit }) {
@@ -2189,6 +2371,34 @@ export function createPostgresCommunicationCoreStore({ client }) {
     return result.rows.map(rowToDeliveryAttempt);
   }
 
+  async function getBroadcastMessageLink(organizationId, broadcastId, messageId) {
+    const result = await client.query(
+      `
+        SELECT *
+        FROM broadcast_messages
+        WHERE organization_id = $1
+          AND broadcast_id = $2
+          AND message_id = $3
+      `,
+      [organizationId, broadcastId, messageId],
+    );
+
+    return result.rowCount === 0 ? null : rowToBroadcastMessage(result.rows[0]);
+  }
+
+  async function ensureBroadcastRow({ organizationId, broadcastId, name, occurredAt }) {
+    const trimmedName = typeof name === "string" ? name.trim() : "";
+    const resolvedName = trimmedName === "" ? `Broadcast ${broadcastId}` : name;
+    await client.query(
+      `
+        INSERT INTO broadcasts (id, organization_id, name, status, created_at, updated_at)
+        VALUES ($1, $2, $3, 'running', $4::timestamptz, $4::timestamptz)
+        ON CONFLICT (id) DO NOTHING
+      `,
+      [broadcastId, organizationId, resolvedName, occurredAt],
+    );
+  }
+
   async function getOutboxEventById(organizationId, eventId) {
     const result = await client.query(
       `
@@ -2596,6 +2806,240 @@ export function createPostgresCommunicationCoreStore({ client }) {
           conversation,
           deliveryAttempt: rowToDeliveryAttempt(attempt.rows[0]),
         };
+      });
+    },
+
+    async recordDeliveryAttempt({
+      organizationId,
+      messageId,
+      adapter,
+      attemptNo,
+      status,
+      error,
+      occurredAt,
+    }) {
+      return withTenantTransaction(organizationId, async () => {
+        const current = await getMessageWithContext(organizationId, messageId);
+        if (!current) {
+          throw new CommunicationCoreM1NotFoundError("Message was not found.");
+        }
+
+        const attemptId = uuidFromText(
+          `${organizationId}:delivery_attempt:${messageId}:${adapter}:${attemptNo}`,
+        );
+        const attempt = await client.query(
+          `
+            INSERT INTO message_delivery_attempts (
+              id,
+              organization_id,
+              message_id,
+              adapter,
+              attempt_no,
+              status,
+              error,
+              created_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz)
+            ON CONFLICT (message_id, adapter, attempt_no) DO UPDATE SET
+              status = EXCLUDED.status,
+              error = EXCLUDED.error
+            RETURNING *
+          `,
+          [
+            attemptId,
+            organizationId,
+            messageId,
+            adapter,
+            attemptNo,
+            status,
+            error ?? null,
+            occurredAt,
+          ],
+        );
+
+        return {
+          deliveryAttempt: rowToDeliveryAttempt(attempt.rows[0]),
+        };
+      });
+    },
+
+    async recordBroadcastDelivery({
+      organizationId,
+      broadcastId,
+      broadcastName,
+      draft,
+      occurredAt,
+    }) {
+      return withTenantTransaction(organizationId, async () => {
+        const source = draft.message;
+        const existing = await getMessageWithContext(organizationId, source.id);
+        if (existing) {
+          const link = await getBroadcastMessageLink(organizationId, broadcastId, source.id);
+          const attempts = await getDeliveryAttempts(organizationId, source.id);
+          const conversation = await getConversationById(
+            organizationId,
+            existing.conversation_id,
+          );
+          const endpoint = await getEndpointById(organizationId, existing.endpoint_id);
+
+          return {
+            duplicate: true,
+            message: existing,
+            conversation,
+            endpoint,
+            broadcastMessage: link,
+            nextAttemptNo: attempts.length + 1,
+          };
+        }
+
+        const conversation = await getConversationById(
+          organizationId,
+          source.conversation_id,
+        );
+        if (!conversation) {
+          throw new CommunicationCoreM1NotFoundError("Conversation was not found.");
+        }
+
+        const endpoint = await getEndpointById(organizationId, source.endpoint_id);
+        if (!endpoint) {
+          throw new CommunicationCoreM1NotFoundError("Communication endpoint was not found.");
+        }
+
+        await ensureBroadcastRow({
+          organizationId,
+          broadcastId,
+          name: broadcastName,
+          occurredAt,
+        });
+        await lockEndpointPartition(organizationId, endpoint.id);
+        const sequenceNumber = await nextSequenceNumber(organizationId, endpoint.id);
+
+        await client.query(
+          `
+            INSERT INTO messages (
+              id,
+              organization_id,
+              conversation_id,
+              endpoint_id,
+              channel,
+              direction,
+              sender_type,
+              sequence_number,
+              type,
+              content,
+              status,
+              created_at
+            )
+            VALUES (
+              $1,
+              $2,
+              $3,
+              $4,
+              $5,
+              'outbound',
+              'broadcast',
+              $6,
+              $7,
+              $8::jsonb,
+              'routed',
+              $9::timestamptz
+            )
+          `,
+          [
+            source.id,
+            organizationId,
+            conversation.id,
+            endpoint.id,
+            endpoint.channel,
+            sequenceNumber,
+            source.type,
+            JSON.stringify(source.content),
+            source.created_at ?? occurredAt,
+          ],
+        );
+        await client.query(
+          `
+            UPDATE conversations
+            SET last_message_at = $1::timestamptz,
+                updated_at = $2::timestamptz
+            WHERE organization_id = $3
+              AND id = $4
+          `,
+          [source.created_at ?? occurredAt, occurredAt, organizationId, conversation.id],
+        );
+
+        const linkId = uuidFromText(
+          `${organizationId}:broadcast_message:${broadcastId}:${source.id}`,
+        );
+        const linkResult = await client.query(
+          `
+            INSERT INTO broadcast_messages (
+              id,
+              organization_id,
+              broadcast_id,
+              message_id,
+              status,
+              created_at,
+              updated_at
+            )
+            VALUES ($1, $2, $3, $4, 'prepared', $5::timestamptz, $5::timestamptz)
+            ON CONFLICT (organization_id, broadcast_id, message_id) DO NOTHING
+            RETURNING *
+          `,
+          [linkId, organizationId, broadcastId, source.id, occurredAt],
+        );
+
+        const message = await getMessageWithContext(organizationId, source.id);
+        await insertOutboxEvents([
+          createMessageCreatedOutboxEvent(message, {
+            clientId: endpoint.client_id,
+          }),
+        ]);
+        const updatedConversation = await getConversationById(
+          organizationId,
+          conversation.id,
+        );
+        const link =
+          linkResult.rowCount > 0
+            ? rowToBroadcastMessage(linkResult.rows[0])
+            : await getBroadcastMessageLink(organizationId, broadcastId, source.id);
+
+        return {
+          duplicate: false,
+          message,
+          conversation: updatedConversation,
+          endpoint,
+          broadcastMessage: link,
+          nextAttemptNo: 1,
+        };
+      });
+    },
+
+    async updateBroadcastMessageStatus({
+      organizationId,
+      broadcastId,
+      messageId,
+      status,
+      occurredAt,
+    }) {
+      return withTenantTransaction(organizationId, async () => {
+        const result = await client.query(
+          `
+            UPDATE broadcast_messages
+            SET status = $1,
+                updated_at = GREATEST($2::timestamptz, updated_at)
+            WHERE organization_id = $3
+              AND broadcast_id = $4
+              AND message_id = $5
+            RETURNING *
+          `,
+          [status, occurredAt, organizationId, broadcastId, messageId],
+        );
+        if (result.rowCount === 0) {
+          throw new CommunicationCoreM1NotFoundError("Broadcast message link was not found.");
+        }
+
+        return rowToBroadcastMessage(result.rows[0]);
       });
     },
 
@@ -3362,7 +3806,7 @@ function transitionStoredMessage(message, status, changedAt) {
   };
 }
 
-function buildC2EgressDelivery({ message, endpoint }) {
+export function buildC2EgressDelivery({ message, endpoint }) {
   const channelId = endpoint.metadata?.channel_id ?? endpoint.external_id ?? endpoint.id;
   const conversationRef =
     endpoint.metadata?.conversation_ref ??
@@ -3565,7 +4009,7 @@ function toMessageUuid(value, fallback) {
   return uuidFromText(`message:${value ?? fallback}`);
 }
 
-function uuidFromText(value) {
+export function uuidFromText(value) {
   const hex = createHash("md5").update(String(value)).digest("hex");
 
   return [
@@ -3631,6 +4075,14 @@ function outboxEventKey(organizationId, eventId) {
 
 function channelKey(organizationId, channelId) {
   return `${organizationId}:${channelId}`;
+}
+
+function broadcastKey(organizationId, broadcastId) {
+  return `${organizationId}:${broadcastId}`;
+}
+
+function broadcastMessageKey(organizationId, broadcastId, messageId) {
+  return `${organizationId}:${broadcastId}:${messageId}`;
 }
 
 function compareConversations(left, right) {
@@ -3728,6 +4180,18 @@ function rowToDeliveryAttempt(row) {
     status: row.status,
     error: row.error,
     created_at: row.created_at?.toISOString?.() ?? row.created_at,
+  };
+}
+
+function rowToBroadcastMessage(row) {
+  return {
+    id: row.id,
+    organization_id: row.organization_id,
+    broadcast_id: row.broadcast_id,
+    message_id: row.message_id,
+    status: row.status,
+    created_at: row.created_at?.toISOString?.() ?? row.created_at,
+    updated_at: row.updated_at?.toISOString?.() ?? row.updated_at,
   };
 }
 

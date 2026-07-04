@@ -148,6 +148,15 @@ export const mockNotifications: NotificationItem[] = [
   }
 ];
 
+export const mockLiveNotification: NotificationItem = {
+  id: "notif-live-1",
+  category: "critical",
+  title: "Критический сбой канала Telegram",
+  body: "Доставка ответов приостановлена, требуется вмешательство менеджера.",
+  status: "new",
+  createdAt: "2026-07-02T16:11:12.000Z"
+};
+
 export const mockC7Events: C7Event[] = [
   {
     contract: "C7.WebSocketEvent",
@@ -222,7 +231,7 @@ export const mockC7Events: C7Event[] = [
     organization_id: "org-1",
     sequence_number: 1006,
     payload: {
-      notification: mockNotifications[0]
+      notification: mockLiveNotification
     },
     occurred_at: "2026-07-02T16:11:12.000Z"
   }

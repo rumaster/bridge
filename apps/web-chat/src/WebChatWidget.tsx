@@ -16,6 +16,7 @@ import {
   applyRealtimeEventToMessages,
   getLatestSequenceNumber,
   mergeWebChatMessages,
+  updateWebChatMessageStatus,
 } from "./platform/messageState";
 import {
   createWebChatRealtimeClient,
@@ -25,24 +26,41 @@ import {
   loadStoredVisitorSession,
   saveStoredVisitorSession,
 } from "./platform/visitorSession";
+import {
+  createOutboundQueue,
+  type OutboundQueue,
+  type OutboundQueueItem,
+} from "./platform/outboundQueue";
+import { resolveEdgeConnection } from "./platform/edgeConnection";
 import { IconButton, PrimaryButton, WidgetShell } from "./platform/uiKit";
 import type { WebChatMessage, WebChatMountOptions, WebChatSession } from "./types";
 
 export function WebChatWidget({
   apiBaseUrl,
   conversationId = DEFAULT_CONVERSATION_ID,
+  edgeBaseUrl,
   historyPageSize = 20,
   organizationId = DEFAULT_ORGANIZATION_ID,
+  outboundQueueStorage,
   realtimeEnabled = true,
   realtimeReconnectDelayMs,
   realtimeUrl,
   title = "Bridge Web Chat",
   webSocketFactory,
 }: WebChatMountOptions) {
-  const client = useMemo(
-    () => createWebChatApiClient({ baseUrl: apiBaseUrl }),
-    [apiBaseUrl],
+  const edge = useMemo(
+    () => resolveEdgeConnection({ apiBaseUrl, realtimeUrl, edgeBaseUrl }),
+    [apiBaseUrl, edgeBaseUrl, realtimeUrl],
   );
+  const client = useMemo(
+    () =>
+      createWebChatApiClient({
+        baseUrl: edge.apiBaseUrl,
+        defaultHeaders: edge.headers,
+      }),
+    [edge],
+  );
+  const queueRef = useRef<OutboundQueue | null>(null);
   const [messages, setMessages] = useState<WebChatMessage[]>([]);
   const messagesRef = useRef<WebChatMessage[]>([]);
   const [messageText, setMessageText] = useState("");
@@ -159,9 +177,96 @@ export function WebChatWidget({
     [client, historyPageSize, mergeMessages],
   );
 
+  const processQueue = useCallback(async () => {
+    const queue = queueRef.current;
+    const activeSession = sessionRef.current;
+    if (!queue || !activeSession || queue.isEmpty() || queue.isFlushing()) {
+      return;
+    }
+
+    setIsSending(true);
+    const latestSequenceNumber = getLatestSequenceNumber(messagesRef.current);
+    const result = await queue.flush(
+      (item) =>
+        client.sendMessage({
+          conversationId: item.conversationId,
+          endpointId: item.endpointId,
+          idempotencyKey: item.idempotencyKey,
+          organizationId: item.organizationId,
+          text: item.text,
+          visitorSessionId: item.visitorSessionId,
+        }),
+      {
+        onSent(_item, message) {
+          // Дедупликация: id серверного сообщения = idempotency_key, поэтому
+          // merge по id заменяет оптимистичную реплику без создания дубля.
+          mergeMessages([message]);
+        },
+        onFailed(item) {
+          setMessages((currentMessages) => {
+            const nextMessages = updateWebChatMessageStatus(
+              currentMessages,
+              item.idempotencyKey,
+              "failed",
+            );
+            messagesRef.current = nextMessages;
+            return nextMessages;
+          });
+        },
+      },
+    );
+    setIsSending(false);
+
+    if (result.sent.length > 0) {
+      // Догоняем ленту после переотправки: подтягиваем ответы менеджера и
+      // восстанавливаем порядок по sequence_number без пропусков (§7.10).
+      await catchUpMessages(latestSequenceNumber);
+    }
+
+    if (result.failure) {
+      setError(getErrorMessage(result.failure.error));
+      return;
+    }
+
+    setError(null);
+    if (!queue.isEmpty()) {
+      // Реплики, добавленные во время flush, отправляем следующим проходом.
+      void processQueue();
+    }
+  }, [catchUpMessages, client, mergeMessages]);
+
   useEffect(() => {
     sessionRef.current = session;
   }, [session]);
+
+  useEffect(() => {
+    if (!session) {
+      queueRef.current = null;
+      return;
+    }
+
+    const queue = createOutboundQueue({
+      conversationId: session.conversationId,
+      storage: outboundQueueStorage,
+    });
+    queueRef.current = queue;
+
+    // Восстанавливаем буфер исходящих после перезагрузки/повторного монтирования:
+    // возвращаем оптимистичные реплики в ленту и переотправляем накопленное.
+    const bufferedMessages = queue
+      .items()
+      .map((item) => createOptimisticMessage(item));
+    if (bufferedMessages.length > 0) {
+      mergeMessages(bufferedMessages);
+    }
+    void processQueue();
+
+    return () => {
+      if (queueRef.current === queue) {
+        queueRef.current = null;
+      }
+    };
+  }, [mergeMessages, outboundQueueStorage, processQueue, session]);
 
   useEffect(() => {
     if (!session || !realtimeEnabled) {
@@ -177,10 +282,16 @@ export function WebChatWidget({
       conversationId: session.conversationId,
       organizationId: session.organizationId,
       reconnectDelayMs: realtimeReconnectDelayMs,
-      url: resolveRealtimeUrl(apiBaseUrl, realtimeUrl),
+      url: resolveRealtimeUrl(edge.apiBaseUrl, edge.realtimeUrl),
       visitorSessionId: session.visitorSessionId,
       webSocketFactory,
-      onConnectionState: setConnectionState,
+      onConnectionState(state) {
+        setConnectionState(state);
+        if (state === "online") {
+          // Соединение через Edge восстановлено — переотправляем буфер (CP-7).
+          void processQueue();
+        }
+      },
       onEvent(event) {
         if (event.type === "message.created") {
           if (event.message.conversationId !== session.conversationId) {
@@ -229,44 +340,37 @@ export function WebChatWidget({
       realtimeClient.stop();
     };
   }, [
-    apiBaseUrl,
     catchUpMessages,
+    edge,
+    processQueue,
     realtimeEnabled,
     realtimeReconnectDelayMs,
-    realtimeUrl,
     session,
     webSocketFactory,
   ]);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const trimmedText = messageText.trim();
-    if (!trimmedText || isSending || !session) {
+    const activeSession = sessionRef.current;
+    const queue = queueRef.current;
+    if (!trimmedText || !activeSession || !queue) {
       return;
     }
 
-    setIsSending(true);
-    try {
-      const idempotencyKey = crypto.randomUUID();
-      const sentMessage = await client.sendMessage({
-        conversationId: session.conversationId,
-        endpointId: session.endpointId,
-        idempotencyKey,
-        organizationId: session.organizationId,
-        text: trimmedText,
-        visitorSessionId: session.visitorSessionId,
-      });
-      const latestSequenceNumber = getLatestSequenceNumber(messagesRef.current);
-      mergeMessages([sentMessage]);
-      await catchUpMessages(latestSequenceNumber);
-      setMessageText("");
-      setError(null);
-    } catch (unknownError) {
-      setError(getErrorMessage(unknownError));
-    } finally {
-      setIsSending(false);
-    }
+    // Кладём реплику в буфер (стабильный idempotency_key) и оптимистично
+    // показываем её в ленте — даже при разрыве она не потеряется (CP-7).
+    const item = queue.enqueue({
+      conversationId: activeSession.conversationId,
+      endpointId: activeSession.endpointId,
+      organizationId: activeSession.organizationId,
+      visitorSessionId: activeSession.visitorSessionId,
+      text: trimmedText,
+    });
+    mergeMessages([createOptimisticMessage(item)]);
+    setMessageText("");
+    void processQueue();
   }
 
   return (
@@ -277,6 +381,7 @@ export function WebChatWidget({
           <h1>{title}</h1>
           <p className="bridge-chat-connection">
             {formatConnectionState(connectionState)}
+            {edge.viaEdge ? " · через Edge" : ""}
           </p>
         </div>
         <IconButton aria-label="Свернуть виджет" title="Свернуть виджет">
@@ -372,6 +477,27 @@ export function WebChatWidget({
   );
 }
 
+function createOptimisticMessage(item: OutboundQueueItem): WebChatMessage {
+  return {
+    id: item.idempotencyKey,
+    idempotencyKey: item.idempotencyKey,
+    organizationId: item.organizationId,
+    conversationId: item.conversationId,
+    endpointId: item.endpointId,
+    channel: "web_chat",
+    author: {
+      type: "visitor",
+      displayName: "Посетитель",
+    },
+    body: {
+      type: "text",
+      text: item.text,
+    },
+    createdAt: item.createdAt,
+    status: "queued",
+  };
+}
+
 function formatMessageTime(value: string): string {
   return new Intl.DateTimeFormat("ru-RU", {
     hour: "2-digit",
@@ -389,6 +515,8 @@ function getErrorMessage(error: unknown): string {
 
 function formatStatus(status: WebChatMessage["status"]): string {
   switch (status) {
+    case "queued":
+      return "в очереди";
     case "received":
       return "получено";
     case "routed":

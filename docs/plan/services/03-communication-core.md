@@ -272,6 +272,31 @@ resolution, endpoint-scoped `sequence_number`, gap detection, C7 публика�
 - **DoD.** Нет потерь/дублей и перестановок в рамках Endpoint при ретраях и
   разрывах; кампании идут через ядро.
 
+**Статус реализации M4.** M4 Communication Core завершён для CP-6 и CP-7.
+Сквозная идемпотентность опирается на `messages.id = idempotency_key =
+message_id`: повторная передача уже обработанного сообщения отбрасывается на
+Ingress, приёме из буфера Edge и при доставке кампаний. `message_delivery_attempts`
+пишется полностью — промежуточные неудачные попытки фиксируются **без** перехода
+статуса (сообщение остаётся `routed`, т.к. `failed` терминален), финальный исход
+переводит сообщение в `sent`/`failed`. **CP-6 (SVC-BCAST):** координатор
+`createBroadcastDeliveryCoordinator` принимает канонический C8-черновик
+(`C8.BroadcastCoreDeliveryDraft`), фиксирует исходящее broadcast-сообщение
+(direction `outbound`, sender_type `broadcast`), связывает `broadcast_messages ↔
+messages` и доставляет строго через **C1/C2** ядра — кампания не обходит SVC-CORE.
+**CP-7 (SVC-EDGE):** буферизующий шлюз `createBufferedEdgeGateway` (SVC-EDGE)
+копит C9-сообщения при разрыве (дедуп по `idempotency_key`, порядок поступления) и
+дренажирует их одним батчем; `createEdgeIntakeCoordinator` (SVC-CORE)
+восстанавливает порядок по `(endpoint_id, sequence_number)` и повторно
+дедуплицирует через единый ingress-путь. Покрытие:
+`services/backend/test/unit/communication-core.m4.test.mjs`,
+`services/edge-gateway/test/unit/buffered-gateway.test.mjs`,
+`tests/integration/communication-core-m4.test.mjs` (Backend↔PostgreSQL: дедуп и
+порядок из буфера, связь `broadcast_messages`, журнал попыток),
+`tests/contract/m4-core-cp6-cp7.contract.test.mjs` (EDGE↔CORE и BCAST↔CORE через
+моки), e2e `tests/e2e/broadcast-cp6.test.mjs` и
+`tests/e2e/edge-connection-loss-cp7.test.mjs`. Контракты CP-6/CP-7 (C8↔C1/C2 и
+C9↔C1) зафиксированы в `packages/contracts/cp6-cp7-freeze.v1.json`.
+
 ### M5 — Нагрузка, деградация, отказы адаптеров
 
 - **Цель.** Стабильность под нагрузкой и предсказуемая деградация.

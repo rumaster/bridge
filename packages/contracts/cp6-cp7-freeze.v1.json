@@ -1,0 +1,118 @@
+{
+  "x-gate": "CP-6+CP-7",
+  "x-stage": "M4",
+  "x-status": "complete",
+  "frozen_at": "2026-07-04",
+  "scope": {
+    "services": [
+      "SVC-CORE(communication-core)",
+      "SVC-BCAST(broadcast-facade)",
+      "SVC-EDGE(edge-gateway)"
+    ],
+    "scenarios": [
+      "Broadcast: доставка кампании через ядро (CP-6)",
+      "Потеря соединения: буфер SVC-EDGE, восстановление порядка и дедуп (CP-7)"
+    ],
+    "invariants": [
+      "end-to-end idempotency by messages.id = idempotency_key = message_id",
+      "duplicate transitions are dropped on client->Edge->buffer->Core->Adapter",
+      "message_delivery_attempts is fully journaled",
+      "intermediate failed attempts recorded WITHOUT status transition (message stays routed)",
+      "final outcome transitions message to sent/failed (failed is terminal)",
+      "campaigns deliver strictly through core C1/C2, never bypassing SVC-CORE",
+      "broadcast_messages <-> messages link recorded on every delivery",
+      "order recovered by (endpoint_id, sequence_number) with single-writer partition lock",
+      "sequence uniqueness enforced by messages_endpoint_sequence_number_unique",
+      "Edge gateway is transport-only: CORE reorders, gateway only buffers/dedups by idempotency_key",
+      "buffer drain is idempotent — re-drain produces no duplicate rows"
+    ]
+  },
+  "contracts": [
+    {
+      "id": "C8",
+      "version": "1.0.0",
+      "owner": "SVC-BCAST",
+      "status": "stable_for_m5",
+      "surface": [
+        { "contract": "C8.BroadcastCoreDeliveryDraft", "delivery_path": "C1/C2", "core_contracts": ["C1", "C2"] }
+      ],
+      "artifacts": [
+        "packages/contracts/src/c8.mjs",
+        "services/backend/src/modules/communication-core/communication-core-m4.mjs",
+        "services/backend/src/modules/communication-core/communication-core-m1.mjs",
+        "services/backend/src/modules/communication-core/index.mjs"
+      ],
+      "evidence": [
+        "services/backend/test/unit/communication-core.m4.test.mjs",
+        "tests/integration/communication-core-m4.test.mjs",
+        "tests/contract/m4-core-cp6-cp7.contract.test.mjs",
+        "tests/e2e/broadcast-cp6.test.mjs"
+      ]
+    },
+    {
+      "id": "C9",
+      "version": "1.0.0",
+      "owner": "SVC-EDGE",
+      "status": "stable_for_m5",
+      "surface": [
+        { "contract": "C9.EdgeTunnelMessage" },
+        { "contract": "C9.EdgeTunnelAck" }
+      ],
+      "artifacts": [
+        "packages/contracts/src/c9.mjs",
+        "services/edge-gateway/src/buffered-gateway.mjs",
+        "services/backend/src/modules/communication-core/communication-core-m4.mjs",
+        "services/backend/src/modules/communication-core/index.mjs"
+      ],
+      "evidence": [
+        "services/backend/test/unit/communication-core.m4.test.mjs",
+        "services/edge-gateway/test/unit/buffered-gateway.test.mjs",
+        "tests/integration/communication-core-m4.test.mjs",
+        "tests/contract/m4-core-cp6-cp7.contract.test.mjs",
+        "tests/e2e/edge-connection-loss-cp7.test.mjs"
+      ]
+    },
+    {
+      "id": "C1",
+      "version": "1.0.0",
+      "owner": "SVC-CORE",
+      "status": "stable_for_m5",
+      "surface": [
+        { "note": "canonical Message Model — id = idempotency_key = message_id" }
+      ],
+      "artifacts": [
+        "packages/contracts/message-model",
+        "services/backend/src/modules/communication-core/communication-core-m1.mjs"
+      ],
+      "evidence": [
+        "tests/integration/communication-core-m4.test.mjs",
+        "tests/contract/m4-core-cp6-cp7.contract.test.mjs"
+      ]
+    },
+    {
+      "id": "C2",
+      "version": "1.0.0",
+      "owner": "SVC-CORE",
+      "status": "stable_for_m5",
+      "surface": [
+        { "contract": "C2.EgressDelivery" }
+      ],
+      "artifacts": [
+        "services/backend/src/modules/communication-core/communication-core-m1.mjs"
+      ],
+      "evidence": [
+        "tests/contract/m4-core-cp6-cp7.contract.test.mjs",
+        "tests/e2e/broadcast-cp6.test.mjs"
+      ]
+    }
+  ],
+  "m5_readiness": {
+    "stable_contracts": ["C1", "C2", "C8", "C9"],
+    "stable_data_surfaces": ["messages", "message_delivery_attempts", "broadcast_messages"],
+    "next_scope": [
+      "Нагрузка, деградация, отказы адаптеров",
+      "Масштабирование адаптеров",
+      "Backpressure и очереди при пиковых нагрузках"
+    ]
+  }
+}

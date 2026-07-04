@@ -11,6 +11,7 @@ import { RequestLoggingInterceptor } from "./common/request-logging.interceptor"
 import { createValidationPipe } from "./common/validation.pipe";
 import { AiIntegrationModule } from "./modules/ai-integration/ai-integration.module";
 import { BackendApiModule } from "./modules/backend-api/backend-api.module";
+import { BroadcastFacadeModule } from "./modules/broadcast-facade/broadcast-facade.module";
 import { ClientModule } from "./modules/client/client.module";
 import { CommunicationCoreProxyModule } from "./modules/communication-core/communication-core-proxy.module";
 import { ConfigurationModule } from "./modules/configuration/configuration.module";
@@ -18,6 +19,7 @@ import { FbpIntegrationModule } from "./modules/fbp-integration/fbp-integration.
 import { HealthModule } from "./modules/health/health.module";
 import { IdentityM4Module } from "./modules/identity/identity-m4.module";
 import { IntegrationGatewayModule } from "./modules/integration-gateway/integration-gateway.module";
+import { NotificationFacadeModule } from "./modules/notification-facade/notification-facade.module";
 import { OrganizationModule } from "./modules/organization/organization.module";
 import { UserModule } from "./modules/user/user.module";
 
@@ -35,6 +37,8 @@ import { UserModule } from "./modules/user/user.module";
     CommunicationCoreProxyModule,
     AiIntegrationModule,
     FbpIntegrationModule,
+    BroadcastFacadeModule,
+    NotificationFacadeModule,
     BackendApiModule,
   ],
   providers: [

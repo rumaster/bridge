@@ -11,6 +11,7 @@ export function createIntegrationPlatformServer({
   }),
   webChatAdapter,
   adapters = {},
+  deliveryEngine,
 } = {}) {
   const channelAdapters = createChannelAdapterRegistry({ adapters, webChatAdapter });
 
@@ -28,7 +29,11 @@ export function createIntegrationPlatformServer({
       }
 
       if (request.method === "GET" && url.pathname === "/metrics") {
-        sendText(response, 200, renderMetrics(adapter.getMetrics()));
+        sendText(
+          response,
+          200,
+          renderMetrics(adapter.getMetrics(), deliveryEngine?.getMetrics()),
+        );
         return;
       }
 
@@ -97,6 +102,33 @@ export function createIntegrationPlatformServer({
         });
         const result = await egressAdapter.acceptEgressDelivery(payload);
         sendJson(response, result.accepted ? 202 : 400, result);
+        return;
+      }
+
+      if (request.method === "POST" && url.pathname === "/internal/delivery/dispatch") {
+        if (!deliveryEngine) {
+          sendJson(response, 503, {
+            error: "delivery_engine_unavailable",
+            message: "delivery engine is not configured",
+          });
+          return;
+        }
+
+        const payload = await readJson(request);
+        try {
+          const result = await deliveryEngine.deliver(payload);
+          sendJson(response, result.delivered ? 202 : 502, result);
+        } catch (error) {
+          if (error instanceof TypeError) {
+            sendJson(response, 400, {
+              delivered: false,
+              errors: [error.message],
+            });
+            return;
+          }
+
+          throw error;
+        }
         return;
       }
 
@@ -201,7 +233,7 @@ function sendText(response, statusCode, body) {
   response.end(body);
 }
 
-function renderMetrics(metrics) {
+function renderMetrics(metrics, deliveryMetrics) {
   const lines = [
     "# HELP integration_platform_mock_adapter_ingress_published_total C2 ingress messages published to core.",
     "# TYPE integration_platform_mock_adapter_ingress_published_total counter",
@@ -220,5 +252,29 @@ function renderMetrics(metrics) {
     `integration_platform_mock_adapter_egress_rejected_total ${metrics.egress_rejected_total}`,
   ];
 
+  if (deliveryMetrics) {
+    for (const [name, help] of Object.entries(DELIVERY_METRIC_HELP)) {
+      if (deliveryMetrics[name] === undefined) {
+        continue;
+      }
+      const metricName = `integration_platform_delivery_${name}`;
+      lines.push(
+        `# HELP ${metricName} ${help}`,
+        `# TYPE ${metricName} counter`,
+        `${metricName} ${deliveryMetrics[name]}`,
+      );
+    }
+  }
+
   return `${lines.join("\n")}\n`;
 }
+
+const DELIVERY_METRIC_HELP = Object.freeze({
+  deliveries_total: "Total egress deliveries handed to the delivery engine.",
+  delivered_total: "Deliveries that reached the external channel.",
+  failed_total: "Deliveries that failed after exhausting retries or on permanent errors.",
+  duplicate_total: "Deliveries skipped as idempotent duplicates.",
+  retries_total: "Retry attempts triggered by retryable errors.",
+  attempts_total: "Delivery attempts recorded in message_delivery_attempts.",
+  attempt_record_failures_total: "Failures to record a delivery attempt via Backend.",
+});

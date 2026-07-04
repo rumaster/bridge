@@ -42,6 +42,9 @@ describe("Manager Workspace MSW mocks", () => {
 
     const notifications = await api.notifications.list();
     expect(notifications.some((item) => item.status === "new")).toBe(true);
+    const notificationCategories = new Set(notifications.map((item) => item.category));
+    expect(notificationCategories.has("info")).toBe(true);
+    expect(notificationCategories.has("warning")).toBe(true);
 
     const readNotification = await api.notifications.markRead("notif-1");
     expect(readNotification.status).toBe("read");
@@ -75,5 +78,13 @@ describe("Manager Workspace MSW mocks", () => {
 
     expect(events.map((event) => event.event)).toContain("message.created");
     expect(events.map((event) => event.event)).toContain("notification.created");
+
+    const notificationEvent = events.find((event) => event.event === "notification.created");
+    expect(notificationEvent?.event === "notification.created" && notificationEvent.payload.notification.status).toBe(
+      "new"
+    );
+    expect(
+      notificationEvent?.event === "notification.created" && notificationEvent.payload.notification.category
+    ).toBe("critical");
   });
 });
