@@ -1,0 +1,160 @@
+{
+  "x-contract-id": "CP8.telegram-console.consumer",
+  "x-consumer": "SVC-TGC",
+  "x-stage": "M4",
+  "upstream_contracts": ["C3.auth", "C3", "C4", "C10"],
+  "interactions": [
+    {
+      "name": "start Telegram login",
+      "contract": "C3.auth",
+      "operationId": "startTelegramLogin",
+      "method": "POST",
+      "path": "/auth/login/telegram/start",
+      "request": {
+        "required": ["telegramUsername"],
+        "local_aliases": ["telegram_username", "telegram_user", "chat_id"]
+      },
+      "response": {
+        "required": ["requestId", "delivery", "expiresAt"]
+      }
+    },
+    {
+      "name": "verify Telegram login and store server session",
+      "contract": "C3.auth",
+      "operationId": "verifyTelegramLogin",
+      "method": "POST",
+      "path": "/auth/login/telegram/verify",
+      "request": {
+        "required": ["code"],
+        "anyOf": [["requestId"], ["telegramUsername"]],
+        "local_aliases": ["request_id", "telegram_username", "telegram_user", "chat_id"]
+      },
+      "response": {
+        "required": ["token", "user", "organization", "expiresAt"],
+        "consumer_behavior": {
+          "storeServerSessionByTelegramChat": true,
+          "requireSessionForBackendCalls": true
+        }
+      }
+    },
+    {
+      "name": "list active conversations",
+      "contract": "C3",
+      "operationId": "ConversationController_listConversations_v1",
+      "method": "GET",
+      "path": "/conversations",
+      "responseItem": {
+        "required": ["id", "organization_id", "client_id", "status", "channel", "last_message_at", "last_message_preview", "unread_count"]
+      }
+    },
+    {
+      "name": "read conversation history",
+      "contract": "C3",
+      "operationId": "ConversationController_listMessages_v1",
+      "method": "GET",
+      "path": "/conversations/{conversationId}/messages",
+      "responseItem": {
+        "required": ["id", "organization_id", "conversation_id", "endpoint_id", "channel", "direction", "sender_type", "sequence_number", "type", "content", "status", "created_at"]
+      }
+    },
+    {
+      "name": "read client card",
+      "contract": "C3",
+      "operationId": "ClientController_getClient_v1",
+      "method": "GET",
+      "path": "/clients/{clientId}",
+      "response": {
+        "required": ["id", "organization_id", "display_name", "tags", "notes", "endpoints"]
+      }
+    },
+    {
+      "name": "create manager reply idempotently",
+      "contract": "C3",
+      "operationId": "MessageController_createMessage_v1",
+      "method": "POST",
+      "path": "/messages",
+      "request": {
+        "required": ["idempotency_key", "organization_id", "conversation_id", "sender_type", "type", "content.text"]
+      },
+      "response": {
+        "required": ["id", "organization_id", "conversation_id", "endpoint_id", "channel", "direction", "sender_type", "sequence_number", "type", "content", "status", "created_at", "idempotency_key"]
+      },
+      "idempotency": {
+        "keyField": "idempotency_key",
+        "repeatReturnsSameMessage": true,
+        "source": "telegram.chat_id + telegram.message_id + conversation_id"
+      }
+    },
+    {
+      "name": "render Telegram notification card",
+      "contract": "C10",
+      "operationId": "telegramNotificationDelivery",
+      "method": "EVENT",
+      "path": "notification.channels[].telegram",
+      "notification": {
+        "required": ["contract", "version", "id", "organization_id", "recipient_user_id", "category", "title", "body", "payload", "status", "channels", "created_at", "read_at"],
+        "consumed_fields": ["id", "category", "title", "body", "payload", "status", "channels", "created_at"],
+        "required_channels": ["telegram"],
+        "payload_required": ["conversation_id"],
+        "actions": ["open_dialog", "reply", "ai_summary", "open_manager_workspace"]
+      }
+    },
+    {
+      "name": "request AI assistant suggestion",
+      "contract": "C4",
+      "operationId": "suggestAssistant",
+      "method": "POST",
+      "path": "/ai/assistant:suggest",
+      "request": {
+        "required": ["contract", "version", "request_id", "organization_id", "query"],
+        "optional": ["conversation_id", "requester_user_id", "context.messages"]
+      },
+      "response": {
+        "required": ["contract", "version", "request_id", "organization_id", "degraded", "fallback_reason", "suggestion", "source_status", "sources", "created_at"],
+        "manualApplyOnly": true,
+        "modes": ["summary", "reply", "kb", "translate"]
+      },
+      "degradation": {
+        "aiUnavailableKeepsNotificationsUsable": true,
+        "aiUnavailableKeepsRepliesUsable": true
+      }
+    }
+  ],
+  "telegram_callbacks": [
+    {
+      "callback_data": "dialogs.list",
+      "behavior": "list conversations"
+    },
+    {
+      "callback_data": "dialog.open:{conversationId}",
+      "behavior": "open C3 conversation history"
+    },
+    {
+      "callback_data": "reply.prompt:{conversationId}",
+      "behavior": "set active conversation and show quick replies"
+    },
+    {
+      "callback_data": "reply.quick:{conversationId}:{template}",
+      "behavior": "send templated C3 manager reply"
+    },
+    {
+      "callback_data": "ai.summary:{conversationId}",
+      "behavior": "request C4 summary suggestion"
+    },
+    {
+      "callback_data": "ai.reply:{conversationId}",
+      "behavior": "request C4 reply suggestion"
+    },
+    {
+      "callback_data": "ai.kb:{conversationId}",
+      "behavior": "request C4 KB-grounded suggestion"
+    },
+    {
+      "callback_data": "ai.translate:{conversationId}",
+      "behavior": "request C4 translation suggestion"
+    }
+  ],
+  "out_of_scope": {
+    "deferred_to_m5": ["telegram rate limits", "mass notification throttling"]
+  }
+}

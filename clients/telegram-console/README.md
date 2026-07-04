@@ -1,41 +1,45 @@
 # Telegram Console
 
-`clients/telegram-console` — необязательный подготовительный каркас SVC-TGC для
-M0. Он нужен только для ранней проверки формы Telegram-бот клиента менеджера и не
-включает Telegram Console в критический путь M0/M1.
+`clients/telegram-console` — реализация SVC-TGC для CP-8/M4: тонкий Telegram bot
+UI для менеджера поверх опубликованных Backend/Core контрактов. Сервис не
+содержит бизнес-логики, хранит только Telegram chat -> server session context и
+проксирует действия в C3/C4/C10.
 
-## Статус M0
+## Статус CP-8/M4
 
-- Каркас не блокирует M0 gate.
-- Каркас не участвует в CP-1 и не блокирует его.
-- Основная работа Telegram Console начинается в M3, когда появятся готовые
-  уведомления, диалоги и отправка ответа через Backend.
-- В M0 добавлены только mock Telegram API adapter, routing команд/inline-кнопок и
-  черновая точка привязки аккаунта поверх будущего `C3.auth`.
+- M3 закрыт: привязка аккаунта через `C3.auth`, server session для Backend
+  вызовов, C10 Telegram notification cards, C3 dialogs/history/messages и
+  Manager Workspace links.
+- M4 закрыт: C4 AI suggestions (`summary`, `reply`, `kb`, `translate`), быстрые
+  ответы/templates и graceful degradation, когда AI недоступен.
+- M5 rate limits и массовый throttling уведомлений остаются вне scope.
 
 ## Что есть сейчас
 
-- `/start` — маршрутизируется в draft-привязку аккаунта к будущему `C3.auth`
-  (`POST /auth/login/telegram/start`, `POST /auth/login/telegram/verify`) без
-  реальной аутентификации.
-- `/dialogs` — подтверждает routing, но остаётся M3-placeholder без вызовов
-  `C3.conversations`.
-- `auth.link` callback — routing inline-кнопки к той же draft-привязке.
-- `mock-telegram-api` — детерминированный адаптер для unit-тестов handler routing.
+- `/start` — запускает Telegram login (`POST /auth/login/telegram/start`) и
+  подтверждает его (`POST /auth/login/telegram/verify`) в CP-8 mock Backend API.
+- `/dialogs` — читает активные диалоги через `GET /conversations` и карточки
+  клиентов через `GET /clients/{clientId}`.
+- `dialog.open:*` — открывает C3 conversation history через
+  `GET /conversations/{id}/messages`.
+- `reply.prompt:*` и `reply.quick:*` — отправляют ответ менеджера через
+  идемпотентный `POST /messages` с `idempotency_key`.
+- `ai.summary:*`, `ai.reply:*`, `ai.kb:*`, `ai.translate:*` — запрашивают
+  `POST /ai/assistant:suggest`; подсказка применяется менеджером вручную.
+- `deliverNotification()` — рендерит C10 Telegram card с inline actions:
+  открыть диалог, ответить, запросить AI summary, открыть Manager Workspace.
 
-## Чего намеренно нет в M0/M1/M2
+## Деградация
 
-- Уведомлений через `C10.notifications`.
-- Просмотра активного диалога и истории через `C3.conversations`.
-- Ответа клиенту через `C3.messages`.
-- AI-подсказок через `C4`.
-
-Эти сценарии относятся к основной работе SVC-TGC в M3+ по
-`docs/plan/services/14-telegram-console.md`.
+Если C4 недоступен, router возвращает статус `degraded` и отправляет менеджеру
+сообщение, что AI недоступен. C10 notification cards, просмотр C3 диалогов и
+`POST /messages` продолжают работать.
 
 ## Проверки
 
 ```bash
 npm run test --workspace @bridge/telegram-console
 npm run build --workspace @bridge/telegram-console
+npm run test:contract
+node --test tests/e2e/telegram-console-cp8.test.mjs
 ```
