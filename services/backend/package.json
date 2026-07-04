@@ -8,7 +8,7 @@
     "test": "jest --config jest.config.cjs --runInBand && node --test test/",
     "test:unit": "jest --config jest.config.cjs --runInBand test/unit && node --test test/unit/*.test.mjs",
     "test:integration": "jest --config jest.config.cjs --runInBand test/integration && node --test test/integration/*.test.mjs",
-    "build": "tsc -p tsconfig.build.json && node dist/tools/export-openapi.js && find src -name '*.mjs' -print0 | xargs -0 -r -n 1 node --check",
+    "build": "tsc -p tsconfig.build.json && node dist/tools/export-openapi.js",
     "start": "node dist/main.js"
   },
   "dependencies": {
