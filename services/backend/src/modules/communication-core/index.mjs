@@ -21,4 +21,12 @@ export {
   createBroadcastDeliveryCoordinator,
   createEdgeIntakeCoordinator,
 } from "./communication-core-m4.mjs";
+export {
+  CommunicationCoreM5TimeoutError,
+  CommunicationCoreM5ValidationError,
+  createAdapterFailureCoordinator,
+  createAiDegradationGuard,
+  createCommunicationCoreLoadProbe,
+  runLoadProbe,
+} from "./communication-core-m5.mjs";
 export { createCommunicationCoreModule } from "./communication-core-module.mjs";
