@@ -121,3 +121,72 @@ describe("ExecutionContext: журнал исполнения", () => {
     assert.notEqual(e1.id, e2.id);
   });
 });
+
+describe("ExecutionContext: внешнее состояние (workflow_instance_state, ТЗ §25.3)", () => {
+  it("snapshot() содержит всё для продолжения на другом узле, но НЕ журнал", () => {
+    const ctx = makeContext();
+    ctx.setNodeOutput("n1", { status_code: 201, body: { id: "x1" } });
+    ctx.appendJournal("node.completed", { nodeId: "n1" });
+
+    const snapshot = ctx.snapshot();
+    assert.equal(snapshot.organization_id, ORG);
+    assert.equal(snapshot.instance_id, "instance-1");
+    assert.deepEqual(snapshot.input, { amount: 150, customer: { name: "Иван" } });
+    assert.deepEqual(snapshot.outputs.n1, { status_code: 201, body: { id: "x1" } });
+    assert.equal(snapshot.seq, 1, "порядковый счётчик журнала сохранён");
+    assert.equal("journal" in snapshot, false, "журнал уходит в workflow_execution_logs, не в состояние");
+  });
+
+  it("fromSnapshot() восстанавливает результаты узлов и продолжает нумерацию журнала", () => {
+    const ctx = makeContext();
+    ctx.setNodeOutput("n1", { body: { id: "x1" } });
+    const firstEntryId = ctx.appendJournal("node.completed", { nodeId: "n1" }).id;
+    const snapshot = ctx.snapshot();
+
+    // Другой узел-исполнитель поднимает контекст из внешнего состояния.
+    const restored = ExecutionContext.fromSnapshot(snapshot, { now: () => "2026-07-04T00:00:00.000Z" });
+    assert.equal(restored.organizationId, ORG);
+    assert.equal(restored.instanceId, "instance-1");
+    assert.equal(restored.hasNodeOutput("n1"), true);
+    assert.deepEqual(
+      restored.assembleInput({ id: { kind: "node", node: "n1", path: ["body", "id"] } }),
+      { id: "x1" },
+    );
+    // Нумерация журнала продолжается с сохранённого seq — id не коллизируют.
+    const next = restored.appendJournal("node.started", { nodeId: "n2" });
+    assert.notEqual(next.id, firstEntryId, "seq продолжен → id новой записи отличается от seq=1");
+  });
+
+  it("snapshot → fromSnapshot изолирует восстановленные результаты (глубокое копирование)", () => {
+    const ctx = makeContext();
+    const output = { list: [1, 2] };
+    ctx.setNodeOutput("n1", output);
+    const snapshot = ctx.snapshot();
+    output.list.push(3); // мутация после снимка не должна затрагивать состояние
+
+    const restored = ExecutionContext.fromSnapshot(snapshot, { now: () => "2026-07-04T00:00:00.000Z" });
+    assert.deepEqual(restored.getNodeOutput("n1"), { list: [1, 2] });
+  });
+
+  it("fromSnapshot() игнорирует опасные ключи результатов (защита прототипа)", () => {
+    const restored = ExecutionContext.fromSnapshot(
+      {
+        organization_id: ORG,
+        instance_id: "instance-1",
+        input: {},
+        outputs: { __proto__: { polluted: true }, safe: { ok: 1 } },
+        seq: 0,
+      },
+      { now: () => "2026-07-04T00:00:00.000Z" },
+    );
+    assert.equal(Object.prototype.polluted, undefined);
+    assert.equal(restored.hasNodeOutput("safe"), true);
+  });
+
+  it("fromSnapshot() отклоняет не-объект", () => {
+    assert.throws(
+      () => ExecutionContext.fromSnapshot(null),
+      (error) => error instanceof WorkflowExecutionError && error.reason === "invalid_instance_state",
+    );
+  });
+});

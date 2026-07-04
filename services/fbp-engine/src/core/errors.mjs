@@ -28,3 +28,32 @@ export class WorkflowExecutionError extends Error {
     this.nodeType = nodeType;
   }
 }
+
+/**
+ * Ошибка неизменяемости версии Workflow (ТЗ §13.10). Возникает при попытке
+ * ПЕРЕЗАПИСАТЬ уже опубликованную версию (тот же `version_no`) — правка схемы
+ * обязана порождать НОВУЮ версию, а не менять существующую. Зеркалит запрет
+ * `UPDATE/DELETE` на уровне БД (триггер `workflow_versions_immutable`).
+ */
+export class VersionImmutabilityError extends Error {
+  constructor(message, { workflowId = null, versionNo = null } = {}) {
+    super(message);
+    this.name = "VersionImmutabilityError";
+    this.reason = "version_immutable";
+    this.workflowId = workflowId;
+    this.versionNo = versionNo;
+  }
+}
+
+/**
+ * Ошибка обращения к несуществующей версии/экземпляру/состоянию Workflow. Держит
+ * машиночитаемую `reason`, чтобы вызвавший фасад мог различить причину (например,
+ * версия не найдена против экземпляр не найден).
+ */
+export class WorkflowStoreError extends Error {
+  constructor(reason, message) {
+    super(message);
+    this.name = "WorkflowStoreError";
+    this.reason = reason;
+  }
+}

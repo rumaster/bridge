@@ -5,14 +5,15 @@ import {
   NOTIFICATION_CATEGORIES,
   NOTIFICATION_CHANNELS,
   createNotification,
-  createNotificationCreatedEvent,
 } from "../../../packages/contracts/src/c10.mjs";
+import { createDefaultChannelAdapters } from "./channel-adapters.mjs";
 import {
   C10DtoValidationError,
   assertListNotificationsQuery,
   assertNotificationTriggerEventPayload,
   assertUpdateNotificationSettingsRequest,
 } from "./c10-dto.mjs";
+import { resolveTargetChannels, routeProducerEvent } from "./notification-routing.mjs";
 
 export class C10NotificationNotFoundError extends Error {
   constructor(notificationId) {
@@ -24,8 +25,15 @@ export class C10NotificationNotFoundError extends Error {
 
 export function createDeterministicNotificationMock({
   now = () => new Date().toISOString(),
+  channels = createDefaultChannelAdapters({ now }),
 } = {}) {
   const notifications = new Map();
+  // Индекс адресата для NFR ≤ 1 с (ТЗ §25.2): `${org}:${user}` -> id[] (новые первыми).
+  const recipientIndex = new Map();
+  // Ключ логического события -> id уведомления (дедупликация, ТЗ §15, инвариант §4).
+  const dedupeIndex = new Map();
+  // id уведомления -> список записей доставки по каналам.
+  const deliveriesByNotification = new Map();
   const settingsByUser = new Map();
   const metrics = {
     list_total: 0,
@@ -33,6 +41,13 @@ export function createDeterministicNotificationMock({
     settings_read_total: 0,
     settings_update_total: 0,
     producer_event_total: 0,
+    duplicate_total: 0,
+    delivery_total: 0,
+    delivery_web_total: 0,
+    delivery_telegram_total: 0,
+    delivery_email_total: 0,
+    delivery_push_total: 0,
+    delivery_skipped_total: 0,
   };
 
   const seedNotification = createNotification({
@@ -49,18 +64,66 @@ export function createDeterministicNotificationMock({
     createdAt: "2026-07-02T16:30:00.000Z",
     dedupeKey: "m0:seed:manager-1",
   });
-  notifications.set(seedNotification.id, seedNotification);
+  indexNotification(seedNotification);
+
+  function indexNotification(notification) {
+    notifications.set(notification.id, notification);
+    const key = recipientKey(notification.organization_id, notification.recipient_user_id);
+    const ids = recipientIndex.get(key);
+    if (ids) {
+      ids.unshift(notification.id);
+    } else {
+      recipientIndex.set(key, [notification.id]);
+    }
+    if (notification.dedupe_key) {
+      dedupeIndex.set(
+        dedupeKeyOf(notification.organization_id, notification.recipient_user_id, notification.dedupe_key),
+        notification.id,
+      );
+    }
+  }
+
+  function recipientNotifications(context) {
+    const ids = recipientIndex.get(recipientKey(context.organizationId, context.userId)) ?? [];
+    return ids
+      .map((id) => notifications.get(id))
+      .filter((notification) => notification !== undefined);
+  }
+
+  function deliver(notification, targetChannels) {
+    const deliveries = [];
+    let webEvent = null;
+
+    for (const channel of targetChannels) {
+      const adapter = channels[channel];
+      if (!adapter) {
+        continue;
+      }
+      const record = adapter.deliver({ notification });
+      deliveries.push(record);
+      metrics.delivery_total += 1;
+      metrics[`delivery_${channel}_total`] += 1;
+      if (channel === "web" && record.event) {
+        webEvent = record.event;
+      }
+    }
+
+    deliveriesByNotification.set(notification.id, deliveries);
+    return { deliveries, webEvent };
+  }
 
   return {
     listNotifications(context, query = {}) {
       const filters = assertListNotificationsQuery(query);
-      const items = [...notifications.values()]
-        .filter((notification) => notification.organization_id === context.organizationId)
-        .filter((notification) => notification.recipient_user_id === context.userId)
+      const filtered = recipientNotifications(context)
         .filter((notification) => !filters.status || notification.status === filters.status)
-        .filter((notification) => !filters.category || notification.category === filters.category)
-        .sort((left, right) => right.created_at.localeCompare(left.created_at))
-        .slice(0, filters.limit);
+        .filter((notification) => !filters.category || notification.category === filters.category);
+
+      const start = filters.cursor ? cursorStartIndex(filtered, filters.cursor) : 0;
+      const items = filtered.slice(start, start + filters.limit);
+      const nextIndex = start + filters.limit;
+      const nextCursor =
+        nextIndex < filtered.length ? encodeCursor(filtered[nextIndex - 1]) : null;
 
       metrics.list_total += 1;
 
@@ -73,7 +136,7 @@ export function createDeterministicNotificationMock({
         items,
         page: {
           limit: filters.limit,
-          next_cursor: null,
+          next_cursor: nextCursor,
         },
       };
     },
@@ -152,63 +215,114 @@ export function createDeterministicNotificationMock({
 
     acceptProducerEvent(payload) {
       const event = assertNotificationTriggerEventPayload(payload);
-      const existing = [...notifications.values()].find(
-        (notification) =>
-          notification.organization_id === event.organization_id &&
-          notification.recipient_user_id === event.recipient_user_id &&
-          notification.dedupe_key === event.dedupe_key,
+      const route = routeProducerEvent(event);
+      const dedupeLookup = dedupeKeyOf(
+        event.organization_id,
+        event.recipient_user_id,
+        event.dedupe_key,
       );
 
-      const notification =
-        existing ??
-        createNotification({
-          notificationId: createDeterministicUuid([
-            event.organization_id,
-            event.recipient_user_id,
-            event.dedupe_key,
-          ]),
-          organizationId: event.organization_id,
-          recipientUserId: event.recipient_user_id,
-          category: event.category,
-          title: event.title,
-          body: event.body,
-          payload: {
-            ...event.payload,
-            producer_service_id: event.producer_service_id,
-            producer_event_id: event.producer_event_id,
-          },
-          channels: enabledChannelsFor(settingsByUser, {
-            organizationId: event.organization_id,
-            userId: event.recipient_user_id,
-            category: event.category,
-          }),
-          createdAt: now(),
-          dedupeKey: event.dedupe_key,
-        });
+      // Дедупликация: один ключ логического события не порождает дубль
+      // уведомления и повторную доставку (ТЗ §15, инвариант §4.3).
+      const existingId = dedupeIndex.get(dedupeLookup);
+      if (existingId) {
+        metrics.producer_event_total += 1;
+        metrics.duplicate_total += 1;
+        const existing = notifications.get(existingId);
+        const deliveries = deliveriesByNotification.get(existingId) ?? [];
 
-      notifications.set(notification.id, notification);
+        return acceptResponse({
+          event,
+          notification: existing,
+          duplicate: true,
+          deliveries,
+          webEvent: deliveries.find((record) => record.channel === "web")?.event ?? null,
+        });
+      }
+
+      const settings = getSettingsForUser(settingsByUser, {
+        organizationId: event.organization_id,
+        userId: event.recipient_user_id,
+      });
+      const targetChannels = resolveTargetChannels({ category: route.category, settings });
+
+      const notification = createNotification({
+        notificationId: createDeterministicUuid([
+          event.organization_id,
+          event.recipient_user_id,
+          event.dedupe_key,
+        ]),
+        organizationId: event.organization_id,
+        recipientUserId: event.recipient_user_id,
+        category: route.category,
+        title: event.title,
+        body: event.body,
+        payload: {
+          ...event.payload,
+          producer_service_id: event.producer_service_id,
+          producer_event_id: event.producer_event_id,
+        },
+        channels: targetChannels.length > 0 ? targetChannels : ["web"],
+        createdAt: now(),
+        dedupeKey: event.dedupe_key,
+      });
+      indexNotification(notification);
       metrics.producer_event_total += 1;
 
-      return {
-        contract: "C10.AcceptNotificationTriggerResponse",
-        version: C10_VERSION,
-        request_id: event.event_id,
-        organization_id: event.organization_id,
-        accepted: true,
-        duplicate: Boolean(existing),
+      const skipped = route.eligible_channels.filter(
+        (channel) => !targetChannels.includes(channel),
+      );
+      metrics.delivery_skipped_total += skipped.length;
+
+      const { deliveries, webEvent } = deliver(notification, targetChannels);
+
+      return acceptResponse({
+        event,
         notification,
-        notification_created_event: createNotificationCreatedEvent({
-          eventId: `${notification.id}:created`,
-          notification,
-          occurredAt: notification.created_at,
-        }),
-      };
+        duplicate: false,
+        deliveries,
+        webEvent,
+        skippedChannels: skipped,
+      });
+    },
+
+    getDeliveries(notificationId) {
+      return (deliveriesByNotification.get(notificationId) ?? []).map((record) => ({
+        ...record,
+      }));
     },
 
     getMetrics() {
       return { ...metrics };
     },
   };
+}
+
+function acceptResponse({
+  event,
+  notification,
+  duplicate,
+  deliveries,
+  webEvent,
+  skippedChannels = [],
+}) {
+  return {
+    contract: "C10.AcceptNotificationTriggerResponse",
+    version: C10_VERSION,
+    request_id: event.event_id,
+    organization_id: event.organization_id,
+    accepted: true,
+    duplicate,
+    notification,
+    deliveries: deliveries.map((record) => publicDelivery(record)),
+    skipped_channels: skippedChannels,
+    notification_created_event: webEvent,
+  };
+}
+
+function publicDelivery(record) {
+  const { event, ...rest } = record;
+  return { ...rest };
 }
 
 function getSettingsForUser(settingsByUser, context) {
@@ -218,15 +332,6 @@ function getSettingsForUser(settingsByUser, context) {
   }
 
   return createDefaultSettings();
-}
-
-function enabledChannelsFor(settingsByUser, { organizationId, userId, category }) {
-  const settings = getSettingsForUser(settingsByUser, { organizationId, userId });
-  const enabled = settings
-    .filter((setting) => setting.category === category && setting.enabled)
-    .map((setting) => setting.channel);
-
-  return enabled.length > 0 ? enabled : ["web"];
 }
 
 function createDefaultSettings() {
@@ -243,8 +348,34 @@ function userKey(context) {
   return `${context.organizationId}:${context.userId}`;
 }
 
+function recipientKey(organizationId, userId) {
+  return `${organizationId}:${userId}`;
+}
+
+function dedupeKeyOf(organizationId, userId, dedupeKey) {
+  return `${organizationId}${userId}${dedupeKey}`;
+}
+
+function encodeCursor(notification) {
+  return Buffer.from(`${notification.created_at}${notification.id}`, "utf8").toString(
+    "base64url",
+  );
+}
+
+function cursorStartIndex(items, cursor) {
+  let decoded;
+  try {
+    decoded = Buffer.from(cursor, "base64url").toString("utf8");
+  } catch {
+    return 0;
+  }
+  const [, id] = decoded.split("");
+  const position = items.findIndex((notification) => notification.id === id);
+  return position === -1 ? items.length : position + 1;
+}
+
 function createDeterministicUuid(parts) {
-  const hash = createHash("sha256").update(parts.join("\u001f")).digest("hex");
+  const hash = createHash("sha256").update(parts.join("")).digest("hex");
   const variant = (8 + (Number.parseInt(hash[16], 16) % 4)).toString(16);
 
   return [

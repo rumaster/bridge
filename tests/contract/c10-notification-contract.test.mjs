@@ -137,6 +137,52 @@ describe("NOTIF <-> producers/MWS/TGC M0 C10 contract", () => {
     assert.equal(list.items[0].id, accepted.notification.id);
   });
 
+  it("deduplicates a replayed producer trigger without a second notification", async () => {
+    const dedupeKey = "SVC-AI:insight-1:manager-1";
+    const build = (eventId) =>
+      createNotificationTriggerEvent({
+        eventId,
+        producerServiceId: "SVC-AI",
+        producerEventId: "insight-1:ready",
+        organizationId: "org-1",
+        recipientUserId: "manager-1",
+        category: "info",
+        title: "AI insight ready",
+        body: "A new insight is available.",
+        payload: { insight_id: "insight-1" },
+        dedupeKey,
+        occurredAt: fixedNow(),
+      });
+
+    const first = await (
+      await fetch(`${baseUrl}/api/v1/internal/notifications/events`, {
+        method: "POST",
+        headers: JSON_HEADERS,
+        body: JSON.stringify(build("ai-insight-1:notif")),
+      })
+    ).json();
+    const second = await (
+      await fetch(`${baseUrl}/api/v1/internal/notifications/events`, {
+        method: "POST",
+        headers: JSON_HEADERS,
+        body: JSON.stringify(build("ai-insight-1:notif-retry")),
+      })
+    ).json();
+
+    assert.equal(first.duplicate, false);
+    assert.equal(second.duplicate, true);
+    assert.equal(second.notification.id, first.notification.id);
+
+    // NOTIF -> MWS/TGC: доставки выражены как записи с провайдером и ссылкой.
+    assert.ok(first.deliveries.length >= 1);
+    for (const delivery of first.deliveries) {
+      assert.equal(delivery.status, "sent");
+      assert.equal(typeof delivery.provider, "string");
+      assert.equal(typeof delivery.provider_ref, "string");
+    }
+    assert.ok(first.deliveries.some((delivery) => delivery.channel === "telegram"));
+  });
+
   it("smokes C10 settings and read-state endpoints for MWS/TGC consumers", async () => {
     const settingsResponse = await fetch(`${baseUrl}/api/v1/notifications/settings`, {
       headers: {

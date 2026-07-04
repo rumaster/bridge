@@ -19,6 +19,12 @@ const DEFAULT_MAX_NODE_STEPS = 10000;
  * Возвращает `{ status, output, journal, wait?, waitingNodeId? }`. Ошибки времени
  * исполнения фиксируются событием `node.failed` и пробрасываются наверх — фасад
  * оборачивает их в `workflow.failed` и всегда возвращает журнал.
+ *
+ * Для stateless-исполнителя (ТЗ §25.3) поддерживается ПРОДОЛЖЕНИЕ с произвольного
+ * узла: если задан `startNodeId`, обход стартует не с `entry`, а с указанного
+ * узла — контекст (`ctx`) при этом восстановлен из `workflow_instance_state`, так
+ * что другой узел-исполнитель без памяти между шагами продолжает тот же экземпляр
+ * на его зафиксированной версии.
  */
 export async function runGraph({
   schema,
@@ -26,19 +32,34 @@ export async function runGraph({
   backendClient,
   limits = TRANSFORM_DEFAULT_LIMITS,
   maxNodeSteps = DEFAULT_MAX_NODE_STEPS,
+  resume = false,
+  startNodeId = null,
+  resumeOutput = null,
 }) {
   const graph = buildGraph(schema);
 
-  ctx.appendJournal("workflow.started", {
+  if (resume && startNodeId !== null && !graph.getNode(startNodeId)) {
+    throw new WorkflowExecutionError(
+      "unknown_node",
+      `Узел продолжения "${startNodeId}" отсутствует в графе зафиксированной версии.`,
+      { nodeId: startNodeId },
+    );
+  }
+
+  ctx.appendJournal(resume ? "workflow.resumed" : "workflow.started", {
     data: {
       workflow_id: schema.workflow_id ?? null,
       workflow_version_id: schema.workflow_version_id ?? null,
       entry: graph.entry,
+      ...(resume ? { resume_from: startNodeId } : {}),
     },
   });
 
-  let currentId = graph.entry;
-  let lastOutput = null;
+  // При продолжении (stateless resume, ТЗ §25.3) обход начинается с узла-преемника
+  // ожидавшего события. Если преемника нет, экземпляр завершается сразу, а итоговым
+  // выходом остаётся результат ожидания (`resumeOutput`).
+  let currentId = resume ? startNodeId : graph.entry;
+  let lastOutput = resume ? resumeOutput : null;
   let steps = 0;
 
   while (currentId) {
