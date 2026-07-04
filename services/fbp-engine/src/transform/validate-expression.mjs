@@ -169,11 +169,14 @@ function validateAlias(alias, path, context) {
 }
 
 function validateFunction(node, path, depth, boundVars, context) {
-  const spec = TRANSFORM_FUNCTION_OPERATIONS[node.op];
-  if (!spec) {
+  // ВАЖНО: только СОБСТВЕННЫЕ ключи таблицы — иначе унаследованные от
+  // Object.prototype имена (`constructor`, `toString`, `hasOwnProperty`, …)
+  // прошли бы как «операции» и стали лазейкой из песочницы (§13.4).
+  if (!Object.hasOwn(TRANSFORM_FUNCTION_OPERATIONS, node.op)) {
     push(context, `${path}.op`, `Недопустимая операция "${node.op}".`);
     return;
   }
+  const spec = TRANSFORM_FUNCTION_OPERATIONS[node.op];
   if (!Array.isArray(node.args)) {
     push(context, `${path}.args`, `Операция "${node.op}" требует массив args.`);
     return;
