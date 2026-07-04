@@ -32,7 +32,7 @@ console.log(
   JSON.stringify(
     {
       service: "telegram-console",
-      mode: "cp8-m4",
+      mode: "cp9-m5",
       scope: router.getScope(),
       backend_requests: router.getBackendApi().getRecordedRequests(),
       sent_messages: telegramApi.getSentMessages(),

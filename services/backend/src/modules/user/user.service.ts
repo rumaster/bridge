@@ -5,11 +5,15 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 import { PgDatabase } from "../../common/database/database.service";
 import type { Queryable } from "../../common/database/database.service";
 import { AuditService } from "../audit/audit.service";
-import { mapUser } from "./user.dto";
+import type { AuthSessionContext } from "../../common/auth/auth-context";
+import { mapUser, mapUserSession } from "./user.dto";
 import type {
   CreateUserDto,
+  LogoutSessionResponseDto,
   PatchUserDto,
   RevokeUserSessionsResponseDto,
+  UserSessionListResponseDto,
+  UserSessionRow,
   UserListResponseDto,
   UserResponseDto,
   UserRow,
@@ -34,6 +38,43 @@ export class UserService {
       ]);
 
       return { items: result.rows.map(mapUser) };
+    });
+  }
+
+  async listActiveUserSessions(
+    organizationId: string,
+    userId: string,
+    currentSessionId?: string,
+  ): Promise<UserSessionListResponseDto> {
+    return this.database.withTenant(organizationId, async (client) => {
+      await this.getUserInTransaction(client, organizationId, userId);
+
+      const result = await client.query<UserSessionRow>(
+        `
+          SELECT
+            id,
+            user_id,
+            organization_id,
+            issued_at,
+            expires_at,
+            revoked_at,
+            host(ip) AS ip,
+            user_agent
+          FROM auth_sessions
+          WHERE organization_id = $1
+            AND user_id = $2
+            AND revoked_at IS NULL
+            AND expires_at > now()
+          ORDER BY issued_at DESC, id
+        `,
+        [organizationId, userId],
+      );
+
+      return {
+        items: result.rows.map((row) => mapUserSession(row, currentSessionId)),
+        organizationId,
+        userId,
+      };
     });
   }
 
@@ -209,6 +250,49 @@ export class UserService {
         organizationId,
         revokedCount: revokedSessionIds.length,
         userId,
+      };
+    });
+  }
+
+  async revokeOwnSession(
+    auth: AuthSessionContext,
+    context: UserMutationContext,
+  ): Promise<LogoutSessionResponseDto> {
+    return this.database.withTenant(auth.organization.id, async (client) => {
+      const result = await client.query<{ id: string; revoked_at: Date }>(
+        `
+          UPDATE auth_sessions
+          SET revoked_at = now()
+          WHERE organization_id = $1
+            AND user_id = $2
+            AND id = $3
+            AND revoked_at IS NULL
+            AND expires_at > now()
+          RETURNING id, revoked_at
+        `,
+        [auth.organization.id, auth.user.id, auth.session.id],
+      );
+
+      if (result.rowCount === 0) {
+        throw notFound("session", auth.session.id);
+      }
+
+      await this.audit.record(client, {
+        action: "auth.session.logout",
+        actorUserId: auth.user.id,
+        metadata: {
+          sessionRevokedAt: result.rows[0].revoked_at.toISOString(),
+        },
+        objectId: auth.session.id,
+        objectType: "auth_session",
+        organizationId: auth.organization.id,
+        requestId: context.requestId,
+      });
+
+      return {
+        implementationStage: "M1",
+        loggedOut: true,
+        sessionMode: "server",
       };
     });
   }

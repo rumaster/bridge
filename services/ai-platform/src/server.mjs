@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 
 import { C4DtoValidationError } from "./c4-dto.mjs";
 import { createDeterministicAiMock } from "./deterministic-ai.mjs";
+import { renderPrometheus } from "./metrics.mjs";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -20,17 +21,12 @@ export function createAiPlatformServer({
       const path = normalizeApiPath(url.pathname);
 
       if (request.method === "GET" && path === "/health") {
-        sendJson(response, 200, {
-          status: "ok",
-          service: "ai-platform",
-          mode: serviceMode,
-          contract: "C4",
-        });
+        sendJson(response, 200, buildHealth(mockAi, serviceMode));
         return;
       }
 
       if (request.method === "GET" && path === "/metrics") {
-        sendText(response, 200, renderMetrics(mockAi.getMetrics()));
+        sendText(response, 200, renderPrometheus(mockAi.getMetrics(), breakerGauges(mockAi)));
         return;
       }
 
@@ -139,20 +135,42 @@ function problem(status, title, detail, errors) {
   };
 }
 
-function renderMetrics(metrics) {
-  const lines = [
-    "# HELP ai_platform_mock_assistant_suggest_total C4 assistant suggestions served by the deterministic mock.",
-    "# TYPE ai_platform_mock_assistant_suggest_total counter",
-    `ai_platform_mock_assistant_suggest_total ${metrics.assistant_suggest_total}`,
-    "# HELP ai_platform_mock_onboarding_command_total C4 onboarding commands served by the deterministic mock.",
-    "# TYPE ai_platform_mock_onboarding_command_total counter",
-    `ai_platform_mock_onboarding_command_total ${metrics.onboarding_command_total}`,
-    "# HELP ai_platform_assistant_suggest_degraded_total C4 assistant suggestions that fell back to the degraded stub.",
-    "# TYPE ai_platform_assistant_suggest_degraded_total counter",
-    `ai_platform_assistant_suggest_degraded_total ${metrics.assistant_suggest_degraded_total ?? 0}`,
-  ];
+/**
+ * Base liveness plus, when the AI implementation exposes it, degradation detail
+ * (active provider/model and circuit-breaker state) for ТЗ §24.4. The M0
+ * deterministic mock has no `getHealth`, so its health payload stays minimal.
+ */
+function buildHealth(mockAi, serviceMode) {
+  const base = {
+    status: "ok",
+    service: "ai-platform",
+    mode: serviceMode,
+    contract: "C4",
+  };
 
-  return `${lines.join("\n")}\n`;
+  if (typeof mockAi.getHealth === "function") {
+    const detail = mockAi.getHealth();
+    if (detail && typeof detail === "object") {
+      return { ...base, ...detail };
+    }
+  }
+
+  return base;
+}
+
+/**
+ * Expose the LLM circuit-breaker state as a numeric gauge alongside the metric
+ * counters, so alerting can fire when a provider trips open (ТЗ §11.2, §24.4).
+ */
+function breakerGauges(mockAi) {
+  if (typeof mockAi.getHealth !== "function") {
+    return {};
+  }
+  const breaker = mockAi.getHealth()?.llm?.breaker;
+  if (!breaker || typeof breaker.state !== "string") {
+    return {};
+  }
+  return { llm_circuit_breaker_open: breaker.state === "open" ? 1 : 0 };
 }
 
 class PayloadError extends Error {

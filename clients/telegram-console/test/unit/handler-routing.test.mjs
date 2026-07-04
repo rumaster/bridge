@@ -8,12 +8,24 @@ import {
 } from "../../src/index.mjs";
 
 const fixedNow = () => "2026-07-03T22:40:00.000Z";
+const noTelegramWaits = Object.freeze({
+  limits: Object.freeze({
+    globalIntervalMs: 0,
+    perChatIntervalMs: 0,
+    groupChatIntervalMs: 0,
+  }),
+});
 
 describe("Telegram Console CP-8 handler routing", () => {
   it("routes /start through C3.auth and stores a linked manager session", async () => {
     const telegramApi = createMockTelegramApiAdapter({ now: fixedNow });
     const backendApi = createMockTelegramConsoleBackendApi({ now: fixedNow });
-    const router = createTelegramConsoleRouter({ telegramApi, backendApi, now: fixedNow });
+    const router = createTelegramConsoleRouter({
+      telegramApi,
+      backendApi,
+      now: fixedNow,
+      telegramDelivery: noTelegramWaits,
+    });
 
     const result = await router.handleUpdate(startUpdate());
 
@@ -35,7 +47,11 @@ describe("Telegram Console CP-8 handler routing", () => {
 
   it("requires account linking before C3.conversations access", async () => {
     const telegramApi = createMockTelegramApiAdapter({ now: fixedNow });
-    const router = createTelegramConsoleRouter({ telegramApi, now: fixedNow });
+    const router = createTelegramConsoleRouter({
+      telegramApi,
+      now: fixedNow,
+      telegramDelivery: noTelegramWaits,
+    });
 
     const result = await router.handleUpdate({
       update_id: 2,
@@ -55,7 +71,12 @@ describe("Telegram Console CP-8 handler routing", () => {
   it("routes /dialogs through C3.conversations after linking", async () => {
     const telegramApi = createMockTelegramApiAdapter({ now: fixedNow });
     const backendApi = createMockTelegramConsoleBackendApi({ now: fixedNow });
-    const router = createTelegramConsoleRouter({ telegramApi, backendApi, now: fixedNow });
+    const router = createTelegramConsoleRouter({
+      telegramApi,
+      backendApi,
+      now: fixedNow,
+      telegramDelivery: noTelegramWaits,
+    });
 
     await router.handleUpdate(startUpdate());
     const result = await router.handleUpdate({
@@ -81,7 +102,11 @@ describe("Telegram Console CP-8 handler routing", () => {
 
   it("keeps auth.link callback as a guided /start entrypoint", async () => {
     const telegramApi = createMockTelegramApiAdapter({ now: fixedNow });
-    const router = createTelegramConsoleRouter({ telegramApi, now: fixedNow });
+    const router = createTelegramConsoleRouter({
+      telegramApi,
+      now: fixedNow,
+      telegramDelivery: noTelegramWaits,
+    });
 
     const result = await router.handleUpdate({
       update_id: 3,
@@ -106,15 +131,48 @@ describe("Telegram Console CP-8 handler routing", () => {
       },
     ]);
   });
+
+  it("rejects unknown Telegram accounts before storing a manager session", async () => {
+    const telegramApi = createMockTelegramApiAdapter({ now: fixedNow });
+    const backendApi = createMockTelegramConsoleBackendApi({ now: fixedNow });
+    const router = createTelegramConsoleRouter({
+      telegramApi,
+      backendApi,
+      now: fixedNow,
+      telegramDelivery: noTelegramWaits,
+    });
+
+    const denied = await router.handleUpdate(startUpdate({ username: "intruder" }));
+    const dialogs = await router.handleUpdate({
+      update_id: 2,
+      message: {
+        message_id: 11,
+        chat: { id: 1001 },
+        from: { id: 777, username: "intruder" },
+        text: "/dialogs",
+      },
+    });
+
+    assert.equal(denied.route, "command:start");
+    assert.equal(denied.status, "auth_denied");
+    assert.equal(dialogs.status, "auth_required");
+    assert.match(telegramApi.getSentMessages()[0].text, /не привязан/);
+    assert.equal(
+      backendApi
+        .getRecordedRequests()
+        .some((request) => request.method === "GET" && request.path === "/conversations"),
+      false,
+    );
+  });
 });
 
-function startUpdate() {
+function startUpdate({ username = "manager_demo", telegramUserId = 501 } = {}) {
   return {
     update_id: 1,
     message: {
       message_id: 10,
       chat: { id: 1001 },
-      from: { id: 501, username: "manager_demo", first_name: "Demo" },
+      from: { id: telegramUserId, username, first_name: "Demo" },
       text: "/start",
     },
   };

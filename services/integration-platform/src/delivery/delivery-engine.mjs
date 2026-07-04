@@ -1,5 +1,6 @@
 import { createBackoffPolicy } from "./backoff.mjs";
 import { classifyDeliveryError } from "./errors.mjs";
+import { createChannelResilience } from "./resilience.mjs";
 
 /**
  * Движок надёжной доставки SVC-INT (CP-6, M4).
@@ -19,6 +20,8 @@ export function createDeliveryEngine({
   backendClient,
   rateLimiter,
   backoff = createBackoffPolicy(),
+  resilience = {},
+  queue = {},
   now = () => new Date().toISOString(),
   sleep = defaultSleep,
   maxBackpressureWaitMs = Number.POSITIVE_INFINITY,
@@ -31,6 +34,8 @@ export function createDeliveryEngine({
   }
 
   const processed = new Map(); // idempotency_key -> final result
+  const channelStates = new Map(); // channel_type -> resilience guard
+  const deliveryQueue = createAsyncDeliveryQueue({ queue, sleep });
   const metrics = {
     deliveries_total: 0,
     delivered_total: 0,
@@ -39,6 +44,12 @@ export function createDeliveryEngine({
     retries_total: 0,
     attempts_total: 0,
     attempt_record_failures_total: 0,
+    queued_total: 0,
+    queue_retries_total: 0,
+    degraded_total: 0,
+    timeout_total: 0,
+    circuit_open_total: 0,
+    bulkhead_rejected_total: 0,
   };
 
   async function recordAttempt(context, attemptNo, status, error) {
@@ -62,13 +73,94 @@ export function createDeliveryEngine({
     return { recorded: true };
   }
 
-  return {
+  const api = {
     getMetrics() {
       return { ...metrics };
     },
 
+    getChannelState(channelType) {
+      const state = channelStates.get(channelType);
+      if (!state) {
+        return {
+          circuit: "closed",
+          active: 0,
+          queued: 0,
+        };
+      }
+      return state.getSnapshot();
+    },
+
+    getQueueSnapshot() {
+      return deliveryQueue.getSnapshot();
+    },
+
+    getDeliveryStatus(idempotencyKey) {
+      if (processed.has(idempotencyKey)) {
+        return structuredCloneResult(processed.get(idempotencyKey));
+      }
+
+      const queued = deliveryQueue.getStatus(idempotencyKey);
+      return queued ? { ...queued } : null;
+    },
+
     isProcessed(idempotencyKey) {
       return processed.has(idempotencyKey);
+    },
+
+    enqueue(egressDelivery) {
+      const context = extractContext(egressDelivery);
+
+      if (processed.has(context.idempotencyKey)) {
+        metrics.duplicate_total += 1;
+        return {
+          ...structuredCloneResult(processed.get(context.idempotencyKey)),
+          accepted: true,
+          queued: false,
+          duplicate: true,
+        };
+      }
+
+      const accepted = deliveryQueue.enqueue({
+        key: context.idempotencyKey,
+        payload: egressDelivery,
+        run: async () => api.deliver(egressDelivery),
+        shouldRetry: (result) => result?.retryable === true && !result?.delivered,
+        onQueued: () => {
+          metrics.queued_total += 1;
+        },
+        onDuplicate: () => {
+          metrics.duplicate_total += 1;
+        },
+        onRetry: () => {
+          metrics.queue_retries_total += 1;
+        },
+      });
+
+      if (!accepted.accepted) {
+        return {
+          accepted: false,
+          queued: false,
+          delivered: false,
+          duplicate: false,
+          status: "queue_full",
+          idempotency_key: context.idempotencyKey,
+          message_id: context.messageId,
+          adapter: context.adapter,
+          error: "delivery queue is full",
+          retryable: true,
+        };
+      }
+
+      return {
+        accepted: true,
+        queued: true,
+        delivered: false,
+        duplicate: accepted.duplicate,
+        status: "queued",
+        idempotency_key: context.idempotencyKey,
+        message_id: context.messageId,
+        adapter: context.adapter,
+      };
     },
 
     async deliver(egressDelivery) {
@@ -102,11 +194,7 @@ export function createDeliveryEngine({
         }
 
         try {
-          const deliveryResult = await channel.deliver({
-            idempotencyKey: context.idempotencyKey,
-            channelType: context.channelType,
-            message: egressDelivery.message,
-          });
+          const deliveryResult = await deliverToExternalChannel(context, egressDelivery);
 
           await recordAttempt(context, attempt, "delivered", null);
 
@@ -130,6 +218,7 @@ export function createDeliveryEngine({
         } catch (error) {
           lastError = error;
           lastClassification = classifyDeliveryError(error);
+          recordDegradationMetric(lastClassification);
 
           await recordAttempt(context, attempt, "failed", error.message);
 
@@ -147,7 +236,9 @@ export function createDeliveryEngine({
               error_category: lastClassification.category,
               retryable: lastClassification.retryable,
             };
-            processed.set(context.idempotencyKey, result);
+            if (!result.retryable) {
+              processed.set(context.idempotencyKey, result);
+            }
             metrics.failed_total += 1;
             return result;
           }
@@ -175,6 +266,167 @@ export function createDeliveryEngine({
       };
     },
   };
+
+  return api;
+
+  async function deliverToExternalChannel(context, egressDelivery) {
+    const guard = getChannelResilience(context.adapter);
+    const result = await guard.execute(({ signal }) =>
+      channel.deliver({
+        idempotencyKey: context.idempotencyKey,
+        channelType: context.channelType,
+        message: egressDelivery.message,
+        signal,
+      }),
+    );
+
+    if (result.ok) {
+      return result.value;
+    }
+
+    throw result.error;
+  }
+
+  function getChannelResilience(channelType) {
+    if (!channelStates.has(channelType)) {
+      channelStates.set(channelType, createChannelResilience(resilience));
+    }
+    return channelStates.get(channelType);
+  }
+
+  function recordDegradationMetric(classification) {
+    if (classification.retryable) {
+      metrics.degraded_total += 1;
+    }
+
+    if (classification.category === "timeout") {
+      metrics.timeout_total += 1;
+    }
+    if (classification.category === "circuit_open") {
+      metrics.circuit_open_total += 1;
+    }
+    if (classification.category === "bulkhead_full") {
+      metrics.bulkhead_rejected_total += 1;
+    }
+  }
+}
+
+function createAsyncDeliveryQueue({ queue, sleep }) {
+  const enabled = queue?.enabled === true;
+  const maxSize = Math.max(1, queue?.maxSize ?? 1024);
+  const concurrency = Math.max(1, queue?.concurrency ?? 4);
+  const maxAttempts = Math.max(1, queue?.maxAttempts ?? 10);
+  const retryDelayMs = Math.max(0, queue?.retryDelayMs ?? 1000);
+  const pending = [];
+  const queued = new Map();
+  let active = 0;
+  let draining = false;
+
+  function enqueue(item) {
+    if (!enabled) {
+      return { accepted: false, reason: "queue_disabled" };
+    }
+
+    const existing = queued.get(item.key);
+    if (existing) {
+      item.onDuplicate?.();
+      return { accepted: true, duplicate: true };
+    }
+
+    if (queued.size >= maxSize) {
+      return { accepted: false, reason: "queue_full" };
+    }
+
+    const queuedItem = {
+      ...item,
+      attempts: 0,
+      status: "queued",
+    };
+    queued.set(item.key, queuedItem);
+    pending.push(queuedItem);
+    item.onQueued?.();
+    scheduleDrain();
+    return { accepted: true, duplicate: false };
+  }
+
+  function getSnapshot() {
+    return {
+      enabled,
+      queued: queued.size,
+      pending: pending.length,
+      active,
+    };
+  }
+
+  function getStatus(key) {
+    const item = queued.get(key);
+    if (!item) {
+      return null;
+    }
+
+    return {
+      status: item.status,
+      queued: true,
+      attempts: item.attempts,
+      idempotency_key: item.key,
+    };
+  }
+
+  function scheduleDrain() {
+    if (draining) {
+      return;
+    }
+    draining = true;
+    queueMicrotask(drain);
+  }
+
+  function drain() {
+    draining = false;
+
+    while (active < concurrency && pending.length > 0) {
+      const item = pending.shift();
+      active += 1;
+      item.status = "running";
+      item.attempts += 1;
+
+      Promise.resolve()
+        .then(() => item.run())
+        .then((result) => {
+          if (item.shouldRetry?.(result) && item.attempts < maxAttempts) {
+            item.status = "retry_wait";
+            item.onRetry?.(result);
+            scheduleRetry(item);
+            return;
+          }
+
+          item.status = result?.delivered ? "delivered" : "failed";
+          queued.delete(item.key);
+        })
+        .catch(() => {
+          item.status = "failed";
+          queued.delete(item.key);
+        })
+        .finally(() => {
+          active = Math.max(0, active - 1);
+          scheduleDrain();
+        });
+    }
+  }
+
+  function scheduleRetry(item) {
+    const retry = async () => {
+      if (retryDelayMs > 0) {
+        await sleep(retryDelayMs);
+      }
+      item.status = "queued";
+      pending.push(item);
+      scheduleDrain();
+    };
+
+    void retry();
+  }
+
+  return { enqueue, getSnapshot, getStatus };
 }
 
 function extractContext(egressDelivery) {

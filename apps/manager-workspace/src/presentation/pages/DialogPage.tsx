@@ -1,4 +1,12 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 import { Send, Sparkles } from "lucide-react";
 import { useParams } from "react-router-dom";
 
@@ -22,7 +30,17 @@ import {
   mergeMessagesById
 } from "../../state/realtime-merge";
 import { useC7RealtimeClient, useManagerWorkspaceApi } from "../../state/workspace";
+import {
+  MANAGER_WORKSPACE_NFR_BUDGET_MS,
+  recordClientNfrMeasurement,
+  startClientNfrMeasurement
+} from "../../shared/nfr";
 import { Badge, Button, Panel } from "../../shared/ui-kit";
+
+const MESSAGE_WINDOWING_THRESHOLD = 80;
+const MESSAGE_ROW_ESTIMATE_PX = 88;
+const MESSAGE_WINDOW_OVERSCAN = 8;
+const MESSAGE_VIEWPORT_FALLBACK_HEIGHT_PX = 520;
 
 export default function DialogPage() {
   const { conversationId = "conv-1" } = useParams();
@@ -48,17 +66,27 @@ export default function DialogPage() {
   const seenMessageIdsRef = useRef(new Set<string>());
 
   const loadDialog = useCallback(async () => {
-    const nextConversation = await api.conversations.get(conversationId);
-    const [nextMessages, nextClient] = await Promise.all([
-      api.conversations.listMessages(conversationId),
-      api.clients.get(nextConversation.clientId)
-    ]);
+    const startedAt = startClientNfrMeasurement();
 
-    return {
-      nextConversation,
-      nextMessages,
-      nextClient
-    };
+    try {
+      const nextConversation = await api.conversations.get(conversationId);
+      const [nextMessages, nextClient] = await Promise.all([
+        api.conversations.listMessages(conversationId),
+        api.clients.get(nextConversation.clientId)
+      ]);
+
+      return {
+        nextConversation,
+        nextMessages,
+        nextClient
+      };
+    } finally {
+      recordClientNfrMeasurement(
+        "message_history",
+        MANAGER_WORKSPACE_NFR_BUDGET_MS.message_history,
+        startedAt
+      );
+    }
   }, [api, conversationId]);
 
   const catchUpMessages = useCallback(async () => {
@@ -149,6 +177,7 @@ export default function DialogPage() {
       return;
     }
 
+    const startedAt = startClientNfrMeasurement();
     const idempotencyKey = createIdempotencyKey(conversation.id);
     const optimisticMessage: Message = {
       id: `optimistic-${idempotencyKey}`,
@@ -198,6 +227,11 @@ export default function DialogPage() {
         )
       );
     } finally {
+      recordClientNfrMeasurement(
+        "send_message",
+        MANAGER_WORKSPACE_NFR_BUDGET_MS.send_message,
+        startedAt
+      );
       setSending(false);
     }
   }
@@ -260,22 +294,7 @@ export default function DialogPage() {
 
       <div className="dialog-layout">
         <Panel className="message-thread">
-          {messages.map((message) => (
-            <article className={`message-bubble ${message.direction}`} key={message.id}>
-              <span>{message.content}</span>
-              {message.attachments?.length ? (
-                <div className="attachment-list">
-                  {message.attachments.map((attachment) => (
-                    <a className="attachment-link" href={attachment.url} key={attachment.id} rel="noreferrer" target="_blank">
-                      <span>{attachment.name}</span>
-                      <small>{formatBytes(attachment.sizeBytes)}</small>
-                    </a>
-                  ))}
-                </div>
-              ) : null}
-              <small>{message.status}</small>
-            </article>
-          ))}
+          <VirtualizedMessageList messages={messages} />
 
           <form className="reply-form" onSubmit={handleSend}>
             <label className="text-input reply-input" htmlFor="manager-reply">
@@ -370,6 +389,116 @@ export default function DialogPage() {
         </div>
       </div>
     </section>
+  );
+}
+
+function VirtualizedMessageList({ messages }: { messages: Message[] }) {
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const shouldVirtualize = messages.length > MESSAGE_WINDOWING_THRESHOLD;
+  const totalHeight = messages.length * MESSAGE_ROW_ESTIMATE_PX;
+  const [scrollTop, setScrollTop] = useState(() =>
+    shouldVirtualize ? Math.max(0, totalHeight - MESSAGE_VIEWPORT_FALLBACK_HEIGHT_PX) : 0
+  );
+  const [viewportHeight, setViewportHeight] = useState(MESSAGE_VIEWPORT_FALLBACK_HEIGHT_PX);
+
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current;
+
+    if (!viewport) {
+      return;
+    }
+
+    const nextViewportHeight = viewport.clientHeight || MESSAGE_VIEWPORT_FALLBACK_HEIGHT_PX;
+    setViewportHeight(nextViewportHeight);
+
+    if (!shouldVirtualize) {
+      setScrollTop(0);
+      return;
+    }
+
+    const nextScrollTop = Math.max(0, messages.length * MESSAGE_ROW_ESTIMATE_PX - nextViewportHeight);
+    viewport.scrollTop = nextScrollTop;
+    setScrollTop(nextScrollTop);
+  }, [messages.length, shouldVirtualize]);
+
+  const windowRange = useMemo(() => {
+    if (!shouldVirtualize) {
+      return {
+        startIndex: 0,
+        endIndex: messages.length
+      };
+    }
+
+    const startIndex = Math.max(0, Math.floor(scrollTop / MESSAGE_ROW_ESTIMATE_PX) - MESSAGE_WINDOW_OVERSCAN);
+    const visibleRows = Math.ceil(viewportHeight / MESSAGE_ROW_ESTIMATE_PX) + MESSAGE_WINDOW_OVERSCAN * 2;
+
+    return {
+      startIndex,
+      endIndex: Math.min(messages.length, startIndex + visibleRows)
+    };
+  }, [messages.length, scrollTop, shouldVirtualize, viewportHeight]);
+
+  const visibleMessages = messages.slice(windowRange.startIndex, windowRange.endIndex);
+  const topSpacerHeight = shouldVirtualize ? windowRange.startIndex * MESSAGE_ROW_ESTIMATE_PX : 0;
+  const bottomSpacerHeight = shouldVirtualize
+    ? Math.max(0, (messages.length - windowRange.endIndex) * MESSAGE_ROW_ESTIMATE_PX)
+    : 0;
+
+  return (
+    <div
+      aria-label="История сообщений"
+      aria-live="polite"
+      className="message-list-viewport"
+      onScroll={(event) => setScrollTop(event.currentTarget.scrollTop)}
+      ref={viewportRef}
+      role="list"
+      tabIndex={0}
+    >
+      {topSpacerHeight > 0 ? <div aria-hidden="true" className="message-window-spacer" style={{ height: topSpacerHeight }} /> : null}
+      {visibleMessages.map((message, visibleIndex) => (
+        <MessageBubble
+          key={message.id}
+          message={message}
+          position={windowRange.startIndex + visibleIndex + 1}
+          setSize={messages.length}
+        />
+      ))}
+      {bottomSpacerHeight > 0 ? (
+        <div aria-hidden="true" className="message-window-spacer" style={{ height: bottomSpacerHeight }} />
+      ) : null}
+    </div>
+  );
+}
+
+function MessageBubble({
+  message,
+  position,
+  setSize
+}: {
+  message: Message;
+  position: number;
+  setSize: number;
+}) {
+  return (
+    <article
+      aria-posinset={position}
+      aria-setsize={setSize}
+      className={`message-bubble ${message.direction}`}
+      role="listitem"
+    >
+      <span>{message.content}</span>
+      {message.attachments?.length ? (
+        <div className="attachment-list">
+          {message.attachments.map((attachment) => (
+            <a className="attachment-link" href={attachment.url} key={attachment.id} rel="noreferrer" target="_blank">
+              <span>{attachment.name}</span>
+              <small>{formatBytes(attachment.sizeBytes)}</small>
+            </a>
+          ))}
+        </div>
+      ) : null}
+      <small>{message.status}</small>
+    </article>
   );
 }
 

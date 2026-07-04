@@ -28,8 +28,21 @@ describe("CP-8 e2e: Telegram Console consumes C10, C3 and C4", () => {
   });
 
   it("renders a C10 Telegram card, opens C3 history, requests C4 AI and sends an idempotent reply", async () => {
-    const telegramApi = createMockTelegramApiAdapter({ now: fixedNow });
-    const router = createTelegramConsoleRouter({ telegramApi, now: fixedNow });
+    const clock = createControllableClock(Date.parse(fixedNow()));
+    const telegramApi = createMockTelegramApiAdapter({ now: clock.iso });
+    const router = createTelegramConsoleRouter({
+      telegramApi,
+      now: clock.iso,
+      telegramDelivery: {
+        now: clock.now,
+        sleep: clock.sleep,
+        limits: {
+          globalIntervalMs: 0,
+          perChatIntervalMs: 1_000,
+          groupChatIntervalMs: 3_000,
+        },
+      },
+    });
 
     await router.handleUpdate(startUpdate());
     await enableTelegramNotifications(notificationBaseUrl);
@@ -87,6 +100,7 @@ describe("CP-8 e2e: Telegram Console consumes C10, C3 and C4", () => {
         "/messages",
       ],
     );
+    assertPerChatSpacing(telegramApi.getSentMessages(), 1_000);
   });
 });
 
@@ -148,6 +162,33 @@ function headers(extra = {}) {
 
 function fixedNow() {
   return "2026-07-04T10:00:00.000Z";
+}
+
+function createControllableClock(start) {
+  let current = start;
+  return {
+    now: () => current,
+    iso: () => new Date(current).toISOString(),
+    sleep: async (ms) => {
+      current += ms;
+    },
+  };
+}
+
+function assertPerChatSpacing(messages, minIntervalMs) {
+  for (let index = 1; index < messages.length; index += 1) {
+    const previous = messages[index - 1];
+    const current = messages[index];
+    if (previous.chat_id !== current.chat_id) {
+      continue;
+    }
+
+    const diff = Date.parse(current.sent_at) - Date.parse(previous.sent_at);
+    assert.ok(
+      diff >= minIntervalMs,
+      `Telegram message ${current.message_id} was sent after ${diff}ms, expected >= ${minIntervalMs}ms`,
+    );
+  }
 }
 
 function startUpdate() {

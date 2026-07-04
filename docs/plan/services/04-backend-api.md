@@ -290,6 +290,23 @@ Telegram Console.
 - **Тесты.** *Unit*: полнота декораторов OpenAPI. *Integration*: контрактная проверка «OpenAPI ↔ фактический API»; регрессия изоляции арендатора по всем ресурсам. *E2e*: полный набор сценариев вехи M5 (мастер §8.2), участие в приёмке (CP-9).
 - **DoD.** OpenAPI полна и синхронна с кодом; версия API под контролем; ориентиры §25.2 достигнуты в нагрузочной пробе; регрессия зелёная (мастер §9.4).
 
+**Статус реализации M5 (M5-04).** M5 Backend API завершён для CP-9:
+`packages/contracts/openapi/backend-core/openapi.json` генерируется из
+NestJS-кода (`npm run build --workspace @bridge/backend`) и содержит M5-метаданные
+C3 (`x-contract-id`, `x-owner`, `x-stage`, `x-api-version`,
+`x-api-version-strategy`). Полнота декораторов закреплена в
+`services/backend/test/unit/openapi-decorators.spec.ts`: каждый контроллер имеет
+`@ApiTags`, а каждый route handler — `@ApiOperation`, Swagger response decorator
+и `@Version("1")`. Синхронизация «фактический API ↔ OpenAPI» закреплена в
+`services/backend/test/integration/m5-openapi-contract.spec.ts`: все реальные
+маршруты `/api/v1` опубликованы в контракте, а единственные неверсированные
+операционные alias — `GET /health` и `GET /metrics`. NFR-пороги ТЗ §25.2
+зафиксированы p95-пробами в `services/backend/test/integration/m5-nfr.spec.ts`
+(список диалогов ≤ 1 с, история ≤ 2 с, отправка ≤ 1 с, AI без внешнего LLM
+≤ 500 мс). Приёмочный артефакт CP-9 опубликован как
+`packages/contracts/cp9-svc-api-acceptance.v1.json` и проверяется contract-тестом
+`tests/contract/cp9-svc-api-acceptance.test.mjs`.
+
 ---
 
 ## 6. Точки согласования
@@ -329,6 +346,17 @@ Telegram Console.
 - **Замораживаемый контракт.** **C3 + C4 + C5** (совместная стабилизация).
 - **Межсервисные тесты.** e2e «Admin правит Workflow», «AI Onboarding применяет
   конфиг»; проверка применения структурированной команды AI через Backend API (ТЗ §12.6).
+
+### CP-9 (M5) — приемка SVC-API
+
+- **Ожидания.** SVC-API публикует полный и синхронный C3 OpenAPI из кода, держит
+  стабильный `/api/v1` и подтверждает NFR-ориентиры ТЗ §25.2 на автоматических
+  пробах без времени внешнего LLM.
+- **Замораживаемый контракт.** **C3 Backend REST API v1.0.0**:
+  `packages/contracts/openapi/backend-core/openapi.json` +
+  `packages/contracts/cp9-svc-api-acceptance.v1.json`.
+- **Межсервисные тесты.** contract CP-9, unit полноты Swagger-декораторов,
+  integration «OpenAPI ↔ фактические маршруты» и NFR p95-пробы.
 
 ---
 

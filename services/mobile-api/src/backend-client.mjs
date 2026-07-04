@@ -57,6 +57,7 @@ export function createMockBackendApi({ now = () => new Date().toISOString() } = 
 
   function appendChange(state, kind, entity, occurredAt) {
     state.feedSequence += 1;
+    tagEntityWithSyncSequence(entity, state.feedSequence);
     const change = {
       sequence: state.feedSequence,
       kind,
@@ -67,6 +68,17 @@ export function createMockBackendApi({ now = () => new Date().toISOString() } = 
     state.feed.push(change);
     metrics.changes_total += 1;
     return change;
+  }
+
+  function tagEntityWithSyncSequence(entity, sequence) {
+    if (entity && typeof entity === "object") {
+      Object.defineProperty(entity, "sync_sequence", {
+        value: sequence,
+        writable: true,
+        configurable: true,
+        enumerable: false,
+      });
+    }
   }
 
   function ensureConversation(state, { conversationId, clientId, createdAt }) {
@@ -169,7 +181,7 @@ export function createMockBackendApi({ now = () => new Date().toISOString() } = 
       const existingId = state.idempotencyIndex.get(idempotencyKey) ?? (state.messages.has(messageId) ? messageId : undefined);
       if (existingId) {
         metrics.messages_deduplicated_total += 1;
-        return { duplicate: true, message: { ...state.messages.get(existingId) } };
+        return { duplicate: true, message: cloneMessage(state.messages.get(existingId)) };
       }
 
       const at = occurredAt ?? now();
@@ -187,7 +199,7 @@ export function createMockBackendApi({ now = () => new Date().toISOString() } = 
       });
       metrics.messages_sent_total += 1;
       appendChange(state, "message", message, at);
-      return { duplicate: false, message: { ...message } };
+      return { duplicate: false, message: cloneMessage(message) };
     },
 
     /**
@@ -204,7 +216,7 @@ export function createMockBackendApi({ now = () => new Date().toISOString() } = 
       const existingId = state.idempotencyIndex.get(idempotencyKey) ?? (state.messages.has(canonical.id) ? canonical.id : undefined);
       if (existingId) {
         metrics.edge_duplicate_total += 1;
-        return { duplicate: true, message: { ...state.messages.get(existingId) } };
+        return { duplicate: true, message: cloneMessage(state.messages.get(existingId)) };
       }
 
       const at = canonical.created_at ?? now();
@@ -224,7 +236,7 @@ export function createMockBackendApi({ now = () => new Date().toISOString() } = 
       });
       metrics.edge_ingested_total += 1;
       appendChange(state, "message", message, at);
-      return { duplicate: false, message: { ...message } };
+      return { duplicate: false, message: cloneMessage(message) };
     },
 
     /**
@@ -270,7 +282,7 @@ export function createMockBackendApi({ now = () => new Date().toISOString() } = 
         },
         at,
       );
-      return { ...message };
+      return cloneMessage(message);
     },
 
     /** Создание уведомления C10.notifications. */
@@ -405,13 +417,22 @@ export function createMockBackendApi({ now = () => new Date().toISOString() } = 
         .map((conversation) => ({ ...conversation }));
     },
 
-    listConversationMessages({ organizationId, conversationId, limit = 200 }) {
+    listConversationMessages({
+      organizationId,
+      conversationId,
+      limit = 200,
+      maxSyncSequence = Number.POSITIVE_INFINITY,
+    }) {
       const state = orgState(organizationId);
       return [...state.messages.values()]
         .filter((message) => message.conversation_id === conversationId)
+        .filter(
+          (message) =>
+            (message.sync_sequence ?? Number.POSITIVE_INFINITY) <= maxSyncSequence,
+        )
         .sort((a, b) => a.sequence_number - b.sequence_number)
         .slice(0, limit)
-        .map((message) => ({ ...message }));
+        .map((message) => cloneMessage(message));
     },
 
     getClient({ organizationId, clientId }) {
@@ -442,4 +463,8 @@ function directionToSender(direction) {
     return "manager";
   }
   return "client";
+}
+
+function cloneMessage(message) {
+  return message ? { ...message } : message;
 }

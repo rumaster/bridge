@@ -4,7 +4,9 @@ import { describe, it } from "node:test";
 import {
   NOTIFICATION_CATEGORY_CHANNELS,
   PRODUCER_DEFAULT_CATEGORY,
+  deliveryPolicyForCategory,
   eligibleChannelsForCategory,
+  isPriorityNotificationCategory,
   isSupportedChannel,
   resolveTargetChannels,
   routeProducerEvent,
@@ -130,6 +132,16 @@ describe("notification routing (M3/M4)", () => {
     assert.equal(isSupportedChannel("email"), true);
     assert.equal(isSupportedChannel("push"), true);
     assert.equal(isSupportedChannel("sms"), false);
+  });
+
+  it("prioritises critical and admin categories with the strongest retry policy", () => {
+    assert.equal(isPriorityNotificationCategory("critical"), true);
+    assert.equal(isPriorityNotificationCategory("admin"), true);
+    assert.equal(isPriorityNotificationCategory("warning"), false);
+
+    assert.equal(deliveryPolicyForCategory("critical").max_attempts, 3);
+    assert.equal(deliveryPolicyForCategory("admin").max_attempts, 3);
+    assert.equal(deliveryPolicyForCategory("warning").max_attempts, 1);
   });
 
   it("rejects non-object producer events", () => {

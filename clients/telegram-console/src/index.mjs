@@ -11,6 +11,18 @@ export {
 } from "./rendering.mjs";
 export { createTelegramConsoleSessionStore } from "./session-store.mjs";
 export {
+  TELEGRAM_CONSOLE_DEFAULT_DELIVERY_LIMITS,
+  createReliableTelegramApiAdapter,
+  createTelegramRateLimiter,
+  isRetryableTelegramError,
+} from "./telegram-delivery.mjs";
+export {
+  createBackoffPolicy,
+  executeWithRetries,
+  isRetryableTransientError,
+  retryAfterMsFromError,
+} from "./retry-policy.mjs";
+export {
   TELEGRAM_CONSOLE_CALLBACKS,
   TELEGRAM_CONSOLE_COMMANDS,
   TELEGRAM_CONSOLE_M0_SCOPE,

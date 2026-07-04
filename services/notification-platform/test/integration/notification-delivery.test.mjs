@@ -5,6 +5,8 @@ import {
   createNotificationTriggerEvent,
   validateNotificationCreatedEvent,
 } from "../../../../packages/contracts/src/c10.mjs";
+import { createDefaultChannelAdapters } from "../../src/channel-adapters.mjs";
+import { createDeterministicNotificationMock } from "../../src/deterministic-notification.mjs";
 import { createNotificationPlatformServer } from "../../src/server.mjs";
 
 const fixedNow = () => "2026-07-04T09:30:00.000Z";
@@ -60,21 +62,47 @@ async function postEvent(baseUrl, payload) {
   });
 }
 
+async function listen(server) {
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  return `http://127.0.0.1:${address.port}`;
+}
+
+async function close(server) {
+  await new Promise((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
+}
+
+function failingChannelAdapter(channel, message = `${channel} is unavailable`) {
+  let attempts = 0;
+
+  return {
+    channel,
+    deliver() {
+      attempts += 1;
+      throw new Error(message);
+    },
+    getAttempts() {
+      return attempts;
+    },
+    getDispatches() {
+      return [];
+    },
+  };
+}
+
 describe("Notification Platform delivery over HTTP (M3/M4)", () => {
   let server;
   let baseUrl;
 
   before(async () => {
     server = createNotificationPlatformServer({ now: fixedNow });
-    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const address = server.address();
-    baseUrl = `http://127.0.0.1:${address.port}`;
+    baseUrl = await listen(server);
   });
 
   after(async () => {
-    await new Promise((resolve, reject) => {
-      server.close((error) => (error ? reject(error) : resolve()));
-    });
+    await close(server);
   });
 
   it("accepts a producer event and emits a valid C7 notification.created event", async () => {
@@ -110,6 +138,7 @@ describe("Notification Platform delivery over HTTP (M3/M4)", () => {
   it("delivers only to enabled channels after a subscription change", async () => {
     await putSettings(baseUrl, [
       { category: "warning", channel: "web", enabled: true },
+      { category: "warning", channel: "telegram", enabled: false },
       { category: "warning", channel: "email", enabled: true },
     ]);
 
@@ -171,5 +200,59 @@ describe("Notification Platform delivery over HTTP (M3/M4)", () => {
       /notification_platform_mock_delivery_total\{channel="telegram"\} \d+/,
     );
     assert.match(metrics, /notification_platform_mock_delivery_skipped_total \d+/);
+  });
+});
+
+describe("Notification Platform delivery degradation over HTTP (M5)", () => {
+  it("returns 202 and delivers through Web when Telegram is unavailable", async () => {
+    const telegram = failingChannelAdapter("telegram", "telegram provider is down");
+    const channels = {
+      ...createDefaultChannelAdapters({ now: fixedNow }),
+      telegram,
+    };
+    const notifications = createDeterministicNotificationMock({
+      now: fixedNow,
+      channels,
+    });
+    const server = createNotificationPlatformServer({ notifications, now: fixedNow });
+    const baseUrl = await listen(server);
+
+    try {
+      const response = await postEvent(
+        baseUrl,
+        trigger({ dedupeKey: "SVC-BCAST:degradation-http:1" }),
+      );
+      const accepted = await response.json();
+
+      assert.equal(response.status, 202);
+      assert.equal(accepted.degraded, true);
+      assert.deepEqual(
+        accepted.deliveries
+          .filter((delivery) => delivery.status === "sent")
+          .map((delivery) => delivery.channel),
+        ["web"],
+      );
+      assert.deepEqual(
+        accepted.failed_deliveries.map((delivery) => ({
+          channel: delivery.channel,
+          attempts: delivery.attempts,
+        })),
+        [{ channel: "telegram", attempts: 3 }],
+      );
+      assert.equal(telegram.getAttempts(), 3);
+      assert.equal(
+        validateNotificationCreatedEvent(accepted.notification_created_event).valid,
+        true,
+      );
+
+      const metrics = await (await fetch(`${baseUrl}/metrics`)).text();
+      assert.match(
+        metrics,
+        /notification_platform_mock_delivery_failed_total\{channel="telegram"\} 1/,
+      );
+      assert.match(metrics, /notification_platform_mock_delivery_retry_total 2/);
+    } finally {
+      await close(server);
+    }
   });
 });

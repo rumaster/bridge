@@ -164,7 +164,10 @@ describe("CP-6/CP-8 facade e2e (contract-level chain)", () => {
 
     assert.equal(settingsUpdateResponse.status, 200);
     assert.deepEqual(
-      updatedSettings.settings.map((setting) => setting.channel).sort(),
+      updatedSettings.settings
+        .filter((setting) => setting.category === "critical" && setting.enabled)
+        .map((setting) => setting.channel)
+        .sort(),
       ["telegram", "web"],
     );
 
@@ -248,7 +251,10 @@ describe("CP-6/CP-8 facade e2e (contract-level chain)", () => {
 
     assert.equal(settingsGetResponse.status, 200);
     assert.deepEqual(
-      currentSettings.settings.map((setting) => setting.channel).sort(),
+      currentSettings.settings
+        .filter((setting) => setting.category === "critical" && setting.enabled)
+        .map((setting) => setting.channel)
+        .sort(),
       ["telegram", "web"],
     );
   });

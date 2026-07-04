@@ -9,12 +9,14 @@ import {
   Patch,
   Post,
   Req,
+  Res,
   UseGuards,
   Version,
 } from "@nestjs/common";
 import { ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
-import type { Request } from "express";
+import type { Request, Response } from "express";
 
+import type { AuthenticatedRequest } from "../../common/auth/auth-context";
 import { Roles } from "../../common/auth/roles.decorator";
 import { RolesGuard } from "../../common/auth/roles.guard";
 import { SessionAuthGuard } from "../../common/auth/session-auth.guard";
@@ -27,8 +29,10 @@ import {
 import type { RequestWithRequestId } from "../../common/request-id.middleware";
 import {
   CreateUserDto,
+  LogoutSessionResponseDto,
   PatchUserDto,
   RevokeUserSessionsResponseDto,
+  UserSessionListResponseDto,
   UserListResponseDto,
   UserResponseDto,
 } from "./user.dto";
@@ -75,6 +79,22 @@ export class OrganizationUsersController {
 export class UserController {
   constructor(private readonly users: UserService) {}
 
+  @Get(":id/sessions")
+  @Version("1")
+  @ApiOperation({ summary: "List active sessions for a user in tenant scope" })
+  @ApiOkResponse({ type: UserSessionListResponseDto })
+  listUserSessions(
+    @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: string | string[] | undefined,
+    @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<UserSessionListResponseDto> {
+    return this.users.listActiveUserSessions(
+      getRequiredOrganizationId(organizationIdHeader),
+      id,
+      request.auth?.session.id,
+    );
+  }
+
   @Patch(":id")
   @Version("1")
   @ApiOperation({ summary: "Patch user in tenant scope" })
@@ -107,5 +127,34 @@ export class UserController {
       actorUserId: getOptionalActorUserId(actorUserIdHeader),
       requestId: (request as RequestWithRequestId).requestId,
     });
+  }
+}
+
+@ApiTags("auth")
+@UseGuards(SessionAuthGuard)
+@Controller("auth")
+export class AuthSessionController {
+  constructor(private readonly users: UserService) {}
+
+  @Post("logout")
+  @HttpCode(200)
+  @Version("1")
+  @ApiOperation({ summary: "Logout current server session" })
+  @ApiOkResponse({ type: LogoutSessionResponseDto })
+  async logout(
+    @Req() request: AuthenticatedRequest & RequestWithRequestId,
+    @Res({ passthrough: true }) response: Response,
+  ): Promise<LogoutSessionResponseDto> {
+    const result = await this.users.revokeOwnSession(request.auth!, {
+      actorUserId: request.auth?.user.id,
+      requestId: request.requestId,
+    });
+
+    response.setHeader(
+      "set-cookie",
+      "bridge_session=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0",
+    );
+
+    return result;
   }
 }

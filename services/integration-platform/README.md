@@ -48,7 +48,8 @@ Mock adapter поддерживает весь C6 v1 набор возможно
   создания второго внешнего сообщения (двухуровневый dedup: движок + фасад).
 
 Внешний API канала на этом этапе — мок (`createMockExternalChannel`); реальные
-внешние сервисы подключаются в M5 (ТЗ §26.3, в CI внешние API не вызываются).
+внешние сервисы подключаются через тот же фасад доставки (ТЗ §26.3, в CI внешние
+API не вызываются).
 
 Endpoint-ы и метрики:
 
@@ -58,7 +59,39 @@ Endpoint-ы и метрики:
 - `GET /metrics` дополнительно отдаёт счётчики
   `integration_platform_delivery_*` (`deliveries_total`, `delivered_total`,
   `failed_total`, `duplicate_total`, `retries_total`, `attempts_total`,
-  `attempt_record_failures_total`).
+  `attempt_record_failures_total`, `queued_total`, `queue_retries_total`,
+  `degraded_total`, `timeout_total`, `circuit_open_total`,
+  `bulkhead_rejected_total`).
 
-Вне области M4-05: устойчивость к недоступности внешних API и деградация всех
-каналов (M5); генерация кампаний остаётся в SVC-BCAST.
+## Delivery resilience (M5, CP-9)
+
+Этап M5-05 добавляет отказоустойчивость доставки при недоступности внешних API
+(ТЗ §11.2, §25.4):
+
+- **Timeout на внешний вызов.** Каждый вызов `channel.deliver()` ограничен
+  `DELIVERY_TIMEOUT_MS`; timeout классифицируется как retryable деградация,
+  фиксируется в `message_delivery_attempts` и метрике
+  `integration_platform_delivery_timeout_total`.
+- **Circuit breaker на канал.** Ошибки считаются по каждому `channel_type`
+  независимо; открытый breaker быстро отклоняет падающий канал, не вызывая
+  внешний API повторно до reset window.
+- **Bulkhead на канал.** Параллелизм и очередь ожидания ограничены по каждому
+  каналу, поэтому зависший Telegram не исчерпывает слоты Email/SMS/VK/… .
+- **Async dispatch для ядра.** В production `POST /internal/delivery/dispatch`
+  принимает C2 Egress в bounded in-memory queue и сразу возвращает `202 queued`.
+  Фоновый worker выполняет доставку/ретраи, а недоставленное остаётся кандидатом
+  на повтор; retryable failures не помечаются как окончательно обработанные по
+  `idempotency_key`.
+
+Параметры окружения: `DELIVERY_TIMEOUT_MS`,
+`DELIVERY_CIRCUIT_FAILURE_THRESHOLD`, `DELIVERY_CIRCUIT_RESET_TIMEOUT_MS`,
+`DELIVERY_BULKHEAD_MAX_CONCURRENT`, `DELIVERY_BULKHEAD_MAX_QUEUE`,
+`DELIVERY_QUEUE_CONCURRENCY`, `DELIVERY_QUEUE_MAX_SIZE`,
+`DELIVERY_QUEUE_MAX_ATTEMPTS`, `DELIVERY_QUEUE_RETRY_DELAY_MS`.
+
+Проверки M5: unit `test/unit/m5-delivery-resilience.test.mjs`, integration
+`test/integration/m5-delivery-degradation.integration.test.mjs`, e2e
+`tests/e2e/integration-degradation-cp9.test.mjs`.
+
+Вне области SVC-INT: генерация кампаний остаётся в SVC-BCAST; персистентная
+очередь доставки может заменить in-memory queue без изменения C2-контракта.

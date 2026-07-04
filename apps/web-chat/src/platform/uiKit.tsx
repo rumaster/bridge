@@ -1,9 +1,20 @@
-import type { ButtonHTMLAttributes, PropsWithChildren } from "react";
+import type {
+  ButtonHTMLAttributes,
+  HTMLAttributes,
+  PropsWithChildren,
+} from "react";
 
 // TODO(SVC-CHAT M1): заменить локальные примитивы на @bridge/ui-kit,
 // когда пакет начнет экспортировать общие React-компоненты.
-export function WidgetShell({ children }: PropsWithChildren) {
-  return <section className="bridge-chat-shell">{children}</section>;
+export function WidgetShell({
+  children,
+  ...props
+}: PropsWithChildren<HTMLAttributes<HTMLElement>>) {
+  return (
+    <section className="bridge-chat-shell" {...props}>
+      {children}
+    </section>
+  );
 }
 
 export function IconButton({

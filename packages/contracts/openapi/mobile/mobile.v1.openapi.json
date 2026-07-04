@@ -2,13 +2,18 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Bridge Mobile API",
-    "version": "1.0.0",
-    "description": "Frozen M0 independent Mobile API contract for mobile clients. SVC-MOB is a BFF mock in M0: it aggregates or proxies C3/C7/C9/C10 contracts without owning domain business logic."
+    "version": "1.1.0",
+    "description": "M5 independent Mobile API v1 contract for mobile clients. SVC-MOB keeps /mobile/v1 backward-compatible with the published 1.0.0 client contract while serving the current 1.1.0 minor version."
   },
   "x-contract-id": "MOBILE.v1",
   "x-owner": "SVC-MOB",
-  "x-stage": "M0",
-  "x-api-semver": "1.0.0",
+  "x-stage": "M5",
+  "x-api-semver": "1.1.0",
+  "x-supported-versions": [
+    "1.0.0",
+    "1.1.0"
+  ],
+  "x-previous-version": "1.0.0",
   "x-consumes": [
     "C3.auth",
     "C3.conversations",
@@ -658,7 +663,7 @@
             "const": "MOBILE.AuthProxyResponse"
           },
           "version": {
-            "const": "1.0.0"
+            "$ref": "#/components/schemas/MobileApiVersion"
           },
           "request_id": {
             "type": "string"
@@ -677,7 +682,8 @@
             ]
           },
           "mock": {
-            "const": true
+            "type": "boolean",
+            "description": "true for deterministic mock responses, false for the BFF implementation."
           }
         }
       },
@@ -697,7 +703,7 @@
             "const": "MOBILE.AuthSessionResponse"
           },
           "version": {
-            "const": "1.0.0"
+            "$ref": "#/components/schemas/MobileApiVersion"
           },
           "request_id": {
             "type": "string"
@@ -712,7 +718,8 @@
             "$ref": "#/components/schemas/MobileSession"
           },
           "mock": {
-            "const": true
+            "type": "boolean",
+            "description": "true for deterministic mock responses, false for the BFF implementation."
           }
         }
       },
@@ -731,7 +738,7 @@
             "const": "MOBILE.LogoutResponse"
           },
           "version": {
-            "const": "1.0.0"
+            "$ref": "#/components/schemas/MobileApiVersion"
           },
           "proxied_to": {
             "const": "C3.auth"
@@ -740,7 +747,8 @@
             "const": "ok"
           },
           "mock": {
-            "const": true
+            "type": "boolean",
+            "description": "true for deterministic mock responses, false for the BFF implementation."
           }
         }
       },
@@ -793,7 +801,7 @@
             "const": "MOBILE.DialogListResponse"
           },
           "version": {
-            "const": "1.0.0"
+            "$ref": "#/components/schemas/MobileApiVersion"
           },
           "source_contracts": {
             "$ref": "#/components/schemas/SourceContracts"
@@ -811,7 +819,8 @@
             ]
           },
           "mock": {
-            "const": true
+            "type": "boolean",
+            "description": "true for deterministic mock responses, false for the BFF implementation."
           }
         }
       },
@@ -916,7 +925,7 @@
             "const": "MOBILE.DialogMessagesResponse"
           },
           "version": {
-            "const": "1.0.0"
+            "$ref": "#/components/schemas/MobileApiVersion"
           },
           "dialog_id": {
             "type": "string",
@@ -938,7 +947,8 @@
             ]
           },
           "mock": {
-            "const": true
+            "type": "boolean",
+            "description": "true for deterministic mock responses, false for the BFF implementation."
           }
         }
       },
@@ -1006,7 +1016,7 @@
             "const": "MOBILE.SendMessageRequest"
           },
           "version": {
-            "const": "1.0.0"
+            "$ref": "#/components/schemas/MobileApiVersion"
           },
           "request_id": {
             "type": "string",
@@ -1065,7 +1075,7 @@
             "const": "MOBILE.SendMessageResponse"
           },
           "version": {
-            "const": "1.0.0"
+            "$ref": "#/components/schemas/MobileApiVersion"
           },
           "request_id": {
             "type": "string"
@@ -1093,7 +1103,8 @@
             "format": "date-time"
           },
           "mock": {
-            "const": true
+            "type": "boolean",
+            "description": "true for deterministic mock responses, false for the BFF implementation."
           }
         }
       },
@@ -1113,7 +1124,7 @@
             "const": "MOBILE.NotificationListResponse"
           },
           "version": {
-            "const": "1.0.0"
+            "$ref": "#/components/schemas/MobileApiVersion"
           },
           "source_contracts": {
             "$ref": "#/components/schemas/SourceContracts"
@@ -1131,7 +1142,8 @@
             ]
           },
           "mock": {
-            "const": true
+            "type": "boolean",
+            "description": "true for deterministic mock responses, false for the BFF implementation."
           }
         }
       },
@@ -1210,7 +1222,7 @@
             "const": "MOBILE.SyncResponse"
           },
           "version": {
-            "const": "1.0.0"
+            "$ref": "#/components/schemas/MobileApiVersion"
           },
           "previous_cursor": {
             "type": [
@@ -1234,7 +1246,8 @@
             "$ref": "#/components/schemas/SyncDeltas"
           },
           "mock": {
-            "const": true
+            "type": "boolean",
+            "description": "true for deterministic mock responses, false for the BFF implementation."
           }
         }
       },
@@ -1294,7 +1307,7 @@
             "const": "MOBILE.RegisterDeviceRequest"
           },
           "version": {
-            "const": "1.0.0"
+            "$ref": "#/components/schemas/MobileApiVersion"
           },
           "request_id": {
             "type": "string",
@@ -1354,7 +1367,7 @@
             "const": "MOBILE.RegisterDeviceResponse"
           },
           "version": {
-            "const": "1.0.0"
+            "$ref": "#/components/schemas/MobileApiVersion"
           },
           "request_id": {
             "type": "string"
@@ -1366,7 +1379,8 @@
             "$ref": "#/components/schemas/PushPayloadStub"
           },
           "mock": {
-            "const": true
+            "type": "boolean",
+            "description": "true for deterministic mock responses, false for the BFF implementation."
           }
         }
       },
@@ -1449,7 +1463,7 @@
             "const": "MOBILE.PushPayloadStub"
           },
           "version": {
-            "const": "1.0.0"
+            "$ref": "#/components/schemas/MobileApiVersion"
           },
           "provider": {
             "type": "string",
@@ -1489,7 +1503,7 @@
             "const": "MOBILE.RevokeDeviceResponse"
           },
           "version": {
-            "const": "1.0.0"
+            "$ref": "#/components/schemas/MobileApiVersion"
           },
           "device_id": {
             "type": "string"
@@ -1502,7 +1516,8 @@
             "format": "date-time"
           },
           "mock": {
-            "const": true
+            "type": "boolean",
+            "description": "true for deterministic mock responses, false for the BFF implementation."
           }
         }
       },
@@ -1553,6 +1568,14 @@
             }
           }
         }
+      },
+      "MobileApiVersion": {
+        "type": "string",
+        "enum": [
+          "1.0.0",
+          "1.1.0"
+        ],
+        "description": "Supported MOBILE.v1 semver values. 1.0.0 remains accepted for published clients; 1.1.0 is the current non-breaking M5 minor."
       }
     }
   }

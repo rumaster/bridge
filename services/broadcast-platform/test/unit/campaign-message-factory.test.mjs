@@ -68,6 +68,44 @@ describe("SVC-BCAST M4 — идемпотентная генерация соо�
       deriveMessageId({ broadcastId: broadcast.id, recipient: other, startIdempotencyKey: "k" }),
     );
   });
+
+  it("M5: массовая генерация не даёт коллизий и сохраняет idempotency_key = message_id", () => {
+    const recipients = Array.from({ length: 1_000 }, (_unused, index) => {
+      const suffix = String(index + 1).padStart(12, "0");
+      return {
+        ...recipient,
+        client_id: `client-load-${index + 1}`,
+        endpoint_id: `10000000-0000-4000-8000-${suffix}`,
+        conversation_id: `20000000-0000-4000-8000-${suffix}`,
+        context: { client: { name: `Клиент ${index + 1}` } },
+      };
+    });
+
+    const firstPass = recipients.map((item) =>
+      buildBroadcastDraft({
+        broadcast,
+        recipient: item,
+        startIdempotencyKey: "m5-load-start",
+        createdAt: "2026-07-04T10:00:00.000Z",
+      }),
+    );
+    const secondPass = recipients.map((item) =>
+      deriveMessageId({
+        broadcastId: broadcast.id,
+        recipient: item,
+        startIdempotencyKey: "m5-load-start",
+      }),
+    );
+
+    const messageIds = firstPass.map(({ message_id }) => message_id);
+    assert.equal(new Set(messageIds).size, recipients.length, "коллизий message_id нет");
+    assert.deepEqual(messageIds, secondPass, "повторная генерация детерминирована");
+
+    for (const { draft, message_id } of firstPass) {
+      assert.equal(draft.message.id, message_id);
+      assert.equal(draft.message.idempotency_key, message_id);
+    }
+  });
 });
 
 describe("SVC-BCAST M4 — совместимость канала по Capability (C6)", () => {

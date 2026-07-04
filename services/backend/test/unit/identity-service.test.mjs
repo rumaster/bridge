@@ -47,6 +47,26 @@ function createTestService(options = {}) {
 }
 
 describe("identity service M1 Telegram login", () => {
+  it("selects Telegram as the MVP login provider and keeps email unavailable", () => {
+    const { service } = createTestService();
+
+    const telegram = service.selectLoginProvider("telegram");
+    const email = service.selectLoginProvider("email");
+
+    assert.equal(telegram.ok, true);
+    assert.equal(telegram.provider.id, "telegram");
+    assert.equal(telegram.provider.contactType, "telegram");
+    assert.equal(telegram.provider.codePurpose, "telegram_login");
+    assert.equal(telegram.provider.enabled, true);
+
+    assert.equal(email.ok, false);
+    assert.equal(email.reason, "provider_unavailable");
+    assert.equal(email.provider.id, "email");
+    assert.equal(email.provider.contactType, "email");
+    assert.equal(email.provider.codePurpose, "email_login");
+    assert.equal(email.provider.enabled, false);
+  });
+
   it("generates a Telegram code, stores only code_hash and schedules mock delivery", async () => {
     const { deliveryAdapter, service, store } = createTestService();
 

@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { createNotificationTriggerEvent } from "../../../../packages/contracts/src/c10.mjs";
+import {
+  NOTIFICATION_CATEGORIES,
+  NOTIFICATION_CHANNELS,
+  createNotificationTriggerEvent,
+} from "../../../../packages/contracts/src/c10.mjs";
+import { createDefaultChannelAdapters } from "../../src/channel-adapters.mjs";
 import { createDeterministicNotificationMock } from "../../src/deterministic-notification.mjs";
 
 const fixedNow = () => "2026-07-04T09:30:00.000Z";
@@ -31,6 +36,35 @@ function context(overrides = {}) {
     organizationId: ORG,
     userId: USER,
     ...overrides,
+  };
+}
+
+function failingChannelAdapter(channel, message = `${channel} is unavailable`) {
+  let attempts = 0;
+
+  return {
+    channel,
+    deliver() {
+      attempts += 1;
+      throw new Error(message);
+    },
+    getAttempts() {
+      return attempts;
+    },
+    getDispatches() {
+      return [];
+    },
+  };
+}
+
+function settingsPatch(overrides) {
+  return {
+    contract: "C10.UpdateNotificationSettingsRequest",
+    version: "1.0.0",
+    request_id: "req-settings",
+    organization_id: ORG,
+    user_id: USER,
+    settings: overrides,
   };
 }
 
@@ -87,14 +121,13 @@ describe("notification domain: producer event acceptance", () => {
 
   it("respects disabled subscriptions and skips those channels", () => {
     const mock = createDeterministicNotificationMock({ now: fixedNow });
-    mock.updateNotificationSettings(context(), {
-      contract: "C10.UpdateNotificationSettingsRequest",
-      version: "1.0.0",
-      request_id: "req-settings",
-      organization_id: ORG,
-      user_id: USER,
-      settings: [{ category: "critical", channel: "web", enabled: true }],
-    });
+    mock.updateNotificationSettings(
+      context(),
+      settingsPatch([
+        { category: "critical", channel: "web", enabled: true },
+        { category: "critical", channel: "telegram", enabled: false },
+      ]),
+    );
 
     const result = mock.acceptProducerEvent(triggerEvent());
 
@@ -110,24 +143,20 @@ describe("notification domain: producer event acceptance", () => {
 
   it("delivers to email/push when the user enables them for a severe category", () => {
     const mock = createDeterministicNotificationMock({ now: fixedNow });
-    mock.updateNotificationSettings(context(), {
-      contract: "C10.UpdateNotificationSettingsRequest",
-      version: "1.0.0",
-      request_id: "req-settings",
-      organization_id: ORG,
-      user_id: USER,
-      settings: [
+    mock.updateNotificationSettings(
+      context(),
+      settingsPatch([
         { category: "error", channel: "web", enabled: true },
         { category: "error", channel: "email", enabled: true },
         { category: "error", channel: "push", enabled: true },
-      ],
-    });
+      ]),
+    );
 
     const result = mock.acceptProducerEvent(triggerEvent({ category: "error" }));
 
     assert.deepEqual(
       result.deliveries.map((delivery) => delivery.channel).sort(),
-      ["email", "push", "web"],
+      ["email", "push", "telegram", "web"],
     );
     assert.ok(result.deliveries.some((d) => d.provider === "smtp-gateway"));
     assert.ok(result.deliveries.some((d) => d.provider === "push-gateway"));
@@ -157,14 +186,13 @@ describe("notification domain: producer event acceptance", () => {
 
   it("falls back to the web channel when no subscription is enabled (schema needs a channel)", () => {
     const mock = createDeterministicNotificationMock({ now: fixedNow });
-    mock.updateNotificationSettings(context(), {
-      contract: "C10.UpdateNotificationSettingsRequest",
-      version: "1.0.0",
-      request_id: "req-settings",
-      organization_id: ORG,
-      user_id: USER,
-      settings: [{ category: "critical", channel: "web", enabled: false }],
-    });
+    mock.updateNotificationSettings(
+      context(),
+      settingsPatch([
+        { category: "critical", channel: "web", enabled: false },
+        { category: "critical", channel: "telegram", enabled: false },
+      ]),
+    );
 
     const result = mock.acceptProducerEvent(triggerEvent());
 
@@ -172,6 +200,143 @@ describe("notification domain: producer event acceptance", () => {
     // но фактических доставок нет.
     assert.deepEqual(result.notification.channels, ["web"]);
     assert.equal(result.deliveries.length, 0);
+  });
+
+  it("updates settings at category × channel granularity without dropping defaults", () => {
+    const mock = createDeterministicNotificationMock({ now: fixedNow });
+    const response = mock.updateNotificationSettings(
+      context(),
+      settingsPatch([{ category: "critical", channel: "email", enabled: true }]),
+    );
+
+    assert.equal(
+      response.settings.length,
+      NOTIFICATION_CATEGORIES.length * NOTIFICATION_CHANNELS.length,
+    );
+    assert.equal(
+      response.settings.find(
+        (setting) => setting.category === "critical" && setting.channel === "email",
+      )?.enabled,
+      true,
+    );
+    assert.equal(
+      response.settings.find(
+        (setting) => setting.category === "critical" && setting.channel === "web",
+      )?.enabled,
+      true,
+    );
+
+    const info = mock.acceptProducerEvent(
+      triggerEvent({
+        category: "info",
+        dedupeKey: "SVC-CORE:message-settings:manager-1",
+      }),
+    );
+    assert.deepEqual(
+      info.deliveries.map((delivery) => delivery.channel),
+      ["web", "telegram"],
+    );
+  });
+
+  it("degrades predictably when one channel fails and still delivers to available channels", () => {
+    const telegram = failingChannelAdapter("telegram", "telegram provider is down");
+    const channels = {
+      ...createDefaultChannelAdapters({ now: fixedNow }),
+      telegram,
+    };
+    const mock = createDeterministicNotificationMock({ now: fixedNow, channels });
+
+    const result = mock.acceptProducerEvent(triggerEvent());
+
+    assert.equal(result.degraded, true);
+    assert.deepEqual(
+      result.deliveries.filter((delivery) => delivery.status === "sent").map((delivery) => delivery.channel),
+      ["web"],
+    );
+    assert.deepEqual(
+      result.failed_deliveries.map((delivery) => ({
+        channel: delivery.channel,
+        status: delivery.status,
+        attempts: delivery.attempts,
+      })),
+      [{ channel: "telegram", status: "failed", attempts: 3 }],
+    );
+    assert.equal(telegram.getAttempts(), 3);
+    assert.equal(result.notification_created_event.event, "notification.created");
+
+    const metrics = mock.getMetrics();
+    assert.equal(metrics.delivery_web_total, 1);
+    assert.equal(metrics.delivery_telegram_total, 0);
+    assert.equal(metrics.delivery_telegram_failed_total, 1);
+    assert.equal(metrics.delivery_retry_total, 2);
+  });
+
+  it("preserves degraded delivery records for duplicate producer events", () => {
+    const telegram = failingChannelAdapter("telegram", "telegram provider is down");
+    const channels = {
+      ...createDefaultChannelAdapters({ now: fixedNow }),
+      telegram,
+    };
+    const mock = createDeterministicNotificationMock({ now: fixedNow, channels });
+
+    const first = mock.acceptProducerEvent(triggerEvent());
+    const duplicate = mock.acceptProducerEvent(triggerEvent());
+
+    assert.equal(first.duplicate, false);
+    assert.equal(duplicate.duplicate, true);
+    assert.equal(duplicate.degraded, true);
+    assert.deepEqual(
+      duplicate.deliveries
+        .filter((delivery) => delivery.status === "sent")
+        .map((delivery) => delivery.channel),
+      ["web"],
+    );
+    assert.deepEqual(
+      duplicate.failed_deliveries.map((delivery) => ({
+        channel: delivery.channel,
+        status: delivery.status,
+        attempts: delivery.attempts,
+      })),
+      [{ channel: "telegram", status: "failed", attempts: 3 }],
+    );
+    assert.equal(telegram.getAttempts(), 3);
+  });
+
+  it("uses the priority retry policy for admin notifications and sends them via remaining channels", () => {
+    const telegram = failingChannelAdapter("telegram", "telegram provider is down");
+    const channels = {
+      ...createDefaultChannelAdapters({ now: fixedNow }),
+      telegram,
+    };
+    const mock = createDeterministicNotificationMock({ now: fixedNow, channels });
+    mock.updateNotificationSettings(
+      context(),
+      settingsPatch([
+        { category: "admin", channel: "web", enabled: true },
+        { category: "admin", channel: "telegram", enabled: true },
+        { category: "admin", channel: "email", enabled: true },
+      ]),
+    );
+
+    const result = mock.acceptProducerEvent(
+      triggerEvent({
+        producerServiceId: "SVC-IDN",
+        producerEventId: "administrator-1:created",
+        category: "admin",
+        title: "Administrator account changed",
+        body: "Administrative notification.",
+        dedupeKey: "SVC-IDN:administrator-1:manager-1",
+      }),
+    );
+
+    assert.deepEqual(
+      result.deliveries.filter((delivery) => delivery.status === "sent").map((delivery) => delivery.channel),
+      ["web", "email"],
+    );
+    assert.deepEqual(result.failed_deliveries.map((delivery) => delivery.channel), [
+      "telegram",
+    ]);
+    assert.equal(result.failed_deliveries[0].attempts, 3);
   });
 });
 

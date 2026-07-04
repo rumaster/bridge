@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Headers, Post, Req, UseGuards, Version } from "@nestjs/common";
-import { ApiOperation, ApiTags } from "@nestjs/swagger";
+import { ApiCreatedResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
 
 import type { AuthenticatedRequest } from "../../common/auth/auth-context";
 import { Roles } from "../../common/auth/roles.decorator";
@@ -47,6 +47,7 @@ export class BackendApiController {
   @Version("1")
   @Roles("administrator")
   @ApiOperation({ summary: "Apply a confirmed AI onboarding command (actor_type = ai)" })
+  @ApiCreatedResponse({ description: "Applied Backend API action response" })
   async applyOnboarding(
     @Body() body: OnboardingApplyDto,
     @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: HeaderValue,
@@ -72,6 +73,7 @@ export class BackendApiController {
   @Version("1")
   @Roles("manager")
   @ApiOperation({ summary: "Apply a change requested by a Workflow node (actor_type = workflow)" })
+  @ApiCreatedResponse({ description: "C5.BackendApiNodeResult" })
   async invokeNode(
     @Body() body: BackendApiNodeInvokeDto,
     @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: HeaderValue,

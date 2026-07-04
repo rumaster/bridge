@@ -12,6 +12,7 @@ export function createIntegrationPlatformServer({
   webChatAdapter,
   adapters = {},
   deliveryEngine,
+  deliveryDispatchMode = "sync",
 } = {}) {
   const channelAdapters = createChannelAdapterRegistry({ adapters, webChatAdapter });
 
@@ -116,6 +117,15 @@ export function createIntegrationPlatformServer({
 
         const payload = await readJson(request);
         try {
+          if (
+            deliveryDispatchMode === "async" &&
+            typeof deliveryEngine.enqueue === "function"
+          ) {
+            const result = deliveryEngine.enqueue(payload);
+            sendJson(response, result.accepted ? 202 : 503, result);
+            return;
+          }
+
           const result = await deliveryEngine.deliver(payload);
           sendJson(response, result.delivered ? 202 : 502, result);
         } catch (error) {
@@ -277,4 +287,10 @@ const DELIVERY_METRIC_HELP = Object.freeze({
   retries_total: "Retry attempts triggered by retryable errors.",
   attempts_total: "Delivery attempts recorded in message_delivery_attempts.",
   attempt_record_failures_total: "Failures to record a delivery attempt via Backend.",
+  queued_total: "Deliveries accepted into the asynchronous retry queue.",
+  queue_retries_total: "Asynchronous queue retries scheduled after degraded delivery attempts.",
+  degraded_total: "Retryable degraded delivery outcomes observed for external channels.",
+  timeout_total: "External channel calls rejected by the delivery timeout.",
+  circuit_open_total: "External channel calls rejected by an open circuit breaker.",
+  bulkhead_rejected_total: "External channel calls rejected by bulkhead limits.",
 });

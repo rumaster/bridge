@@ -2244,10 +2244,25 @@ export function createPostgresCommunicationCoreStore({ client }) {
           updated_at
         )
         VALUES ($1, $2, $3, 'open', $4::timestamptz, $4::timestamptz)
+        ON CONFLICT (id) DO NOTHING
         RETURNING *
       `,
       [id, organizationId, clientId, occurredAt],
     );
+
+    if (created.rowCount === 0) {
+      const existing = await getConversationById(organizationId, id);
+      if (existing) {
+        return {
+          conversation: existing,
+          created: false,
+        };
+      }
+
+      throw new CommunicationCoreM1ValidationError(
+        "Conversation id is already used outside the organization.",
+      );
+    }
 
     return {
       conversation: rowToConversation(created.rows[0]),
@@ -2460,6 +2475,13 @@ export function createPostgresCommunicationCoreStore({ client }) {
 
         const endpoint = await resolveEndpoint(ingress);
         await lockEndpointPartition(ingress.organizationId, endpoint.id);
+        const existingAfterLock = await getMessageWithContext(
+          ingress.organizationId,
+          ingress.message.id,
+        );
+        if (existingAfterLock) {
+          return resultForExistingMessage(ingress.organizationId, existingAfterLock);
+        }
         const conversationResolution = await resolveConversationWithCreated({
           organizationId: ingress.organizationId,
           clientId: endpoint.client_id,
@@ -2644,6 +2666,13 @@ export function createPostgresCommunicationCoreStore({ client }) {
         }
 
         await lockEndpointPartition(outbound.organizationId, endpoint.id);
+        const existingAfterLock = await getMessageWithContext(
+          outbound.organizationId,
+          outbound.message.id,
+        );
+        if (existingAfterLock) {
+          return resultForExistingMessage(outbound.organizationId, existingAfterLock);
+        }
         const sequenceNumber = await nextSequenceNumber(outbound.organizationId, endpoint.id);
 
         await client.query(
@@ -2912,6 +2941,28 @@ export function createPostgresCommunicationCoreStore({ client }) {
           occurredAt,
         });
         await lockEndpointPartition(organizationId, endpoint.id);
+        const existingAfterLock = await getMessageWithContext(organizationId, source.id);
+        if (existingAfterLock) {
+          const link = await getBroadcastMessageLink(organizationId, broadcastId, source.id);
+          const attempts = await getDeliveryAttempts(organizationId, source.id);
+          const conversationAfterLock = await getConversationById(
+            organizationId,
+            existingAfterLock.conversation_id,
+          );
+          const endpointAfterLock = await getEndpointById(
+            organizationId,
+            existingAfterLock.endpoint_id,
+          );
+
+          return {
+            duplicate: true,
+            message: existingAfterLock,
+            conversation: conversationAfterLock,
+            endpoint: endpointAfterLock,
+            broadcastMessage: link,
+            nextAttemptNo: attempts.length + 1,
+          };
+        }
         const sequenceNumber = await nextSequenceNumber(organizationId, endpoint.id);
 
         await client.query(

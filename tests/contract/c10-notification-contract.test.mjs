@@ -226,7 +226,10 @@ describe("NOTIF <-> producers/MWS/TGC M0 C10 contract", () => {
 
     assert.equal(updateResponse.status, 200);
     assert.deepEqual(
-      updated.settings.map((item) => item.channel).sort(),
+      updated.settings
+        .filter((item) => item.category === "critical" && item.enabled)
+        .map((item) => item.channel)
+        .sort(),
       ["telegram", "web"],
     );
 

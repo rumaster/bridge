@@ -44,6 +44,37 @@ describe("Bridge Web Chat widget", () => {
     ).toBeDisabled();
   });
 
+  it("сохраняет M5 accessibility-инварианты ленты, статуса и клавиатурного фокуса", async () => {
+    const user = userEvent.setup();
+    await renderWebChatWidget(createMountPoint(), {
+      apiBaseUrl: "http://localhost/api/v1",
+      conversationId: DEFAULT_CONVERSATION_ID,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+    });
+
+    const thread = await screen.findByRole("log", { name: "Лента Web Chat" });
+    expect(thread).toHaveAttribute("aria-live", "polite");
+    expect(thread).toHaveAttribute("aria-relevant", "additions text");
+    expect(thread).toHaveAttribute("aria-atomic", "false");
+
+    const connectionStatus = screen.getByRole("status", {
+      name: "Состояние соединения Web Chat",
+    });
+    expect(connectionStatus).toHaveTextContent("офлайн");
+
+    const input = screen.getByRole("textbox", { name: "Сообщение" });
+    expect(input).toHaveAttribute(
+      "aria-describedby",
+      "bridge-chat-connection-status",
+    );
+
+    await user.type(input, "Доступная отправка");
+    await user.click(screen.getByRole("button", { name: "Отправить" }));
+
+    expect(await screen.findByText("Доступная отправка")).toBeInTheDocument();
+    expect(input).toHaveFocus();
+  });
+
   it("отправляет сообщение через мок C3.messages и добавляет его в ленту", async () => {
     const user = userEvent.setup();
     await renderWebChatWidget(createMountPoint(), {

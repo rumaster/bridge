@@ -72,6 +72,14 @@ CREATE INDEX communication_endpoints_client_channel_idx
 CREATE INDEX audit_events_object_lookup_idx
   ON audit_events (organization_id, object_type, object_id, created_at);
 
+ALTER TABLE login_codes
+  DROP CONSTRAINT IF EXISTS login_codes_purpose_check,
+  ADD CONSTRAINT login_codes_purpose_check
+    CHECK (purpose IN ('telegram_login', 'email_login'));
+
+COMMENT ON CONSTRAINT login_codes_purpose_check ON login_codes IS
+  'M5 pluggable auth provider extension point. email_login is reserved for the disabled MVP email provider.';
+
 CREATE FUNCTION app.anonymize_client_personal_data(
   p_organization_id uuid,
   p_client_id uuid,
@@ -295,6 +303,9 @@ COMMENT ON FUNCTION app.anonymize_client_personal_data(uuid, uuid, uuid, text, t
 -- down migration
 
 DROP FUNCTION IF EXISTS app.anonymize_client_personal_data(uuid, uuid, uuid, text, text);
+
+ALTER TABLE IF EXISTS login_codes
+  DROP CONSTRAINT IF EXISTS login_codes_purpose_check;
 
 DROP INDEX IF EXISTS audit_events_object_lookup_idx;
 DROP INDEX IF EXISTS communication_endpoints_client_channel_idx;
