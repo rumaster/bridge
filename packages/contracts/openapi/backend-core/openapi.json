@@ -54,7 +54,7 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "C4.AssistantSuggestResponse"
           }
         },
         "summary": "Request an AI assistant suggestion (degrades to a safe fallback)",
@@ -79,7 +79,7 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "C4.OnboardingCommandResponse"
           }
         },
         "summary": "Generate a structured AI onboarding command (never auto-applied)",
@@ -113,7 +113,7 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "C5.StartWorkflowInstanceResponse"
           }
         },
         "summary": "Start a Workflow instance (initiated by the Backend, degrades safely)",
@@ -1498,7 +1498,7 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "Applied Backend API action response"
           }
         },
         "summary": "Apply a confirmed AI onboarding command (actor_type = ai)",
@@ -1523,7 +1523,7 @@
         },
         "responses": {
           "201": {
-            "description": ""
+            "description": "C5.BackendApiNodeResult"
           }
         },
         "summary": "Apply a change requested by a Workflow node (actor_type = workflow)",
@@ -1535,7 +1535,7 @@
   },
   "info": {
     "title": "Bridge Backend Core API",
-    "description": "M1 REST API for C3 domain CRUD and Communication Core proxy contracts.",
+    "description": "M5 C3 Backend REST API: domain CRUD, Communication Core proxy contracts, and stabilized facade endpoints.",
     "version": "1.0.0",
     "contact": {}
   },
@@ -3685,5 +3685,14 @@
         "type": "object"
       }
     }
+  },
+  "x-contract-id": "C3",
+  "x-owner": "SVC-API",
+  "x-stage": "M5",
+  "x-api-version": "v1",
+  "x-api-version-strategy": {
+    "breakingChanges": "publish a new URL version; never break /api/v1",
+    "currentPrefix": "/api/v1",
+    "type": "uri"
   }
 }

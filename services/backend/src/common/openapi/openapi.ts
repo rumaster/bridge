@@ -5,12 +5,15 @@ import type { OpenAPIObject } from "@nestjs/swagger";
 export function buildOpenApiDocument(app: INestApplication): OpenAPIObject {
   const config = new DocumentBuilder()
     .setTitle("Bridge Backend Core API")
-    .setDescription("M1 REST API for C3 domain CRUD and Communication Core proxy contracts.")
+    .setDescription(
+      "M5 C3 Backend REST API: domain CRUD, Communication Core proxy contracts, and stabilized facade endpoints.",
+    )
     .setVersion("1.0.0")
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
   addCommunicationCoreM1Contract(document);
+  addM5ContractMetadata(document);
 
   return document;
 }
@@ -322,6 +325,20 @@ function addCommunicationCoreM1Contract(document: OpenAPIObject): void {
       type: "object",
     },
   });
+}
+
+function addM5ContractMetadata(document: OpenAPIObject): void {
+  const contract = document as OpenAPIObject & Record<string, unknown>;
+
+  contract["x-contract-id"] = "C3";
+  contract["x-owner"] = "SVC-API";
+  contract["x-stage"] = "M5";
+  contract["x-api-version"] = "v1";
+  contract["x-api-version-strategy"] = {
+    breakingChanges: "publish a new URL version; never break /api/v1",
+    currentPrefix: "/api/v1",
+    type: "uri",
+  };
 }
 
 function setPathIfAbsent(

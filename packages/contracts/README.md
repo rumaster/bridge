@@ -137,6 +137,18 @@
 - `src/mobile.mjs` содержит semver, base path, contract id и проверку формы
   sync cursor `mob1.<base64url-json>`.
 
+## CP-9: приемка SVC-API M5
+
+- `cp9-svc-api-acceptance.v1.json` фиксирует готовность C3 Backend REST API к
+  CP-9: OpenAPI генерируется из кода, совпадает с фактическими `/api/v1`
+  маршрутами и содержит M5-метаданные владельца/версии.
+- `openapi/backend-core/openapi.json` является опубликованным C3 v1.0.0
+  артефактом SVC-API. Ломающие изменения не меняют `/api/v1`, а публикуются в
+  новой URL-версии.
+- NFR-пороги ТЗ §25.2 закреплены как p95-пробы в
+  `services/backend/test/integration/m5-nfr.spec.ts`: список диалогов,
+  история, отправка сообщения и AI assistant без времени внешнего LLM.
+
 ## Ownership
 
 Каждый контракт имеет владельца из мастер-плана:
