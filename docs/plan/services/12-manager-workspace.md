@@ -311,6 +311,13 @@ EDGE) и стабилизация; отдельного сквозного ре�
 **DoD.** DoD §9.4 + участие в **CP-9**: приёмочные сценарии зелёные, NFR §25.2
 подтверждены на клиентской части.
 
+**Статус реализации M5 (M5-99).** На интеграционном gate CP-9 SVC-MWS принят:
+сценарии «Работа менеджера» и «Notification в Web» зелёные
+(`apps/manager-workspace/test/e2e/manager-workspace.m1.spec.ts`), клиентские NFR
+§25.2 подтверждены. Потребляемые контракты (C3.base, C7, C10) финально заморожены
+как `released_v1` в `packages/contracts/cp9-freeze.v1.json` (скреплено
+`tests/contract/m5-gate-freeze.test.mjs`).
+
 ---
 
 ## 6. Точки согласования

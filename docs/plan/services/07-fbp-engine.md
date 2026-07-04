@@ -290,6 +290,13 @@ C3/C4 стабилизирован на CP-5 в `packages/contracts/cp4-cp5-free
 - **DoD.** Пройдены нагрузка/масштабирование; фаззинг не выявляет обхода изоляции;
   журнал полон; критерии приёмки (мастер §9.4, CP-9).
 
+**Статус реализации M5 (M5-99).** На интеграционном gate CP-9 SVC-FBP принят:
+нагрузочный пробник исполнителей (`experiments/m5-fbp-load-probe.mjs`) в бюджете,
+харденинг Transform Node подтверждён фаззингом (`docs/operations/m5-security-review.md`,
+§2), участие в полном наборе §26.6 зелёное (`tests/e2e/workflow-fbp-m5-cp9.test.mjs`).
+Контракт **C5** финально заморожен как `released_v1` в
+`packages/contracts/cp9-freeze.v1.json` (скреплено `tests/contract/m5-gate-freeze.test.mjs`).
+
 ---
 
 ## 6. Точки согласования

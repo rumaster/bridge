@@ -1832,6 +1832,15 @@ export function createPostgresCommunicationCoreStore({ client }) {
       await client.query("COMMIT");
       return result;
     } catch (error) {
+      if (process.env.COMMCORE_TRACE_ERRORS === "1") {
+        // Диагностика гонок дедупликации (по умолчанию выключено).
+        console.error(
+          "[commcore] tx rollback",
+          error?.code ?? "",
+          error?.constraint ?? "",
+          error?.message ?? error,
+        );
+      }
       await client.query("ROLLBACK");
       throw error;
     }
@@ -2117,7 +2126,7 @@ export function createPostgresCommunicationCoreStore({ client }) {
           updated_at
         )
         VALUES ($1, $2, $3, $4::timestamptz, $4::timestamptz)
-        ON CONFLICT (id) DO NOTHING
+        ON CONFLICT DO NOTHING
       `,
       [
         clientId,
@@ -2244,7 +2253,7 @@ export function createPostgresCommunicationCoreStore({ client }) {
           updated_at
         )
         VALUES ($1, $2, $3, 'open', $4::timestamptz, $4::timestamptz)
-        ON CONFLICT (id) DO NOTHING
+        ON CONFLICT DO NOTHING
         RETURNING *
       `,
       [id, organizationId, clientId, occurredAt],
@@ -2511,7 +2520,7 @@ export function createPostgresCommunicationCoreStore({ client }) {
           status: MESSAGE_STATUS.RECEIVED,
         };
 
-        await client.query(
+        const insertedMessage = await client.query(
           `
             INSERT INTO messages (
               id,
@@ -2541,6 +2550,8 @@ export function createPostgresCommunicationCoreStore({ client }) {
               'received',
               $9::timestamptz
             )
+            ON CONFLICT DO NOTHING
+            RETURNING id
           `,
           [
             ingress.message.id,
@@ -2554,6 +2565,21 @@ export function createPostgresCommunicationCoreStore({ client }) {
             ingress.occurredAt,
           ],
         );
+
+        if (insertedMessage.rowCount === 0) {
+          // Конкурентный экземпляр ядра уже записал это сообщение. Такая гонка
+          // возможна при одновременном создании endpoint, когда SELECT ... FOR
+          // UPDATE в lockEndpointPartition не успевает сериализовать вставку
+          // (строка endpoint ещё не видна второму экземпляру). ON CONFLICT DO
+          // NOTHING дожидается фиксации первого экземпляра и возвращает 0 строк —
+          // короткое замыкание на duplicate-путь, чтобы не задвоить
+          // attachments/outbox и не упасть на unique constraint.
+          const concurrentExisting = await getMessageWithContext(
+            ingress.organizationId,
+            ingress.message.id,
+          );
+          return resultForExistingMessage(ingress.organizationId, concurrentExisting);
+        }
 
         for (const attachment of ingress.attachments) {
           await client.query(

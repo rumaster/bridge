@@ -1,0 +1,392 @@
+{
+  "x-gate": "CP-9",
+  "x-stage": "M5",
+  "x-status": "complete",
+  "x-final": true,
+  "accepted_at": "2026-07-04",
+  "description": "Финальная заморозка всех контрактов v1 платформы (веха M5, точка согласования CP-9). Консолидирует все CP-1..CP-8 freeze-артефакты и приёмку SVC-API (CP-9), помечая каждый контракт как released_v1 / accepted. Дальнейшие ломающие изменения — только новой версией URL/semver по §7.4/§9.3.",
+  "scope": {
+    "services": [
+      "SVC-CORE(communication-core)",
+      "SVC-API(backend)",
+      "SVC-IDN(identity-platform)",
+      "SVC-INT(integration-platform)",
+      "SVC-AI(ai-platform)",
+      "SVC-FBP(fbp-engine)",
+      "SVC-BCAST(broadcast-platform)",
+      "SVC-EDGE(edge-gateway)",
+      "SVC-NOTIF(notification-platform)",
+      "SVC-MOB(mobile-api)",
+      "SVC-DATA(data-platform)",
+      "SVC-MWS(manager-workspace)",
+      "SVC-CHAT(web-chat)",
+      "SVC-ADMIN(saas-admin)",
+      "SVC-TGC(telegram-console)"
+    ],
+    "scenarios": [
+      "Авторизация",
+      "Работа менеджера",
+      "Web Chat",
+      "Telegram",
+      "AI Assistant из KB",
+      "Workflow вызывает Backend API",
+      "AI Onboarding применяет конфиг",
+      "Notification в Web + Telegram",
+      "Broadcast: доставка кампании",
+      "Edge Cluster",
+      "Потеря соединения"
+    ],
+    "invariants": [
+      "полный e2e-набор ТЗ §26.6 (11 сценариев) прогоняется зелёной регрессией",
+      "все контракты C1..C10, C3.auth/C3.base, C7-события и MOBILE.v1 заморожены как released_v1",
+      "изменение контракта — только новой версией (URL /api/v2 или semver), никогда мутацией released_v1 (§7.4/§9.3)",
+      "REST-ядро сохраняет стабильный URL-контракт /api/v1; операционные алиасы /health и /metrics вне версии",
+      "мобильный контракт версионируется независимо (MOBILE.v1 = 1.1.0, ТЗ §19.6) и совместим по нисходящей",
+      "сквозная идемпотентность messages.id = idempotency_key = message_id на всех переходах",
+      "доставка только через единый механизм ядра (C1/C2); SVC-NOTIF — единственный владелец notification.created",
+      "изоляция арендаторов по organization_id (RLS) действует на всех ресурсах",
+      "аудит изменяющих операций append-only и защищён от UPDATE/DELETE",
+      "секреты хранятся только по ссылке (secret://...), без plaintext в конфигурации/аудите",
+      "NFR §25.2 (p95) подтверждены автоматическими пробниками без времени внешних LLM",
+      "RPO/RTO подтверждены пробным backup/restore SVC-DATA и авто-синхронизацией буфера SVC-EDGE"
+    ]
+  },
+  "consolidates": [
+    "packages/contracts/cp1-freeze.v1.json",
+    "packages/contracts/cp2-cp3-freeze.v1.json",
+    "packages/contracts/cp4-cp5-freeze.v1.json",
+    "packages/contracts/cp6-cp7-freeze.v1.json",
+    "packages/contracts/cp8-freeze.v1.json",
+    "packages/contracts/cp9-svc-api-acceptance.v1.json"
+  ],
+  "contracts": [
+    {
+      "id": "C1",
+      "name": "Canonical Message Model",
+      "version": "1.0.0",
+      "owner": "SVC-CORE",
+      "status": "released_v1",
+      "surface": [
+        { "note": "id = idempotency_key = message_id; статус-машина received -> routed -> sent/failed" }
+      ],
+      "artifacts": [
+        "packages/contracts/message-model/message.schema.json",
+        "packages/contracts/message-model/status-machine.v1.json",
+        "packages/contracts/message-model/index.mjs"
+      ],
+      "evidence": [
+        "packages/contracts/message-model/message-model.test.mjs",
+        "services/backend/test/unit/communication-core.m1.test.mjs",
+        "tests/contract/m4-core-cp6-cp7.contract.test.mjs",
+        "tests/integration/communication-core-m5.test.mjs"
+      ]
+    },
+    {
+      "id": "C2",
+      "name": "Ingress/Egress",
+      "version": "1.0.0",
+      "owner": "SVC-CORE",
+      "status": "released_v1",
+      "surface": [
+        { "contract": "C2.IngressMessage" },
+        { "contract": "C2.EgressDelivery" }
+      ],
+      "artifacts": [
+        "packages/contracts/openapi/communication-core-c2.openapi.json",
+        "packages/contracts/openapi/c2-internal-api.yaml",
+        "packages/contracts/json-schema/c2-ingress-message.schema.json",
+        "packages/contracts/json-schema/c2-egress-delivery.schema.json"
+      ],
+      "evidence": [
+        "tests/contract/int-core.m1.contract.test.mjs",
+        "tests/contract/int-core-m2-adapters.contract.test.mjs",
+        "tests/contract/int-core-c2-c6.test.mjs",
+        "tests/e2e/web-chat-cp1.test.mjs",
+        "tests/e2e/telegram-cp2.test.mjs"
+      ]
+    },
+    {
+      "id": "C3.auth",
+      "name": "Backend Auth API",
+      "version": "1.0.0",
+      "owner": "SVC-IDN",
+      "status": "released_v1",
+      "base_path": "/api/v1",
+      "artifacts": [
+        "packages/contracts/openapi/auth/c3.auth.openapi.json",
+        "packages/contracts/consumer/saas-admin-c3.consumer.v1.json"
+      ],
+      "evidence": [
+        "tests/contract/saas-admin-c3-consumer.test.mjs",
+        "apps/saas-admin/test/e2e/saas-admin.auth.spec.ts"
+      ]
+    },
+    {
+      "id": "C3.base",
+      "name": "Backend REST core",
+      "version": "1.0.0",
+      "owner": "SVC-API",
+      "status": "released_v1",
+      "base_path": "/api/v1",
+      "versioning": {
+        "strategy": "uri",
+        "current_prefix": "/api/v1",
+        "breaking_changes": "publish a new URL version; never break /api/v1",
+        "operational_aliases": ["GET /health", "GET /metrics"],
+        "next_breaking_version": "/api/v2"
+      },
+      "artifacts": [
+        "packages/contracts/openapi/backend-core/openapi.json",
+        "packages/contracts/consumer/manager-workspace-c3.consumer.v1.json"
+      ],
+      "evidence": [
+        "tests/contract/manager-workspace-c3-consumer.test.mjs",
+        "tests/contract/cp9-svc-api-acceptance.test.mjs",
+        "services/backend/test/integration/m1-domain-api.spec.ts",
+        "services/backend/test/integration/m5-openapi-contract.spec.ts",
+        "services/backend/test/integration/m5-nfr.spec.ts",
+        "apps/manager-workspace/test/e2e/manager-workspace.m1.spec.ts"
+      ]
+    },
+    {
+      "id": "C4",
+      "name": "AI Platform (Assistant + Onboarding)",
+      "version": "1.0.0",
+      "owner": "SVC-AI",
+      "status": "released_v1",
+      "base_path": "/api/v1",
+      "artifacts": [
+        "packages/contracts/openapi/ai/c4.ai.openapi.json",
+        "packages/contracts/json-schema/c4-ai-assistant-suggest-response.schema.json",
+        "packages/contracts/json-schema/c4-ai-onboarding-command.schema.json",
+        "packages/contracts/src/c4.mjs"
+      ],
+      "evidence": [
+        "tests/contract/c4-ai-contract.test.mjs",
+        "tests/contract/ai-integration-c4-consumer.test.mjs",
+        "tests/contract/c4-onboarding-command-cp5.test.mjs",
+        "tests/e2e/ai-assistant-kb.test.mjs",
+        "tests/e2e/ai-onboarding-apply.test.mjs",
+        "tests/integration/ai-rag-kb.test.mjs"
+      ]
+    },
+    {
+      "id": "C5",
+      "name": "FBP Engine (workflow start + Backend API node)",
+      "version": "1.0.0",
+      "owner": "SVC-FBP",
+      "status": "released_v1",
+      "base_path": "/api/v1",
+      "artifacts": [
+        "packages/contracts/openapi/fbp/c5.fbp.openapi.json",
+        "packages/contracts/events/workflow-state-changed.schema.json",
+        "packages/contracts/src/c5.mjs"
+      ],
+      "evidence": [
+        "tests/contract/c5-fbp-contract.test.mjs",
+        "tests/contract/c5-fbp-node-catalog.test.mjs",
+        "tests/e2e/workflow-cp4.test.mjs",
+        "tests/e2e/workflow-fbp-m5-cp9.test.mjs"
+      ]
+    },
+    {
+      "id": "C6",
+      "name": "Capability Descriptor",
+      "version": "1.0.0",
+      "owner": "SVC-INT",
+      "status": "released_v1",
+      "artifacts": [
+        "packages/contracts/json-schema/c6-capability-descriptor.schema.json",
+        "packages/contracts/src/c6.mjs"
+      ],
+      "evidence": [
+        "tests/contract/int-core-m2-adapters.contract.test.mjs",
+        "tests/contract/int-core-c2-c6.test.mjs",
+        "tests/e2e/integration-degradation-cp9.test.mjs"
+      ]
+    },
+    {
+      "id": "C7",
+      "name": "WebSocket Events",
+      "version": "1.0.0",
+      "owner": "SVC-CORE/SVC-API",
+      "status": "released_v1",
+      "base_path": "/api/v1",
+      "surface": [
+        { "contract": "C7.WebSocketEvent" },
+        { "contract": "C7.NotificationCreatedEvent", "event": "notification.created", "owner": "SVC-NOTIF" }
+      ],
+      "artifacts": [
+        "packages/contracts/openapi/edge/c7.websocket.openapi.json",
+        "packages/contracts/events/c7-websocket-event.schema.json",
+        "packages/contracts/events/notification-created.schema.json",
+        "packages/contracts/src/c7.mjs"
+      ],
+      "evidence": [
+        "packages/contracts/test/unit/c7-websocket-event-schema.test.mjs",
+        "tests/contract/c10-notification-contract.test.mjs"
+      ]
+    },
+    {
+      "id": "C8",
+      "name": "Broadcast Platform",
+      "version": "1.0.0",
+      "owner": "SVC-BCAST",
+      "status": "released_v1",
+      "base_path": "/api/v1",
+      "surface": [
+        { "contract": "C8.BroadcastCoreDeliveryDraft", "delivery_path": "C1/C2" }
+      ],
+      "artifacts": [
+        "packages/contracts/openapi/broadcasts/c8.broadcasts.openapi.json",
+        "packages/contracts/json-schema/c8-core-delivery-draft.schema.json",
+        "packages/contracts/src/c8.mjs"
+      ],
+      "evidence": [
+        "tests/contract/c8-broadcast-contract.test.mjs",
+        "tests/contract/m4-core-cp6-cp7.contract.test.mjs",
+        "tests/e2e/broadcast-cp6.test.mjs",
+        "tests/e2e/broadcast-delivery-cp6.test.mjs"
+      ]
+    },
+    {
+      "id": "C9",
+      "name": "Edge/App Tunnel",
+      "version": "1.0.0",
+      "owner": "SVC-EDGE",
+      "status": "released_v1",
+      "surface": [
+        { "contract": "C9.EdgeTunnelMessage" },
+        { "contract": "C9.EdgeTunnelAck" }
+      ],
+      "artifacts": [
+        "packages/contracts/openapi/edge/c9.edge-tunnel.openapi.json",
+        "packages/contracts/json-schema/c9-edge-tunnel-message.schema.json",
+        "packages/contracts/json-schema/c9-edge-tunnel-ack.schema.json",
+        "packages/contracts/src/c9.mjs"
+      ],
+      "evidence": [
+        "tests/contract/edge-cluster-c9-cp7.contract.test.mjs",
+        "tests/contract/edge-core-c9-c7.contract.test.mjs",
+        "tests/e2e/edge-cluster-cp7.test.mjs",
+        "tests/e2e/edge-connection-loss-cp7.test.mjs",
+        "tests/e2e/edge-resilience-cp9.test.mjs",
+        "tests/integration/edge-message-buffer-store.test.mjs"
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Notification Platform",
+      "version": "1.0.0",
+      "owner": "SVC-NOTIF",
+      "status": "released_v1",
+      "base_path": "/api/v1",
+      "surface": [
+        { "method": "get", "path": "/notifications" },
+        { "method": "post", "path": "/notifications/{id}:read" },
+        { "method": "get", "path": "/notifications/settings" },
+        { "method": "put", "path": "/notifications/settings" },
+        { "contract": "C10.Notification" },
+        { "contract": "C10.NotificationTriggerEvent", "event": "notification.triggered" }
+      ],
+      "artifacts": [
+        "packages/contracts/openapi/notifications/c10.notifications.openapi.json",
+        "packages/contracts/events/notification-created.schema.json",
+        "packages/contracts/events/notification-trigger.schema.json",
+        "packages/contracts/src/c10.mjs"
+      ],
+      "evidence": [
+        "tests/contract/c10-notification-contract.test.mjs",
+        "tests/contract/manager-workspace-c10-consumer.test.mjs",
+        "tests/contract/telegram-console-cp8-consumer.test.mjs",
+        "tests/e2e/notification-delivery-cp9.test.mjs",
+        "tests/e2e/notification-subscriptions-cp8.test.mjs",
+        "tests/e2e/telegram-console-cp8.test.mjs"
+      ]
+    },
+    {
+      "id": "MOBILE.v1",
+      "name": "Mobile API",
+      "version": "1.1.0",
+      "owner": "SVC-MOB",
+      "status": "released_v1",
+      "base_path": "/mobile/v1",
+      "versioning": {
+        "strategy": "independent-semver",
+        "note": "мобильная версия эволюционирует независимо от /api/v1 (ТЗ §19.6); 1.1.0 совместима по нисходящей с 1.0.0",
+        "previous_version": "1.0.0"
+      },
+      "artifacts": [
+        "packages/contracts/openapi/mobile/mobile.v1.openapi.json",
+        "packages/contracts/mobile/consumer-contracts.v1.json",
+        "packages/contracts/src/mobile.mjs"
+      ],
+      "evidence": [
+        "tests/contract/mobile-api-contract.test.mjs",
+        "tests/e2e/mobile-connection-loss-cp7.test.mjs"
+      ]
+    }
+  ],
+  "acceptance": {
+    "spec": "ТЗ §29",
+    "e2e_regression": {
+      "spec": "ТЗ §26.6",
+      "suite": "tests/e2e",
+      "scenario_count": 11
+    },
+    "nfr": {
+      "spec": "ТЗ §25.2/§25.3/§25.11",
+      "percentile": "p95",
+      "external_llm_time": "excluded",
+      "evidence": [
+        "services/backend/test/integration/m5-nfr.spec.ts",
+        "docs/operations/communication-core-m5-load-probes.md",
+        "docs/operations/mobile-api-m5-acceptance.md",
+        "experiments/m5-fbp-load-probe.mjs",
+        "experiments/edge-ws-load-probe.mjs"
+      ]
+    },
+    "security_review": {
+      "spec": "ТЗ §23",
+      "checks": [
+        "RLS-изоляция арендаторов по всем ресурсам",
+        "фаззинг/валидация Transform Node на сохранении схемы",
+        "хранение секретов только по ссылке (secret://...)",
+        "append-only аудит защищён от UPDATE/DELETE",
+        "отзыв сессий/доступа"
+      ],
+      "evidence": [
+        "tests/integration/data-platform.test.mjs",
+        "docs/operations/data-platform-backup-restore.md",
+        "docs/operations/m5-security-review.md"
+      ]
+    },
+    "rpo_rto": {
+      "spec": "ТЗ §25.3",
+      "evidence": [
+        "tests/integration/data-platform.test.mjs",
+        "tests/e2e/edge-resilience-cp9.test.mjs",
+        "docs/operations/data-platform-backup-restore.md"
+      ]
+    }
+  },
+  "release_v1": {
+    "released_contracts": [
+      "C1",
+      "C2",
+      "C3.auth",
+      "C3.base",
+      "C4",
+      "C5",
+      "C6",
+      "C7",
+      "C8",
+      "C9",
+      "C10",
+      "MOBILE.v1"
+    ],
+    "stable_url_prefixes": ["/api/v1", "/mobile/v1"],
+    "next_breaking_version": "/api/v2",
+    "change_policy": "любое ломающее изменение — только новой версией URL/semver и новым CP (§7.4/§9.3); released_v1 не мутируется"
+  }
+}
