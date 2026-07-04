@@ -606,6 +606,127 @@ textarea {
   padding: 24px;
 }
 
+/* ── Broadcast (C8, CP-6) ───────────────────────────────────────────────── */
+.broadcast-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.broadcast-card {
+  align-content: start;
+  gap: 12px;
+}
+
+.broadcast-card.status-running {
+  border-top: 3px solid #116a7b;
+}
+
+.broadcast-card.status-scheduled {
+  border-top: 3px solid #b06a1a;
+}
+
+.broadcast-card.status-done {
+  border-top: 3px solid #2f8f63;
+}
+
+.broadcast-card.status-failed {
+  border-top: 3px solid #b42318;
+}
+
+.broadcast-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.broadcast-title svg {
+  flex: 0 0 auto;
+  color: #116a7b;
+}
+
+.broadcast-title h2 {
+  overflow-wrap: anywhere;
+}
+
+table.broadcast-stats,
+.notification-settings {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+table.broadcast-stats th,
+table.broadcast-stats td,
+.notification-settings th,
+.notification-settings td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+}
+
+table.broadcast-stats th {
+  color: #607082;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.broadcast-stats.muted,
+div.broadcast-stats {
+  display: block;
+}
+
+.broadcast-start {
+  display: grid;
+  gap: 10px;
+}
+
+/* ── Notification (C10, CP-8) ───────────────────────────────────────────── */
+.notification-feed {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.notification-item.status-new article {
+  border-left: 3px solid #116a7b;
+}
+
+.notification-item.status-read article {
+  border-left: 3px solid #8a99aa;
+}
+
+.notification-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.notification-title svg {
+  flex: 0 0 auto;
+  color: #116a7b;
+}
+
+.notification-title h3 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.notification-channels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.notification-settings th[scope="row"] {
+  white-space: nowrap;
+}
+
 @media (max-width: 1040px) {
   .module-grid,
   .summary-grid {
@@ -645,6 +766,7 @@ textarea {
   .form-grid,
   .channel-grid,
   .knowledge-list,
+  .broadcast-grid,
   .metadata-list,
   .compact-form-grid {
     grid-template-columns: 1fr;
