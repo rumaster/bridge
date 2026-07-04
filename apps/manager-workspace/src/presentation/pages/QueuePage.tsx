@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import type { ClientProfile, Conversation } from "../../api/client/types";
@@ -11,6 +11,11 @@ import {
   markC7EventSeen
 } from "../../state/realtime-merge";
 import { useC7RealtimeClient, useManagerWorkspaceApi } from "../../state/workspace";
+import {
+  MANAGER_WORKSPACE_NFR_BUDGET_MS,
+  recordClientNfrMeasurement,
+  startClientNfrMeasurement
+} from "../../shared/nfr";
 import { Badge, Panel, TextInput } from "../../shared/ui-kit";
 
 const statusTone = {
@@ -33,14 +38,24 @@ export default function QueuePage() {
   const seenMessageIdsRef = useRef(new Set<string>());
 
   const loadQueue = useCallback(async () => {
-    const [nextConversations, nextClients] = await Promise.all([
-      api.conversations.list(),
-      api.clients.list()
-    ]);
+    const startedAt = startClientNfrMeasurement();
 
-    setConversations(nextConversations);
-    setClients(nextClients);
-    setError(null);
+    try {
+      const [nextConversations, nextClients] = await Promise.all([
+        api.conversations.list(),
+        api.clients.list()
+      ]);
+
+      setConversations(nextConversations);
+      setClients(nextClients);
+      setError(null);
+    } finally {
+      recordClientNfrMeasurement(
+        "conversation_list",
+        MANAGER_WORKSPACE_NFR_BUDGET_MS.conversation_list,
+        startedAt
+      );
+    }
   }, [api]);
 
   useEffect(() => {
@@ -94,28 +109,32 @@ export default function QueuePage() {
     };
   }, [loadQueue, queueReady, realtime]);
 
-  const clientById = new Map(clients.map((client) => [client.id, client]));
+  const clientById = useMemo(() => new Map(clients.map((client) => [client.id, client])), [clients]);
   const normalizedSearch = search.trim().toLowerCase();
-  const filteredConversations = conversations.filter((conversation) => {
-    if (!normalizedSearch) {
-      return true;
-    }
+  const filteredConversations = useMemo(
+    () =>
+      conversations.filter((conversation) => {
+        if (!normalizedSearch) {
+          return true;
+        }
 
-    const client = clientById.get(conversation.clientId);
-    const searchableText = [
-      client?.displayName,
-      client?.tags.join(" "),
-      client?.endpoints.map((endpoint) => endpoint.externalId).join(" "),
-      conversation.lastMessagePreview,
-      conversation.status,
-      conversation.channel
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
+        const client = clientById.get(conversation.clientId);
+        const searchableText = [
+          client?.displayName,
+          client?.tags.join(" "),
+          client?.endpoints.map((endpoint) => endpoint.externalId).join(" "),
+          conversation.lastMessagePreview,
+          conversation.status,
+          conversation.channel
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
 
-    return searchableText.includes(normalizedSearch);
-  });
+        return searchableText.includes(normalizedSearch);
+      }),
+    [clientById, conversations, normalizedSearch]
+  );
 
   return (
     <section className="page-section">
@@ -138,9 +157,9 @@ export default function QueuePage() {
 
       {error ? <p className="error-text">{error}</p> : null}
 
-      <div className="conversation-list">
+      <div aria-label="Очередь диалогов" className="conversation-list" role="list">
         {filteredConversations.map((conversation) => (
-          <Panel as="article" className="conversation-row" key={conversation.id}>
+          <Panel as="article" className="conversation-row" key={conversation.id} role="listitem">
             <div>
               <div className="row-title">
                 <span>{clientById.get(conversation.clientId)?.displayName ?? conversation.clientId}</span>
