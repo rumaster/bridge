@@ -130,11 +130,16 @@ function evaluateNode(node, input, scope, state, guards) {
 }
 
 function evaluateFunction(node, input, scope, state, guards) {
-  const spec = TRANSFORM_FUNCTION_OPERATIONS[node.op];
-  const implementation = OPERATIONS[node.op];
-  if (!spec || typeof implementation !== "function") {
+  // Только СОБСТВЕННЫЕ ключи таблиц: унаследованные от Object.prototype имена
+  // (`constructor`, `toString`, `hasOwnProperty`, …) не являются операциями и не
+  // должны исполняться — иначе это лазейка из песочницы (§13.4).
+  if (
+    !Object.hasOwn(TRANSFORM_FUNCTION_OPERATIONS, node.op) ||
+    !Object.hasOwn(OPERATIONS, node.op)
+  ) {
     throw new TransformEvaluationError("unknown_operation", `Операция "${node.op}" недопустима.`);
   }
+  const implementation = OPERATIONS[node.op];
 
   const args = (node.args ?? []).map((argument) =>
     evaluateNode(argument, input, scope, state, guards),
