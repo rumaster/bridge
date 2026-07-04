@@ -142,7 +142,43 @@ describe("SVC-API M1 domain API", () => {
         token: "brs_created_user_session",
         userId: createdUser.id,
       });
+      await insertAuthSession(client, {
+        id: "10000000-0000-4000-8000-000000000906",
+        organizationId: ORG_A,
+        token: "brs_created_user_session_second",
+        userId: createdUser.id,
+      });
+      await insertAuthSession(client, {
+        id: "10000000-0000-4000-8000-000000000907",
+        organizationId: ORG_A,
+        token: "brs_self_revoke_token",
+        userId: USER_A,
+      });
     });
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/users/${createdUser.id}/sessions`)
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
+      .set("x-organization-id", ORG_A)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          organizationId: ORG_A,
+          userId: createdUser.id,
+        });
+        expect(body.items).toHaveLength(2);
+        expect(body.items.map((session: { id: string }) => session.id).sort()).toEqual([
+          "10000000-0000-4000-8000-000000000905",
+          "10000000-0000-4000-8000-000000000906",
+        ]);
+        expect(body.items[0]).toMatchObject({
+          current: false,
+          ip: null,
+          revokedAt: null,
+          userAgent: null,
+        });
+        expect(body.items[0].tokenHash).toBeUndefined();
+      });
 
     await request(app.getHttpServer())
       .post(`/api/v1/users/${createdUser.id}/sessions:revoke`)
@@ -153,9 +189,31 @@ describe("SVC-API M1 domain API", () => {
       .expect(({ body }) => {
         expect(body).toMatchObject({
           organizationId: ORG_A,
-          revokedCount: 1,
+          revokedCount: 2,
           userId: createdUser.id,
         });
+      });
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/users/${createdUser.id}/sessions`)
+      .set("authorization", `Bearer ${USER_A_TOKEN}`)
+      .set("x-organization-id", ORG_A)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.items).toEqual([]);
+      });
+
+    await request(app.getHttpServer())
+      .post("/api/v1/auth/logout")
+      .set("authorization", "Bearer brs_self_revoke_token")
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toMatchObject({
+          implementationStage: "M1",
+          loggedOut: true,
+          sessionMode: "server",
+        });
+        expect(body.sessionId).toBeUndefined();
       });
 
     await withClient(databaseUrl, async (client) => {
@@ -182,6 +240,7 @@ describe("SVC-API M1 domain API", () => {
         expect.arrayContaining([
           "access.permissions.change",
           "access.roles.change",
+          "auth.session.logout",
           "auth.session.revoke",
           "configuration.put",
           "organization.update",
@@ -189,6 +248,11 @@ describe("SVC-API M1 domain API", () => {
           "user.patch",
         ]),
       );
+      const selfRevoked = await client.query<{ revoked_at: Date | null }>(
+        "SELECT revoked_at FROM auth_sessions WHERE id = $1",
+        ["10000000-0000-4000-8000-000000000907"],
+      );
+      expect(selfRevoked.rows[0].revoked_at).toBeInstanceOf(Date);
     });
   });
 

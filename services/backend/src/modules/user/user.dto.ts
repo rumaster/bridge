@@ -113,6 +113,46 @@ export class UserListResponseDto {
   items!: UserResponseDto[];
 }
 
+export class UserSessionResponseDto {
+  @ApiProperty({ example: "00000000-0000-4000-8000-000000000901" })
+  id!: string;
+
+  @ApiProperty({ example: "00000000-0000-4000-8000-000000000201" })
+  userId!: string;
+
+  @ApiProperty({ example: "00000000-0000-4000-8000-000000000101" })
+  organizationId!: string;
+
+  @ApiProperty({ example: "2026-07-03T10:00:00.000Z" })
+  issuedAt!: string;
+
+  @ApiProperty({ example: "2026-07-03T18:00:00.000Z" })
+  expiresAt!: string;
+
+  @ApiPropertyOptional({ example: null, nullable: true, type: String })
+  revokedAt!: null | string;
+
+  @ApiPropertyOptional({ example: "127.0.0.1", nullable: true, type: String })
+  ip!: null | string;
+
+  @ApiPropertyOptional({ example: "Mozilla/5.0", nullable: true, type: String })
+  userAgent!: null | string;
+
+  @ApiProperty({ example: false })
+  current!: boolean;
+}
+
+export class UserSessionListResponseDto {
+  @ApiProperty({ example: "00000000-0000-4000-8000-000000000201" })
+  userId!: string;
+
+  @ApiProperty({ example: "00000000-0000-4000-8000-000000000101" })
+  organizationId!: string;
+
+  @ApiProperty({ type: [UserSessionResponseDto] })
+  items!: UserSessionResponseDto[];
+}
+
 export class RevokeUserSessionsResponseDto {
   @ApiProperty({ example: "00000000-0000-4000-8000-000000000201" })
   userId!: string;
@@ -122,6 +162,17 @@ export class RevokeUserSessionsResponseDto {
 
   @ApiProperty({ example: 2 })
   revokedCount!: number;
+}
+
+export class LogoutSessionResponseDto {
+  @ApiProperty({ example: true })
+  loggedOut!: true;
+
+  @ApiProperty({ example: "server" })
+  sessionMode!: "server";
+
+  @ApiProperty({ example: "M1" })
+  implementationStage!: "M1";
 }
 
 export interface UserRow {
@@ -136,6 +187,17 @@ export interface UserRow {
   updated_at: Date | string;
 }
 
+export interface UserSessionRow {
+  expires_at: Date | string;
+  id: string;
+  ip: null | string;
+  issued_at: Date | string;
+  organization_id: string;
+  revoked_at: Date | string | null;
+  user_agent: null | string;
+  user_id: string;
+}
+
 export function mapUser(row: UserRow): UserResponseDto {
   return {
     createdAt: toIso(row.created_at),
@@ -147,6 +209,23 @@ export function mapUser(row: UserRow): UserResponseDto {
     status: row.status,
     telegramUsername: row.telegram_username,
     updatedAt: toIso(row.updated_at),
+  };
+}
+
+export function mapUserSession(
+  row: UserSessionRow,
+  currentSessionId?: string,
+): UserSessionResponseDto {
+  return {
+    current: Boolean(currentSessionId && row.id === currentSessionId),
+    expiresAt: toIso(row.expires_at),
+    id: row.id,
+    ip: row.ip,
+    issuedAt: toIso(row.issued_at),
+    organizationId: row.organization_id,
+    revokedAt: row.revoked_at === null ? null : toIso(row.revoked_at),
+    userAgent: row.user_agent,
+    userId: row.user_id,
   };
 }
 

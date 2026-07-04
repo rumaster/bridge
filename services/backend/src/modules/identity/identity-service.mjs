@@ -17,6 +17,7 @@ import {
 import { SEEDED_AUTH_CONTEXT } from "./seeded-auth-context.mjs";
 
 const TELEGRAM_LOGIN_PURPOSE = "telegram_login";
+const EMAIL_LOGIN_PURPOSE = "email_login";
 const DEFAULT_CODE_TTL_SECONDS = 5 * 60;
 const DEFAULT_INVITATION_TTL_SECONDS = 7 * 24 * 60 * 60;
 const DEFAULT_SESSION_TTL_SECONDS = 8 * 60 * 60;
@@ -275,6 +276,73 @@ export function createMockTelegramCodeDeliveryAdapter() {
       return {
         deliveryChannel: "telegram",
         status: "mock_code_delivery_scheduled",
+      };
+    },
+  };
+}
+
+export function createTelegramLoginProvider({
+  deliveryAdapter = createMockTelegramCodeDeliveryAdapter(),
+} = {}) {
+  return Object.freeze({
+    codePurpose: TELEGRAM_LOGIN_PURPOSE,
+    contactType: "telegram",
+    enabled: true,
+    id: "telegram",
+
+    async deliverLoginCode(delivery) {
+      return deliveryAdapter.deliverTelegramLoginCode(delivery);
+    },
+  });
+}
+
+export function createUnavailableEmailLoginProvider() {
+  return Object.freeze({
+    codePurpose: EMAIL_LOGIN_PURPOSE,
+    contactType: "email",
+    enabled: false,
+    id: "email",
+
+    async deliverLoginCode() {
+      throw new Error("Email login provider is not available in MVP.");
+    },
+  });
+}
+
+export function createAuthProviderRegistry({
+  providers = [
+    createTelegramLoginProvider(),
+    createUnavailableEmailLoginProvider(),
+  ],
+} = {}) {
+  const providerById = new Map(providers.map((provider) => [provider.id, provider]));
+
+  return {
+    list() {
+      return [...providerById.values()].map((provider) => ({ ...provider }));
+    },
+
+    select(id) {
+      const provider = providerById.get(id);
+
+      if (!provider) {
+        return {
+          ok: false,
+          reason: "provider_not_found",
+        };
+      }
+
+      if (!provider.enabled) {
+        return {
+          ok: false,
+          provider,
+          reason: "provider_unavailable",
+        };
+      }
+
+      return {
+        ok: true,
+        provider,
       };
     },
   };
@@ -1269,6 +1337,12 @@ export function createIdentityService({
   codeGenerator = createDefaultCode,
   codeTtlSeconds = DEFAULT_CODE_TTL_SECONDS,
   deliveryAdapter = createMockTelegramCodeDeliveryAdapter(),
+  authProviderRegistry = createAuthProviderRegistry({
+    providers: [
+      createTelegramLoginProvider({ deliveryAdapter }),
+      createUnavailableEmailLoginProvider(),
+    ],
+  }),
   hashSecret = process.env.BRIDGE_AUTH_SECRET ?? DEFAULT_HASH_SECRET,
   invitationTokenGenerator = createDefaultInvitationToken,
   invitationTtlSeconds = DEFAULT_INVITATION_TTL_SECONDS,
@@ -1281,10 +1355,35 @@ export function createIdentityService({
   tokenGenerator = createDefaultToken,
   verifyRateLimiter = createMemoryRateLimiter({ now }),
 } = {}) {
-  function hashLoginCode({ userId, code }) {
+  function selectLoginProvider(providerId) {
+    return authProviderRegistry.select(providerId);
+  }
+
+  function requireLoginProvider(providerId) {
+    const selected = selectLoginProvider(providerId);
+
+    if (selected.ok) {
+      return selected;
+    }
+
+    return {
+      ...selected,
+      response: problem(
+        selected.reason === "provider_not_found" ? 404 : 501,
+        selected.reason === "provider_not_found"
+          ? "Not Found"
+          : "Not Implemented",
+        selected.reason === "provider_not_found"
+          ? "Login provider is not registered."
+          : "Login provider is not available in MVP.",
+      ),
+    };
+  }
+
+  function hashLoginCode({ userId, code, purpose = TELEGRAM_LOGIN_PURPOSE }) {
     return hashSecretValue({
       secret: hashSecret,
-      purpose: TELEGRAM_LOGIN_PURPOSE,
+      purpose,
       subject: userId,
       value: code,
     });
@@ -1488,6 +1587,7 @@ export function createIdentityService({
     hashInvitationToken,
     hashLoginCode,
     hashSessionToken,
+    selectLoginProvider,
 
     async provisionOrganization(payload, authContext) {
       const authorization = requireRole(authContext, ["platform_operator"]);
@@ -1738,6 +1838,11 @@ export function createIdentityService({
     },
 
     async startTelegramLogin(payload) {
+      const providerSelection = requireLoginProvider("telegram");
+      if (!providerSelection.ok) {
+        return providerSelection.response;
+      }
+      const provider = providerSelection.provider;
       const result = validateTelegramLoginStartRequest(payload);
       if (!result.ok) {
         return validationProblem(result.errors);
@@ -1799,8 +1904,9 @@ export function createIdentityService({
         codeHash: hashLoginCode({
           userId: userRecord.user.id,
           code,
+          purpose: provider.codePurpose,
         }),
-        purpose: TELEGRAM_LOGIN_PURPOSE,
+        purpose: provider.codePurpose,
         expiresAt: toIsoDate(expiresAt),
         consumedAt: null,
         createdAt: toIsoDate(createdAt),
@@ -1808,10 +1914,10 @@ export function createIdentityService({
         lockedUntil: null,
       });
 
-      await deliveryAdapter.deliverTelegramLoginCode({
+      await provider.deliverLoginCode({
         code,
         expiresAt: loginCode.expiresAt,
-        purpose: TELEGRAM_LOGIN_PURPOSE,
+        purpose: provider.codePurpose,
         requestId: loginCode.id,
         telegramUsername: userRecord.user.telegramUsername,
         userId: userRecord.user.id,
@@ -1846,6 +1952,11 @@ export function createIdentityService({
     },
 
     async verifyTelegramLogin(payload, request = {}) {
+      const providerSelection = requireLoginProvider("telegram");
+      if (!providerSelection.ok) {
+        return providerSelection.response;
+      }
+      const provider = providerSelection.provider;
       const result = validateTelegramLoginVerifyRequest(payload);
       if (!result.ok) {
         return validationProblem(result.errors);
@@ -1877,7 +1988,7 @@ export function createIdentityService({
         if (userRecord) {
           loginCode = await store.findLatestLoginCodeByUser({
             userId: userRecord.user.id,
-            purpose: TELEGRAM_LOGIN_PURPOSE,
+            purpose: provider.codePurpose,
           });
         }
       }
@@ -1965,6 +2076,7 @@ export function createIdentityService({
       const expectedHash = hashLoginCode({
         userId: userRecord.user.id,
         code: result.value.code,
+        purpose: provider.codePurpose,
       });
 
       if (!secureEqual(expectedHash, loginCode.codeHash)) {
