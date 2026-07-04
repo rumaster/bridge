@@ -53,5 +53,40 @@ export function createIdentityController({
         identityService.getSession(request.auth),
       );
     },
+
+    provisionOrganization({ body, request }) {
+      return withGuard(authGuard, request, () =>
+        identityService.provisionOrganization(body, request.auth),
+      );
+    },
+
+    createFirstAdministratorInvitation({ body, params, request }) {
+      return withGuard(authGuard, request, () =>
+        identityService.createFirstAdministratorInvitation(
+          params.id,
+          body,
+          request.auth,
+        ),
+      );
+    },
+
+    blockOrganization({ params, request }) {
+      return withGuard(authGuard, request, () =>
+        identityService.blockOrganization(params.id, request.auth),
+      );
+    },
+
+    createInvitation({ body, request }) {
+      return withGuard(authGuard, request, () =>
+        identityService.createInvitation(body, request.auth),
+      );
+    },
+
+    acceptInvitation({ body, request }) {
+      return identityService.acceptInvitation(body, {
+        ip: request.ip,
+        userAgent: request.headers?.["user-agent"] ?? null,
+      });
+    },
   };
 }

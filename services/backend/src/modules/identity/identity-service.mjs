@@ -7,6 +7,10 @@ import {
 } from "node:crypto";
 
 import {
+  validateAcceptInvitationRequest,
+  validateCreateInvitationRequest,
+  validateCreateOrganizationAdministratorRequest,
+  validatePlatformOrganizationProvisionRequest,
   validateTelegramLoginStartRequest,
   validateTelegramLoginVerifyRequest,
 } from "./dto/auth-dto.mjs";
@@ -14,6 +18,7 @@ import { SEEDED_AUTH_CONTEXT } from "./seeded-auth-context.mjs";
 
 const TELEGRAM_LOGIN_PURPOSE = "telegram_login";
 const DEFAULT_CODE_TTL_SECONDS = 5 * 60;
+const DEFAULT_INVITATION_TTL_SECONDS = 7 * 24 * 60 * 60;
 const DEFAULT_SESSION_TTL_SECONDS = 8 * 60 * 60;
 const DEFAULT_LOCKOUT_SECONDS = 15 * 60;
 const DEFAULT_MAX_VERIFY_ATTEMPTS = 5;
@@ -22,12 +27,34 @@ const DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60;
 const DEFAULT_HASH_SECRET = "bridge-local-dev-auth-secret";
 
 export const IDENTITY_AUDIT_ACTIONS = Object.freeze({
+  invitationAccept: "invitation.accept",
+  invitationCreate: "invitation.create",
   loginFailure: "auth.login.failure",
   loginStart: "auth.login.start",
   loginSuccess: "auth.login.success",
+  organizationBlock: "organization.block",
+  organizationProvision: "organization.provision",
   sessionLogout: "auth.session.logout",
   sessionRevoke: "auth.session.revoke",
 });
+
+const ROLE_RECORDS = Object.freeze([
+  Object.freeze({
+    id: "00000000-0000-4000-8000-000000000001",
+    code: "platform_operator",
+    scope: "platform",
+  }),
+  Object.freeze({
+    id: "00000000-0000-4000-8000-000000000002",
+    code: "administrator",
+    scope: "organization",
+  }),
+  Object.freeze({
+    id: "00000000-0000-4000-8000-000000000003",
+    code: "manager",
+    scope: "organization",
+  }),
+]);
 
 function toIsoDate(value) {
   return new Date(value).toISOString();
@@ -73,6 +100,10 @@ function unauthorized(detail = "Authentication is required.") {
   return problem(401, "Unauthorized", detail);
 }
 
+function forbidden(detail = "Insufficient permissions.") {
+  return problem(403, "Forbidden", detail);
+}
+
 function tooManyRequests(detail, retryAfterSeconds) {
   return problem(429, "Too Many Requests", detail, {
     retryAfterSeconds,
@@ -104,6 +135,10 @@ function createDefaultCode() {
 
 function createDefaultToken() {
   return `brs_${randomBytes(32).toString("base64url")}`;
+}
+
+function createDefaultInvitationToken() {
+  return `bri_${randomBytes(32).toString("base64url")}`;
 }
 
 function hashSecretValue({ secret, purpose, subject, value }) {
@@ -139,11 +174,33 @@ function primaryRole(roles) {
   return roles[0] ?? null;
 }
 
+function roleAllowed(authContext, allowedRoles) {
+  const roles = new Set(authContext?.roles ?? []);
+
+  if (roles.has("administrator")) {
+    roles.add("manager");
+  }
+
+  return allowedRoles.some((role) => roles.has(role));
+}
+
+function requireRole(authContext, allowedRoles) {
+  if (!authContext?.authenticated || !authContext?.user) {
+    return unauthorized("Authentication is required.");
+  }
+
+  if (!roleAllowed(authContext, allowedRoles)) {
+    return forbidden(`Required role: ${allowedRoles.join(" or ")}.`);
+  }
+
+  return null;
+}
+
 function hasRoleBinding(record) {
   return Array.isArray(record?.roles) && record.roles.length > 0;
 }
 
-function sessionResponse(authContext, token) {
+function sessionResponse(authContext, token, implementationStage = "M1") {
   return {
     authenticated: true,
     token,
@@ -156,7 +213,7 @@ function sessionResponse(authContext, token) {
     roles: [...authContext.roles],
     roleBindings: [...authContext.roleBindings],
     session: authContext.session,
-    implementationStage: "M1",
+    implementationStage,
   };
 }
 
@@ -166,6 +223,7 @@ function seededUserRecord() {
       id: SEEDED_AUTH_CONTEXT.user.id,
       organizationId: SEEDED_AUTH_CONTEXT.user.organizationId,
       telegramUsername: SEEDED_AUTH_CONTEXT.user.telegramUsername,
+      email: SEEDED_AUTH_CONTEXT.user.email ?? null,
       displayName: SEEDED_AUTH_CONTEXT.user.displayName,
       status: SEEDED_AUTH_CONTEXT.user.status,
     },
@@ -291,28 +349,75 @@ export function createNoopAuditRecorder() {
 export function createInMemoryIdentityStore({
   users = [seededUserRecord()],
 } = {}) {
+  const organizations = new Map();
+  const invitations = new Map();
+  const invitationsByTokenHash = new Map();
+  const usersById = new Map();
   const usersByTelegram = new Map();
   const loginCodes = new Map();
   const sessions = new Map();
 
   for (const userRecord of users) {
-    usersByTelegram.set(
-      userRecord.user.telegramUsername.toLowerCase(),
-      structuredClone(userRecord),
-    );
+    upsertUserRecord(userRecord);
   }
 
   return {
+    async createOrganization(record) {
+      const organization = {
+        ...record,
+        slug: slugify(record.name),
+        status: record.status ?? "active",
+      };
+      organizations.set(organization.id, organization);
+
+      return cloneOrNull(organization);
+    },
+
+    async findOrganizationById(id) {
+      return cloneOrNull(organizations.get(id));
+    },
+
+    async updateOrganizationStatus(id, { status, updatedAt }) {
+      const organization = organizations.get(id);
+
+      if (!organization) {
+        return null;
+      }
+
+      organization.status = status;
+      organization.updatedAt = updatedAt;
+
+      return cloneOrNull(organization);
+    },
+
+    async findRoleByCode(code) {
+      return cloneOrNull(ROLE_RECORDS.find((role) => role.code === code));
+    },
+
+    async countUsersByRole({ organizationId, roleCode }) {
+      return [...usersById.values()].filter(
+        (record) =>
+          record.user.organizationId === organizationId &&
+          record.roles.includes(roleCode),
+      ).length;
+    },
+
+    async countPendingInvitationsByRole({ organizationId, now: currentTime, roleCode }) {
+      return [...invitations.values()].filter(
+        (record) =>
+          record.organizationId === organizationId &&
+          record.roleCode === roleCode &&
+          !record.acceptedAt &&
+          isAfter(record.expiresAt, currentTime),
+      ).length;
+    },
+
     async findUserByTelegramUsername(telegramUsername) {
       return cloneOrNull(usersByTelegram.get(telegramUsername.toLowerCase()));
     },
 
     async findUserById(userId) {
-      return cloneOrNull(
-        [...usersByTelegram.values()].find(
-          (record) => record.user.id === userId,
-        ),
-      );
+      return cloneOrNull(usersById.get(userId));
     },
 
     async createLoginCode(record) {
@@ -386,7 +491,96 @@ export function createInMemoryIdentityStore({
 
       return null;
     },
+
+    async createInvitation(record) {
+      const role = ROLE_RECORDS.find((item) => item.id === record.roleId);
+      const invitation = {
+        ...record,
+        acceptedAt: record.acceptedAt ?? null,
+        createdBy: record.createdBy ?? null,
+        roleCode: role?.code ?? record.roleCode,
+      };
+
+      invitations.set(invitation.id, invitation);
+      invitationsByTokenHash.set(invitation.tokenHash, invitation.id);
+
+      return cloneOrNull(invitation);
+    },
+
+    async findInvitationByTokenHash(tokenHash) {
+      const id = invitationsByTokenHash.get(tokenHash);
+
+      return cloneOrNull(id ? invitations.get(id) : null);
+    },
+
+    async consumeInvitation(id, acceptedAt) {
+      const invitation = invitations.get(id);
+
+      if (!invitation || invitation.acceptedAt) {
+        return null;
+      }
+
+      invitation.acceptedAt = acceptedAt;
+
+      return cloneOrNull(invitation);
+    },
+
+    async createUserFromInvitation({ displayName, id, invitation }) {
+      const organization = organizations.get(invitation.organizationId);
+
+      if (!organization) {
+        return null;
+      }
+
+      const userRecord = {
+        user: {
+          id,
+          organizationId: invitation.organizationId,
+          telegramUsername:
+            invitation.contactType === "telegram" ? invitation.contactValue : null,
+          email: invitation.contactType === "email" ? invitation.contactValue : null,
+          displayName,
+          status: "active",
+        },
+        organization: {
+          id: organization.id,
+          slug: organization.slug ?? slugify(organization.name),
+          name: organization.name,
+          status: organization.status,
+        },
+        roles: [invitation.roleCode],
+      };
+
+      upsertUserRecord(userRecord);
+
+      return cloneOrNull(userRecord);
+    },
   };
+
+  function upsertUserRecord(userRecord) {
+    const record = structuredClone(userRecord);
+    usersById.set(record.user.id, record);
+
+    if (record.user.telegramUsername) {
+      usersByTelegram.set(record.user.telegramUsername.toLowerCase(), record);
+    }
+
+    if (record.organization?.id) {
+      organizations.set(record.organization.id, {
+        id: record.organization.id,
+        slug: record.organization.slug ?? slugify(record.organization.name),
+        name: record.organization.name,
+        description: record.organization.description ?? null,
+        timezone: record.organization.timezone ?? "UTC",
+        locale: record.organization.locale ?? "ru-RU",
+        status: record.organization.status,
+        createdAt:
+          record.organization.createdAt ?? "2026-01-01T00:00:00.000Z",
+        updatedAt:
+          record.organization.updatedAt ?? "2026-01-01T00:00:00.000Z",
+      });
+    }
+  }
 }
 
 function cloneOrNull(value) {
@@ -410,6 +604,7 @@ export function createPostgresIdentityStore({ client }) {
             u.id,
             u.organization_id,
             u.telegram_username,
+            u.email,
             u.display_name,
             u.status,
             o.id AS organization_id,
@@ -445,6 +640,7 @@ export function createPostgresIdentityStore({ client }) {
             u.id,
             u.organization_id,
             u.telegram_username,
+            u.email,
             u.display_name,
             u.status,
             o.id AS organization_id,
@@ -607,6 +803,7 @@ export function createPostgresIdentityStore({ client }) {
             s.ip,
             s.user_agent,
             u.telegram_username,
+            u.email,
             u.display_name,
             u.status AS user_status,
             o.name AS organization_name,
@@ -643,6 +840,234 @@ export function createPostgresIdentityStore({ client }) {
       );
 
       return result.rowCount === 0 ? null : mapAuthSessionRow(result.rows[0]);
+    },
+
+    async createOrganization(record) {
+      const result = await client.query(
+        `
+          INSERT INTO organizations (
+            id,
+            name,
+            description,
+            timezone,
+            locale,
+            status,
+            created_at,
+            updated_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz, $8::timestamptz)
+          RETURNING id, name, description, timezone, locale, status, created_at, updated_at
+        `,
+        [
+          record.id,
+          record.name,
+          record.description,
+          record.timezone,
+          record.locale,
+          record.status,
+          record.createdAt,
+          record.updatedAt,
+        ],
+      );
+
+      return mapOrganizationRow(result.rows[0]);
+    },
+
+    async findOrganizationById(id) {
+      const result = await client.query(
+        `
+          SELECT id, name, description, timezone, locale, status, created_at, updated_at
+          FROM organizations
+          WHERE id = $1
+        `,
+        [id],
+      );
+
+      return result.rowCount === 0 ? null : mapOrganizationRow(result.rows[0]);
+    },
+
+    async updateOrganizationStatus(id, { status, updatedAt }) {
+      const result = await client.query(
+        `
+          UPDATE organizations
+          SET status = $2,
+              updated_at = $3::timestamptz
+          WHERE id = $1
+          RETURNING id, name, description, timezone, locale, status, created_at, updated_at
+        `,
+        [id, status, updatedAt],
+      );
+
+      return result.rowCount === 0 ? null : mapOrganizationRow(result.rows[0]);
+    },
+
+    async findRoleByCode(code) {
+      const result = await client.query(
+        "SELECT id, code, scope FROM roles WHERE code = $1 LIMIT 1",
+        [code],
+      );
+
+      return result.rowCount === 0 ? null : mapRoleRow(result.rows[0]);
+    },
+
+    async countUsersByRole({ organizationId, roleCode }) {
+      const result = await client.query(
+        `
+          SELECT count(*)::int AS count
+          FROM users u
+          JOIN user_roles ur
+            ON ur.user_id = u.id AND ur.organization_id = u.organization_id
+          JOIN roles r ON r.id = ur.role_id
+          WHERE u.organization_id = $1 AND r.code = $2
+        `,
+        [organizationId, roleCode],
+      );
+
+      return result.rows[0].count;
+    },
+
+    async countPendingInvitationsByRole({ organizationId, now: currentTime, roleCode }) {
+      const result = await client.query(
+        `
+          SELECT count(*)::int AS count
+          FROM invitations i
+          JOIN roles r ON r.id = i.role_id
+          WHERE i.organization_id = $1
+            AND r.code = $2
+            AND i.accepted_at IS NULL
+            AND i.expires_at > $3::timestamptz
+        `,
+        [organizationId, roleCode, currentTime],
+      );
+
+      return result.rows[0].count;
+    },
+
+    async createInvitation(record) {
+      const result = await client.query(
+        `
+          INSERT INTO invitations (
+            id,
+            organization_id,
+            contact_type,
+            contact_value,
+            role_id,
+            token_hash,
+            expires_at,
+            accepted_at,
+            created_by,
+            created_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7::timestamptz, $8::timestamptz, $9, $10::timestamptz)
+          RETURNING *
+        `,
+        [
+          record.id,
+          record.organizationId,
+          record.contactType,
+          record.contactValue,
+          record.roleId,
+          record.tokenHash,
+          record.expiresAt,
+          record.acceptedAt,
+          record.createdBy,
+          record.createdAt,
+        ],
+      );
+
+      return {
+        ...mapInvitationRow(result.rows[0]),
+        roleCode: record.roleCode,
+      };
+    },
+
+    async findInvitationByTokenHash(tokenHash) {
+      const result = await client.query(
+        `
+          SELECT
+            i.*,
+            r.code AS role_code,
+            o.name AS organization_name,
+            o.status AS organization_status
+          FROM invitations i
+          JOIN roles r ON r.id = i.role_id
+          JOIN organizations o ON o.id = i.organization_id
+          WHERE i.token_hash = $1
+          LIMIT 1
+        `,
+        [tokenHash],
+      );
+
+      return result.rowCount === 0 ? null : mapInvitationRow(result.rows[0]);
+    },
+
+    async consumeInvitation(id, acceptedAt) {
+      const result = await client.query(
+        `
+          UPDATE invitations
+          SET accepted_at = $2::timestamptz
+          WHERE id = $1 AND accepted_at IS NULL
+          RETURNING *
+        `,
+        [id, acceptedAt],
+      );
+
+      return result.rowCount === 0 ? null : mapInvitationRow(result.rows[0]);
+    },
+
+    async createUserFromInvitation({ displayName, id, invitation }) {
+      await client.query(
+        `
+          INSERT INTO users (
+            id,
+            organization_id,
+            telegram_username,
+            email,
+            display_name,
+            status,
+            created_at,
+            updated_at
+          )
+          VALUES ($1, $2, $3, $4, $5, 'active', now(), now())
+        `,
+        [
+          id,
+          invitation.organizationId,
+          invitation.contactType === "telegram" ? invitation.contactValue : null,
+          invitation.contactType === "email" ? invitation.contactValue : null,
+          displayName,
+        ],
+      );
+      await client.query(
+        `
+          INSERT INTO user_roles (user_id, role_id, organization_id)
+          VALUES ($1, $2, $3)
+        `,
+        [id, invitation.roleId, invitation.organizationId],
+      );
+
+      const result = await client.query(
+        `
+          SELECT
+            u.id,
+            u.organization_id,
+            u.telegram_username,
+            u.email,
+            u.display_name,
+            u.status,
+            o.id AS organization_id,
+            o.name AS organization_name,
+            o.status AS organization_status,
+            ARRAY[$3::text] AS roles
+          FROM users u
+          JOIN organizations o ON o.id = u.organization_id
+          WHERE u.id = $1 AND u.organization_id = $2
+          LIMIT 1
+        `,
+        [id, invitation.organizationId, invitation.roleCode],
+      );
+
+      return result.rowCount === 0 ? null : mapUserRow(result.rows[0]);
     },
   };
 }
@@ -695,6 +1120,7 @@ function mapUserRow(row) {
       id: row.id,
       organizationId: row.organization_id,
       telegramUsername: row.telegram_username,
+      email: row.email ?? null,
       displayName: row.display_name,
       status: row.status,
     },
@@ -748,6 +1174,7 @@ function mapSessionJoinRow(row) {
       id: row.user_id,
       organizationId: row.organization_id,
       telegramUsername: row.telegram_username,
+      email: row.email ?? null,
       displayName: row.display_name,
       status: row.user_status,
     },
@@ -761,12 +1188,90 @@ function mapSessionJoinRow(row) {
   };
 }
 
+function mapOrganizationRow(row) {
+  return {
+    id: row.id,
+    slug: slugify(row.name),
+    name: row.name,
+    description: row.description,
+    timezone: row.timezone,
+    locale: row.locale,
+    status: row.status,
+    createdAt: normalizeIso(row.created_at),
+    updatedAt: normalizeIso(row.updated_at),
+  };
+}
+
+function mapRoleRow(row) {
+  return {
+    id: row.id,
+    code: row.code,
+    scope: row.scope,
+  };
+}
+
+function mapInvitationRow(row) {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    contactType: row.contact_type,
+    contactValue: row.contact_value,
+    roleId: row.role_id,
+    roleCode:
+      row.role_code ?? ROLE_RECORDS.find((role) => role.id === row.role_id)?.code,
+    tokenHash: row.token_hash,
+    expiresAt: normalizeIso(row.expires_at),
+    acceptedAt: normalizeIso(row.accepted_at),
+    createdBy: row.created_by,
+    createdAt: normalizeIso(row.created_at),
+    organization: row.organization_name
+      ? {
+          id: row.organization_id,
+          slug: slugify(row.organization_name),
+          name: row.organization_name,
+          status: row.organization_status,
+        }
+      : undefined,
+  };
+}
+
+function organizationResponse(organization) {
+  return {
+    id: organization.id,
+    name: organization.name,
+    description: organization.description ?? null,
+    timezone: organization.timezone ?? "UTC",
+    locale: organization.locale ?? "ru-RU",
+    status: organization.status,
+    createdAt: normalizeIso(organization.createdAt),
+    updatedAt: normalizeIso(organization.updatedAt),
+    implementationStage: "M4",
+  };
+}
+
+function invitationResponse(invitation) {
+  return {
+    id: invitation.id,
+    organizationId: invitation.organizationId,
+    contactType: invitation.contactType,
+    contactValue: invitation.contactValue,
+    roleCode: invitation.roleCode,
+    expiresAt: invitation.expiresAt,
+    acceptedAt: invitation.acceptedAt,
+    createdBy: invitation.createdBy ?? null,
+    createdAt: invitation.createdAt,
+    implementationStage: "M4",
+  };
+}
+
 export function createIdentityService({
   auditRecorder = createNoopAuditRecorder(),
   codeGenerator = createDefaultCode,
   codeTtlSeconds = DEFAULT_CODE_TTL_SECONDS,
   deliveryAdapter = createMockTelegramCodeDeliveryAdapter(),
   hashSecret = process.env.BRIDGE_AUTH_SECRET ?? DEFAULT_HASH_SECRET,
+  invitationTokenGenerator = createDefaultInvitationToken,
+  invitationTtlSeconds = DEFAULT_INVITATION_TTL_SECONDS,
   lockoutSeconds = DEFAULT_LOCKOUT_SECONDS,
   maxVerifyAttempts = DEFAULT_MAX_VERIFY_ATTEMPTS,
   now = () => new Date(),
@@ -789,6 +1294,15 @@ export function createIdentityService({
     return hashSecretValue({
       secret: hashSecret,
       purpose: "auth_session",
+      subject: "server",
+      value: token,
+    });
+  }
+
+  function hashInvitationToken(token) {
+    return hashSecretValue({
+      secret: hashSecret,
+      purpose: "invitation",
       subject: "server",
       value: token,
     });
@@ -839,6 +1353,7 @@ export function createIdentityService({
   async function recordAuditEvent({
     action,
     actorUserId,
+    authMethod = "telegram",
     ip,
     metadata = {},
     objectId,
@@ -856,10 +1371,7 @@ export function createIdentityService({
       actorType: "user",
       actorUserId,
       ip,
-      metadata: {
-        authMethod: "telegram",
-        ...metadata,
-      },
+      metadata: authMethod ? { authMethod, ...metadata } : { ...metadata },
       objectId,
       objectType,
       organizationId,
@@ -902,9 +1414,328 @@ export function createIdentityService({
     });
   }
 
+  async function createInvitationRecord({
+    authContext,
+    createdBy,
+    organizationId,
+    platformActorUserId,
+    value,
+  }) {
+    const organization = await store.findOrganizationById(organizationId);
+    if (!organization) {
+      return problem(404, "Not Found", "Organization was not found.");
+    }
+
+    if (organization.status !== "active") {
+      return unauthorized("Organization is not active.");
+    }
+
+    const role = await store.findRoleByCode(value.roleCode);
+    if (!role) {
+      return validationProblem([
+        {
+          field: "roleCode",
+          message: "Invitation roleCode does not exist.",
+        },
+      ]);
+    }
+
+    const token = invitationTokenGenerator();
+    const currentTime = now();
+    const expiresInSeconds = value.expiresInSeconds ?? invitationTtlSeconds;
+    const expiresAt = addSeconds(currentTime, expiresInSeconds);
+    const invitation = await store.createInvitation({
+      id: randomUUID(),
+      organizationId,
+      contactType: value.contactType,
+      contactValue: value.contactValue,
+      displayName: value.displayName,
+      roleId: role.id,
+      roleCode: role.code,
+      tokenHash: hashInvitationToken(token),
+      expiresAt: toIsoDate(expiresAt),
+      acceptedAt: null,
+      createdBy,
+      createdAt: toIsoDate(currentTime),
+    });
+
+    await recordAuditEvent({
+      action: IDENTITY_AUDIT_ACTIONS.invitationCreate,
+      actorUserId: createdBy,
+      authMethod: null,
+      metadata: {
+        contactType: invitation.contactType,
+        expiresAt: invitation.expiresAt,
+        platformActorUserId,
+        roleCode: invitation.roleCode,
+      },
+      objectId: invitation.id,
+      objectType: "invitation",
+      organizationId,
+      requestId: invitation.id,
+    });
+
+    return {
+      status: 201,
+      body: {
+        ...invitationResponse(invitation),
+        token,
+      },
+    };
+  }
+
   return {
+    hashInvitationToken,
     hashLoginCode,
     hashSessionToken,
+
+    async provisionOrganization(payload, authContext) {
+      const authorization = requireRole(authContext, ["platform_operator"]);
+      if (authorization) {
+        return authorization;
+      }
+
+      const result = validatePlatformOrganizationProvisionRequest(payload);
+      if (!result.ok) {
+        return validationProblem(result.errors);
+      }
+
+      const currentTime = now();
+      const organization = await store.createOrganization({
+        id: randomUUID(),
+        name: result.value.name,
+        description: result.value.description,
+        timezone: result.value.timezone,
+        locale: result.value.locale,
+        status: "active",
+        createdAt: toIsoDate(currentTime),
+        updatedAt: toIsoDate(currentTime),
+      });
+
+      await recordAuditEvent({
+        action: IDENTITY_AUDIT_ACTIONS.organizationProvision,
+        actorUserId: null,
+        authMethod: null,
+        metadata: {
+          platformActorUserId: authContext.user.id,
+          status: organization.status,
+        },
+        objectId: organization.id,
+        objectType: "organization",
+        organizationId: organization.id,
+      });
+
+      return {
+        status: 201,
+        body: organizationResponse(organization),
+      };
+    },
+
+    async createFirstAdministratorInvitation(organizationId, payload, authContext) {
+      const authorization = requireRole(authContext, ["platform_operator"]);
+      if (authorization) {
+        return authorization;
+      }
+
+      const result = validateCreateOrganizationAdministratorRequest(payload);
+      if (!result.ok) {
+        return validationProblem(result.errors);
+      }
+
+      const organization = await store.findOrganizationById(organizationId);
+      if (!organization) {
+        return problem(404, "Not Found", "Organization was not found.");
+      }
+
+      if (organization.status !== "active") {
+        return unauthorized("Organization is not active.");
+      }
+
+      const existingAdministrators = await store.countUsersByRole({
+        organizationId,
+        roleCode: "administrator",
+      });
+      const pendingAdministratorInvitations =
+        await store.countPendingInvitationsByRole({
+          now: toIsoDate(now()),
+          organizationId,
+          roleCode: "administrator",
+        });
+
+      if (existingAdministrators > 0 || pendingAdministratorInvitations > 0) {
+        return problem(
+          409,
+          "Conflict",
+          "Organization already has an Administrator or pending Administrator invitation.",
+        );
+      }
+
+      return createInvitationRecord({
+        authContext,
+        createdBy: null,
+        organizationId,
+        platformActorUserId: authContext.user.id,
+        value: result.value,
+      });
+    },
+
+    async createInvitation(payload, authContext) {
+      const authorization = requireRole(authContext, ["administrator"]);
+      if (authorization) {
+        return authorization;
+      }
+
+      const result = validateCreateInvitationRequest(payload);
+      if (!result.ok) {
+        return validationProblem(result.errors);
+      }
+
+      if (authContext.organization.id !== result.value.organizationId) {
+        return forbidden("Administrator can create invitations only in their organization.");
+      }
+
+      return createInvitationRecord({
+        authContext,
+        createdBy: authContext.user.id,
+        organizationId: result.value.organizationId,
+        value: result.value,
+      });
+    },
+
+    async acceptInvitation(payload, request = {}) {
+      const result = validateAcceptInvitationRequest(payload);
+      if (!result.ok) {
+        return validationProblem(result.errors);
+      }
+
+      const currentTime = now();
+      const tokenHash = hashInvitationToken(result.value.token);
+      const invitation = await store.findInvitationByTokenHash(tokenHash);
+
+      if (!invitation) {
+        return unauthorized("Invitation token is invalid.");
+      }
+
+      if (invitation.acceptedAt) {
+        return unauthorized("Invitation token has already been used.");
+      }
+
+      if (isOnOrBefore(invitation.expiresAt, currentTime)) {
+        return unauthorized("Invitation token has expired.");
+      }
+
+      const consumedInvitation = await store.consumeInvitation(
+        invitation.id,
+        toIsoDate(currentTime),
+      );
+
+      if (!consumedInvitation) {
+        return unauthorized("Invitation token has already been used.");
+      }
+
+      const displayName =
+        result.value.displayName ??
+        invitation.displayName ??
+        invitation.contactValue;
+      const userRecord = await store.createUserFromInvitation({
+        displayName,
+        id: randomUUID(),
+        invitation,
+      });
+
+      if (!userRecord) {
+        return problem(404, "Not Found", "Invitation organization was not found.");
+      }
+
+      const token = tokenGenerator();
+      const expiresAt = addSeconds(currentTime, sessionTtlSeconds);
+      const session = await store.createAuthSession({
+        id: randomUUID(),
+        tokenHash: hashSessionToken(token),
+        user: userRecord.user,
+        organization: userRecord.organization,
+        roles: userRecord.roles,
+        issuedAt: toIsoDate(currentTime),
+        expiresAt: toIsoDate(expiresAt),
+        revokedAt: null,
+        ip: request.ip ?? null,
+        userAgent: request.userAgent ?? null,
+      });
+      const authContext = toAuthContext(session);
+
+      await recordAuditEvent({
+        action: IDENTITY_AUDIT_ACTIONS.invitationAccept,
+        actorUserId: userRecord.user.id,
+        authMethod: "invitation",
+        metadata: {
+          contactType: invitation.contactType,
+          roleCode: invitation.roleCode,
+        },
+        objectId: invitation.id,
+        objectType: "invitation",
+        organizationId: invitation.organizationId,
+        requestId: invitation.id,
+      });
+      await recordAuditEvent({
+        action: IDENTITY_AUDIT_ACTIONS.loginSuccess,
+        actorUserId: userRecord.user.id,
+        authMethod: "invitation",
+        ip: request.ip ?? null,
+        metadata: {
+          invitationId: invitation.id,
+          roleCodes: [...userRecord.roles],
+          sessionExpiresAt: session.expiresAt,
+        },
+        objectId: session.id,
+        objectType: "auth_session",
+        organizationId: invitation.organizationId,
+        requestId: invitation.id,
+      });
+
+      return {
+        status: 200,
+        body: sessionResponse(authContext, token, "M4"),
+        headers: {
+          "set-cookie": `bridge_session=${token}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${sessionTtlSeconds}`,
+        },
+      };
+    },
+
+    async blockOrganization(organizationId, authContext) {
+      const authorization = requireRole(authContext, ["platform_operator"]);
+      if (authorization) {
+        return authorization;
+      }
+
+      const before = await store.findOrganizationById(organizationId);
+      if (!before) {
+        return problem(404, "Not Found", "Organization was not found.");
+      }
+
+      const blocked = await store.updateOrganizationStatus(organizationId, {
+        status: "blocked",
+        updatedAt: toIsoDate(now()),
+      });
+
+      await recordAuditEvent({
+        action: IDENTITY_AUDIT_ACTIONS.organizationBlock,
+        actorUserId: null,
+        authMethod: null,
+        metadata: {
+          platformActorUserId: authContext.user.id,
+          previousStatus: before.status,
+          status: "blocked",
+        },
+        objectId: organizationId,
+        objectType: "organization",
+        organizationId,
+      });
+
+      return {
+        status: 200,
+        body: organizationResponse(blocked),
+      };
+    },
 
     async startTelegramLogin(payload) {
       const result = validateTelegramLoginStartRequest(payload);

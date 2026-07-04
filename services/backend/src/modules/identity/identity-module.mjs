@@ -13,7 +13,7 @@ export function createIdentityModule({
 
   return {
     name: "identity",
-    contractId: "C3.auth",
+    contractId: "C3.auth/C3.platform/C3.users",
     basePath: "/api/v1",
     authGuard,
     routes: [
@@ -36,6 +36,31 @@ export function createIdentityModule({
         method: "GET",
         path: "/api/v1/auth/session",
         handler: controller.getCurrentSession,
+      },
+      {
+        method: "POST",
+        path: "/api/v1/platform/organizations",
+        handler: controller.provisionOrganization,
+      },
+      {
+        method: "POST",
+        path: "/api/v1/platform/organizations/:id/administrators",
+        handler: controller.createFirstAdministratorInvitation,
+      },
+      {
+        method: "POST",
+        path: "/api/v1/platform/organizations/:id/block",
+        handler: controller.blockOrganization,
+      },
+      {
+        method: "POST",
+        path: "/api/v1/invitations",
+        handler: controller.createInvitation,
+      },
+      {
+        method: "POST",
+        path: "/api/v1/invitations/accept",
+        handler: controller.acceptInvitation,
       },
     ],
   };

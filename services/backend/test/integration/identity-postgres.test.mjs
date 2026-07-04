@@ -34,6 +34,7 @@ describe("identity M1 PostgreSQL integration", { timeout: 300_000 }, () => {
   let client;
   let container;
   let service;
+  let invitationCounter = 0;
   let tokenCounter = 0;
 
   before(async () => {
@@ -59,6 +60,7 @@ describe("identity M1 PostgreSQL integration", { timeout: 300_000 }, () => {
       hashSecret: "postgres-test-secret",
       now: () => new Date("2026-07-03T10:00:00.000Z"),
       auditRecorder: createPostgresAuditRecorder({ client }),
+      invitationTokenGenerator: () => `bri_postgres_test_invitation_${++invitationCounter}`,
       store: createPostgresIdentityStore({ client }),
       tokenGenerator: () => `brs_postgres_test_token_${++tokenCounter}`,
     });
@@ -222,6 +224,121 @@ describe("identity M1 PostgreSQL integration", { timeout: 300_000 }, () => {
       requestId: start.body.requestId,
     });
   });
+
+  it("provisions a tenant, accepts the first Administrator invitation once, and keeps invitations tenant-scoped", async () => {
+    const organization = await service.provisionOrganization(
+      {
+        name: "M4 PostgreSQL Tenant",
+        description: "Self-service bootstrap fixture",
+      },
+      platformAuthContext(),
+    );
+
+    assert.equal(organization.status, 201);
+    assert.equal(organization.body.status, "active");
+
+    const invitation = await service.createFirstAdministratorInvitation(
+      organization.body.id,
+      {
+        contactType: "email",
+        contactValue: "postgres-admin@example.bridge.local",
+        displayName: "PostgreSQL Admin",
+      },
+      platformAuthContext(),
+    );
+
+    assert.equal(invitation.status, 201);
+    assert.equal(invitation.body.token, "bri_postgres_test_invitation_1");
+    assert.equal(invitation.body.roleCode, "administrator");
+
+    const invitationRows = await client.query(
+      `
+        SELECT contact_type, contact_value, token_hash, accepted_at
+        FROM invitations
+        WHERE id = $1
+      `,
+      [invitation.body.id],
+    );
+    assert.equal(invitationRows.rowCount, 1);
+    assert.equal(invitationRows.rows[0].contact_type, "email");
+    assert.equal(
+      invitationRows.rows[0].contact_value,
+      "postgres-admin@example.bridge.local",
+    );
+    assert.match(invitationRows.rows[0].token_hash, /^sha256:/);
+    assert.notEqual(
+      invitationRows.rows[0].token_hash,
+      "bri_postgres_test_invitation_1",
+    );
+    assert.equal(invitationRows.rows[0].accepted_at, null);
+
+    const accepted = await service.acceptInvitation({
+      token: invitation.body.token,
+      displayName: "Accepted PostgreSQL Admin",
+    });
+
+    assert.equal(accepted.status, 200);
+    assert.equal(accepted.body.implementationStage, "M4");
+    assert.equal(accepted.body.user.email, "postgres-admin@example.bridge.local");
+    assert.equal(accepted.body.organization.id, organization.body.id);
+    assert.deepEqual(accepted.body.roles, ["administrator"]);
+
+    const roleRows = await client.query(
+      `
+        SELECT r.code
+        FROM user_roles ur
+        JOIN roles r ON r.id = ur.role_id
+        WHERE ur.organization_id = $1 AND ur.user_id = $2
+      `,
+      [organization.body.id, accepted.body.user.id],
+    );
+    assert.deepEqual(roleRows.rows.map((row) => row.code), ["administrator"]);
+
+    const secondAccept = await service.acceptInvitation({
+      token: invitation.body.token,
+      displayName: "Accepted PostgreSQL Admin",
+    });
+
+    assert.equal(secondAccept.status, 401);
+    assert.match(secondAccept.body.detail, /already been used/i);
+
+    const audit = await client.query(
+      `
+        SELECT action, actor_user_id, object_type, result, metadata
+        FROM audit_events
+        WHERE organization_id = $1
+          AND action IN ($2, $3, $4, $5)
+        ORDER BY created_at, action
+      `,
+      [
+        organization.body.id,
+        IDENTITY_AUDIT_ACTIONS.organizationProvision,
+        IDENTITY_AUDIT_ACTIONS.invitationCreate,
+        IDENTITY_AUDIT_ACTIONS.invitationAccept,
+        IDENTITY_AUDIT_ACTIONS.loginSuccess,
+      ],
+    );
+    assert.deepEqual(
+      audit.rows.map((row) => [row.action, row.object_type, row.result]),
+      [
+        [IDENTITY_AUDIT_ACTIONS.organizationProvision, "organization", "success"],
+        [IDENTITY_AUDIT_ACTIONS.invitationCreate, "invitation", "success"],
+        [IDENTITY_AUDIT_ACTIONS.invitationAccept, "invitation", "success"],
+        [IDENTITY_AUDIT_ACTIONS.loginSuccess, "auth_session", "success"],
+      ],
+    );
+    assert.equal(audit.rows[0].actor_user_id, null);
+    assert.equal(
+      audit.rows[0].metadata.platformActorUserId,
+      platformAuthContext().user.id,
+    );
+    assert.equal(audit.rows[2].actor_user_id, accepted.body.user.id);
+
+    await assertInvitationTenantIsolation(connectionConfig(container), client, {
+      invitationId: invitation.body.id,
+      organizationId: organization.body.id,
+    });
+  });
 });
 
 async function assertAuditTenantIsolation(adminConfig, adminClient, { organizationId, requestId }) {
@@ -301,4 +418,93 @@ function quoteIdentifier(identifier) {
   }
 
   return `"${identifier}"`;
+}
+
+async function assertInvitationTenantIsolation(
+  adminConfig,
+  adminClient,
+  { invitationId, organizationId },
+) {
+  const roleName = `identity_invitation_probe_${process.pid}`;
+  const roleIdentifier = quoteIdentifier(roleName);
+
+  await adminClient.query(`DROP ROLE IF EXISTS ${roleIdentifier}`);
+  await adminClient.query(`CREATE ROLE ${roleIdentifier} LOGIN PASSWORD 'bridge_test'`);
+  await adminClient.query(`GRANT USAGE ON SCHEMA app, public TO ${roleIdentifier}`);
+  await adminClient.query(`GRANT SELECT ON invitations TO ${roleIdentifier}`);
+
+  try {
+    await withClient(
+      connectionConfigFromAdmin(adminConfig, {
+        password: "bridge_test",
+        user: roleName,
+      }),
+      async (restrictedClient) => {
+        let result = await restrictedClient.query(
+          "SELECT count(*)::int AS count FROM invitations WHERE id = $1",
+          [invitationId],
+        );
+        assert.equal(result.rows[0].count, 0);
+
+        await restrictedClient.query(
+          "SELECT set_config('app.current_organization_id', $1, false)",
+          [organizationId],
+        );
+        result = await restrictedClient.query(
+          "SELECT count(*)::int AS count FROM invitations WHERE id = $1",
+          [invitationId],
+        );
+        assert.equal(result.rows[0].count, 1);
+
+        await restrictedClient.query(
+          "SELECT set_config('app.current_organization_id', $1, false)",
+          ["10000000-0000-4000-8000-000000000999"],
+        );
+        result = await restrictedClient.query(
+          "SELECT count(*)::int AS count FROM invitations WHERE id = $1",
+          [invitationId],
+        );
+        assert.equal(result.rows[0].count, 0);
+      },
+    );
+  } finally {
+    await adminClient.query(`DROP OWNED BY ${roleIdentifier}`);
+    await adminClient.query(`DROP ROLE IF EXISTS ${roleIdentifier}`);
+  }
+}
+
+function platformAuthContext() {
+  return {
+    authenticated: true,
+    implementationStage: "M4",
+    organization: {
+      id: "00000000-0000-4000-8000-000000000101",
+      name: "Platform Operations",
+      slug: "platform-operations",
+      status: "active",
+    },
+    roleBindings: [
+      {
+        organizationId: "00000000-0000-4000-8000-000000000101",
+        role: "platform_operator",
+      },
+    ],
+    roles: ["platform_operator"],
+    session: {
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      id: "platform-session",
+      issuedAt: "2026-07-03T10:00:00.000Z",
+      mode: "server",
+      revokedAt: null,
+    },
+    token: "brs_platform_operator",
+    user: {
+      displayName: "Platform Operator",
+      id: "00000000-0000-4000-8000-000000000901",
+      organizationId: "00000000-0000-4000-8000-000000000101",
+      role: "platform_operator",
+      status: "active",
+      telegramUsername: "platform_operator",
+    },
+  };
 }

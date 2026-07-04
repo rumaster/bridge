@@ -225,6 +225,174 @@
         ]
       }
     },
+    "/api/v1/platform/organizations": {
+      "post": {
+        "operationId": "PlatformOrganizationsController_provisionOrganization_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProvisionOrganizationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Provision an organization tenant",
+        "tags": [
+          "platform"
+        ]
+      }
+    },
+    "/api/v1/platform/organizations/{id}/administrators": {
+      "post": {
+        "operationId": "PlatformOrganizationsController_createFirstAdministratorInvitation_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFirstAdministratorInvitationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create first Administrator invitation",
+        "tags": [
+          "platform"
+        ]
+      }
+    },
+    "/api/v1/platform/organizations/{id}/block": {
+      "post": {
+        "operationId": "PlatformOrganizationsController_blockOrganization_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizationResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Block an organization tenant",
+        "tags": [
+          "platform"
+        ]
+      }
+    },
+    "/api/v1/invitations": {
+      "post": {
+        "operationId": "InvitationsController_createInvitation_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInvitationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create an organization user invitation",
+        "tags": [
+          "invitations"
+        ]
+      }
+    },
+    "/api/v1/invitations/accept": {
+      "post": {
+        "operationId": "InvitationsController_acceptInvitation_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptInvitationDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationAcceptedSessionDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Accept a one-time invitation token and create first session",
+        "tags": [
+          "invitations"
+        ]
+      }
+    },
     "/api/v1/organizations/{id}": {
       "get": {
         "operationId": "OrganizationController_getOrganization_v1",
@@ -1351,6 +1519,31 @@
           "channel"
         ]
       },
+      "ProvisionOrganizationDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Acme Support"
+          },
+          "description": {
+            "type": "string",
+            "example": "Customer support tenant",
+            "nullable": true
+          },
+          "timezone": {
+            "type": "string",
+            "example": "Europe/Moscow"
+          },
+          "locale": {
+            "type": "string",
+            "example": "ru-RU"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
       "OrganizationResponseDto": {
         "type": "object",
         "properties": {
@@ -1400,6 +1593,180 @@
           "status",
           "createdAt",
           "updatedAt"
+        ]
+      },
+      "CreateFirstAdministratorInvitationDto": {
+        "type": "object",
+        "properties": {
+          "contactType": {
+            "type": "string",
+            "enum": [
+              "email",
+              "telegram"
+            ],
+            "example": "email"
+          },
+          "contactValue": {
+            "type": "string",
+            "example": "admin@example.bridge.local"
+          },
+          "displayName": {
+            "type": "string",
+            "example": "Tenant Admin"
+          },
+          "expiresInSeconds": {
+            "type": "number",
+            "example": 604800
+          }
+        },
+        "required": [
+          "contactType",
+          "contactValue"
+        ]
+      },
+      "InvitationResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000231"
+          },
+          "organizationId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000101"
+          },
+          "contactType": {
+            "type": "string",
+            "enum": [
+              "email",
+              "telegram"
+            ],
+            "example": "email"
+          },
+          "contactValue": {
+            "type": "string",
+            "example": "admin@example.bridge.local"
+          },
+          "roleCode": {
+            "type": "string",
+            "enum": [
+              "administrator",
+              "manager"
+            ],
+            "example": "administrator"
+          },
+          "expiresAt": {
+            "type": "string",
+            "example": "2026-07-10T10:00:00.000Z"
+          },
+          "acceptedAt": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "createdBy": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-07-03T10:00:00.000Z"
+          },
+          "token": {
+            "type": "string",
+            "example": "bri_xxx"
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "contactType",
+          "contactValue",
+          "roleCode",
+          "expiresAt",
+          "createdAt",
+          "token"
+        ]
+      },
+      "CreateInvitationDto": {
+        "type": "object",
+        "properties": {
+          "contactType": {
+            "type": "string",
+            "enum": [
+              "email",
+              "telegram"
+            ],
+            "example": "email"
+          },
+          "contactValue": {
+            "type": "string",
+            "example": "admin@example.bridge.local"
+          },
+          "displayName": {
+            "type": "string",
+            "example": "Tenant Admin"
+          },
+          "expiresInSeconds": {
+            "type": "number",
+            "example": 604800
+          },
+          "organizationId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000101"
+          },
+          "roleCode": {
+            "type": "string",
+            "enum": [
+              "administrator",
+              "manager"
+            ],
+            "example": "manager"
+          }
+        },
+        "required": [
+          "contactType",
+          "contactValue",
+          "organizationId"
+        ]
+      },
+      "AcceptInvitationDto": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "example": "bri_xxx"
+          },
+          "displayName": {
+            "type": "string",
+            "example": "Invited Manager"
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "InvitationAcceptedSessionDto": {
+        "type": "object",
+        "properties": {
+          "authenticated": {
+            "type": "boolean",
+            "example": true
+          },
+          "token": {
+            "type": "string",
+            "example": "brs_xxx"
+          },
+          "implementationStage": {
+            "type": "string",
+            "example": "M4"
+          }
+        },
+        "required": [
+          "authenticated",
+          "token",
+          "implementationStage"
         ]
       },
       "UpdateOrganizationDto": {

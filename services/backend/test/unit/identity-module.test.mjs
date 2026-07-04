@@ -12,7 +12,7 @@ describe("identity module skeleton", () => {
     }));
 
     assert.equal(identityModule.name, "identity");
-    assert.equal(identityModule.contractId, "C3.auth");
+    assert.equal(identityModule.contractId, "C3.auth/C3.platform/C3.users");
     assert.deepEqual(routes, [
       {
         method: "POST",
@@ -29,6 +29,26 @@ describe("identity module skeleton", () => {
       {
         method: "GET",
         path: "/api/v1/auth/session",
+      },
+      {
+        method: "POST",
+        path: "/api/v1/platform/organizations",
+      },
+      {
+        method: "POST",
+        path: "/api/v1/platform/organizations/:id/administrators",
+      },
+      {
+        method: "POST",
+        path: "/api/v1/platform/organizations/:id/block",
+      },
+      {
+        method: "POST",
+        path: "/api/v1/invitations",
+      },
+      {
+        method: "POST",
+        path: "/api/v1/invitations/accept",
       },
     ]);
   });
