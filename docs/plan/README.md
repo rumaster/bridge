@@ -750,6 +750,12 @@ Broadcast через ядро, Edge + VPN Tunnel и Notification в Web/Telegram
 точки согласования CP-6, CP-7 и CP-8) — в документе
 [parallel-stage-5-prompts.md](./parallel-stage-5-prompts.md).
 
+Шестая серия параллельных задач для стабилизации и приёмки — полный e2e-набор
+(§ 26.6), нагрузка/деградация (§ 25.11), безопасность (§ 23), RPO/RTO,
+документация (§ 28) и критерии приёмки (§ 29) с финальной заморозкой всех
+контрактов v1 (веха M5, точка согласования CP-9) — в документе
+[parallel-stage-6-prompts.md](./parallel-stage-6-prompts.md).
+
 | Сервис | План | Точки согласования |
 |--------|------|--------------------|
 | Data Platform | [01-data-platform.md](./services/01-data-platform.md) | все (поставщик схемы) |
