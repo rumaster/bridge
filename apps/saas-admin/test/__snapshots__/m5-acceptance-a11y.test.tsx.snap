@@ -1,0 +1,148 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`SaaS Administration M5 acceptance and accessibility > фиксирует информационную архитектуру ключевых экранов (визуальная регрессия структуры) 1`] = `
+{
+  "/broadcast": [
+    {
+      "level": 1,
+      "name": "Broadcast",
+    },
+    {
+      "level": 2,
+      "name": "Черновик кампании",
+    },
+    {
+      "level": 2,
+      "name": "Приветственная серия",
+    },
+    {
+      "level": 2,
+      "name": "Июльская акция",
+    },
+  ],
+  "/channels": [
+    {
+      "level": 1,
+      "name": "Каналы связи",
+    },
+    {
+      "level": 2,
+      "name": "Подключение Web Chat",
+    },
+    {
+      "level": 2,
+      "name": "Основной Web Chat",
+    },
+    {
+      "level": 3,
+      "name": "Журнал ошибок",
+    },
+    {
+      "level": 2,
+      "name": "Telegram Support",
+    },
+    {
+      "level": 3,
+      "name": "Журнал ошибок",
+    },
+  ],
+  "/knowledge": [
+    {
+      "level": 1,
+      "name": "Knowledge Base",
+    },
+    {
+      "level": 2,
+      "name": "Загрузка документа",
+    },
+    {
+      "level": 2,
+      "name": "FAQ возвратов",
+    },
+    {
+      "level": 2,
+      "name": "Регламент доставки",
+    },
+    {
+      "level": 2,
+      "name": "Прайс-лист",
+    },
+  ],
+  "/notifications": [
+    {
+      "level": 1,
+      "name": "Notification",
+    },
+    {
+      "level": 2,
+      "name": "Лента уведомлений",
+    },
+    {
+      "level": 3,
+      "name": "Кампания «Приветственная серия» завершена",
+    },
+    {
+      "level": 3,
+      "name": "Канал Telegram Support недоступен",
+    },
+    {
+      "level": 3,
+      "name": "Использовано 80% месячного лимита сообщений",
+    },
+    {
+      "level": 2,
+      "name": "Каналы доставки по категориям",
+    },
+  ],
+  "/onboarding": [
+    {
+      "level": 1,
+      "name": "AI Onboarding",
+    },
+    {
+      "level": 2,
+      "name": "Диалоговый помощник",
+    },
+    {
+      "level": 2,
+      "name": "Текущая конфигурация",
+    },
+  ],
+  "/organization": [
+    {
+      "level": 1,
+      "name": "Организация и конфигурация",
+    },
+  ],
+  "/overview": [
+    {
+      "level": 1,
+      "name": "Административная панель",
+    },
+  ],
+  "/users": [
+    {
+      "level": 1,
+      "name": "Пользователи и роли",
+    },
+  ],
+  "/workflow": [
+    {
+      "level": 1,
+      "name": "Workflow",
+    },
+    {
+      "level": 2,
+      "name": "Список Workflow",
+    },
+    {
+      "level": 2,
+      "name": "Автоответчик обращений",
+    },
+    {
+      "level": 2,
+      "name": "История исполнения",
+    },
+  ],
+}
+`;

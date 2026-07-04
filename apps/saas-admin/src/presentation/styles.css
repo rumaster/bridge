@@ -28,6 +28,48 @@ textarea {
   font: inherit;
 }
 
+/* Доступность: видимый фокус для клавиатурной навигации (ТЗ §21.8). */
+:focus-visible {
+  outline: 2px solid #116a7b;
+  outline-offset: 2px;
+}
+
+/* Ссылка «пропустить навигацию» — видна только при фокусе с клавиатуры. */
+.skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: #172331;
+  background: #78d7c9;
+  font-weight: 700;
+  text-decoration: none;
+  transform: translateY(-150%);
+  transition: transform 0.15s ease;
+}
+
+.skip-link:focus {
+  transform: translateY(0);
+}
+
+/* Уважаем настройку пользователя об уменьшении анимаций. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+#main-content:focus {
+  outline: none;
+}
+
 .admin-shell {
   display: grid;
   grid-template-columns: 264px minmax(0, 1fr);

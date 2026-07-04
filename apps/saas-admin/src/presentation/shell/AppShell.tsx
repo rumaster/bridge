@@ -44,6 +44,9 @@ export function AppShell() {
 
   return (
     <div className="admin-shell">
+      <a className="skip-link" href="#main-content">
+        Перейти к содержимому
+      </a>
       <aside className="sidebar">
         <div className="brand">
           <span className="brand-mark">SA</span>
@@ -74,7 +77,7 @@ export function AppShell() {
           </Button>
         </header>
 
-        <div className="workspace-content">
+        <div className="workspace-content" id="main-content" tabIndex={-1}>
           <Outlet />
         </div>
       </main>
