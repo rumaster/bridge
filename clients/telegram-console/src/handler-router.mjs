@@ -1,5 +1,11 @@
 import { createMockTelegramConsoleBackendApi } from "./mock-backend-api.mjs";
 import {
+  createBackoffPolicy,
+  defaultSleep,
+  executeWithRetries,
+  isRetryableTransientError,
+} from "./retry-policy.mjs";
+import {
   QUICK_REPLIES,
   createDialogKeyboard,
   createDialogsKeyboard,
@@ -22,15 +28,25 @@ import {
   TELEGRAM_CONSOLE_COMMANDS,
   TELEGRAM_CONSOLE_SCOPE,
 } from "./scope.mjs";
+import { createReliableTelegramApiAdapter } from "./telegram-delivery.mjs";
 
 const DEFAULT_LOGIN_CODE = "000000";
 const DEFAULT_WORKSPACE_URL = "https://manager.bridge.local";
+const DEFAULT_BACKEND_RETRY = Object.freeze({
+  baseDelayMs: 250,
+  factor: 2,
+  maxDelayMs: 2_000,
+  maxAttempts: 3,
+});
 
 export function createTelegramConsoleRouter({
   telegramApi,
   backendApi,
-  sessionStore = createTelegramConsoleSessionStore(),
   now = () => new Date().toISOString(),
+  sleep = defaultSleep,
+  sessionStore,
+  telegramDelivery = {},
+  backendRetry = {},
   aiAvailable = true,
   workspaceBaseUrl = DEFAULT_WORKSPACE_URL,
   loginCode = DEFAULT_LOGIN_CODE,
@@ -44,27 +60,46 @@ export function createTelegramConsoleRouter({
 
   const resolvedBackendApi =
     backendApi ?? createMockTelegramConsoleBackendApi({ now, aiAvailable });
+  const resolvedSessionStore = sessionStore ?? createTelegramConsoleSessionStore({ now });
+  const resolvedTelegramApi =
+    telegramDelivery === false
+      ? telegramApi
+      : createReliableTelegramApiAdapter({
+          telegramApi,
+          now: telegramDelivery.now ?? (() => Date.now()),
+          sleep: telegramDelivery.sleep ?? defaultSleep,
+          limits: telegramDelivery.limits,
+          backoff: telegramDelivery.backoff,
+        });
+  const backendRetryPolicy =
+    backendRetry === false
+      ? null
+      : resolveBackoffPolicy({ ...DEFAULT_BACKEND_RETRY, ...backendRetry });
 
   return {
     async handleUpdate(update) {
       if (isRecord(update?.message)) {
         return handleMessage({
           update,
-          telegramApi,
+          telegramApi: resolvedTelegramApi,
           backendApi: resolvedBackendApi,
-          sessionStore,
+          sessionStore: resolvedSessionStore,
           workspaceBaseUrl,
           loginCode,
+          backendRetryPolicy,
+          sleep,
         });
       }
 
       if (isRecord(update?.callback_query)) {
         return handleCallbackQuery({
           update,
-          telegramApi,
+          telegramApi: resolvedTelegramApi,
           backendApi: resolvedBackendApi,
-          sessionStore,
+          sessionStore: resolvedSessionStore,
           workspaceBaseUrl,
+          backendRetryPolicy,
+          sleep,
         });
       }
 
@@ -75,10 +110,12 @@ export function createTelegramConsoleRouter({
       return deliverTelegramNotification({
         chatId,
         notification,
-        telegramApi,
+        telegramApi: resolvedTelegramApi,
         backendApi: resolvedBackendApi,
-        sessionStore,
+        sessionStore: resolvedSessionStore,
         workspaceBaseUrl,
+        backendRetryPolicy,
+        sleep,
       });
     },
 
@@ -88,6 +125,12 @@ export function createTelegramConsoleRouter({
 
     getScope() {
       return TELEGRAM_CONSOLE_SCOPE;
+    },
+
+    getTelegramDeliveryMetrics() {
+      return typeof resolvedTelegramApi.getMetrics === "function"
+        ? resolvedTelegramApi.getMetrics()
+        : null;
     },
   };
 }
@@ -99,6 +142,8 @@ async function handleMessage({
   sessionStore,
   workspaceBaseUrl,
   loginCode,
+  backendRetryPolicy,
+  sleep,
 }) {
   const message = update.message;
   const command = parseTelegramCommand(message.text);
@@ -119,6 +164,8 @@ async function handleMessage({
       telegramApi,
       backendApi,
       sessionStore,
+      backendRetryPolicy,
+      sleep,
     });
   }
 
@@ -141,13 +188,41 @@ async function handleMessage({
     return ignoredRoute("command:unknown", { command });
   }
 
-  const activeConversationId = sessionStore.getActiveConversationId(message.chat.id);
-  if (activeConversationId && isNonEmptyString(message.text)) {
-    const session = await requireSession({
+  let activeConversationId = sessionStore.getActiveConversationId(message.chat.id);
+  let restoredSession = null;
+  if (
+    !activeConversationId &&
+    isNonEmptyString(message.text) &&
+    sessionStore.getSession(message.chat.id)
+  ) {
+    restoredSession = await requireSession({
       chatId: message.chat.id,
       telegramApi,
+      backendApi,
       sessionStore,
+      backendRetryPolicy,
+      sleep,
     });
+    if (restoredSession) {
+      activeConversationId = await restoreActiveConversation({
+        chatId: message.chat.id,
+        session: restoredSession,
+        backendApi,
+        sessionStore,
+      });
+    }
+  }
+
+  if (activeConversationId && isNonEmptyString(message.text)) {
+    const session =
+      (await requireSession({
+        chatId: message.chat.id,
+        telegramApi,
+        backendApi,
+        sessionStore,
+        backendRetryPolicy,
+        sleep,
+      })) ?? restoredSession;
     if (!session) {
       return authRequiredRoute("message:reply");
     }
@@ -161,6 +236,8 @@ async function handleMessage({
       telegramApi,
       backendApi,
       route: "message:reply",
+      backendRetryPolicy,
+      sleep,
     });
   }
 
@@ -173,6 +250,8 @@ async function handleCallbackQuery({
   backendApi,
   sessionStore,
   workspaceBaseUrl,
+  backendRetryPolicy,
+  sleep,
 }) {
   const callbackQuery = update.callback_query;
   const chatId = callbackQuery.message?.chat?.id;
@@ -198,6 +277,8 @@ async function handleCallbackQuery({
       telegramApi,
       backendApi,
       sessionStore,
+      backendRetryPolicy,
+      sleep,
     });
   }
 
@@ -231,6 +312,8 @@ async function handleCallbackQuery({
       backendApi,
       sessionStore,
       workspaceBaseUrl,
+      backendRetryPolicy,
+      sleep,
     });
   }
 
@@ -245,13 +328,23 @@ async function handleCallbackQuery({
       chatId,
       conversationId: replyConversationId,
       telegramApi,
+      backendApi,
       sessionStore,
+      backendRetryPolicy,
+      sleep,
     });
   }
 
   const quickReply = readQuickReply(data);
   if (quickReply) {
-    const session = await requireSession({ chatId, telegramApi, sessionStore });
+    const session = await requireSession({
+      chatId,
+      telegramApi,
+      backendApi,
+      sessionStore,
+      backendRetryPolicy,
+      sleep,
+    });
     if (!session) {
       return authRequiredRoute("callback:reply.quick");
     }
@@ -270,6 +363,8 @@ async function handleCallbackQuery({
       telegramApi,
       backendApi,
       route: "callback:reply.quick",
+      backendRetryPolicy,
+      sleep,
     });
   }
 
@@ -287,6 +382,8 @@ async function handleCallbackQuery({
       telegramApi,
       backendApi,
       sessionStore,
+      backendRetryPolicy,
+      sleep,
     });
   }
 
@@ -301,17 +398,35 @@ async function handleCallbackQuery({
 async function linkAccount({ update, telegramApi, backendApi, sessionStore, loginCode }) {
   const message = update.message;
   const telegramUsername = message.from?.username;
-  const start = await backendApi.auth.startTelegramLogin({
-    telegram_username: telegramUsername,
-    telegram_user: normalizeTelegramUser(message.from),
-    chat_id: message.chat.id,
-  });
-  const session = await backendApi.auth.verifyTelegramLogin({
-    request_id: start.request_id,
-    code: loginCode,
-    telegram_user: normalizeTelegramUser(message.from),
-    chat_id: message.chat.id,
-  });
+  let start;
+  let session;
+  try {
+    start = await backendApi.auth.startTelegramLogin({
+      telegram_username: telegramUsername,
+      telegram_user: normalizeTelegramUser(message.from),
+      chat_id: message.chat.id,
+    });
+    session = await backendApi.auth.verifyTelegramLogin({
+      request_id: start.request_id,
+      code: loginCode,
+      telegram_user: normalizeTelegramUser(message.from),
+      chat_id: message.chat.id,
+    });
+  } catch (error) {
+    sessionStore.revokeSession(message.chat.id, "auth-denied");
+    await telegramApi.sendMessage({
+      chat_id: message.chat.id,
+      text: "Telegram-аккаунт не привязан к менеджеру Bridge. Доступ к диалогам не выдан.",
+    });
+
+    return {
+      route: "command:start",
+      status: "auth_denied",
+      reason: error instanceof Error ? error.message : "account linking denied",
+      blocks_m0_gate: false,
+      blocks_cp1: false,
+    };
+  }
 
   sessionStore.setSession(message.chat.id, session);
 
@@ -333,19 +448,51 @@ async function linkAccount({ update, telegramApi, backendApi, sessionStore, logi
   });
 }
 
-async function listDialogs({ chatId, telegramApi, backendApi, sessionStore }) {
-  const session = await requireSession({ chatId, telegramApi, sessionStore });
+async function listDialogs({
+  chatId,
+  telegramApi,
+  backendApi,
+  sessionStore,
+  backendRetryPolicy,
+  sleep,
+}) {
+  const session = await requireSession({
+    chatId,
+    telegramApi,
+    backendApi,
+    sessionStore,
+    backendRetryPolicy,
+    sleep,
+  });
   if (!session) {
     return authRequiredRoute("command:dialogs");
   }
 
-  const conversations = await backendApi.conversations.list();
-  const cards = await Promise.all(
-    conversations.map(async (conversation) => ({
-      conversation,
-      client: await backendApi.clients.get(conversation.client_id),
-    })),
-  );
+  let conversations;
+  let cards;
+  try {
+    conversations = await executeBackendOperation({
+      backendRetryPolicy,
+      sleep,
+      operation: () => backendApi.conversations.list(),
+    });
+    cards = await Promise.all(
+      conversations.map(async (conversation) => ({
+        conversation,
+        client: await executeBackendOperation({
+          backendRetryPolicy,
+          sleep,
+          operation: () => backendApi.clients.get(conversation.client_id),
+        }),
+      })),
+    );
+  } catch (error) {
+    await telegramApi.sendMessage({
+      chat_id: chatId,
+      text: "Backend временно недоступен. Повторите просмотр диалогов позже.",
+    });
+    return degradedRoute("command:dialogs", "C3", error);
+  }
 
   await telegramApi.sendMessage({
     chat_id: chatId,
@@ -366,18 +513,56 @@ async function openDialog({
   backendApi,
   sessionStore,
   workspaceBaseUrl,
+  backendRetryPolicy,
+  sleep,
 }) {
-  const session = await requireSession({ chatId, telegramApi, sessionStore });
+  const session = await requireSession({
+    chatId,
+    telegramApi,
+    backendApi,
+    sessionStore,
+    backendRetryPolicy,
+    sleep,
+  });
   if (!session) {
     return authRequiredRoute("callback:dialog.open");
   }
 
-  const conversation = await backendApi.conversations.get(conversationId);
-  const [client, messages] = await Promise.all([
-    backendApi.clients.get(conversation.client_id),
-    backendApi.conversations.listMessages(conversationId),
-  ]);
-  sessionStore.setActiveConversation(chatId, conversationId);
+  let conversation;
+  let client;
+  let messages;
+  try {
+    conversation = await executeBackendOperation({
+      backendRetryPolicy,
+      sleep,
+      operation: () => backendApi.conversations.get(conversationId),
+    });
+    [client, messages] = await Promise.all([
+      executeBackendOperation({
+        backendRetryPolicy,
+        sleep,
+        operation: () => backendApi.clients.get(conversation.client_id),
+      }),
+      executeBackendOperation({
+        backendRetryPolicy,
+        sleep,
+        operation: () => backendApi.conversations.listMessages(conversationId),
+      }),
+    ]);
+  } catch (error) {
+    await telegramApi.sendMessage({
+      chat_id: chatId,
+      text: "Backend временно недоступен. Историю диалога сейчас открыть нельзя.",
+    });
+    return degradedRoute("callback:dialog.open", "C3", error);
+  }
+  await persistActiveConversation({
+    chatId,
+    conversationId,
+    session,
+    backendApi,
+    sessionStore,
+  });
 
   await telegramApi.sendMessage({
     chat_id: chatId,
@@ -397,13 +582,34 @@ async function openDialog({
   });
 }
 
-async function promptReply({ chatId, conversationId, telegramApi, sessionStore }) {
-  const session = await requireSession({ chatId, telegramApi, sessionStore });
+async function promptReply({
+  chatId,
+  conversationId,
+  telegramApi,
+  backendApi,
+  sessionStore,
+  backendRetryPolicy,
+  sleep,
+}) {
+  const session = await requireSession({
+    chatId,
+    telegramApi,
+    backendApi,
+    sessionStore,
+    backendRetryPolicy,
+    sleep,
+  });
   if (!session) {
     return authRequiredRoute("callback:reply.prompt");
   }
 
-  sessionStore.setActiveConversation(chatId, conversationId);
+  await persistActiveConversation({
+    chatId,
+    conversationId,
+    session,
+    backendApi,
+    sessionStore,
+  });
   await telegramApi.sendMessage({
     chat_id: chatId,
     text: renderReplyPrompt(conversationId),
@@ -424,18 +630,38 @@ async function sendManagerReply({
   telegramApi,
   backendApi,
   route,
+  backendRetryPolicy,
+  sleep,
 }) {
   const idempotencyKey = createReplyIdempotencyKey({ chatId, telegramMessageId, conversationId });
-  const message = await backendApi.messages.create({
-    idempotency_key: idempotencyKey,
-    organization_id: session.organization.id,
-    conversation_id: conversationId,
-    sender_type: "manager",
-    type: "text",
-    content: {
-      text,
-    },
-  });
+  let message;
+  try {
+    message = await executeBackendOperation({
+      backendRetryPolicy,
+      sleep,
+      operation: () =>
+        backendApi.messages.create({
+          idempotency_key: idempotencyKey,
+          organization_id: session.organization.id,
+          conversation_id: conversationId,
+          sender_type: "manager",
+          type: "text",
+          content: {
+            text,
+          },
+        }),
+    });
+  } catch (error) {
+    await telegramApi.sendMessage({
+      chat_id: chatId,
+      text: "Backend временно недоступен. Ответ не подтверждён, повтор будет безопасен по idempotency_key.",
+    });
+    return {
+      ...degradedRoute(route, "C3.messages", error),
+      idempotency_key: idempotencyKey,
+      retry_safe: true,
+    };
+  }
 
   await telegramApi.sendMessage({
     chat_id: chatId,
@@ -455,8 +681,17 @@ async function requestAiSuggestion({
   telegramApi,
   backendApi,
   sessionStore,
+  backendRetryPolicy,
+  sleep,
 }) {
-  const session = await requireSession({ chatId, telegramApi, sessionStore });
+  const session = await requireSession({
+    chatId,
+    telegramApi,
+    backendApi,
+    sessionStore,
+    backendRetryPolicy,
+    sleep,
+  });
   if (!session) {
     return authRequiredRoute(`callback:ai.${mode}`);
   }
@@ -515,6 +750,8 @@ async function deliverTelegramNotification({
   backendApi,
   sessionStore,
   workspaceBaseUrl,
+  backendRetryPolicy,
+  sleep,
 }) {
   if (!notification.channels?.includes("telegram")) {
     return ignoredRoute("notification:telegram", {
@@ -523,17 +760,25 @@ async function deliverTelegramNotification({
     });
   }
 
-  const session = await requireSession({ chatId, telegramApi, sessionStore });
+  const session = await requireSession({
+    chatId,
+    telegramApi,
+    backendApi,
+    sessionStore,
+    backendRetryPolicy,
+    sleep,
+  });
   if (!session) {
     return authRequiredRoute("notification:telegram");
   }
 
   const conversationId = notification.payload?.conversation_id;
-  const conversation = conversationId
-    ? await backendApi.conversations.get(conversationId)
-    : null;
-  const clientId = notification.payload?.client_id ?? conversation?.client_id;
-  const client = clientId ? await backendApi.clients.get(clientId) : null;
+  const { conversation, client, degradedReason } = await readNotificationContext({
+    notification,
+    backendApi,
+    backendRetryPolicy,
+    sleep,
+  });
 
   await telegramApi.sendMessage({
     chat_id: chatId,
@@ -548,18 +793,42 @@ async function deliverTelegramNotification({
 
   return {
     route: "notification:telegram",
-    status: "delivered",
+    status: degradedReason ? "delivered_degraded" : "delivered",
     notification_id: notification.id,
     conversation_id: conversationId,
+    degraded_reason: degradedReason,
     blocks_m0_gate: false,
     blocks_cp1: false,
   };
 }
 
-async function requireSession({ chatId, telegramApi, sessionStore }) {
+async function requireSession({
+  chatId,
+  telegramApi,
+  backendApi,
+  sessionStore,
+  backendRetryPolicy,
+  sleep,
+}) {
   const session = sessionStore.getSession(chatId);
   if (session) {
-    return session;
+    if (typeof backendApi?.auth?.getSession !== "function") {
+      return session;
+    }
+
+    try {
+      return await executeBackendOperation({
+        backendRetryPolicy,
+        sleep,
+        operation: () => backendApi.auth.getSession({ token: session.token }),
+      });
+    } catch (error) {
+      if (isSessionEndedError(error)) {
+        sessionStore.revokeSession(chatId, "backend-session-ended");
+      } else {
+        return session;
+      }
+    }
   }
 
   if (Number.isInteger(chatId)) {
@@ -570,6 +839,98 @@ async function requireSession({ chatId, telegramApi, sessionStore }) {
   }
 
   return null;
+}
+
+async function persistActiveConversation({
+  chatId,
+  conversationId,
+  session,
+  backendApi,
+  sessionStore,
+}) {
+  sessionStore.setActiveConversation(chatId, conversationId);
+  if (typeof backendApi?.telegramConsole?.setActiveConversation !== "function") {
+    return null;
+  }
+
+  try {
+    return await backendApi.telegramConsole.setActiveConversation({
+      session_token: session.token,
+      conversation_id: conversationId,
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function restoreActiveConversation({ chatId, session, backendApi, sessionStore }) {
+  if (typeof backendApi?.telegramConsole?.getActiveConversation !== "function") {
+    return null;
+  }
+
+  try {
+    const state = await backendApi.telegramConsole.getActiveConversation({
+      session_token: session.token,
+    });
+    if (isNonEmptyString(state?.conversation_id)) {
+      sessionStore.setActiveConversation(chatId, state.conversation_id);
+      return state.conversation_id;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+async function readNotificationContext({ notification, backendApi, backendRetryPolicy, sleep }) {
+  const conversationId = notification.payload?.conversation_id;
+
+  try {
+    const conversation = conversationId
+      ? await executeBackendOperation({
+          backendRetryPolicy,
+          sleep,
+          operation: () => backendApi.conversations.get(conversationId),
+        })
+      : null;
+    const clientId = notification.payload?.client_id ?? conversation?.client_id;
+    const client = clientId
+      ? await executeBackendOperation({
+          backendRetryPolicy,
+          sleep,
+          operation: () => backendApi.clients.get(clientId),
+        })
+      : null;
+
+    return { conversation, client, degradedReason: null };
+  } catch (error) {
+    return {
+      conversation: null,
+      client: null,
+      degradedReason: error instanceof Error ? error.message : "Backend unavailable",
+    };
+  }
+}
+
+async function executeBackendOperation({ operation, backendRetryPolicy, sleep }) {
+  if (!backendRetryPolicy) {
+    return operation();
+  }
+
+  return executeWithRetries({
+    operation,
+    backoff: backendRetryPolicy,
+    sleep,
+    isRetryable: isRetryableTransientError,
+  });
+}
+
+function resolveBackoffPolicy(backoff) {
+  if (backoff && typeof backoff.delayForAttempt === "function") {
+    return backoff;
+  }
+  return createBackoffPolicy(backoff);
 }
 
 function readCallbackSuffix(data, prefix) {
@@ -669,6 +1030,22 @@ function authRequiredRoute(route) {
     blocks_m0_gate: false,
     blocks_cp1: false,
   };
+}
+
+function degradedRoute(route, degradedContract, error) {
+  return {
+    route,
+    status: "degraded",
+    degraded_contract: degradedContract,
+    reason: error instanceof Error ? error.message : "temporary backend failure",
+    blocks_m0_gate: false,
+    blocks_cp1: false,
+  };
+}
+
+function isSessionEndedError(error) {
+  const status = Number(error?.status ?? error?.statusCode ?? error?.error_code);
+  return status === 401 || status === 403 || status === 404;
 }
 
 function ignoredRoute(route, extra = {}) {

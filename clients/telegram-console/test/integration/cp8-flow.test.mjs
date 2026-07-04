@@ -8,11 +8,22 @@ import {
 } from "../../src/index.mjs";
 
 const fixedNow = () => "2026-07-03T22:40:00.000Z";
+const noTelegramWaits = Object.freeze({
+  limits: Object.freeze({
+    globalIntervalMs: 0,
+    perChatIntervalMs: 0,
+    groupChatIntervalMs: 0,
+  }),
+});
 
 describe("Telegram Console CP-8 flow", () => {
   it("links a manager, lists dialogs and opens history through Backend C3 mocks", async () => {
     const telegramApi = createMockTelegramApiAdapter({ now: fixedNow });
-    const router = createTelegramConsoleRouter({ telegramApi, now: fixedNow });
+    const router = createTelegramConsoleRouter({
+      telegramApi,
+      now: fixedNow,
+      telegramDelivery: noTelegramWaits,
+    });
 
     await router.handleUpdate(startUpdate());
     const dialogs = await router.handleUpdate({
@@ -41,7 +52,11 @@ describe("Telegram Console CP-8 flow", () => {
 
   it("renders C10 telegram notification cards with CP-8 action buttons", async () => {
     const telegramApi = createMockTelegramApiAdapter({ now: fixedNow });
-    const router = createTelegramConsoleRouter({ telegramApi, now: fixedNow });
+    const router = createTelegramConsoleRouter({
+      telegramApi,
+      now: fixedNow,
+      telegramDelivery: noTelegramWaits,
+    });
     await router.handleUpdate(startUpdate());
 
     const result = await router.deliverNotification({
@@ -77,7 +92,11 @@ describe("Telegram Console CP-8 flow", () => {
 
   it("requires account linking before notification cards call Backend C3", async () => {
     const telegramApi = createMockTelegramApiAdapter({ now: fixedNow });
-    const router = createTelegramConsoleRouter({ telegramApi, now: fixedNow });
+    const router = createTelegramConsoleRouter({
+      telegramApi,
+      now: fixedNow,
+      telegramDelivery: noTelegramWaits,
+    });
 
     const result = await router.deliverNotification({
       chatId: 1001,
@@ -92,7 +111,11 @@ describe("Telegram Console CP-8 flow", () => {
 
   it("sends manager replies through C3.messages with stable idempotency", async () => {
     const telegramApi = createMockTelegramApiAdapter({ now: fixedNow });
-    const router = createTelegramConsoleRouter({ telegramApi, now: fixedNow });
+    const router = createTelegramConsoleRouter({
+      telegramApi,
+      now: fixedNow,
+      telegramDelivery: noTelegramWaits,
+    });
     await router.handleUpdate(startUpdate());
     await router.handleUpdate(callbackUpdate("callback-reply", "reply.prompt:conv-1"));
 
@@ -134,6 +157,7 @@ describe("Telegram Console CP-8 flow", () => {
       telegramApi,
       now: fixedNow,
       aiAvailable: false,
+      telegramDelivery: noTelegramWaits,
     });
     await router.handleUpdate(startUpdate());
     const ai = await router.handleUpdate(callbackUpdate("callback-ai", "ai.reply:conv-1"));

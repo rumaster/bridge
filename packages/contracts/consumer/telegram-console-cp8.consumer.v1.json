@@ -1,8 +1,25 @@
 {
   "x-contract-id": "CP8.telegram-console.consumer",
   "x-consumer": "SVC-TGC",
-  "x-stage": "M4",
+  "x-stage": "M5",
   "upstream_contracts": ["C3.auth", "C3", "C4", "C10"],
+  "m5_hardening": {
+    "telegram_delivery": {
+      "queue": true,
+      "throttling": ["global", "private_chat", "group_chat"],
+      "retry_after": true,
+      "backoff": true
+    },
+    "backend_resilience": {
+      "messageRetryKeepsIdempotencyKey": true,
+      "activeConversationRestoredFromBackend": true,
+      "notificationsDegradeWhenBackendContextFails": true
+    },
+    "account_security": {
+      "verifyTelegramAccountOwnership": true,
+      "revokeAccessWhenSessionEnds": true
+    }
+  },
   "interactions": [
     {
       "name": "start Telegram login",
@@ -155,6 +172,6 @@
     }
   ],
   "out_of_scope": {
-    "deferred_to_m5": ["telegram rate limits", "mass notification throttling"]
+    "deferred_to_m5": []
   }
 }
