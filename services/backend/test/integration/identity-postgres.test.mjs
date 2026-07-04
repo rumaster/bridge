@@ -79,7 +79,11 @@ describe("identity M1 PostgreSQL integration", { timeout: 300_000 }, () => {
     assert.equal(start.status, 202);
 
     const loginCodeRows = await client.query(
-      "SELECT code_hash, consumed_at, attempt_count, locked_until FROM login_codes WHERE id = $1",
+      `
+        SELECT code_hash, consumed_at, attempt_count, locked_until, organization_id, purpose, user_id
+        FROM login_codes
+        WHERE id = $1
+      `,
       [start.body.requestId],
     );
 
@@ -89,6 +93,31 @@ describe("identity M1 PostgreSQL integration", { timeout: 300_000 }, () => {
     assert.equal(loginCodeRows.rows[0].consumed_at, null);
     assert.equal(loginCodeRows.rows[0].attempt_count, 0);
     assert.equal(loginCodeRows.rows[0].locked_until, null);
+    assert.equal(loginCodeRows.rows[0].purpose, "telegram_login");
+
+    await client.query(
+      `
+        INSERT INTO login_codes (
+          id,
+          user_id,
+          organization_id,
+          code_hash,
+          purpose,
+          expires_at,
+          created_at
+        )
+        VALUES (
+          '10000000-0000-4000-8000-000000000951',
+          $1,
+          $2,
+          'sha256:reserved-email-login-test',
+          'email_login',
+          '2026-07-03T10:05:00.000Z',
+          '2026-07-03T10:00:00.000Z'
+        )
+      `,
+      [loginCodeRows.rows[0].user_id, loginCodeRows.rows[0].organization_id],
+    );
 
     const verify = await service.verifyTelegramLogin({
       requestId: start.body.requestId,

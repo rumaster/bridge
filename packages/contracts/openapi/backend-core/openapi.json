@@ -1357,6 +1357,37 @@
         ]
       }
     },
+    "/api/v1/users/{id}/sessions": {
+      "get": {
+        "operationId": "UserController_listUserSessions_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserSessionListResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List active sessions for a user in tenant scope",
+        "tags": [
+          "users"
+        ]
+      }
+    },
     "/api/v1/users/{id}": {
       "patch": {
         "operationId": "UserController_patchUser_v1",
@@ -1426,6 +1457,28 @@
         "summary": "Revoke active sessions for a user in tenant scope",
         "tags": [
           "users"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "operationId": "AuthSessionController_logout_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutSessionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Logout current server session",
+        "tags": [
+          "auth"
         ]
       }
     },
@@ -3026,6 +3079,82 @@
           "displayName"
         ]
       },
+      "UserSessionResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000901"
+          },
+          "userId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000201"
+          },
+          "organizationId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000101"
+          },
+          "issuedAt": {
+            "type": "string",
+            "example": "2026-07-03T10:00:00.000Z"
+          },
+          "expiresAt": {
+            "type": "string",
+            "example": "2026-07-03T18:00:00.000Z"
+          },
+          "revokedAt": {
+            "type": "string",
+            "example": null,
+            "nullable": true
+          },
+          "ip": {
+            "type": "string",
+            "example": "127.0.0.1",
+            "nullable": true
+          },
+          "userAgent": {
+            "type": "string",
+            "example": "Mozilla/5.0",
+            "nullable": true
+          },
+          "current": {
+            "type": "boolean",
+            "example": false
+          }
+        },
+        "required": [
+          "id",
+          "userId",
+          "organizationId",
+          "issuedAt",
+          "expiresAt",
+          "current"
+        ]
+      },
+      "UserSessionListResponseDto": {
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000201"
+          },
+          "organizationId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000101"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UserSessionResponseDto"
+            }
+          }
+        },
+        "required": [
+          "userId",
+          "organizationId",
+          "items"
+        ]
+      },
       "PatchUserDto": {
         "type": "object",
         "properties": {
@@ -3081,6 +3210,28 @@
           "userId",
           "organizationId",
           "revokedCount"
+        ]
+      },
+      "LogoutSessionResponseDto": {
+        "type": "object",
+        "properties": {
+          "loggedOut": {
+            "type": "boolean",
+            "example": true
+          },
+          "sessionMode": {
+            "type": "string",
+            "example": "server"
+          },
+          "implementationStage": {
+            "type": "string",
+            "example": "M1"
+          }
+        },
+        "required": [
+          "loggedOut",
+          "sessionMode",
+          "implementationStage"
         ]
       },
       "OnboardingApplyDto": {
