@@ -1,0 +1,90 @@
+{
+  "x-gate": "CP-8",
+  "x-stage": "M4",
+  "x-status": "complete",
+  "frozen_at": "2026-07-04",
+  "scope": {
+    "services": [
+      "SVC-NOTIF(notification-platform)",
+      "SVC-CORE/SVC-BCAST/SVC-AI/SVC-FBP/SVC-API/SVC-IDN/SVC-DATA (producers)",
+      "SVC-MWS(manager-workspace)",
+      "SVC-TGC(telegram-console)"
+    ],
+    "scenarios": [
+      "Notification: генерация продюсером и доставка в Web + Telegram Console (CP-8)"
+    ],
+    "invariants": [
+      "notifications are produced only via notification.triggered producer events, never written by producers directly",
+      "SVC-NOTIF is the single owner of notification.created (C7.NotificationCreatedEvent)",
+      "producer_service_id is restricted to the sanctioned producer allow-list",
+      "cross-service dedup by dedupe_key drops replayed producer triggers without duplicate notifications",
+      "delivery respects per-recipient channel subscriptions — a disabled channel is never delivered",
+      "web feed and Telegram Console consume the same frozen C10 notification, never divergent payloads",
+      "notifications are tenant-isolated by organization_id and scoped to recipient_user_id",
+      "notification.created and notification.triggered event schemas are frozen at v1 (additionalProperties:false)"
+    ]
+  },
+  "contracts": [
+    {
+      "id": "C10",
+      "version": "1.0.0",
+      "owner": "SVC-NOTIF",
+      "status": "stable_for_m5",
+      "surface": [
+        { "method": "get", "path": "/notifications" },
+        { "method": "post", "path": "/notifications/{id}:read" },
+        { "method": "get", "path": "/notifications/settings" },
+        { "method": "put", "path": "/notifications/settings" },
+        { "contract": "C10.Notification" },
+        { "contract": "C10.NotificationTriggerEvent", "event": "notification.triggered" }
+      ],
+      "artifacts": [
+        "packages/contracts/src/c10.mjs",
+        "packages/contracts/events/notification-trigger.schema.json",
+        "packages/contracts/openapi/notifications/c10.notifications.openapi.json",
+        "services/notification-platform/src/server.mjs",
+        "services/notification-platform/src/notification-routing.mjs",
+        "services/notification-platform/src/channel-adapters.mjs",
+        "services/notification-platform/src/c10-dto.mjs"
+      ],
+      "evidence": [
+        "tests/contract/c10-notification-contract.test.mjs",
+        "tests/contract/manager-workspace-c10-consumer.test.mjs",
+        "tests/contract/telegram-console-cp8-consumer.test.mjs",
+        "tests/e2e/notification-subscriptions-cp8.test.mjs",
+        "tests/e2e/telegram-console-cp8.test.mjs",
+        "tests/e2e/facades-cp6-cp8.test.mjs",
+        "services/notification-platform/test/unit/c10-dto.test.mjs",
+        "services/notification-platform/test/integration/notification-delivery.test.mjs",
+        "services/notification-platform/test/integration/notification-server.test.mjs"
+      ]
+    },
+    {
+      "id": "C7.notification.created",
+      "version": "1.0.0",
+      "owner": "SVC-NOTIF",
+      "status": "stable_for_m5",
+      "surface": [
+        { "contract": "C7.NotificationCreatedEvent", "event": "notification.created" }
+      ],
+      "artifacts": [
+        "packages/contracts/src/c10.mjs",
+        "packages/contracts/events/notification-created.schema.json"
+      ],
+      "evidence": [
+        "tests/contract/c10-notification-contract.test.mjs",
+        "tests/contract/manager-workspace-c10-consumer.test.mjs",
+        "tests/e2e/notification-subscriptions-cp8.test.mjs"
+      ]
+    }
+  ],
+  "m5_readiness": {
+    "stable_contracts": ["C10", "C7.notification.created"],
+    "stable_data_surfaces": ["notifications", "notification_settings"],
+    "next_scope": [
+      "Тонкие настройки уведомлений (частота, digest, muting)",
+      "Дополнительные каналы доставки и приоритезация",
+      "Приёмка CP-9 и нагрузочные пробы ленты уведомлений"
+    ]
+  }
+}

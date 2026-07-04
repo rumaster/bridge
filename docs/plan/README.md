@@ -532,6 +532,34 @@ outbox готовы как стабильная база M4. Готовност�
 Broadcast CP-6, Edge/VPN/буфер CP-7, Notification CP-8, Mobile API, Telegram
 Console и фасады broadcast/notification.
 
+**Статус CP-6/CP-7/CP-8 (M4-99, 2026-07-04).** Интеграционный gate M4 выполнен:
+на CP-6 заморожен C8 (Broadcast) в сопряжении с C1/C2, на CP-7 — C9 (Edge↔App
+tunnel) в сопряжении с C1, на CP-8 — C10 (Notification) и схема C7-события
+`notification.created`. Машинно-читаемые freeze-артефакты:
+`packages/contracts/cp6-cp7-freeze.v1.json` (C1/C2/C8/C9 как `stable_for_m5`) и
+`packages/contracts/cp8-freeze.v1.json` (C10 и `notification.created` как
+`stable_for_m5`); оба скреплены gate-тестом
+`tests/contract/m4-gate-freeze.test.mjs`. Проверки CP-6 покрывают e2e «Broadcast:
+доставка кампании» и contract BCAST↔CORE (`m4-core-cp6-cp7.contract.test.mjs`,
+`c8-broadcast-contract.test.mjs`, `int-delivery-attempts-cp6.test.mjs`). Проверки
+CP-7 покрывают e2e «Потеря соединения» и «Edge Cluster» и contract EDGE↔CORE
+(`edge-cluster-c9-cp7.contract.test.mjs`, `edge-core-c9-c7.contract.test.mjs`).
+Проверки CP-8 покрывают e2e «Notification в Web + Telegram» и contract
+«продюсеры↔NOTIF» и NOTIF↔MWS/TGC (`c10-notification-contract.test.mjs`,
+`manager-workspace-c10-consumer.test.mjs`, `telegram-console-cp8-consumer.test.mjs`).
+Сквозные инварианты gate: сквозной `idempotency_key = message_id` на всех
+переходах (клиент→Edge→буфер→Core→Adapter) без дублей; восстановление порядка по
+`(endpoint_id, sequence_number)` в рамках Endpoint; доставка кампаний и
+уведомлений только через единый механизм ядра (C1/C2 для Broadcast,
+единственный владелец `notification.created` — SVC-NOTIF); RF-first размещение
+ПДн (буфер Edge в БД РФ-контура); RLS-изоляция арендаторов по `organization_id`;
+доставка уведомления учитывает подписки на каналы (отключённый канал не
+доставляется). Готовность M5: стабильные C1/C2/C8/C9/C10 и
+`notification.created`, данные `messages`, `message_delivery_attempts`,
+`broadcast_messages`, `edge_message_buffer`, `notifications`; следующий scope
+M5 — нагрузка/деградация, отказоустойчивость Edge и RPO/RTO, полнота
+OpenAPI/версионирование, тонкие настройки уведомлений и приёмка CP-9.
+
 ## 6.1 Граф зависимостей вех (упрощённо)
 
 ```text

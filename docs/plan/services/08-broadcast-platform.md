@@ -215,6 +215,18 @@ SVC-MWS). SVC-BCAST использует их так:
 - **DoD.** Кампания идёт через единый механизм ядра; повторный запуск не создаёт
   дублей; статистика корректна; добавлены contract- и e2e-тесты (мастер §9.4, CP-6).
 
+**Статус реализации M4 (M4-99).** M4 Broadcast завершён для CP-6: запуск кампании
+генерирует канонические C8-черновики (`C8.BroadcastCoreDeliveryDraft`) и доставляет
+их **строго через C1/C2 ядра** (`sender_type = broadcast`, `idempotency_key =
+message_id`), не обходя SVC-CORE; связь `broadcast_messages ↔ messages`
+фиксируется на каждой доставке, повторный запуск дедуплицируется. Контракт **C8**
+заморожен как `stable_for_m5` в `packages/contracts/cp6-cp7-freeze.v1.json`
+(скреплено `tests/contract/m4-gate-freeze.test.mjs`). Покрытие: contract
+`tests/contract/m4-core-cp6-cp7.contract.test.mjs`,
+`tests/contract/c8-broadcast-contract.test.mjs`,
+`tests/contract/int-delivery-attempts-cp6.test.mjs`; e2e
+`tests/e2e/broadcast-cp6.test.mjs`, `tests/e2e/broadcast-delivery-cp6.test.mjs`.
+
 ### M5 — Нагрузка и устойчивость
 
 - **Цель.** Крупные кампании под нагрузкой, устойчивость к отказам адаптеров,

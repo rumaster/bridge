@@ -209,6 +209,22 @@ SVC-NOTIF использует их так:
 - **DoD.** Все каналы §15.4 подключены; отключённые подписки не доставляются;
   дублей нет; NFR ≤ 1 с соблюдён (мастер §9.4).
 
+**Статус реализации M4 (M4-99).** M4 Notification завершён для CP-8: продюсеры
+(`SVC-CORE/SVC-BCAST/SVC-AI/SVC-FBP/SVC-API/SVC-IDN/SVC-DATA`) публикуют
+`notification.triggered`, а SVC-NOTIF — **единственный владелец**
+`notification.created` (C7) — формирует уведомление, дедуплицирует повторные
+триггеры по `dedupe_key` и доставляет только по включённым подпискам
+(категория × канал), одинаковый C10-payload идёт в Web (SVC-MWS) и Telegram
+Console (SVC-TGC). Контракты **C10** и схема **`notification.created`** заморожены
+как `stable_for_m5` в `packages/contracts/cp8-freeze.v1.json` (скреплено
+`tests/contract/m4-gate-freeze.test.mjs`). Покрытие: contract
+`tests/contract/c10-notification-contract.test.mjs`,
+`tests/contract/manager-workspace-c10-consumer.test.mjs`,
+`tests/contract/telegram-console-cp8-consumer.test.mjs`; e2e
+`tests/e2e/notification-subscriptions-cp8.test.mjs`,
+`tests/e2e/telegram-console-cp8.test.mjs`; unit/integration
+`services/notification-platform/test/**`.
+
 ### M5 — Тонкие настройки, устойчивость, приоритеты категорий
 
 - **Цель.** Стабильная доставка и точные пользовательские настройки.

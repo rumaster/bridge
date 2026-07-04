@@ -287,6 +287,14 @@ Integration: против мок-C10/WS (MSW). **E2E (Playwright): «Notificatio
 SVC-MWS для M4 пуста). Возможны мелкие правки UI под нужды смежных сервисов (BCAST/
 EDGE) и стабилизация; отдельного сквозного результата этап не даёт.
 
+**Статус реализации M4 (M4-99).** На интеграционном gate CP-8 web-потребитель C10
+подтверждён без изменений: SVC-MWS отображает `notification.created` в ленте и
+отмечает прочтение по замороженному C10. Контракты C10/`notification.created`
+зафиксированы `stable_for_m5` (`packages/contracts/cp8-freeze.v1.json`, скреплено
+`tests/contract/m4-gate-freeze.test.mjs`). Покрытие CP-8 web-части:
+`tests/contract/manager-workspace-c10-consumer.test.mjs`,
+`tests/e2e/notification-subscriptions-cp8.test.mjs`.
+
 ### M5 — Приёмка, производительность, полировка
 
 **Цель.** Приёмочная готовность рабочего места (мастер-план §5, M5; CP-9).

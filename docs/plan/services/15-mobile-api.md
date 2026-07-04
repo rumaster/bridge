@@ -204,6 +204,15 @@ e2e) · DoD (единый — мастер §9.4). Основная работа
   клиент РФ ходит через Edge; e2e «Потеря соединения» зелёный; идемпотентность/изоляция
   арендатора соблюдены (мастер §9.4).
 
+**Статус реализации M4 (M4-99).** M4 Mobile API завершён для CP-7: клиенты РФ
+ходят через Edge Cluster/VPN Tunnel, оффлайн→онлайн синхронизация по курсорам без
+потерь/дублей, идемпотентная отправка (`idempotency_key = message_id`) и push из
+C10. Контракт **C9** (Edge↔App tunnel) в сопряжении с C1 заморожен `stable_for_m5`
+(`packages/contracts/cp6-cp7-freeze.v1.json`, скреплено
+`tests/contract/m4-gate-freeze.test.mjs`). Покрытие: e2e
+`tests/e2e/mobile-connection-loss-cp7.test.mjs`, `tests/e2e/edge-cluster-cp7.test.mjs`;
+contract `tests/contract/mobile-api-contract.test.mjs`.
+
 ### M5 — Независимое версионирование §19.6, приёмка, производительность, устойчивость
 
 - **Цель.** Совместимость версий мобильного API, целевая производительность и
