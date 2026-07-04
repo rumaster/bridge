@@ -616,6 +616,78 @@
         ]
       }
     },
+    "/api/v1/auth/session": {
+      "get": {
+        "operationId": "TelegramAuthController_getSession_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Return the current authenticated session",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/login/telegram/start": {
+      "post": {
+        "operationId": "TelegramAuthController_startTelegramLogin_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelegramLoginStartDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramLoginStartResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Start a Telegram login and deliver a one-time code",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/login/telegram/verify": {
+      "post": {
+        "operationId": "TelegramAuthController_verifyTelegramLogin_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TelegramLoginVerifyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Verify a Telegram login code and create a session",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/organizations/{id}": {
       "get": {
         "operationId": "OrganizationController_getOrganization_v1",
@@ -2279,6 +2351,90 @@
           "authenticated",
           "token",
           "implementationStage"
+        ]
+      },
+      "TelegramLoginStartDto": {
+        "type": "object",
+        "properties": {
+          "telegramUsername": {
+            "type": "string",
+            "example": "seeded_admin"
+          }
+        },
+        "required": [
+          "telegramUsername"
+        ]
+      },
+      "TelegramLoginStartResponseDto": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "code_delivery_scheduled"
+          },
+          "delivery": {
+            "type": "string",
+            "example": "telegram"
+          },
+          "deliveryChannel": {
+            "type": "string",
+            "example": "telegram"
+          },
+          "telegramUsername": {
+            "type": "string",
+            "example": "seeded_admin"
+          },
+          "requestId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000401"
+          },
+          "expiresAt": {
+            "type": "string",
+            "example": "2026-07-04T10:05:00.000Z"
+          },
+          "expiresInSeconds": {
+            "type": "number",
+            "example": 300
+          },
+          "implementationStage": {
+            "type": "string",
+            "example": "M1"
+          },
+          "note": {
+            "type": "string",
+            "example": "telegram_bot_not_configured",
+            "nullable": true
+          }
+        },
+        "required": [
+          "status",
+          "delivery",
+          "deliveryChannel",
+          "telegramUsername",
+          "requestId",
+          "expiresAt",
+          "expiresInSeconds",
+          "implementationStage"
+        ]
+      },
+      "TelegramLoginVerifyDto": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "example": "123456"
+          },
+          "requestId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000401"
+          },
+          "telegramUsername": {
+            "type": "string",
+            "example": "seeded_admin"
+          }
+        },
+        "required": [
+          "code"
         ]
       },
       "UpdateOrganizationDto": {

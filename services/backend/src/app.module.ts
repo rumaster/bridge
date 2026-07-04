@@ -21,6 +21,7 @@ import { IdentityM4Module } from "./modules/identity/identity-m4.module";
 import { IntegrationGatewayModule } from "./modules/integration-gateway/integration-gateway.module";
 import { NotificationFacadeModule } from "./modules/notification-facade/notification-facade.module";
 import { OrganizationModule } from "./modules/organization/organization.module";
+import { TelegramAuthModule } from "./modules/identity/telegram-auth.module";
 import { UserModule } from "./modules/user/user.module";
 
 @Module({
@@ -30,6 +31,7 @@ import { UserModule } from "./modules/user/user.module";
     HealthModule,
     IntegrationGatewayModule,
     IdentityM4Module,
+    TelegramAuthModule,
     OrganizationModule,
     ConfigurationModule,
     ClientModule,
