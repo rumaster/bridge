@@ -19,10 +19,12 @@ import { FbpIntegrationModule } from "./modules/fbp-integration/fbp-integration.
 import { HealthModule } from "./modules/health/health.module";
 import { IdentityM4Module } from "./modules/identity/identity-m4.module";
 import { IntegrationGatewayModule } from "./modules/integration-gateway/integration-gateway.module";
+import { KnowledgeBaseModule } from "./modules/knowledge-base/knowledge-base.module";
 import { NotificationFacadeModule } from "./modules/notification-facade/notification-facade.module";
 import { OrganizationModule } from "./modules/organization/organization.module";
 import { TelegramAuthModule } from "./modules/identity/telegram-auth.module";
 import { UserModule } from "./modules/user/user.module";
+import { WorkflowModule } from "./modules/workflow/workflow.module";
 
 @Module({
   imports: [
@@ -30,6 +32,7 @@ import { UserModule } from "./modules/user/user.module";
     AuthModule,
     HealthModule,
     IntegrationGatewayModule,
+    KnowledgeBaseModule,
     IdentityM4Module,
     TelegramAuthModule,
     OrganizationModule,
@@ -41,6 +44,7 @@ import { UserModule } from "./modules/user/user.module";
     FbpIntegrationModule,
     BroadcastFacadeModule,
     NotificationFacadeModule,
+    WorkflowModule,
     BackendApiModule,
   ],
   providers: [

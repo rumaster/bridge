@@ -692,6 +692,162 @@
         ]
       }
     },
+    "/api/v1/knowledge/documents": {
+      "get": {
+        "operationId": "KnowledgeBaseController_listDocuments_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KnowledgeDocumentResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Knowledge Base documents in tenant scope",
+        "tags": [
+          "knowledge"
+        ]
+      },
+      "post": {
+        "operationId": "KnowledgeBaseController_createDocument_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateKnowledgeDocumentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeDocumentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create a Knowledge Base document placeholder",
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/api/v1/knowledge/documents/{id}": {
+      "patch": {
+        "operationId": "KnowledgeBaseController_updateDocument_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateKnowledgeDocumentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeDocumentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Update a Knowledge Base document",
+        "tags": [
+          "knowledge"
+        ]
+      },
+      "delete": {
+        "operationId": "KnowledgeBaseController_deleteDocument_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteKnowledgeDocumentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Delete a Knowledge Base document",
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
+    "/api/v1/knowledge/documents/{id}:reindex": {
+      "post": {
+        "operationId": "KnowledgeBaseController_reindexDocument_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReindexKnowledgeDocumentResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Queue a Knowledge Base document for reindexing",
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
     "/api/v1/platform/organizations": {
       "post": {
         "operationId": "PlatformOrganizationsController_provisionOrganization_v1",
@@ -1554,6 +1710,218 @@
         ]
       }
     },
+    "/api/v1/workflows": {
+      "get": {
+        "operationId": "WorkflowController_listWorkflows_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "List tenant Workflow definitions",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
+    "/api/v1/workflows/{workflowId}/versions": {
+      "get": {
+        "operationId": "WorkflowController_listVersions_v1",
+        "parameters": [
+          {
+            "name": "workflowId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowVersionResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "List immutable Workflow versions",
+        "tags": [
+          "workflows"
+        ]
+      },
+      "post": {
+        "operationId": "WorkflowController_createVersion_v1",
+        "parameters": [
+          {
+            "name": "workflowId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWorkflowVersionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowVersionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create an immutable Workflow version",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
+    "/api/v1/workflows/{workflowId}": {
+      "patch": {
+        "operationId": "WorkflowController_updateWorkflow_v1",
+        "parameters": [
+          {
+            "name": "workflowId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWorkflowDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Update Workflow status/default version",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
+    "/api/v1/workflows/{workflowId}/instances": {
+      "get": {
+        "operationId": "WorkflowController_listInstances_v1",
+        "parameters": [
+          {
+            "name": "workflowId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowInstanceResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Workflow execution instances",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
+    "/api/v1/workflows/{workflowId}/instances/{instanceId}": {
+      "get": {
+        "operationId": "WorkflowController_getInstance_v1",
+        "parameters": [
+          {
+            "name": "workflowId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "instanceId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowInstanceDetailResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read Workflow execution instance details",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
     "/api/v1/ai/onboarding:apply": {
       "post": {
         "operationId": "BackendApiController_applyOnboarding_v1",
@@ -2370,6 +2738,148 @@
         },
         "required": [
           "settings"
+        ]
+      },
+      "KnowledgeDocumentResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000701"
+          },
+          "organization_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000101"
+          },
+          "title": {
+            "type": "string",
+            "example": "FAQ возвратов"
+          },
+          "source": {
+            "type": "object",
+            "example": "manual://returns",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "failed",
+              "indexed",
+              "indexing"
+            ],
+            "example": "indexed"
+          },
+          "indexed_at": {
+            "type": "object",
+            "example": "2026-07-04T10:02:00.000Z",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "example": "2026-07-04T10:01:00.000Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "example": "2026-07-04T10:02:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "title",
+          "status",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "CreateKnowledgeDocumentDto": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000101"
+          },
+          "title": {
+            "type": "string",
+            "example": "FAQ возвратов"
+          },
+          "source": {
+            "type": "string",
+            "example": "manual://returns"
+          },
+          "file_name": {
+            "type": "string",
+            "example": "returns.md"
+          },
+          "content_type": {
+            "type": "string",
+            "example": "text/markdown"
+          },
+          "size_bytes": {
+            "type": "number",
+            "example": 4096,
+            "minimum": 0
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "UpdateKnowledgeDocumentDto": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "example": "FAQ возвратов"
+          },
+          "source": {
+            "type": "string",
+            "example": "manual://returns"
+          }
+        }
+      },
+      "ReindexKnowledgeDocumentResponseDto": {
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "example": true
+          },
+          "document_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000701"
+          },
+          "status": {
+            "type": "string",
+            "example": "indexing"
+          },
+          "queued_at": {
+            "type": "string",
+            "example": "2026-07-04T10:02:00.000Z"
+          }
+        },
+        "required": [
+          "accepted",
+          "document_id",
+          "status",
+          "queued_at"
+        ]
+      },
+      "DeleteKnowledgeDocumentResponseDto": {
+        "type": "object",
+        "properties": {
+          "deleted": {
+            "type": "boolean",
+            "example": true
+          },
+          "document_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000701"
+          }
+        },
+        "required": [
+          "deleted",
+          "document_id"
         ]
       },
       "ProvisionOrganizationDto": {
@@ -3438,6 +3948,290 @@
           "loggedOut",
           "sessionMode",
           "implementationStage"
+        ]
+      },
+      "WorkflowResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000801"
+          },
+          "organization_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000101"
+          },
+          "name": {
+            "type": "string",
+            "example": "Распределение обращений"
+          },
+          "description": {
+            "type": "string",
+            "example": ""
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "active",
+              "archived"
+            ],
+            "example": "active"
+          },
+          "enabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "default_version_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000811"
+          },
+          "created_at": {
+            "type": "string",
+            "example": "2026-07-04T10:03:00.000Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "example": "2026-07-04T10:04:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "name",
+          "description",
+          "status",
+          "enabled",
+          "default_version_id",
+          "created_at",
+          "updated_at"
+        ]
+      },
+      "WorkflowVersionResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000811"
+          },
+          "organization_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000101"
+          },
+          "workflow_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000801"
+          },
+          "version_no": {
+            "type": "number",
+            "example": 1
+          },
+          "schema": {
+            "type": "object"
+          },
+          "created_by": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000201"
+          },
+          "created_at": {
+            "type": "string",
+            "example": "2026-07-04T10:04:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "workflow_id",
+          "version_no",
+          "schema",
+          "created_by",
+          "created_at"
+        ]
+      },
+      "CreateWorkflowVersionDto": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "type": "object"
+          },
+          "activate": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "schema"
+        ]
+      },
+      "UpdateWorkflowDto": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "active",
+              "archived"
+            ],
+            "example": "active"
+          },
+          "default_version_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000811"
+          }
+        }
+      },
+      "WorkflowInstanceResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000821"
+          },
+          "organization_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000101"
+          },
+          "workflow_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000801"
+          },
+          "workflow_version_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000811"
+          },
+          "version_no": {
+            "type": "number",
+            "example": 1
+          },
+          "status": {
+            "type": "string",
+            "example": "running"
+          },
+          "started_at": {
+            "type": "object",
+            "nullable": true
+          },
+          "finished_at": {
+            "type": "object",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "example": "2026-07-04T10:05:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "workflow_id",
+          "workflow_version_id",
+          "version_no",
+          "status",
+          "created_at"
+        ]
+      },
+      "WorkflowInstanceLogEntryDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000831"
+          },
+          "node_id": {
+            "type": "object",
+            "nullable": true
+          },
+          "node_type": {
+            "type": "string",
+            "enum": [
+              "backend_api_call",
+              "llm_call",
+              "kb_search",
+              "branch",
+              "transform",
+              "wait_event"
+            ]
+          },
+          "event": {
+            "type": "string",
+            "example": "node.started"
+          },
+          "message": {
+            "type": "string",
+            "example": "Node started"
+          },
+          "created_at": {
+            "type": "string",
+            "example": "2026-07-04T10:05:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "event",
+          "message",
+          "created_at"
+        ]
+      },
+      "WorkflowInstanceDetailResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000821"
+          },
+          "organization_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000101"
+          },
+          "workflow_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000801"
+          },
+          "workflow_version_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000811"
+          },
+          "version_no": {
+            "type": "number",
+            "example": 1
+          },
+          "status": {
+            "type": "string",
+            "example": "running"
+          },
+          "started_at": {
+            "type": "object",
+            "nullable": true
+          },
+          "finished_at": {
+            "type": "object",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "example": "2026-07-04T10:05:00.000Z"
+          },
+          "logs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowInstanceLogEntryDto"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "workflow_id",
+          "workflow_version_id",
+          "version_no",
+          "status",
+          "created_at",
+          "logs"
         ]
       },
       "OnboardingApplyDto": {

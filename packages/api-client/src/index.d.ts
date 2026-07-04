@@ -1,11 +1,15 @@
 export const DEFAULT_API_BASE_URL: "/api/v1";
 
 export type Fetcher = typeof fetch;
+export type JsonApiDefaultHeaders =
+  | HeadersInit
+  | (() => HeadersInit | Promise<HeadersInit> | undefined)
+  | undefined;
 
 export interface JsonApiClientOptions {
   baseUrl?: string;
   fetcher?: Fetcher;
-  defaultHeaders?: HeadersInit;
+  defaultHeaders?: JsonApiDefaultHeaders;
   origin?: string;
 }
 

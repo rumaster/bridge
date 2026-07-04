@@ -23,9 +23,10 @@ export function createJsonApiClient(options = {}) {
     },
     async requestJson(path, init = {}) {
       const url = resolveApiUrl(baseUrl, path, origin);
+      const resolvedDefaultHeaders = await resolveDefaultHeaders(defaultHeaders);
       const response = await fetcher(url, {
         ...init,
-        headers: buildHeaders(defaultHeaders, init),
+        headers: buildHeaders(resolvedDefaultHeaders, init),
       });
 
       if (!response.ok) {
@@ -47,6 +48,14 @@ export function createJsonApiClient(options = {}) {
       return readResponseBody(response);
     },
   };
+}
+
+async function resolveDefaultHeaders(defaultHeaders) {
+  if (typeof defaultHeaders === "function") {
+    return defaultHeaders();
+  }
+
+  return defaultHeaders;
 }
 
 export function resolveApiUrl(baseUrl, path, origin = getDefaultOrigin()) {
