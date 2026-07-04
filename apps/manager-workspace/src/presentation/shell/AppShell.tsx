@@ -2,16 +2,18 @@ import { Bell, Inbox, LogIn, LogOut, MessageSquare } from "lucide-react";
 import { NavLink, Outlet } from "react-router-dom";
 
 import { useAuth } from "../../state/auth";
+import { useNotifications } from "../../state/notifications";
 import { Badge, Button } from "../../shared/ui-kit";
 
 const navItems = [
   { to: "/queue", label: "Очередь", icon: Inbox },
   { to: "/dialogs/conv-1", label: "Диалог", icon: MessageSquare },
-  { to: "/notifications", label: "Уведомления", icon: Bell }
+  { to: "/notifications", label: "Уведомления", icon: Bell, showUnread: true }
 ];
 
 export function AppShell() {
   const { logout, session, status } = useAuth();
+  const { unreadCount } = useNotifications();
 
   return (
     <div className="app-shell">
@@ -22,10 +24,18 @@ export function AppShell() {
         </div>
 
         <nav aria-label="Рабочее место менеджера" className="nav-list">
-          {navItems.map(({ to, label, icon: Icon }) => (
+          {navItems.map(({ to, label, icon: Icon, showUnread }) => (
             <NavLink className="nav-link" key={to} to={to}>
               <Icon aria-hidden="true" size={18} />
               <span>{label}</span>
+              {showUnread && unreadCount > 0 ? (
+                <span
+                  aria-label={`Непрочитанных уведомлений: ${unreadCount}`}
+                  className="nav-badge"
+                >
+                  {unreadCount}
+                </span>
+              ) : null}
             </NavLink>
           ))}
         </nav>

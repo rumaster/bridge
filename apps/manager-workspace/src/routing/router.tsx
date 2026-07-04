@@ -8,6 +8,7 @@ import {
 import type { RouteObject } from "react-router-dom";
 
 import { AppShell } from "../presentation/shell/AppShell";
+import { NotificationsProvider } from "../state/notifications";
 import { ManagerWorkspaceProviders } from "../state/workspace";
 import type { ManagerWorkspaceServices } from "../state/workspace";
 
@@ -53,7 +54,11 @@ function createRoutes(services?: ManagerWorkspaceServices): RouteObject[] {
           element: <LoginPage />
         },
         {
-          element: <AppShell />,
+          element: (
+            <NotificationsProvider>
+              <AppShell />
+            </NotificationsProvider>
+          ),
           children: [
             {
               path: "queue",
