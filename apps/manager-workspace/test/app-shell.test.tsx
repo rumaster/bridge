@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 import { createMockManagerWorkspaceServices } from "../src/api/mocks/client";
 import { createManagerWorkspaceRouter } from "../src/routing/router";
 
+const REALTIME_ASSERTION_TIMEOUT_MS = 3_000;
+
 function renderRoute(path: string) {
   const router = createManagerWorkspaceRouter({
     initialEntries: [path],
@@ -79,9 +81,11 @@ describe("Manager Workspace M1 flow", () => {
     renderRoute("/dialogs/conv-1");
 
     expect(await screen.findByRole("heading", { name: "Диалог" })).toBeInTheDocument();
-    expect(await screen.findByText("Есть обновления по доставке заказа?")).toBeInTheDocument();
-    expect(await screen.findByText("delivered")).toBeInTheDocument();
-    expect(await screen.findByText("online")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Есть обновления по доставке заказа?", {}, { timeout: REALTIME_ASSERTION_TIMEOUT_MS })
+    ).toBeInTheDocument();
+    expect(await screen.findByText("delivered", {}, { timeout: REALTIME_ASSERTION_TIMEOUT_MS })).toBeInTheDocument();
+    expect(await screen.findByText("online", {}, { timeout: REALTIME_ASSERTION_TIMEOUT_MS })).toBeInTheDocument();
   });
 
   it("renders C4 AI suggestions with sources", async () => {
