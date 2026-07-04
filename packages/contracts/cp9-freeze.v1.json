@@ -76,9 +76,10 @@
       ],
       "evidence": [
         "packages/contracts/message-model/message-model.test.mjs",
-        "services/backend/test/unit/communication-core.m1.test.mjs",
-        "tests/contract/m4-core-cp6-cp7.contract.test.mjs",
-        "tests/integration/communication-core-m5.test.mjs"
+        "services/backend/test/unit/message-status.spec.ts",
+        "services/backend/test/unit/internal-messaging.dto.spec.ts",
+        "services/backend/test/integration/internal-messaging.spec.ts",
+        "tests/e2e/backend-dist-communication-core.test.mjs"
       ]
     },
     {
@@ -98,11 +99,11 @@
         "packages/contracts/json-schema/c2-egress-delivery.schema.json"
       ],
       "evidence": [
-        "tests/contract/int-core.m1.contract.test.mjs",
+        "tests/contract/int-core.c2.contract.test.mjs",
         "tests/contract/int-core-m2-adapters.contract.test.mjs",
         "tests/contract/int-core-c2-c6.test.mjs",
-        "tests/e2e/web-chat-cp1.test.mjs",
-        "tests/e2e/telegram-cp2.test.mjs"
+        "services/backend/test/integration/internal-messaging.spec.ts",
+        "tests/e2e/backend-dist-communication-core.test.mjs"
       ]
     },
     {
@@ -185,7 +186,7 @@
       "evidence": [
         "tests/contract/c5-fbp-contract.test.mjs",
         "tests/contract/c5-fbp-node-catalog.test.mjs",
-        "tests/e2e/workflow-cp4.test.mjs",
+        "tests/e2e/workflow-engine-cp4-cp5.test.mjs",
         "tests/e2e/workflow-fbp-m5-cp9.test.mjs"
       ]
     },
@@ -244,8 +245,8 @@
       ],
       "evidence": [
         "tests/contract/c8-broadcast-contract.test.mjs",
-        "tests/contract/m4-core-cp6-cp7.contract.test.mjs",
-        "tests/e2e/broadcast-cp6.test.mjs",
+        "tests/contract/int-delivery-attempts-cp6.test.mjs",
+        "tests/e2e/backend-dist-communication-core.test.mjs",
         "tests/e2e/broadcast-delivery-cp6.test.mjs"
       ]
     },
@@ -266,11 +267,11 @@
         "packages/contracts/src/c9.mjs"
       ],
       "evidence": [
-        "tests/contract/edge-cluster-c9-cp7.contract.test.mjs",
         "tests/contract/edge-core-c9-c7.contract.test.mjs",
-        "tests/e2e/edge-cluster-cp7.test.mjs",
-        "tests/e2e/edge-connection-loss-cp7.test.mjs",
-        "tests/e2e/edge-resilience-cp9.test.mjs",
+        "services/edge-gateway/test/unit/edge-cluster.test.mjs",
+        "services/edge-gateway/test/integration/mock-edge-gateway.test.mjs",
+        "tests/e2e/backend-dist-communication-core.test.mjs",
+        "tests/e2e/mobile-connection-loss-cp7.test.mjs",
         "tests/integration/edge-message-buffer-store.test.mjs"
       ]
     },
@@ -365,7 +366,7 @@
       "spec": "ТЗ §25.3",
       "evidence": [
         "tests/integration/data-platform.test.mjs",
-        "tests/e2e/edge-resilience-cp9.test.mjs",
+        "tests/integration/edge-message-buffer-store.test.mjs",
         "docs/operations/data-platform-backup-restore.md"
       ]
     }

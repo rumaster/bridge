@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
-import { createServer } from "node:net";
+import { createHmac } from "node:crypto";
 import { once } from "node:events";
+import { createServer as createHttpServer } from "node:http";
+import { createServer as createNetServer } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { test } from "node:test";
 
@@ -26,6 +28,13 @@ const EDGE_CONVERSATION = "21000000-0000-4000-8000-000000000502";
 const EDGE_MESSAGE = "21000000-0000-4000-8000-000000000601";
 const BROADCAST_ID = "21000000-0000-4000-8000-000000000701";
 const BROADCAST_MESSAGE = "21000000-0000-4000-8000-000000000602";
+const PUBLIC_INGRESS_MESSAGE = "21000000-0000-4000-8000-000000000603";
+const PUBLIC_OUTBOUND_MESSAGE = "21000000-0000-4000-8000-000000000604";
+const MANAGER_USER = "21000000-0000-4000-8000-000000000201";
+const MANAGER_SESSION = "21000000-0000-4000-8000-000000000901";
+const MANAGER_TOKEN = "brs_backend_dist_manager";
+const AUTH_HASH_SECRET = "backend-dist-e2e-secret";
+const MANAGER_ROLE = "21000000-0000-4000-8000-000000000801";
 
 test(
   "dist/main.js handles M4/M5 internal communication-core paths",
@@ -47,18 +56,42 @@ test(
       .start();
     const databaseUrl = connectionString(container);
     let backend;
+    let egressServer;
+    const egressDeliveries = [];
 
     try {
       runRootScript("scripts/db-migrate.mjs", ["up"], databaseUrl);
       await seedFixtures(databaseUrl);
+
+      egressServer = createHttpServer(async (request, response) => {
+        if (request.method !== "POST" || request.url !== "/internal/egress/deliveries") {
+          response.statusCode = 404;
+          response.end();
+          return;
+        }
+
+        const chunks = [];
+        for await (const chunk of request) {
+          chunks.push(chunk);
+        }
+        egressDeliveries.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+        response.writeHead(202, { "content-type": "application/json" });
+        response.end(JSON.stringify({ accepted: true, duplicate: false }));
+      });
+      const egressBaseUrl = await listenHttp(egressServer);
 
       const port = await getAvailablePort();
       backend = spawn(process.execPath, ["services/backend/dist/main.js"], {
         cwd: process.cwd(),
         env: {
           ...process.env,
+          AUTH_HASH_SECRET,
           DATABASE_URL: databaseUrl,
+          INTEGRATION_EGRESS_URL: `${egressBaseUrl}/internal/egress/deliveries`,
           PORT: String(port),
+          TELEGRAM_LOGIN_RATE_LIMIT_WINDOW_SECONDS: "60",
+          TELEGRAM_LOGIN_START_RATE_LIMIT: "2",
+          TELEGRAM_LOGIN_VERIFY_RATE_LIMIT: "2",
         },
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -70,6 +103,53 @@ test(
         output += chunk.toString();
       });
       await waitForHttp(`http://127.0.0.1:${port}/health`, backend, () => output);
+
+      const publicIngress = await postJson(
+        `http://127.0.0.1:${port}/internal/ingress/messages`,
+        publicIngressEnvelope(),
+      );
+      assert.equal(publicIngress.status, 202);
+      assert.equal(publicIngress.body.status, "routed");
+      assert.equal(publicIngress.body.conversation_id, CONVERSATION);
+
+      const conversations = await getJson(
+        `http://127.0.0.1:${port}/api/v1/conversations`,
+        authHeaders(),
+      );
+      assert.equal(conversations.status, 200);
+      assert.equal(conversations.body.items.some((item) => item.id === CONVERSATION), true);
+
+      const messages = await getJson(
+        `http://127.0.0.1:${port}/api/v1/conversations/${CONVERSATION}/messages`,
+        authHeaders(),
+      );
+      assert.equal(messages.status, 200);
+      assert.equal(messages.body.items.some((item) => item.id === PUBLIC_INGRESS_MESSAGE), true);
+
+      const outbound = await postJson(
+        `http://127.0.0.1:${port}/api/v1/messages`,
+        {
+          id: PUBLIC_OUTBOUND_MESSAGE,
+          conversationId: CONVERSATION,
+          endpointId: ENDPOINT,
+          content: { text: "dist manager reply" },
+        },
+        authHeaders({ "idempotency-key": PUBLIC_OUTBOUND_MESSAGE }),
+      );
+      assert.equal(outbound.status, 201);
+      assert.equal(outbound.body.id, PUBLIC_OUTBOUND_MESSAGE);
+      assert.equal(outbound.body.status, "routed");
+
+      const egress = await postJson(
+        `http://127.0.0.1:${port}/internal/egress/messages`,
+        { organization_id: ORG, message_id: PUBLIC_OUTBOUND_MESSAGE, adapter: "web-chat" },
+      );
+      assert.equal(egress.status, 202);
+      assert.equal(egress.body.status, "sent");
+      assert.equal(egress.body.forwarded, true);
+      assert.equal(egressDeliveries.length, 1);
+      assert.equal(egressDeliveries[0].contract, "C2.EgressDelivery");
+      assert.equal(egressDeliveries[0].message.message_id, PUBLIC_OUTBOUND_MESSAGE);
 
       const edge = await postJson(
         `http://127.0.0.1:${port}/internal/edge/tunnel/messages`,
@@ -95,14 +175,67 @@ test(
         await metrics.text(),
         /bridge_backend_communication_core_ingress_total\{result="all"\}/,
       );
+
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        const start = await postJson(
+          `http://127.0.0.1:${port}/api/v1/auth/login/telegram/start`,
+          { telegramUsername: "dist_manager" },
+        );
+        assert.equal(start.status, 202);
+      }
+      const limitedStart = await postJson(
+        `http://127.0.0.1:${port}/api/v1/auth/login/telegram/start`,
+        { telegramUsername: "dist_manager" },
+      );
+      assert.equal(limitedStart.status, 429);
+      assert.equal(limitedStart.body.code, "TOO_MANY_REQUESTS");
+
+      const missingRequestId = "21000000-0000-4000-8000-000000000999";
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        const verify = await postJson(
+          `http://127.0.0.1:${port}/api/v1/auth/login/telegram/verify`,
+          { code: "000000", requestId: missingRequestId },
+        );
+        assert.equal(verify.status, 401);
+      }
+      const limitedVerify = await postJson(
+        `http://127.0.0.1:${port}/api/v1/auth/login/telegram/verify`,
+        { code: "000000", requestId: missingRequestId },
+      );
+      assert.equal(limitedVerify.status, 429);
+      assert.equal(limitedVerify.body.code, "TOO_MANY_REQUESTS");
     } finally {
       if (backend) {
         await stopProcess(backend);
+      }
+      if (egressServer) {
+        await closeHttp(egressServer);
       }
       await container.stop();
     }
   },
 );
+
+function publicIngressEnvelope() {
+  return {
+    contract: "C2.IngressMessage",
+    version: "1.0.0",
+    idempotency_key: PUBLIC_INGRESS_MESSAGE,
+    received_at: "2026-07-04T09:59:59.000Z",
+    message: {
+      message_id: PUBLIC_INGRESS_MESSAGE,
+      organization_id: ORG,
+      channel_id: "dist-bot",
+      channel_type: "telegram",
+      external_message_id: "dist-public-ingress-1",
+      conversation_ref: "dist-room",
+      sender_ref: "client-1",
+      direction: "inbound",
+      content: { type: "text", text: "dist public ingress" },
+      occurred_at: "2026-07-04T09:59:59.000Z",
+    },
+  };
+}
 
 function edgeTunnelMessage() {
   return {
@@ -196,10 +329,43 @@ async function seedFixtures(databaseUrl) {
     await client.query("SELECT set_config('app.is_platform_operator', 'true', false)");
     await client.query(
       `
+        INSERT INTO roles (id, code, scope, description)
+        VALUES ($1, 'manager', 'organization', 'Dist e2e manager')
+        ON CONFLICT (code) DO UPDATE SET id = EXCLUDED.id, scope = EXCLUDED.scope
+      `,
+      [MANAGER_ROLE],
+    );
+    await client.query(
+      `
         INSERT INTO organizations (id, name, description, timezone, locale, status)
         VALUES ($1, 'Dist tenant', 'dist e2e fixture', 'UTC', 'ru-RU', 'active')
       `,
       [ORG],
+    );
+    await client.query(
+      `
+        INSERT INTO users (
+          id, organization_id, telegram_username, telegram_id, email, display_name, status
+        )
+        VALUES ($1, $2, 'dist_manager', '555000222', NULL, 'Dist Manager', 'active')
+      `,
+      [MANAGER_USER, ORG],
+    );
+    await client.query(
+      `
+        INSERT INTO user_roles (user_id, role_id, organization_id)
+        VALUES ($1, $2, $3)
+      `,
+      [MANAGER_USER, MANAGER_ROLE, ORG],
+    );
+    await client.query(
+      `
+        INSERT INTO auth_sessions (
+          id, user_id, organization_id, token_hash, issued_at, expires_at
+        )
+        VALUES ($1, $2, $3, $4, '2026-07-04T09:00:00.000Z', '2030-07-04T17:00:00.000Z')
+      `,
+      [MANAGER_SESSION, MANAGER_USER, ORG, hashSessionToken(MANAGER_TOKEN)],
     );
     await client.query(
       "INSERT INTO clients (id, organization_id, display_name) VALUES ($1, $2, 'Dist Client')",
@@ -229,7 +395,7 @@ async function seedFixtures(databaseUrl) {
 }
 
 async function getAvailablePort() {
-  const server = createServer();
+  const server = createNetServer();
   await new Promise((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, "127.0.0.1", resolve);
@@ -240,6 +406,22 @@ async function getAvailablePort() {
   });
 
   return port;
+}
+
+async function listenHttp(server) {
+  await new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", resolve);
+  });
+  const address = server.address();
+
+  return `http://127.0.0.1:${address.port}`;
+}
+
+async function closeHttp(server) {
+  await new Promise((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+  });
 }
 
 async function waitForHttp(url, child, getOutput) {
@@ -262,10 +444,19 @@ async function waitForHttp(url, child, getOutput) {
   throw new Error(`Backend dist server did not become ready. Output:\n${getOutput()}`);
 }
 
-async function postJson(url, body) {
+async function getJson(url, headers = {}) {
+  const response = await fetch(url, { headers });
+
+  return {
+    status: response.status,
+    body: await response.json(),
+  };
+}
+
+async function postJson(url, body, headers = {}) {
   const response = await fetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
 
@@ -273,6 +464,20 @@ async function postJson(url, body) {
     status: response.status,
     body: await response.json(),
   };
+}
+
+function authHeaders(extra = {}) {
+  return {
+    authorization: `Bearer ${MANAGER_TOKEN}`,
+    "x-organization-id": ORG,
+    ...extra,
+  };
+}
+
+function hashSessionToken(token) {
+  return `sha256:${createHmac("sha256", AUTH_HASH_SECRET)
+    .update(`auth_session:server:${token}`)
+    .digest("hex")}`;
 }
 
 async function stopProcess(child) {

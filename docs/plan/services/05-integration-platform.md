@@ -190,7 +190,8 @@ adapter_capabilities(                       -- Capability Model (ТЗ §10.6), �
 нормализует inbound в C2 Ingress, принимает C2 Egress с обязательным
 `conversation_ref`, публикует C6 capabilities и проверен unit/integration-тестами
 `services/integration-platform/test/**`, contract-тестом
-`tests/contract/int-core-c2-c6.test.mjs` и e2e `tests/e2e/web-chat-cp1.test.mjs`.
+`tests/contract/int-core-c2-c6.test.mjs` и production backend e2e
+`tests/e2e/backend-dist-communication-core.test.mjs`.
 
 ### 5.3 M2 — адаптеры Telegram/Email/SMS/VK/MAX/WhatsApp + наполнение Capability Model
 

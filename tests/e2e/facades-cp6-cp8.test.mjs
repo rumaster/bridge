@@ -9,7 +9,6 @@ import {
   validateNotificationCreatedEvent,
 } from "../../packages/contracts/src/c10.mjs";
 import { createBroadcastPlatformServer } from "../../services/broadcast-platform/src/server.mjs";
-import { createCommunicationCoreMock } from "../../services/backend/src/modules/communication-core/mock-ingress-egress.mjs";
 import { createNotificationPlatformServer } from "../../services/notification-platform/src/server.mjs";
 
 const fixedNow = () => "2026-07-04T09:30:00.000Z";
@@ -43,7 +42,7 @@ describe("CP-6/CP-8 facade e2e (contract-level chain)", () => {
     await close(broadcastServer);
   });
 
-  it("CP-6: creates and starts a broadcast, then hands the C8 delivery draft to CORE C1/C2", async () => {
+  it("CP-6: creates and starts a broadcast with a valid C8 delivery draft for CORE C1/C2", async () => {
     const createResponse = await fetch(`${broadcastBaseUrl}/api/v1/broadcasts`, {
       method: "POST",
       headers: JSON_HEADERS,
@@ -108,15 +107,6 @@ describe("CP-6/CP-8 facade e2e (contract-level chain)", () => {
       true,
     );
     assert.equal(started.core_delivery_draft.delivery_path, "C1/C2");
-
-    const core = createCommunicationCoreMock({ clock: fixedNow });
-    const handoff = core.handoffEgressMessage(started.core_delivery_draft.message, {
-      adapter: "web-chat",
-      adapter_endpoint_id: "web-chat-adapter-local",
-    });
-
-    assert.equal(handoff.accepted, true);
-    assert.equal(handoff.delivery_status, "sent");
 
     const statsResponse = await fetch(
       `${broadcastBaseUrl}/api/v1/broadcasts/${created.broadcast.id}/stats?organization_id=${ORG}&request_id=req-cp6-broadcast-stats`,

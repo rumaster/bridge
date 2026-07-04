@@ -257,13 +257,13 @@ CP-7. Клиенты РФ SVC-CHAT/SVC-MOB подключаются через E
 (`services/mobile-api/src/edge-connection.mjs`, переменная `EDGE_BASE_URL`). Тесты:
 unit (`services/edge-gateway/test/unit/*`: шифр, секвенсор, буфер, VPN-туннель,
 оркестратор; `services/mobile-api/test/unit/edge-connection.test.mjs`), integration
-(`services/edge-gateway/test/integration/edge-cluster-tunnel-order.test.mjs` —
-пересылка через туннель с восстановлением порядка на моке разрыва канала;
-`tests/integration/edge-message-buffer-store.test.mjs` — Postgres-стор RF-буфера;
-Backend↔WebSocket ТЗ §26.4), contract
-(`tests/contract/edge-cluster-c9-cp7.contract.test.mjs` — EDGE↔CORE C9 с полезной
-нагрузкой C1) и e2e (`tests/e2e/edge-cluster-cp7.test.mjs` — «Edge Cluster» и «Потеря
-соединения» через полный стек; `tests/e2e/edge-connection-loss-cp7.test.mjs`).
+(`services/edge-gateway/test/integration/mock-edge-gateway.test.mjs` —
+транспортный ack без backend-прототипа; `tests/integration/edge-message-buffer-store.test.mjs`
+— Postgres-стор RF-буфера; Backend↔WebSocket ТЗ §26.4), contract
+(`tests/contract/edge-core-c9-c7.contract.test.mjs` — EDGE↔CORE C9 с полезной
+нагрузкой C1) и e2e (`tests/e2e/backend-dist-communication-core.test.mjs` для
+production C9 intake, `tests/e2e/mobile-connection-loss-cp7.test.mjs` для
+клиентского сценария потери соединения).
 Секреты туннеля и шифра RF-буфера приходят из секрет-менеджера (`.env.rf.example`:
 `EDGE_VPN_SESSION_KEY`, `EDGE_BUFFER_ENCRYPTION_KEY`), а не из кода. Вне охвата M4 и
 перенесено на M5: отказоустойчивость Edge, RPO/RTO и нагрузка на WS.
@@ -300,10 +300,9 @@ Edge возвращает измерения восстановления в `dr
 `EDGE_WS_PROBE_EVENTS`). Тесты: unit
 `services/edge-gateway/test/unit/edge-message-buffer.test.mjs`,
 `services/edge-gateway/test/unit/ws-load-probe.test.mjs`; integration
-`services/edge-gateway/test/integration/edge-resilience-rpo-rto.test.mjs`; e2e
-`tests/e2e/edge-resilience-cp9.test.mjs` (отказ одного Edge не блокирует другой,
-backlog доставляется после восстановления без потерь/дублей, порядок сохраняется
-внутри Endpoint).
+`tests/integration/edge-message-buffer-store.test.mjs` и e2e
+`tests/e2e/mobile-connection-loss-cp7.test.mjs` (backlog доставляется после
+восстановления без потерь/дублей, порядок сохраняется внутри Endpoint).
 
 ---
 

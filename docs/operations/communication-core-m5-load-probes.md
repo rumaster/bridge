@@ -7,10 +7,11 @@
 
 В production NestJS путь подключён через `CommunicationCoreLoadProbeService`:
 обычный ingress обновляет counters/latency, а `/metrics` экспортирует
-`bridge_backend_communication_core_ingress_*`. Compatibility factory
-`createCommunicationCoreLoadProbe` в `communication-core/index.mjs` сохраняет
-старые `.mjs` регрессии и принимает массив C2 `IngressMessage` с ограничением
-параллелизма. Результат содержит:
+`bridge_backend_communication_core_ingress_*`. Legacy `.mjs` compatibility
+factories удалены вместе с backend-прототипом; регрессия теперь проходит через
+NestJS `AppModule` и `dist/main.js`.
+
+Пробник фиксирует:
 
 - `total`, `accepted`, `duplicates`, `failed`;
 - `concurrency`, `peak_in_flight`;
@@ -18,26 +19,25 @@
 - `latency_ms.min/avg/p50/p95/p99/max`;
 - первые `sample_results` для быстрой сверки маршрутизации.
 
-Локальная CP-9 фикстура проверяет 24 сообщения при `concurrency=6`; unit-фикстура
-проверяет 12 сообщений при `concurrency=4`. Эти числа не являются SLA из ТЗ
-§25.11, а дают повторяемую регрессию, что ядро принимает нагрузочную партию,
-сохраняет idempotency и возвращает измеримый отчёт.
+Integration-фикстуры `services/backend/test/integration/internal-messaging.spec.ts`
+и `tests/e2e/backend-dist-communication-core.test.mjs` проверяют, что ядро
+принимает сообщения, сохраняет idempotency и отдаёт измеримые counters/latency.
+Эти проверки не являются заменой продакшн-SLA из ТЗ §25.11, а дают повторяемую
+регрессию для CI.
 
 ## Деградация адаптеров
 
-Production egress использует `AdapterFailureCoordinator`; compatibility factory
-`createAdapterFailureCoordinator` сохранена в `communication-core/index.mjs` для
-старых `.mjs` тестов. Координатор ограничивает каждый вызов адаптера таймаутом и
-конечным числом попыток. Промежуточные неуспешные попытки записываются в
+Production egress использует `AdapterFailureCoordinator`. Координатор
+ограничивает каждый вызов адаптера таймаутом и конечным числом попыток.
+Промежуточные неуспешные попытки записываются в
 `message_delivery_attempts`; финальная неуспешная попытка переводит сообщение из
 `routed` в `failed`. Ошибка адаптера не блокирует приём сообщений из другого
 канала.
 
 ## Деградация AI
 
-Production AI path использует `AiDegradationGuard`; compatibility factory
-`createAiDegradationGuard` сохранена в `communication-core/index.mjs`.
-Guard изолирует SVC-AI как вспомогательную подсистему:
+Production AI path использует `AiDegradationGuard`. Guard изолирует SVC-AI как
+вспомогательную подсистему:
 отсутствующий клиент, ошибка или timeout возвращают структурированный degraded
 fallback, а Communication Core продолжает приём и маршрутизацию сообщений.
 

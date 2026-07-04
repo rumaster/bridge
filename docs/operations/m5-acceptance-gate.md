@@ -18,17 +18,17 @@ RPO/RTO подтверждены, документация §28 завершен
 |---|---|
 | Авторизация | `apps/saas-admin/test/e2e/saas-admin.auth.spec.ts` |
 | Работа менеджера | `apps/manager-workspace/test/e2e/manager-workspace.m1.spec.ts` |
-| Web Chat | `tests/e2e/web-chat-cp1.test.mjs` |
-| Telegram | `tests/e2e/telegram-cp2.test.mjs` |
+| Web Chat | `tests/e2e/backend-dist-communication-core.test.mjs` |
+| Telegram | `services/backend/test/integration/telegram-auth.spec.ts`, `tests/e2e/backend-dist-communication-core.test.mjs` |
 | AI Assistant из KB | `tests/e2e/ai-assistant-kb.test.mjs` |
-| Workflow вызывает Backend API | `tests/e2e/workflow-cp4.test.mjs`, `tests/e2e/workflow-fbp-m5-cp9.test.mjs` |
+| Workflow вызывает Backend API | `tests/e2e/workflow-engine-cp4-cp5.test.mjs`, `tests/e2e/workflow-fbp-m5-cp9.test.mjs` |
 | AI Onboarding применяет конфиг | `tests/e2e/ai-onboarding-apply.test.mjs` |
 | Notification в Web + Telegram | `tests/e2e/notification-delivery-cp9.test.mjs`, `tests/e2e/telegram-console-cp8.test.mjs` |
 | Broadcast: доставка кампании | `tests/e2e/broadcast-delivery-cp6.test.mjs` |
-| Edge Cluster | `tests/e2e/edge-cluster-cp7.test.mjs` |
-| Потеря соединения | `tests/e2e/edge-connection-loss-cp7.test.mjs`, `tests/e2e/edge-resilience-cp9.test.mjs`, `tests/e2e/mobile-connection-loss-cp7.test.mjs` |
+| Edge Cluster | `services/edge-gateway/test/unit/edge-cluster.test.mjs` |
+| Потеря соединения | `tests/integration/edge-message-buffer-store.test.mjs`, `tests/e2e/mobile-connection-loss-cp7.test.mjs` |
 
-Дополнительно на приёмке зелёные: `tests/e2e/communication-core-cp9.test.mjs`,
+Дополнительно на приёмке зелёные: `tests/e2e/backend-dist-communication-core.test.mjs`,
 `tests/e2e/integration-degradation-cp9.test.mjs`.
 
 ## 2. Нагрузочные пробники и деградация (§25.2/§25.3/§25.11)
@@ -54,9 +54,9 @@ RPO/RTO подтверждены, документация §28 завершен
 organization_id)` — при гонке конфликт всплывал по композитному индексу и не
 гасился. Исправлено безтаргетным `ON CONFLICT DO NOTHING` и коротким замыканием
 на duplicate-путь для `messages` (без задвоения attachments/outbox).
-Контракты не затронуты (только стабилизация, §9.3). Регрессия закрыта:
-`tests/integration/communication-core-m5.test.mjs` — 20/20 зелёных прогонов
-(ранее ~2–3/10 падений).
+Контракты не затронуты (только стабилизация, §9.3). Регрессия закрыта
+production-проверками `services/backend/test/integration/internal-messaging.spec.ts`
+и `tests/e2e/backend-dist-communication-core.test.mjs`.
 
 ## 3. Security review (§23)
 
@@ -72,7 +72,6 @@ organization_id)` — при гонке конфликт всплывал по �
   `docs/operations/data-platform-backup-restore.md`.
 - SVC-EDGE: авто-синхронизация буфера после восстановления канала, измерения
   `drain().recovery` (`rpo.capacity`, `rpo.ttl_ms`, `rto_ms`) —
-  `tests/e2e/edge-resilience-cp9.test.mjs`,
   `tests/integration/edge-message-buffer-store.test.mjs`.
 
 ## 5. Полнота OpenAPI и версионирование (§11.14/§11.8, §19.6)

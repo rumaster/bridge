@@ -246,7 +246,7 @@ Backend API как единственный write path и не имеет пря
 `services/fbp-engine/test/integration/backend-fbp.test.mjs`,
 `tests/contract/c5-fbp-contract.test.mjs`,
 `tests/contract/c5-fbp-node-catalog.test.mjs`,
-`tests/e2e/workflow-cp4.test.mjs` и
+`tests/e2e/workflow-fbp-m5-cp9.test.mjs` и
 `tests/e2e/workflow-engine-cp4-cp5.test.mjs`. C5 заморожен на CP-4 и вместе с
 C3/C4 стабилизирован на CP-5 в `packages/contracts/cp4-cp5-freeze.v1.json`.
 Готовность M4: базовые `workflow_*` стабильны; version pinning/stateless

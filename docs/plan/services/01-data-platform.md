@@ -213,7 +213,7 @@ Data Platform **не отдаёт REST наружу** и не имеет соб�
 миграция `db/migrations/20260703124000000_m2_schema.sql` добавляет KB/pgvector,
 `client_identity_links`, `channels` и `adapter_capabilities`; интеграционные
 проверки `tests/integration/data-platform.test.mjs`, `tests/integration/ai-rag-kb.test.mjs`
-и `tests/integration/communication-core-m2.test.mjs` подтверждают tenant-isolated
+и `services/backend/test/integration/internal-messaging.spec.ts` подтверждают tenant-isolated
 KB-поиск, связи identity и данные capabilities. Gate зафиксирован в
 `packages/contracts/cp2-cp3-freeze.v1.json`.
 

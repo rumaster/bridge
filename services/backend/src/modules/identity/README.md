@@ -23,16 +23,15 @@ This directory contains the M5 implementation for SVC-IDN:
   one-time consumption.
 - Append-only audit events for provisioning, blocking, invitation creation,
   invitation acceptance and invitation-based session creation.
-- M5 login provider registry in `identity-service.mjs`:
-  - `createTelegramLoginProvider()` is the only enabled MVP provider and keeps
-    using `login_codes.purpose = 'telegram_login'`.
-  - `createUnavailableEmailLoginProvider()` reserves the future email provider
-    with `contactType = 'email'` and `codePurpose = 'email_login'`, but always
-    stays disabled in MVP.
-  - Future email login must be connected by registering an enabled provider with
-    the same provider shape (`id`, `contactType`, `codePurpose`,
-    `deliverLoginCode`). Do not add email login endpoints to C3.auth v1; publish
-    a new compatible contract version when the provider is actually enabled.
+- Telegram login start/verify rate limiting in
+  `telegram-login-rate-limiter.ts`, wired into `telegram-auth.service.ts`.
+  Configure it with `TELEGRAM_LOGIN_START_RATE_LIMIT`,
+  `TELEGRAM_LOGIN_VERIFY_RATE_LIMIT` and
+  `TELEGRAM_LOGIN_RATE_LIMIT_WINDOW_SECONDS`.
+- Email login is reserved as a future extension point through
+  `login_codes.purpose = 'email_login'` and `invitations.contact_type = 'email'`.
+  Do not add email login endpoints to C3.auth v1; publish a new compatible
+  contract version when the provider is actually enabled.
 - Session UX operations:
   - `GET /api/v1/users/:id/sessions` lists active, not expired, not revoked
     sessions for an organization user without exposing `token_hash`.

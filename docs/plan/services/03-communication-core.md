@@ -209,11 +209,10 @@ NestJS/TypeScript-коде (компилируется в `dist/main.js`, issue 
 end-to-end на реальном Postgres (testcontainers, реальный `AppModule` = код
 `dist/main.js`) — `test/integration/internal-messaging.spec.ts`. C2 Egress
 сохраняет `channel_type`/`conversation_ref`, чтобы Web Chat adapter доставлял
-ответ в ту же сессию CP-1. Прежние прототипные `.mjs`-наборы
-(`communication-core.m1.test.mjs`, `tests/integration/communication-core-m1.test.mjs`,
-`tests/contract/int-core.m1.contract.test.mjs`) валидируют изолированный
-`.mjs`-прототип, а не production-код (см. `docs/audit/backend-mjs-production-audit.md`,
-пункты 3 и 12).
+ответ в ту же сессию CP-1. Прежние прототипные `.mjs`-наборы удалены; contract и
+e2e evidence теперь указывают на `tests/contract/int-core.c2.contract.test.mjs`,
+`services/backend/test/integration/internal-messaging.spec.ts` и
+`tests/e2e/backend-dist-communication-core.test.mjs`.
 
 ### M2 — Identity resolution, порядок, realtime
 
@@ -235,9 +234,10 @@ end-to-end на реальном Postgres (testcontainers, реальный `App
 **Статус реализации M2.** M2 Communication Core завершён для CP-2: identity
 resolution, endpoint-scoped `sequence_number`, gap detection, C7 публикация и
 выбор канала по C6 capabilities покрыты
-`services/backend/test/unit/communication-core.m2.test.mjs` и
-`tests/integration/communication-core-m2.test.mjs`; сквозной Telegram receive/reply
-проверен в `tests/e2e/telegram-cp2.test.mjs`. C2 зафиксирован как
+`services/backend/test/unit/internal-messaging.dto.spec.ts`,
+`services/backend/test/integration/internal-messaging.spec.ts`,
+`tests/contract/int-core-m2-adapters.contract.test.mjs` и
+`tests/e2e/backend-dist-communication-core.test.mjs`. C2 зафиксирован как
 `stable_for_m3` в `packages/contracts/cp2-cp3-freeze.v1.json`.
 
 ### M3 — Доменные события для Workflow (outbox)
@@ -257,9 +257,9 @@ resolution, endpoint-scoped `sequence_number`, gap detection, C7 публика�
 `message.status_changed` пишутся в `outbox_events` в той же транзакции, что и
 создание/изменение агрегата. Детерминированный `event.id` и replay по
 `pending -> published` обеспечивают идемпотентную доставку в мок SVC-FBP.
-Покрытие: `services/backend/test/unit/communication-core.m3.test.mjs`,
-`tests/integration/communication-core-m3.test.mjs` и
-`tests/e2e/workflow-cp4.test.mjs`. Для M3 gate outbox-инвариант зафиксирован в
+Покрытие: `services/backend/test/integration/m3-facades.spec.ts`,
+`tests/e2e/workflow-engine-cp4-cp5.test.mjs` и
+`tests/e2e/workflow-fbp-m5-cp9.test.mjs`. Для M3 gate outbox-инвариант зафиксирован в
 `packages/contracts/cp4-cp5-freeze.v1.json`: replay идемпотентен и не создаёт
 дублирующих запусков Workflow. Готовность M4: `outbox_events` остаётся
 стабильной основой для Broadcast, Edge и Notification producer-потоков.
@@ -301,16 +301,16 @@ Ingress, приёме из буфера Edge и при доставке камп
 messages` и доставляет строго через **C1/C2** ядра — кампания не обходит SVC-CORE.
 **CP-7 (SVC-EDGE):** буферизующий шлюз `createBufferedEdgeGateway` (SVC-EDGE)
 копит C9-сообщения при разрыве (дедуп по `idempotency_key`, порядок поступления) и
-дренажирует их одним батчем; `createEdgeIntakeCoordinator` (SVC-CORE)
+дренажирует их одним батчем; `EdgeIntakeCoordinatorService` (SVC-CORE)
 восстанавливает порядок по `(endpoint_id, sequence_number)` и повторно
 дедуплицирует через единый ingress-путь. Покрытие:
-`services/backend/test/unit/communication-core.m4.test.mjs`,
-`services/edge-gateway/test/unit/buffered-gateway.test.mjs`,
-`tests/integration/communication-core-m4.test.mjs` (Backend↔PostgreSQL: дедуп и
-порядок из буфера, связь `broadcast_messages`, журнал попыток),
-`tests/contract/m4-core-cp6-cp7.contract.test.mjs` (EDGE↔CORE и BCAST↔CORE через
-моки), e2e `tests/e2e/broadcast-cp6.test.mjs` и
-`tests/e2e/edge-connection-loss-cp7.test.mjs`. Контракты CP-6/CP-7 (C8↔C1/C2 и
+`services/backend/test/integration/internal-messaging.spec.ts`
+(Backend↔PostgreSQL: дедуп и порядок из буфера, связь `broadcast_messages`,
+журнал попыток), `services/edge-gateway/test/unit/buffered-gateway.test.mjs`,
+`tests/contract/c8-broadcast-contract.test.mjs`,
+`tests/contract/edge-core-c9-c7.contract.test.mjs`,
+`tests/e2e/backend-dist-communication-core.test.mjs` и
+`tests/e2e/broadcast-delivery-cp6.test.mjs`. Контракты CP-6/CP-7 (C8↔C1/C2 и
 C9↔C1) зафиксированы в `packages/contracts/cp6-cp7-freeze.v1.json`.
 
 ### M5 — Нагрузка, деградация, отказы адаптеров
@@ -339,10 +339,13 @@ C9↔C1) зафиксированы в `packages/contracts/cp6-cp7-freeze.v1.jso
 idempotency после
 endpoint-lock: несколько экземпляров ядра используют единый `idempotency_key` и
 сохраняют монотонный `sequence_number` в рамках endpoint. Контракты C1/C2/C7 и
-route/message-типы не менялись. Покрытие: `communication-core.m5.test.mjs`,
-`tests/integration/communication-core-m5.test.mjs`,
-`tests/e2e/communication-core-cp9.test.mjs`; порядок запуска и операционные
-заметки по пробникам — в `docs/operations/communication-core-m5-load-probes.md`.
+route/message-типы не менялись. Покрытие:
+`services/backend/test/unit/communication-core-m5.service.spec.ts`,
+`services/backend/test/integration/internal-messaging.spec.ts`,
+`services/backend/test/integration/m5-nfr.spec.ts` и
+`tests/e2e/backend-dist-communication-core.test.mjs`; порядок запуска и
+операционные заметки по пробникам — в
+`docs/operations/communication-core-m5-load-probes.md`.
 
 ---
 

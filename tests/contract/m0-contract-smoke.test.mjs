@@ -11,7 +11,6 @@ import {
   validateM0ContractRegistry,
 } from "../../packages/contracts/src/registry.mjs";
 import { createAiPlatformServer } from "../../services/ai-platform/src/server.mjs";
-import { createBackendServer } from "../../services/backend/src/main.mjs";
 import { createBroadcastPlatformServer } from "../../services/broadcast-platform/src/server.mjs";
 import { createEdgeGatewayServer } from "../../services/edge-gateway/src/server.mjs";
 import { createFbpEngineServer } from "../../services/fbp-engine/src/server.mjs";
@@ -63,48 +62,6 @@ describe("M0 integration contract gate", () => {
         "MOBILE.v1",
       ],
     );
-  });
-
-  it("starts the backend CORE/IDN/API mock and accepts C3.auth + C2 requests", async () => {
-    await withServer(createBackendServer(), async (baseUrl) => {
-      const health = await fetchJson(`${baseUrl}/health`);
-
-      assert.equal(health.statusCode, 200);
-      assert.equal(health.body.status, "ok");
-      assert.deepEqual(health.body.contracts, [
-        "C3.base",
-        "C3.auth",
-        "C3.platform",
-        "C3.users",
-        "C1",
-        "C2",
-      ]);
-
-      const authStart = await fetchJson(
-        `${baseUrl}/api/v1/auth/login/telegram/start`,
-        {
-          method: "POST",
-          headers: JSON_HEADERS,
-          body: JSON.stringify({
-            telegramUsername: "seeded_admin",
-          }),
-        },
-      );
-
-      assert.equal(authStart.statusCode, 202);
-      assert.equal(authStart.body.implementationStage, "M1");
-      assert.match(authStart.body.requestId, /^[0-9a-f-]{36}$/);
-
-      const ingress = await fetchJson(`${baseUrl}/api/v1/internal/ingress/messages`, {
-        method: "POST",
-        headers: JSON_HEADERS,
-        body: JSON.stringify(canonicalMessage),
-      });
-
-      assert.equal(ingress.statusCode, 202);
-      assert.equal(ingress.body.accepted, true);
-      assert.equal(ingress.body.message_id, canonicalMessage.id);
-    });
   });
 
   it("starts the Integration Platform mock and accepts a valid C2 egress delivery", async () => {

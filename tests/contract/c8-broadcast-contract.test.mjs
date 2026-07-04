@@ -8,7 +8,6 @@ import {
   validateBroadcastCoreDeliveryDraft,
 } from "../../packages/contracts/src/c8.mjs";
 import { createBroadcastPlatformServer } from "../../services/broadcast-platform/src/server.mjs";
-import { createCommunicationCoreMock } from "../../services/backend/src/modules/communication-core/mock-ingress-egress.mjs";
 
 const root = process.cwd();
 const fixedNow = () => "2026-07-02T16:30:00.000Z";
@@ -71,7 +70,7 @@ describe("BCAST <-> CORE M0 C8 contract", () => {
     assert.equal(draft.message.idempotency_key, draft.message.id);
   });
 
-  it("smokes C8 start and the future C2 egress handoff against CORE mock", async () => {
+  it("smokes C8 start and emits a valid CORE delivery draft", async () => {
     const startResponse = await fetch(`${baseUrl}/api/v1/broadcasts/broadcast-1:start`, {
       method: "POST",
       headers: {
@@ -91,14 +90,6 @@ describe("BCAST <-> CORE M0 C8 contract", () => {
     assert.equal(startResponse.status, 200);
     assert.equal(started.core_delivery_draft.delivery_path, "C1/C2");
 
-    const core = createCommunicationCoreMock({ clock: fixedNow });
-    const handoff = core.handoffEgressMessage(started.core_delivery_draft.message, {
-      adapter: "web-chat",
-      adapter_endpoint_id: "web-chat-adapter-local",
-    });
-
-    assert.equal(handoff.accepted, true);
-    assert.equal(handoff.mock_delivery, true);
-    assert.equal(handoff.delivery_status, "sent");
+    assert.equal(validateBroadcastCoreDeliveryDraft(started.core_delivery_draft).valid, true);
   });
 });
