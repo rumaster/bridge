@@ -216,6 +216,18 @@ function renderMetrics(metrics) {
     "# HELP notification_platform_mock_producer_event_total Producer notification trigger events accepted by the deterministic mock.",
     "# TYPE notification_platform_mock_producer_event_total counter",
     `notification_platform_mock_producer_event_total ${metrics.producer_event_total}`,
+    "# HELP notification_platform_mock_duplicate_total Duplicate producer events deduplicated without creating a second notification.",
+    "# TYPE notification_platform_mock_duplicate_total counter",
+    `notification_platform_mock_duplicate_total ${metrics.duplicate_total}`,
+    "# HELP notification_platform_mock_delivery_total Channel deliveries dispatched for accepted notifications.",
+    "# TYPE notification_platform_mock_delivery_total counter",
+    `notification_platform_mock_delivery_total{channel="web"} ${metrics.delivery_web_total}`,
+    `notification_platform_mock_delivery_total{channel="telegram"} ${metrics.delivery_telegram_total}`,
+    `notification_platform_mock_delivery_total{channel="email"} ${metrics.delivery_email_total}`,
+    `notification_platform_mock_delivery_total{channel="push"} ${metrics.delivery_push_total}`,
+    "# HELP notification_platform_mock_delivery_skipped_total Channel deliveries skipped because the subscription is disabled.",
+    "# TYPE notification_platform_mock_delivery_skipped_total counter",
+    `notification_platform_mock_delivery_skipped_total ${metrics.delivery_skipped_total}`,
   ];
 
   return `${lines.join("\n")}\n`;
