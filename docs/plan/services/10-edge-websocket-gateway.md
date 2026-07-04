@@ -243,6 +243,31 @@ SVC-MWS; дедупликация по `event_id`/`message.id` и gap detection 
 - **DoD.** e2e «Edge Cluster» и «Потеря соединения» зелёные; нет потерь/дублей и
   перестановок в рамках Endpoint; RF-first соблюдён; C9 заморожен (мастер §9.4).
 
+**Статус реализации M4.** SVC-EDGE замкнут для gate CP-7. RF-first-конвейер Edge
+реализован модулями `services/edge-gateway/src`: `rf-payload-cipher.mjs`
+(AES-256-GCM для `payload_encrypted`), `edge-sequencer.mjs` (`sequence_number` по
+ключу партиционирования `endpoint_id`), `edge-message-buffer.mjs` (in-memory и
+Postgres-стор `edge_message_buffer` с `ttl` и дренажом), `vpn-tunnel.mjs` (VPN
+Tunnel Service: mTLS, шифрование канала AES-256-GCM, контроль соединения,
+авто-восстановление, backpressure) и `edge-cluster.mjs` (RF-first-оркестратор:
+первичная фиксация в РФ → пересылка через туннель → авто-дренаж после разрыва).
+Приёмная сторона (восстановление порядка по `sequence_number` и дедуп по сквозному
+`idempotency_key`) — `createEdgeIntakeCoordinator` ядра (SVC-CORE), совместная зона
+CP-7. Клиенты РФ SVC-CHAT/SVC-MOB подключаются через Edge
+(`services/mobile-api/src/edge-connection.mjs`, переменная `EDGE_BASE_URL`). Тесты:
+unit (`services/edge-gateway/test/unit/*`: шифр, секвенсор, буфер, VPN-туннель,
+оркестратор; `services/mobile-api/test/unit/edge-connection.test.mjs`), integration
+(`services/edge-gateway/test/integration/edge-cluster-tunnel-order.test.mjs` —
+пересылка через туннель с восстановлением порядка на моке разрыва канала;
+`tests/integration/edge-message-buffer-store.test.mjs` — Postgres-стор RF-буфера;
+Backend↔WebSocket ТЗ §26.4), contract
+(`tests/contract/edge-cluster-c9-cp7.contract.test.mjs` — EDGE↔CORE C9 с полезной
+нагрузкой C1) и e2e (`tests/e2e/edge-cluster-cp7.test.mjs` — «Edge Cluster» и «Потеря
+соединения» через полный стек; `tests/e2e/edge-connection-loss-cp7.test.mjs`).
+Секреты туннеля и шифра RF-буфера приходят из секрет-менеджера (`.env.rf.example`:
+`EDGE_VPN_SESSION_KEY`, `EDGE_BUFFER_ENCRYPTION_KEY`), а не из кода. Вне охвата M4 и
+перенесено на M5: отказоустойчивость Edge, RPO/RTO и нагрузка на WS.
+
 ### M5 — Отказоустойчивость Edge, RPO/RTO, нагрузка на WS
 
 - **Цель.** Стабилизация: отказоустойчивость Edge и предсказуемое восстановление.

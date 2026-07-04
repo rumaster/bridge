@@ -139,6 +139,9 @@ services:
     restart: unless-stopped
     environment:
       PORT: ${MOBILE_API_PORT:-3015}
+      # CP-7 (ТЗ §7.6): при заданном EDGE_BASE_URL mobile-api маршрутизирует
+      # клиентов РФ через Edge Cluster; пусто — прямой режим (из окружения, не код).
+      EDGE_BASE_URL: ${EDGE_BASE_URL:-}
     ports:
       - "${MOBILE_API_PORT:-3015}:${MOBILE_API_PORT:-3015}"
     depends_on:

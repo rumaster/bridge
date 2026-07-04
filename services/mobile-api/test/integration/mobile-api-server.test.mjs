@@ -26,7 +26,8 @@ describe("Mobile API deterministic mock server", () => {
   let baseUrl;
 
   before(async () => {
-    server = createMobileApiServer({ now: fixedNow });
+    // edgeBaseUrl: "" — детерминированно прямой режим (не зависит от ambient env).
+    server = createMobileApiServer({ now: fixedNow, edgeBaseUrl: "" });
     baseUrl = await listen(server);
   });
 
@@ -44,7 +45,20 @@ describe("Mobile API deterministic mock server", () => {
       mode: "deterministic-mock",
       contract: "MOBILE.v1",
       base_path: "/mobile/v1",
+      edge: { via_edge: false, tunnel: null },
     });
+  });
+
+  it("exposes client connection config without Edge by default", async () => {
+    const response = await fetch(`${baseUrl}/mobile/v1/config`);
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.api_base_url, "/mobile/v1");
+    assert.equal(body.edge.via_edge, false);
+    assert.equal(body.edge.tunnel, null);
+    assert.equal(body.edge.header, "x-bridge-edge-tunnel");
+    assert.deepEqual(body.edge.headers, {});
   });
 
   it("serves aggregated dialogs, messages and notifications", async () => {
@@ -135,5 +149,39 @@ describe("Mobile API deterministic mock server", () => {
     assert.equal((await valid.json()).proxied_to, "C3.messages");
     assert.equal(invalid.status, 400);
     assert.equal((await invalid.json()).title, "Validation failed");
+  });
+});
+
+describe("Mobile API server — маршрутизация клиентов РФ через Edge Cluster (CP-7)", () => {
+  let server;
+  let baseUrl;
+  const EDGE_BASE = "https://edge.rf.bridge.local/mobile/v1";
+
+  before(async () => {
+    server = createMobileApiServer({ now: fixedNow, edgeBaseUrl: EDGE_BASE });
+    baseUrl = await listen(server);
+  });
+
+  after(async () => {
+    await close(server);
+  });
+
+  it("health сообщает о подключении через Edge с туннелем mobile", async () => {
+    const response = await fetch(`${baseUrl}/health`);
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(body.edge, { via_edge: true, tunnel: "mobile" });
+  });
+
+  it("config выдаёт клиенту РФ базовый URL Edge и заголовок C9-туннеля", async () => {
+    const response = await fetch(`${baseUrl}/mobile/v1/config`);
+    const body = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(body.api_base_url, EDGE_BASE);
+    assert.equal(body.edge.via_edge, true);
+    assert.equal(body.edge.tunnel, "mobile");
+    assert.deepEqual(body.edge.headers, { "x-bridge-edge-tunnel": "mobile" });
   });
 });

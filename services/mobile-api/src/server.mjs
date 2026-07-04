@@ -5,6 +5,7 @@ import {
   MOBILE_API_CONTRACT_ID,
 } from "../../../packages/contracts/src/mobile.mjs";
 import { createDeterministicMobileApiMock } from "./deterministic-mobile-api.mjs";
+import { EDGE_TUNNEL_HEADER, resolveMobileEdgeConnection } from "./edge-connection.mjs";
 import { MobileDtoValidationError } from "./mobile-dto.mjs";
 import { MobileSyncCursorError } from "./sync-cursor.mjs";
 
@@ -14,8 +15,14 @@ const MAX_BODY_BYTES = 1024 * 1024;
 export function createMobileApiServer({
   mobileApi,
   now = () => new Date().toISOString(),
+  apiBaseUrl = MOBILE_API_BASE_PATH,
+  realtimeUrl,
+  edgeBaseUrl = process.env.EDGE_BASE_URL,
 } = {}) {
   const mockMobileApi = mobileApi ?? createDeterministicMobileApiMock({ now });
+  // CP-7: подключение мобильных клиентов РФ через Edge Cluster (§7.6). Резолвим один
+  // раз при старте — клиент узнаёт маршрут и заголовок туннеля через /config и /health.
+  const edgeConnection = resolveMobileEdgeConnection({ apiBaseUrl, realtimeUrl, edgeBaseUrl });
 
   return createServer(async (request, response) => {
     try {
@@ -29,6 +36,29 @@ export function createMobileApiServer({
           mode: mockMobileApi.mode ?? "deterministic-mock",
           contract: MOBILE_API_CONTRACT_ID,
           base_path: MOBILE_API_BASE_PATH,
+          edge: {
+            via_edge: edgeConnection.viaEdge,
+            tunnel: edgeConnection.tunnel,
+          },
+        });
+        return;
+      }
+
+      if (request.method === "GET" && path === "/config") {
+        // Обнаружение подключения мобильным клиентом РФ (CP-7): куда слать REST и
+        // какой заголовок туннеля ставить, чтобы трафик шёл через Edge Cluster.
+        sendJson(response, 200, {
+          service: "mobile-api",
+          contract: MOBILE_API_CONTRACT_ID,
+          base_path: MOBILE_API_BASE_PATH,
+          api_base_url: edgeConnection.apiBaseUrl,
+          realtime_url: edgeConnection.realtimeUrl ?? null,
+          edge: {
+            via_edge: edgeConnection.viaEdge,
+            tunnel: edgeConnection.tunnel,
+            header: EDGE_TUNNEL_HEADER,
+            headers: edgeConnection.headers,
+          },
         });
         return;
       }
