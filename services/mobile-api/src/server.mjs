@@ -26,7 +26,7 @@ export function createMobileApiServer({
         sendJson(response, 200, {
           status: "ok",
           service: "mobile-api",
-          mode: "deterministic-mock",
+          mode: mockMobileApi.mode ?? "deterministic-mock",
           contract: MOBILE_API_CONTRACT_ID,
           base_path: MOBILE_API_BASE_PATH,
         });
@@ -197,24 +197,30 @@ function problem(status, title, detail, errors) {
   };
 }
 
+const METRIC_DEFINITIONS = [
+  ["mobile_api_auth_proxy_total", "auth_proxy_total", "MOBILE auth proxy calls served."],
+  ["mobile_api_dialogs_list_total", "dialogs_list_total", "MOBILE aggregated dialog lists served."],
+  ["mobile_api_messages_list_total", "messages_list_total", "MOBILE dialog message histories served."],
+  ["mobile_api_messages_send_total", "messages_send_total", "MOBILE message sends accepted."],
+  ["mobile_api_messages_dedup_total", "messages_dedup_total", "MOBILE sends deduplicated by idempotency_key."],
+  ["mobile_api_notifications_list_total", "notifications_list_total", "MOBILE notification feeds served."],
+  ["mobile_api_sync_total", "sync_total", "MOBILE offline-sync calls served."],
+  ["mobile_api_devices_registered_total", "devices_registered_total", "MOBILE devices/push tokens registered."],
+  ["mobile_api_devices_revoked_total", "devices_revoked_total", "MOBILE devices revoked."],
+  ["mobile_api_push_delivered_total", "push_delivered_total", "MOBILE push notifications delivered via provider."],
+  ["mobile_api_push_token_deactivated_total", "push_token_deactivated_total", "MOBILE dead push tokens deactivated."],
+  ["mobile_api_realtime_events_total", "realtime_events_total", "MOBILE C7 realtime events consumed."],
+];
+
 function renderMetrics(metrics) {
-  const lines = [
-    "# HELP mobile_api_mock_auth_proxy_total MOBILE auth proxy calls served by the deterministic mock.",
-    "# TYPE mobile_api_mock_auth_proxy_total counter",
-    `mobile_api_mock_auth_proxy_total ${metrics.auth_proxy_total}`,
-    "# HELP mobile_api_mock_dialogs_list_total MOBILE dialog lists served by the deterministic mock.",
-    "# TYPE mobile_api_mock_dialogs_list_total counter",
-    `mobile_api_mock_dialogs_list_total ${metrics.dialogs_list_total}`,
-    "# HELP mobile_api_mock_messages_send_total MOBILE message sends accepted by the deterministic mock.",
-    "# TYPE mobile_api_mock_messages_send_total counter",
-    `mobile_api_mock_messages_send_total ${metrics.messages_send_total}`,
-    "# HELP mobile_api_mock_sync_total MOBILE sync calls served by the deterministic mock.",
-    "# TYPE mobile_api_mock_sync_total counter",
-    `mobile_api_mock_sync_total ${metrics.sync_total}`,
-    "# HELP mobile_api_mock_devices_registered_total MOBILE devices registered by the deterministic mock.",
-    "# TYPE mobile_api_mock_devices_registered_total counter",
-    `mobile_api_mock_devices_registered_total ${metrics.devices_registered_total}`,
-  ];
+  const lines = [];
+  for (const [name, key, help] of METRIC_DEFINITIONS) {
+    lines.push(
+      `# HELP ${name} ${help}`,
+      `# TYPE ${name} counter`,
+      `${name} ${metrics[key] ?? 0}`,
+    );
+  }
 
   return `${lines.join("\n")}\n`;
 }
