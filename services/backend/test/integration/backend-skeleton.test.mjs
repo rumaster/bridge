@@ -60,7 +60,14 @@ describe("backend skeleton with M1 AuthGuard", () => {
       "identity",
       "communication-core",
     ]);
-    assert.deepEqual(body.contracts, ["C3.base", "C3.auth", "C1", "C2"]);
+    assert.deepEqual(body.contracts, [
+      "C3.base",
+      "C3.auth",
+      "C3.platform",
+      "C3.users",
+      "C1",
+      "C2",
+    ]);
     assert.deepEqual(
       body.externalFacades.map((facade) => [facade.serviceId, facade.mode]),
       [

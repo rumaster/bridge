@@ -309,3 +309,219 @@ describe("identity service M1 Telegram login", () => {
     assert.deepEqual(auditRecorder.events[2].metadata.roleCodes, ["administrator"]);
   });
 });
+
+describe("identity service M4 organization bootstrap and invitations", () => {
+  it("provisions a tenant, creates a first Administrator invitation, and accepts it once", async () => {
+    const { auditRecorder, service, store } = createTestService({
+      invitationTokenGenerator: () => "bri_unit_invitation_1",
+      tokenGenerator: () => "brs_unit_invited_admin",
+    });
+
+    const organization = await service.provisionOrganization(
+      {
+        name: "M4 Tenant",
+        description: "Self-service tenant",
+        timezone: "Europe/Moscow",
+      },
+      platformAuthContext(),
+    );
+
+    assert.equal(organization.status, 201);
+    assert.equal(organization.body.name, "M4 Tenant");
+    assert.equal(organization.body.status, "active");
+
+    const invitation = await service.createFirstAdministratorInvitation(
+      organization.body.id,
+      {
+        contactType: "email",
+        contactValue: "first-admin@example.bridge.local",
+        displayName: "First Admin",
+      },
+      platformAuthContext(),
+    );
+
+    assert.equal(invitation.status, 201);
+    assert.equal(invitation.body.organizationId, organization.body.id);
+    assert.equal(invitation.body.roleCode, "administrator");
+    assert.equal(invitation.body.contactType, "email");
+    assert.equal(invitation.body.token, "bri_unit_invitation_1");
+    assert.equal(invitation.body.createdBy, null);
+
+    const storedInvitation = await store.findInvitationByTokenHash(
+      service.hashInvitationToken("bri_unit_invitation_1"),
+    );
+    assert.equal(storedInvitation.token, undefined);
+    assert.notEqual(storedInvitation.tokenHash, "bri_unit_invitation_1");
+    assert.match(storedInvitation.tokenHash, /^sha256:/);
+    assert.equal(storedInvitation.acceptedAt, null);
+
+    const accepted = await service.acceptInvitation({
+      token: "bri_unit_invitation_1",
+      displayName: "Accepted Admin",
+    });
+
+    assert.equal(accepted.status, 200);
+    assert.equal(accepted.body.authenticated, true);
+    assert.equal(accepted.body.implementationStage, "M4");
+    assert.equal(accepted.body.token, "brs_unit_invited_admin");
+    assert.equal(accepted.body.user.email, "first-admin@example.bridge.local");
+    assert.equal(accepted.body.user.displayName, "Accepted Admin");
+    assert.deepEqual(accepted.body.roles, ["administrator"]);
+
+    const secondAccept = await service.acceptInvitation({
+      token: "bri_unit_invitation_1",
+      displayName: "Accepted Admin",
+    });
+
+    assert.equal(secondAccept.status, 401);
+    assert.match(secondAccept.body.detail, /already been used/i);
+
+    assert.deepEqual(
+      auditRecorder.events.map((event) => [event.action, event.objectType, event.result]),
+      [
+        [IDENTITY_AUDIT_ACTIONS.organizationProvision, "organization", "success"],
+        [IDENTITY_AUDIT_ACTIONS.invitationCreate, "invitation", "success"],
+        [IDENTITY_AUDIT_ACTIONS.invitationAccept, "invitation", "success"],
+        [IDENTITY_AUDIT_ACTIONS.loginSuccess, "auth_session", "success"],
+      ],
+    );
+    assert.equal(
+      auditRecorder.events[0].metadata.platformActorUserId,
+      platformAuthContext().user.id,
+    );
+  });
+
+  it("rejects expired invitation tokens without consuming them", async () => {
+    let invitationCounter = 0;
+    const { clock, service, store } = createTestService({
+      invitationTokenGenerator: () => `bri_expired_invitation_${++invitationCounter}`,
+      invitationTtlSeconds: 60,
+    });
+    const organization = await service.provisionOrganization(
+      { name: "Expired Invite Tenant" },
+      platformAuthContext(),
+    );
+    const invitation = await service.createFirstAdministratorInvitation(
+      organization.body.id,
+      {
+        contactType: "telegram",
+        contactValue: "@First_Admin",
+        displayName: "First Admin",
+      },
+      platformAuthContext(),
+    );
+
+    clock.advanceSeconds(61);
+
+    const accepted = await service.acceptInvitation({
+      token: invitation.body.token,
+      displayName: "Too Late",
+    });
+
+    assert.equal(accepted.status, 401);
+    assert.match(accepted.body.detail, /expired/i);
+
+    const storedInvitation = await store.findInvitationByTokenHash(
+      service.hashInvitationToken(invitation.body.token),
+    );
+    assert.equal(storedInvitation.acceptedAt, null);
+
+    const freshInvitation = await service.createFirstAdministratorInvitation(
+      organization.body.id,
+      {
+        contactType: "telegram",
+        contactValue: "@First_Admin",
+        displayName: "First Admin",
+      },
+      platformAuthContext(),
+    );
+
+    assert.equal(freshInvitation.status, 201);
+    assert.equal(freshInvitation.body.token, "bri_expired_invitation_2");
+  });
+
+  it("lets an Administrator create a Manager invitation in their own organization", async () => {
+    let invitationCounter = 0;
+    const { service } = createTestService({
+      invitationTokenGenerator: () => `bri_manager_invitation_${++invitationCounter}`,
+      tokenGenerator: () => "brs_manager_session",
+    });
+    const organization = await service.provisionOrganization(
+      { name: "Manager Invite Tenant" },
+      platformAuthContext(),
+    );
+    const firstAdmin = await service.createFirstAdministratorInvitation(
+      organization.body.id,
+      {
+        contactType: "email",
+        contactValue: "tenant-admin@example.bridge.local",
+        displayName: "Tenant Admin",
+      },
+      platformAuthContext(),
+    );
+    const adminSession = await service.acceptInvitation({
+      token: firstAdmin.body.token,
+      displayName: "Tenant Admin",
+    });
+
+    const managerInvitation = await service.createInvitation(
+      {
+        organizationId: organization.body.id,
+        contactType: "telegram",
+        contactValue: "@Tenant_Manager",
+        roleCode: "manager",
+      },
+      adminSession.body,
+    );
+
+    assert.equal(managerInvitation.status, 201);
+    assert.equal(managerInvitation.body.createdBy, adminSession.body.user.id);
+    assert.equal(managerInvitation.body.roleCode, "manager");
+    assert.equal(managerInvitation.body.token, "bri_manager_invitation_2");
+
+    const managerSession = await service.acceptInvitation({
+      token: managerInvitation.body.token,
+      displayName: "Tenant Manager",
+    });
+
+    assert.equal(managerSession.status, 200);
+    assert.equal(managerSession.body.user.telegramUsername, "tenant_manager");
+    assert.deepEqual(managerSession.body.roles, ["manager"]);
+  });
+});
+
+function platformAuthContext() {
+  return {
+    authenticated: true,
+    implementationStage: "M4",
+    organization: {
+      id: "00000000-0000-4000-8000-000000000101",
+      name: "Platform Operations",
+      slug: "platform-operations",
+      status: "active",
+    },
+    roleBindings: [
+      {
+        organizationId: "00000000-0000-4000-8000-000000000101",
+        role: "platform_operator",
+      },
+    ],
+    roles: ["platform_operator"],
+    session: {
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      id: "platform-session",
+      issuedAt: "2026-07-03T10:00:00.000Z",
+      mode: "server",
+      revokedAt: null,
+    },
+    token: "brs_platform_operator",
+    user: {
+      displayName: "Platform Operator",
+      id: "00000000-0000-4000-8000-000000000901",
+      organizationId: "00000000-0000-4000-8000-000000000101",
+      role: "platform_operator",
+      status: "active",
+      telegramUsername: "platform_operator",
+    },
+  };
+}

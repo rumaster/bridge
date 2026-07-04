@@ -42,7 +42,7 @@ export function createBackendApiModule({
       service: "backend",
       mode: "m0-skeleton",
       modules: moduleNames,
-      contracts: ["C3.base", "C3.auth", "C1", "C2"],
+      contracts: ["C3.base", "C3.auth", "C3.platform", "C3.users", "C1", "C2"],
       externalFacades: EXTERNAL_FACADE_STATUSES.map((status) => ({ ...status })),
       timestamp: now(),
     },

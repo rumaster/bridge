@@ -17,6 +17,7 @@ import { CommunicationCoreProxyModule } from "./modules/communication-core/commu
 import { ConfigurationModule } from "./modules/configuration/configuration.module";
 import { FbpIntegrationModule } from "./modules/fbp-integration/fbp-integration.module";
 import { HealthModule } from "./modules/health/health.module";
+import { IdentityM4Module } from "./modules/identity/identity-m4.module";
 import { IntegrationGatewayModule } from "./modules/integration-gateway/integration-gateway.module";
 import { NotificationFacadeModule } from "./modules/notification-facade/notification-facade.module";
 import { OrganizationModule } from "./modules/organization/organization.module";
@@ -28,6 +29,7 @@ import { UserModule } from "./modules/user/user.module";
     AuthModule,
     HealthModule,
     IntegrationGatewayModule,
+    IdentityM4Module,
     OrganizationModule,
     ConfigurationModule,
     ClientModule,
