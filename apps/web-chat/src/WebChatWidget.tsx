@@ -66,6 +66,7 @@ export function WebChatWidget({
   const [messageText, setMessageText] = useState("");
   const [session, setSession] = useState<WebChatSession | null>(null);
   const sessionRef = useRef<WebChatSession | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [historyCursor, setHistoryCursor] = useState<string | null>(null);
   const [hasMoreHistory, setHasMoreHistory] = useState(false);
@@ -280,6 +281,7 @@ export function WebChatWidget({
 
     const realtimeClient = createWebChatRealtimeClient({
       conversationId: session.conversationId,
+      initialSequenceNumber: getLatestSequenceNumber(messagesRef.current),
       organizationId: session.organizationId,
       reconnectDelayMs: realtimeReconnectDelayMs,
       url: resolveRealtimeUrl(edge.apiBaseUrl, edge.realtimeUrl),
@@ -370,16 +372,23 @@ export function WebChatWidget({
     });
     mergeMessages([createOptimisticMessage(item)]);
     setMessageText("");
+    inputRef.current?.focus();
     void processQueue();
   }
 
   return (
-    <WidgetShell>
+    <WidgetShell aria-labelledby="bridge-chat-title">
       <header className="bridge-chat-header">
         <div>
           <p className="bridge-chat-kicker">web_chat</p>
-          <h1>{title}</h1>
-          <p className="bridge-chat-connection">
+          <h1 id="bridge-chat-title">{title}</h1>
+          <p
+            aria-label="Состояние соединения Web Chat"
+            aria-live="polite"
+            className="bridge-chat-connection"
+            id="bridge-chat-connection-status"
+            role="status"
+          >
             {formatConnectionState(connectionState)}
             {edge.viaEdge ? " · через Edge" : ""}
           </p>
@@ -390,7 +399,11 @@ export function WebChatWidget({
       </header>
 
       <main
+        aria-atomic="false"
+        aria-busy={isLoading || isLoadingHistory}
         aria-label="Лента Web Chat"
+        aria-live="polite"
+        aria-relevant="additions text"
         className="bridge-chat-thread"
         onScroll={(event) => {
           void handleThreadScroll(event, loadOlderMessages, hasMoreHistory);
@@ -460,10 +473,12 @@ export function WebChatWidget({
           Сообщение
         </label>
         <textarea
+          aria-describedby="bridge-chat-connection-status"
           id="bridge-chat-input"
           name="message"
           onChange={(event) => setMessageText(event.target.value)}
           placeholder="Напишите сообщение"
+          ref={inputRef}
           rows={2}
           value={messageText}
         />

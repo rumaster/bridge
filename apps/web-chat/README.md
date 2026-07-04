@@ -75,10 +75,27 @@ Chat как первый канал будущего CP-1: вертикальн�
   соединения»: разрыв канала до Edge → буферизация реплики → восстановление →
   автопереотправка без дублей и с ответом менеджера.
 
+## M5 scope — приёмка доступности, устойчивости и производительности
+
+- **Accessibility-инварианты.** Лента сообщений объявлена как `role="log"` с live
+  region, состояние соединения — `role="status"`, поле ввода связано с состоянием
+  через `aria-describedby`, а после отправки фокус возвращается в поле ввода для
+  непрерывного клавиатурного сценария.
+- **Встраивание.** CSS виджета не публикует широкие `:root`/`body`/`button`
+  селекторы в страницу хоста; базовая типографика и controls scoped внутри
+  `.bridge-chat-shell`.
+- **Reconnect и Edge replay.** C7-подписка стартует с последнего уже загруженного
+  `sequence_number`, поэтому первый event после истории может обнаружить gap и
+  запустить catch-up. Повторный replay по `event_id` не добавляет дубли.
+- **Bundle budget.** `npm run build --workspace @bridge/web-chat` после Vite-сборки
+  запускает `scripts/check-bundle-size.mjs`: проверяет ленивый loader
+  `bridge-web-chat.js`, gzip-бюджет production JS и raw CSS budget.
+
 ## Commands
 
 - `npm run dev --workspace @bridge/web-chat` — локальный стенд с MSW в dev mode.
   Параметр `?edge=1` включает прохождение через Edge Cluster (CP-7).
 - `npm test --workspace @bridge/web-chat` — unit/integration тесты (Vitest).
 - `npm run test:e2e --workspace @bridge/web-chat` — e2e-сценарий CP-7 (Playwright).
-- `npm run build --workspace @bridge/web-chat` — сборка widget bundle.
+- `npm run build --workspace @bridge/web-chat` — сборка widget bundle и проверка
+  budget размера.
