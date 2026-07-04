@@ -15,7 +15,7 @@
     "packages/*"
   ],
   "scripts": {
-    "lint": "npm run lint --workspaces --if-present && node --check scripts/ci-placeholder.mjs && node --check scripts/workspace-command.mjs && node --check scripts/db-migrate.mjs && node --check scripts/db-seed.mjs && node --check db/seeds/000001_m0_seed.mjs && find tests -name '*.mjs' -print0 | xargs -0 -n1 node --check",
+    "lint": "npm run lint --workspaces --if-present && node --check scripts/ci-placeholder.mjs && node --check scripts/workspace-command.mjs && node --check scripts/db-backup-restore.mjs && node --check scripts/db-migrate.mjs && node --check scripts/db-seed.mjs && node --check db/seeds/000001_m0_seed.mjs && find tests -name '*.mjs' -print0 | xargs -0 -n1 node --check",
     "test": "npm run test --workspaces --if-present && node --test tests/smoke/*.test.mjs",
     "build": "npm run build --workspaces --if-present",
     "smoke": "node --test tests/smoke/*.test.mjs",

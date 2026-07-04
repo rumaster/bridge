@@ -285,6 +285,15 @@ pinning, неизменяемость версий и tenant-isolated журна
   - *e2e:* участие в полном наборе § 26.6 (ТЗ) как зависимость; проба RPO/RTO.
 - **DoD.** § 9.4 + обратимость; регламент backup/restore задокументирован (§ 28 ТЗ).
 
+**Статус реализации M5.** Data Platform закрывает CP-9 без новых доменных таблиц:
+миграция M5 добавляет deletion-tombstone для `configuration_history`, процедуру
+`app.anonymize_client_personal_data(...)` и индексы эксплуатационного контроля.
+Регламент PITR/backup/restore для основной БД и RF-контура вынесен в
+`docs/operations/data-platform-backup-restore.md`; интеграционный тест
+`tests/integration/data-platform.test.mjs` проверяет логический restore на чистую
+БД, сохранение append-only аудита, целостность истории конфигурации после
+удаления и отсутствие исходных ПДн после обезличивания клиента.
+
 ---
 
 ## 6. Точки согласования (Data Platform — поставщик для всех)

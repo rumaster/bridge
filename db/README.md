@@ -31,7 +31,7 @@ DATABASE_URL=postgres://user:password@localhost:5433/bridge_edge npm run db:migr
 npm run test:integration
 ```
 
-## M0/M1/M2/M3/M4 Схема
+## M0/M1/M2/M3/M4/M5 Схема
 
 Миграция `20260702160218000_m0_schema.sql` создаёт:
 
@@ -119,6 +119,21 @@ RF-миграция `db/rf-migrations/20260703151000000_m4_edge_message_buffer.s
 разделение выполняется на уровне деплоя: `docker-compose.rf.yml` поднимает
 отдельный `postgres-rf` и отдельную job `migrate-rf`, а зарубежный Application
 Cluster работает со своей основной БД.
+
+Миграция `20260704070000000_m5_data_ops.sql` добавляет M5-операции без новых
+доменных таблиц:
+
+- `configuration_history` получает tombstone-запись при `DELETE` конфигурации,
+  поэтому история ключа не обрывается;
+- `app.anonymize_client_personal_data(...)` необратимо обезличивает клиентские
+  ПДн, сохраняя суррогатные UUID-ссылки и append-only audit;
+- индексы `clients_anonymized_at_idx`,
+  `communication_endpoints_client_channel_idx`,
+  `audit_events_object_lookup_idx` ускоряют эксплуатационные проверки
+  обезличивания и аудита.
+
+Регламент backup/restore, PITR и RPO/RTO по основной БД и RF-БД описан в
+[`docs/operations/data-platform-backup-restore.md`](../docs/operations/data-platform-backup-restore.md).
 
 ## RLS Контекст
 
