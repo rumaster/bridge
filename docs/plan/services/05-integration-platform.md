@@ -253,6 +253,22 @@ C2+C6 зафиксированы как `stable_for_m3` в
   §26.6) с ретраями/лимитами.
 - **DoD.** § 9.4 + доставка идемпотентна (тест «повтор без дубля»); CP-6 зелёный.
 
+**Статус реализации M4.** M4-05 Integration Platform завершён для CP-6: модуль
+`services/integration-platform/src/delivery/` реализует классификацию ошибок и
+экспоненциальный бэкофф (`errors.mjs`, `backoff.mjs`), token-bucket rate limiting
+на канал с backpressure и изоляцией нагрузки (`rate-limiter.mjs`), идемпотентную
+доставку по сквозному `idempotency_key` (`delivery-engine.mjs` +
+`mock-external-channel.mjs`) и фиксацию попыток в `message_delivery_attempts`
+через Backend (`backend-delivery-client.mjs`, контракт `C2.DeliveryAttempt`).
+Движок подключён к серверу через `POST /internal/delivery/dispatch` и метрики
+`integration_platform_delivery_*`. Проверено unit
+`services/integration-platform/test/unit/m4-delivery.test.mjs`, integration
+`services/integration-platform/test/integration/m4-delivery.integration.test.mjs`
+(ретрай без дублей, rate limit, запись попыток), contract
+`tests/contract/int-delivery-attempts-cp6.test.mjs` и e2e
+`tests/e2e/broadcast-delivery-cp6.test.mjs` («Broadcast: доставка кампании» с
+ретраями/лимитами). Реальные внешние API и деградация каналов — предмет M5.
+
 ### 5.6 M5 — отказоустойчивость всех каналов и деградация
 
 - **Цель.** **Стабилизация и приёмка** (CP-9): отказоустойчивость всех каналов,

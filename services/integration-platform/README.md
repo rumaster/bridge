@@ -27,3 +27,38 @@
 Mock adapter поддерживает весь C6 v1 набор возможностей: `text`, `image`, `file`,
 `voice`, `video`, `buttons`, `reactions`, `typing_indicator`, `read_receipt`,
 `delete`, `edit`.
+
+## Delivery engine (M4, CP-6)
+
+Этап M4-05 добавляет надёжную массовую доставку через адаптеры (ТЗ §10.8, §10.9,
+§11.12). Модуль `src/delivery/` объединяет три механизма:
+
+- **Ретраи и обработка ошибок (§10.8).** `classifyDeliveryError` делит ошибки на
+  повторяемые (429, 5xx, 408/425, сетевые коды `ECONNRESET`/`ETIMEDOUT`/… ) и
+  постоянные (прочие 4xx, неизвестные). `createBackoffPolicy` даёт
+  экспоненциальный бэкофф `delay(n) = min(maxDelayMs, baseDelayMs * factor^(n-1))`
+  с опциональным jitter и учётом `Retry-After`. Каждая попытка фиксируется в
+  `message_delivery_attempts` через Backend (`createBackendDeliveryClient`,
+  контракт `C2.DeliveryAttempt`), что одновременно служит уведомлением ядра.
+- **Rate limiting на канал (§10.9).** `createChannelRateLimiter` — token bucket с
+  непрерывным пополнением и изоляцией нагрузки между каналами; при исчерпании
+  токенов включается backpressure (ожидание пополнения, лимит по `maxWaitMs`).
+- **Идемпотентная доставка (§11.12).** Сквозной `idempotency_key` (= `message_id`)
+  доходит до внешнего канала; повтор с уже обработанным ключом отбрасывается без
+  создания второго внешнего сообщения (двухуровневый dedup: движок + фасад).
+
+Внешний API канала на этом этапе — мок (`createMockExternalChannel`); реальные
+внешние сервисы подключаются в M5 (ТЗ §26.3, в CI внешние API не вызываются).
+
+Endpoint-ы и метрики:
+
+- `POST /internal/delivery/dispatch` — принять C2 Egress и доставить через движок
+  (`202` при доставке, `502` при неустранимом отказе, `400` при некорректном
+  payload, `503` если движок не сконфигурирован).
+- `GET /metrics` дополнительно отдаёт счётчики
+  `integration_platform_delivery_*` (`deliveries_total`, `delivered_total`,
+  `failed_total`, `duplicate_total`, `retries_total`, `attempts_total`,
+  `attempt_record_failures_total`).
+
+Вне области M4-05: устойчивость к недоступности внешних API и деградация всех
+каналов (M5); генерация кампаний остаётся в SVC-BCAST.
