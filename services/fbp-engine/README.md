@@ -1,9 +1,13 @@
-# SVC-FBP — движок исполнения Workflow (M3-10)
+# SVC-FBP — движок исполнения Workflow (M3-10, M4-10)
 
 Форк `fbp-engine`, переработанный под платформу (ТЗ §13.13): доменно-нейтральное
 ядро исполнения графа, узел Backend API как единственный санкционированный способ
 менять данные и безопасный Transform Node. Реализация clean-room —
 см. [`LICENSE-NOTE.md`](./LICENSE-NOTE.md).
+
+Веха **M4-10** добавила поверх ядра три механизма (аддитивно, без изменения набора
+узлов, узла Backend API и Transform Node из M3): **неизменяемые версии схем**,
+**version pinning** и **stateless-исполнитель** с горизонтальным масштабированием.
 
 ## Слои
 
@@ -15,7 +19,14 @@
 - `src/schema/validate-workflow.mjs` — валидация схемы **на этапе сохранения**.
 - `src/backend/client.mjs` — клиент Backend API (канал C3) и мок с изоляцией
   арендаторов для тестов.
-- `src/engine.mjs` — прикладной фасад (`createFbpEngine`).
+- `src/versions/version-registry.mjs` — реестр **неизменяемых версий** схем
+  (M4): публикация правки = НОВАЯ версия, перезапись отклоняется, версия по
+  умолчанию переключается конфигурацией.
+- `src/state/instance-store.mjs` — референс-модель `workflow_instances`
+  (закрепление версии) и `workflow_instance_state` (**внешнее** состояние).
+- `src/runtime/instance-runtime.mjs` — оркестратор `start`/`resume` с version
+  pinning и stateless-продолжением.
+- `src/engine.mjs` — прикладные фасады (`createFbpEngine`, `createFbpRuntime`).
 
 > `src/server.mjs`, `src/deterministic-fbp.mjs`, `src/c5-dto.mjs`, `src/main.mjs`
 > — замороженный детерминированный C5-сервер этапа M0 (wire-контракт CP-4/CP-5).
@@ -39,6 +50,42 @@ const result = await engine.runWorkflow({
 });
 // result: { instance_id, organization_id, status, output, journal, ... }
 ```
+
+## Рантайм M4: версии, pinning, stateless-масштабирование (§13.10, §25.3)
+
+```js
+import { createFbpRuntime } from "./src/engine.mjs";
+
+const runtime = createFbpRuntime({ backendClient });
+
+// Неизменяемые версии: публикация правки — это НОВАЯ версия (не перезапись).
+const v1 = runtime.publishVersion({ organizationId, workflowId, schema: schemaV1 });
+const v2 = runtime.publishVersion({ organizationId, workflowId, schema: schemaV2 });
+runtime.setDefaultVersion({ organizationId, workflowId, versionId: v2.id }); // конфигурацией
+
+// Version pinning: экземпляр закрепляется за версией на старте.
+const started = await runtime.start({ organizationId, workflowId, context, input });
+// → status: "waiting" при узле wait-event; состояние ушло в workflow_instance_state.
+
+// Stateless: продолжить может ДРУГОЙ узел-исполнитель над тем же хранилищем.
+const nodeB = createFbpRuntime({ backendClient, versions: runtime.versions, instances: runtime.instances });
+const done = await nodeB.resume({ organizationId, instanceId: started.instance_id, event });
+// → доигрывается на ЗАКРЕПЛЁННОЙ версии, даже если default уже переключён.
+```
+
+- **Неизменяемые версии** (§13.10): каждая правка порождает новую версию с
+  монотонным `version_no`; попытка перезаписать существующую версию отклоняется
+  (`VersionImmutabilityError`); опубликованная схема заморожена (`deepFreeze`).
+  Зеркалит ограничения БД `UNIQUE(workflow_id, version_no)` и триггер
+  `workflow_versions_immutable`.
+- **Version pinning** (§13.10): идущий экземпляр исполняется до конца на своей
+  версии; публикация новой версии влияет только на последующие старты;
+  переключение версии по умолчанию — конфигурацией (`setDefaultVersion`).
+- **Stateless-исполнитель** (§25.3): при переходе в ожидание снимок состояния
+  выносится в `workflow_instance_state` (через Backend); исполнитель не держит
+  память между шагами — любой узел продолжает любой экземпляр по внешнему
+  состоянию. Так моделируется горизонтальное масштабирование (нагрузочная
+  приёмка — веха M5, вне охвата M4).
 
 ## Нейтральный набор узлов (§13.13-п.1)
 

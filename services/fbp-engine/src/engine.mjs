@@ -4,6 +4,9 @@ import { WorkflowExecutionError } from "./core/errors.mjs";
 import { runGraph } from "./core/executor.mjs";
 import { deterministicUuid } from "./core/ids.mjs";
 import { assertWorkflowSchema, validateWorkflowSchema } from "./schema/validate-workflow.mjs";
+import { createVersionRegistry } from "./versions/version-registry.mjs";
+import { createInstanceStore } from "./state/instance-store.mjs";
+import { createInstanceRuntime } from "./runtime/instance-runtime.mjs";
 
 /**
  * Фасад движка Workflow (форк fbp-engine, ТЗ §13.13). Предоставляет две операции:
@@ -76,7 +79,45 @@ export function createFbpEngine({ backendClient, limits = {}, now } = {}) {
   };
 }
 
+/**
+ * Собранный рантайм вехи M4: реестр неизменяемых версий (`versions`), хранилище
+ * экземпляров и внешнего состояния (`instances`) и оркестратор (`start`/`resume`)
+ * с version pinning и stateless-продолжением. Компоненты можно переиспользовать
+ * между «узлами-исполнителями», передав общее хранилище — так моделируется
+ * горизонтальное масштабирование (ТЗ §25.3): любой узел обрабатывает любой
+ * экземпляр по `workflow_instance_state`.
+ */
+export function createFbpRuntime({
+  backendClient,
+  now,
+  versions = createVersionRegistry({ ...(now ? { now } : {}) }),
+  instances = createInstanceStore({ ...(now ? { now } : {}) }),
+  limits = {},
+} = {}) {
+  if (!backendClient || typeof backendClient.call !== "function") {
+    throw new TypeError(
+      "createFbpRuntime требует backendClient с методом call — данные идут только через Backend API (C3).",
+    );
+  }
+  const runtime = createInstanceRuntime({ backendClient, versions, instances, limits, ...(now ? { now } : {}) });
+  return {
+    versions,
+    instances,
+    /** Опубликовать версию схемы (неизменяемо, ТЗ §13.10). */
+    publishVersion: (args) => versions.publishVersion(args),
+    /** Переключить версию по умолчанию — конфигурацией (ТЗ §13.10). */
+    setDefaultVersion: (args) => versions.setDefaultVersion(args),
+    /** Запустить экземпляр (version pinning на старте). */
+    start: (args) => runtime.start(args),
+    /** Продолжить ожидающий экземпляр (stateless, возможно на другом узле). */
+    resume: (args) => runtime.resume(args),
+  };
+}
+
 export { validateWorkflowSchema, assertWorkflowSchema } from "./schema/validate-workflow.mjs";
+export { createVersionRegistry } from "./versions/version-registry.mjs";
+export { createInstanceStore } from "./state/instance-store.mjs";
+export { createInstanceRuntime } from "./runtime/instance-runtime.mjs";
 
 function createContext({ context, schema, input, instanceId, now }) {
   if (!context || typeof context.organization_id !== "string" || context.organization_id.trim() === "") {
