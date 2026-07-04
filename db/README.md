@@ -18,13 +18,20 @@ DATABASE_URL=postgres://user:password@localhost:5432/bridge npm run db:seed
 DATABASE_URL=postgres://user:password@localhost:5432/bridge npm run db:migrate:down
 ```
 
+Для отдельной БД РФ-контура Edge используется тот же runner, но цель `rf`:
+
+```bash
+DATABASE_URL=postgres://user:password@localhost:5433/bridge_edge npm run db:migrate:rf:up
+DATABASE_URL=postgres://user:password@localhost:5433/bridge_edge npm run db:migrate:rf:down
+```
+
 Интеграционная проверка поднимает PostgreSQL 16 + pgvector через Testcontainers:
 
 ```bash
 npm run test:integration
 ```
 
-## M0/M1/M2/M3 Схема
+## M0/M1/M2/M3/M4 Схема
 
 Миграция `20260702160218000_m0_schema.sql` создаёт:
 
@@ -90,6 +97,28 @@ append-only защиту `audit_events` и `configuration_history`.
 (атомарность outbox): событие и изменение агрегата коммитятся либо
 откатываются вместе. Все шесть таблиц покрыты tenant RLS по
 `organization_id`.
+
+Миграция `20260703150000000_m4_broadcast_notification_schema.sql` добавляет
+схему M4 в основной Application Cluster:
+
+- `broadcasts`, `broadcast_recipients`, `broadcast_messages`,
+  `broadcast_stats`;
+- `broadcast_messages.message_id` ссылается на `messages(id, organization_id)`,
+  поэтому доставка Broadcast остаётся на едином механизме `messages`;
+- `notifications` и `notification_settings` с категориями
+  `info/warning/error/critical/admin` и каналами `web/telegram/email/push`;
+- tenant RLS по `organization_id` для всех broadcast/notification-таблиц.
+
+`outbox_events` не пересоздаётся в M4: таблица и индексы `status`/`pending`
+остаются из M3 и переиспользуются продюсерами Broadcast, Notification и Edge.
+
+RF-миграция `db/rf-migrations/20260703151000000_m4_edge_message_buffer.sql`
+применяется только к отдельной БД РФ-контура и создаёт
+`edge_message_buffer` с `idempotency_key`, `sequence_number`,
+`payload_encrypted`, `ttl`, индексами для дренажа и дедупликации. RF-first
+разделение выполняется на уровне деплоя: `docker-compose.rf.yml` поднимает
+отдельный `postgres-rf` и отдельную job `migrate-rf`, а зарубежный Application
+Cluster работает со своей основной БД.
 
 ## RLS Контекст
 

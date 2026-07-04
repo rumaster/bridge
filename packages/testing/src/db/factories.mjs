@@ -264,10 +264,29 @@ const WORKFLOW_INSTANCE_STATUSES = [
   "cancelled",
 ];
 const OUTBOX_EVENT_STATUSES = ["pending", "published", "failed"];
+const BROADCAST_STATUSES = ["draft", "scheduled", "running", "done", "failed"];
+const BROADCAST_DELIVERY_STATUSES = [
+  "prepared",
+  "sent",
+  "delivered",
+  "failed",
+  "skipped",
+];
+const NOTIFICATION_CATEGORIES = ["info", "warning", "error", "critical", "admin"];
+const NOTIFICATION_CHANNELS = ["web", "telegram", "email", "push"];
+const NOTIFICATION_STATUSES = ["new", "read"];
 
 function assertJsonObject(value, fieldName) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     throw new TypeError(`${fieldName} must be a JSON object`);
+  }
+
+  return value;
+}
+
+function assertNonNegativeInteger(value, fieldName) {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new TypeError(`${fieldName} must be a non-negative safe integer`);
   }
 
   return value;
@@ -511,4 +530,268 @@ export function createTestOutboxEvent(overrides = {}) {
   }
 
   return event;
+}
+
+export function createTestBroadcast(overrides = {}) {
+  const createdAt = overrides.created_at ?? toUtcTimestamptz();
+  const broadcast = {
+    id: randomUUID(),
+    organization_id: randomUUID(),
+    name: "Customer Re-engagement",
+    status: "draft",
+    template: { type: "text", body: "Hello, {{client.display_name}}" },
+    filter: { tags: ["segment-a"] },
+    schedule: {},
+    rate_limit: { per_minute: 120 },
+    created_by: null,
+    created_at: createdAt,
+    updated_at: createdAt,
+    ...overrides,
+  };
+
+  assertUuid(broadcast.id, "broadcast.id");
+  assertUuid(broadcast.organization_id, "broadcast.organization_id");
+  assertNonBlankText(broadcast.name, "broadcast.name");
+  if (!BROADCAST_STATUSES.includes(broadcast.status)) {
+    throw new TypeError(
+      `broadcast.status must be one of ${BROADCAST_STATUSES.join(", ")}`,
+    );
+  }
+  assertJsonObject(broadcast.template, "broadcast.template");
+  assertJsonObject(broadcast.filter, "broadcast.filter");
+  assertJsonObject(broadcast.schedule, "broadcast.schedule");
+  assertJsonObject(broadcast.rate_limit, "broadcast.rate_limit");
+  if (broadcast.created_by !== null) {
+    assertUuid(broadcast.created_by, "broadcast.created_by");
+  }
+  assertUtcTimestamptz(broadcast.created_at, "broadcast.created_at");
+  assertUtcTimestamptz(broadcast.updated_at, "broadcast.updated_at");
+  if (broadcast.updated_at < broadcast.created_at) {
+    throw new TypeError("broadcast.updated_at must be greater than or equal to created_at");
+  }
+
+  return broadcast;
+}
+
+export function createTestBroadcastRecipient(overrides = {}) {
+  const recipient = {
+    id: randomUUID(),
+    organization_id: randomUUID(),
+    broadcast_id: randomUUID(),
+    client_id: randomUUID(),
+    endpoint_id: randomUUID(),
+    status: "prepared",
+    created_at: toUtcTimestamptz(),
+    updated_at: toUtcTimestamptz(),
+    ...overrides,
+  };
+
+  assertUuid(recipient.id, "broadcast_recipient.id");
+  assertUuid(recipient.organization_id, "broadcast_recipient.organization_id");
+  assertUuid(recipient.broadcast_id, "broadcast_recipient.broadcast_id");
+  assertUuid(recipient.client_id, "broadcast_recipient.client_id");
+  assertUuid(recipient.endpoint_id, "broadcast_recipient.endpoint_id");
+  if (!BROADCAST_DELIVERY_STATUSES.includes(recipient.status)) {
+    throw new TypeError(
+      `broadcast_recipient.status must be one of ${BROADCAST_DELIVERY_STATUSES.join(", ")}`,
+    );
+  }
+  assertUtcTimestamptz(recipient.created_at, "broadcast_recipient.created_at");
+  assertUtcTimestamptz(recipient.updated_at, "broadcast_recipient.updated_at");
+  if (recipient.updated_at < recipient.created_at) {
+    throw new TypeError(
+      "broadcast_recipient.updated_at must be greater than or equal to created_at",
+    );
+  }
+
+  return recipient;
+}
+
+export function createTestBroadcastMessage(overrides = {}) {
+  const message = {
+    id: randomUUID(),
+    organization_id: randomUUID(),
+    broadcast_id: randomUUID(),
+    message_id: randomUUID(),
+    status: "prepared",
+    created_at: toUtcTimestamptz(),
+    updated_at: toUtcTimestamptz(),
+    ...overrides,
+  };
+
+  assertUuid(message.id, "broadcast_message.id");
+  assertUuid(message.organization_id, "broadcast_message.organization_id");
+  assertUuid(message.broadcast_id, "broadcast_message.broadcast_id");
+  assertUuid(message.message_id, "broadcast_message.message_id");
+  if (!BROADCAST_DELIVERY_STATUSES.includes(message.status)) {
+    throw new TypeError(
+      `broadcast_message.status must be one of ${BROADCAST_DELIVERY_STATUSES.join(", ")}`,
+    );
+  }
+  assertUtcTimestamptz(message.created_at, "broadcast_message.created_at");
+  assertUtcTimestamptz(message.updated_at, "broadcast_message.updated_at");
+  if (message.updated_at < message.created_at) {
+    throw new TypeError(
+      "broadcast_message.updated_at must be greater than or equal to created_at",
+    );
+  }
+
+  return message;
+}
+
+export function createTestBroadcastStats(overrides = {}) {
+  const stats = {
+    broadcast_id: randomUUID(),
+    organization_id: randomUUID(),
+    prepared: 0,
+    sent: 0,
+    delivered: 0,
+    failed: 0,
+    updated_at: toUtcTimestamptz(),
+    ...overrides,
+  };
+
+  assertUuid(stats.broadcast_id, "broadcast_stats.broadcast_id");
+  assertUuid(stats.organization_id, "broadcast_stats.organization_id");
+  assertNonNegativeInteger(stats.prepared, "broadcast_stats.prepared");
+  assertNonNegativeInteger(stats.sent, "broadcast_stats.sent");
+  assertNonNegativeInteger(stats.delivered, "broadcast_stats.delivered");
+  assertNonNegativeInteger(stats.failed, "broadcast_stats.failed");
+  assertUtcTimestamptz(stats.updated_at, "broadcast_stats.updated_at");
+
+  return stats;
+}
+
+export function createTestNotification(overrides = {}) {
+  const createdAt = overrides.created_at ?? toUtcTimestamptz();
+  const notification = {
+    id: randomUUID(),
+    organization_id: randomUUID(),
+    recipient_user_id: randomUUID(),
+    category: "info",
+    title: "New event",
+    body: "A new platform event requires attention.",
+    payload: {},
+    status: "new",
+    created_at: createdAt,
+    read_at: null,
+    ...overrides,
+  };
+
+  assertUuid(notification.id, "notification.id");
+  assertUuid(notification.organization_id, "notification.organization_id");
+  assertUuid(notification.recipient_user_id, "notification.recipient_user_id");
+  if (!NOTIFICATION_CATEGORIES.includes(notification.category)) {
+    throw new TypeError(
+      `notification.category must be one of ${NOTIFICATION_CATEGORIES.join(", ")}`,
+    );
+  }
+  assertNonBlankText(notification.title, "notification.title");
+  assertNonBlankText(notification.body, "notification.body");
+  assertJsonObject(notification.payload, "notification.payload");
+  if (!NOTIFICATION_STATUSES.includes(notification.status)) {
+    throw new TypeError(
+      `notification.status must be one of ${NOTIFICATION_STATUSES.join(", ")}`,
+    );
+  }
+  assertUtcTimestamptz(notification.created_at, "notification.created_at");
+  if (notification.status === "read") {
+    if (notification.read_at === null) {
+      throw new TypeError("notification.read_at is required when status is read");
+    }
+  } else if (notification.read_at !== null) {
+    throw new TypeError("notification.read_at must be null unless status is read");
+  }
+  if (notification.read_at !== null) {
+    assertUtcTimestamptz(notification.read_at, "notification.read_at");
+    if (notification.read_at < notification.created_at) {
+      throw new TypeError(
+        "notification.read_at must be greater than or equal to created_at",
+      );
+    }
+  }
+
+  return notification;
+}
+
+export function createTestNotificationSetting(overrides = {}) {
+  const createdAt = overrides.created_at ?? toUtcTimestamptz();
+  const setting = {
+    id: randomUUID(),
+    organization_id: randomUUID(),
+    user_id: randomUUID(),
+    category: "info",
+    channel: "web",
+    enabled: true,
+    created_at: createdAt,
+    updated_at: createdAt,
+    ...overrides,
+  };
+
+  assertUuid(setting.id, "notification_setting.id");
+  assertUuid(setting.organization_id, "notification_setting.organization_id");
+  assertUuid(setting.user_id, "notification_setting.user_id");
+  if (!NOTIFICATION_CATEGORIES.includes(setting.category)) {
+    throw new TypeError(
+      `notification_setting.category must be one of ${NOTIFICATION_CATEGORIES.join(", ")}`,
+    );
+  }
+  if (!NOTIFICATION_CHANNELS.includes(setting.channel)) {
+    throw new TypeError(
+      `notification_setting.channel must be one of ${NOTIFICATION_CHANNELS.join(", ")}`,
+    );
+  }
+  if (typeof setting.enabled !== "boolean") {
+    throw new TypeError("notification_setting.enabled must be a boolean");
+  }
+  assertUtcTimestamptz(setting.created_at, "notification_setting.created_at");
+  assertUtcTimestamptz(setting.updated_at, "notification_setting.updated_at");
+  if (setting.updated_at < setting.created_at) {
+    throw new TypeError(
+      "notification_setting.updated_at must be greater than or equal to created_at",
+    );
+  }
+
+  return setting;
+}
+
+export function createTestEdgeMessageBufferEntry(overrides = {}) {
+  const receivedAt = overrides.received_at ?? toUtcTimestamptz();
+  const ttl =
+    overrides.ttl ??
+    toUtcTimestamptz(new Date(new Date(receivedAt).getTime() + 60 * 60 * 1000));
+  const entry = {
+    id: randomUUID(),
+    endpoint_id: randomUUID(),
+    sequence_number: 1,
+    idempotency_key: randomUUID(),
+    payload_encrypted: Buffer.from("encrypted edge payload", "utf8"),
+    received_at: receivedAt,
+    ttl,
+    forwarded_at: null,
+    ...overrides,
+  };
+
+  assertUuid(entry.id, "edge_message_buffer.id");
+  assertUuid(entry.endpoint_id, "edge_message_buffer.endpoint_id");
+  assertPositiveInteger(entry.sequence_number, "edge_message_buffer.sequence_number");
+  assertUuid(entry.idempotency_key, "edge_message_buffer.idempotency_key");
+  if (!Buffer.isBuffer(entry.payload_encrypted) || entry.payload_encrypted.length === 0) {
+    throw new TypeError("edge_message_buffer.payload_encrypted must be a non-empty Buffer");
+  }
+  assertUtcTimestamptz(entry.received_at, "edge_message_buffer.received_at");
+  assertUtcTimestamptz(entry.ttl, "edge_message_buffer.ttl");
+  if (entry.ttl < entry.received_at) {
+    throw new TypeError("edge_message_buffer.ttl must be greater than or equal to received_at");
+  }
+  if (entry.forwarded_at !== null) {
+    assertUtcTimestamptz(entry.forwarded_at, "edge_message_buffer.forwarded_at");
+    if (entry.forwarded_at < entry.received_at) {
+      throw new TypeError(
+        "edge_message_buffer.forwarded_at must be greater than or equal to received_at",
+      );
+    }
+  }
+
+  return entry;
 }

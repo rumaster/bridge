@@ -23,11 +23,24 @@ const TEST_DB = {
   user: "bridge_test",
   password: "bridge_test",
 };
+const EDGE_RF_TABLES = ["edge_message_buffer"];
+const EDGE_FIXTURES = {
+  endpoint: "20000000-0000-4000-8000-000000000401",
+  first: "20000000-0000-4000-8000-000000000501",
+  second: "20000000-0000-4000-8000-000000000502",
+  duplicate: "20000000-0000-4000-8000-000000000503",
+  firstIdempotencyKey: "20000000-0000-4000-8000-000000000601",
+  secondIdempotencyKey: "20000000-0000-4000-8000-000000000602",
+};
 const DATA_PLATFORM_TABLES = [
   "adapter_capabilities",
   "attachments",
   "audit_events",
   "auth_sessions",
+  "broadcast_messages",
+  "broadcast_recipients",
+  "broadcast_stats",
+  "broadcasts",
   "channels",
   "client_identity_links",
   "client_notes",
@@ -43,6 +56,8 @@ const DATA_PLATFORM_TABLES = [
   "login_codes",
   "message_delivery_attempts",
   "messages",
+  "notification_settings",
+  "notifications",
   "organizations",
   "outbox_events",
   "roles",
@@ -59,6 +74,10 @@ const TENANT_RLS_TABLES = [
   "attachments",
   "audit_events",
   "auth_sessions",
+  "broadcast_messages",
+  "broadcast_recipients",
+  "broadcast_stats",
+  "broadcasts",
   "channels",
   "client_identity_links",
   "client_notes",
@@ -74,6 +93,8 @@ const TENANT_RLS_TABLES = [
   "login_codes",
   "message_delivery_attempts",
   "messages",
+  "notification_settings",
+  "notifications",
   "organizations",
   "outbox_events",
   "user_roles",
@@ -124,6 +145,11 @@ const M1_FIXTURES = {
     outboxEvent: "10000000-0000-4000-8000-000000000f01",
     outboxMessage: "10000000-0000-4000-8000-000000000f11",
     outboxCommitEvent: "10000000-0000-4000-8000-000000000f21",
+    broadcast: "10000000-0000-4000-8000-000000001001",
+    broadcastRecipient: "10000000-0000-4000-8000-000000001011",
+    broadcastMessage: "10000000-0000-4000-8000-000000001021",
+    notification: "10000000-0000-4000-8000-000000001101",
+    notificationSetting: "10000000-0000-4000-8000-000000001111",
   },
   [ORG_B]: {
     organization: ORG_B,
@@ -158,6 +184,11 @@ const M1_FIXTURES = {
     outboxEvent: "10000000-0000-4000-8000-000000000f02",
     outboxMessage: "10000000-0000-4000-8000-000000000f12",
     outboxCommitEvent: "10000000-0000-4000-8000-000000000f22",
+    broadcast: "10000000-0000-4000-8000-000000001002",
+    broadcastRecipient: "10000000-0000-4000-8000-000000001012",
+    broadcastMessage: "10000000-0000-4000-8000-000000001022",
+    notification: "10000000-0000-4000-8000-000000001102",
+    notificationSetting: "10000000-0000-4000-8000-000000001112",
   },
 };
 
@@ -281,7 +312,11 @@ async function assertDataPlatformSchema(client, { expectSeedData }) {
     `
       SELECT to_regclass('public.conversations_organization_client_idx') AS conversations_organization_client_idx,
              to_regclass('public.messages_endpoint_sequence_number_idx') AS messages_endpoint_sequence_number_idx,
-             to_regclass('public.knowledge_chunks_embedding_hnsw_idx') AS knowledge_chunks_embedding_hnsw_idx
+             to_regclass('public.knowledge_chunks_embedding_hnsw_idx') AS knowledge_chunks_embedding_hnsw_idx,
+             to_regclass('public.broadcast_messages_message_id_idx') AS broadcast_messages_message_id_idx,
+             to_regclass('public.broadcast_recipients_status_idx') AS broadcast_recipients_status_idx,
+             to_regclass('public.notifications_status_created_at_idx') AS notifications_status_created_at_idx,
+             to_regclass('public.notification_settings_user_category_channel_unique') AS notification_settings_user_category_channel_unique
     `,
   );
 
@@ -296,6 +331,22 @@ async function assertDataPlatformSchema(client, { expectSeedData }) {
   assert.equal(
     indexes.rows[0].knowledge_chunks_embedding_hnsw_idx,
     "knowledge_chunks_embedding_hnsw_idx",
+  );
+  assert.equal(
+    indexes.rows[0].broadcast_messages_message_id_idx,
+    "broadcast_messages_message_id_idx",
+  );
+  assert.equal(
+    indexes.rows[0].broadcast_recipients_status_idx,
+    "broadcast_recipients_status_idx",
+  );
+  assert.equal(
+    indexes.rows[0].notifications_status_created_at_idx,
+    "notifications_status_created_at_idx",
+  );
+  assert.equal(
+    indexes.rows[0].notification_settings_user_category_channel_unique,
+    "notification_settings_user_category_channel_unique",
   );
 
   const embeddingColumn = await client.query(
@@ -872,6 +923,7 @@ async function insertM1TenantSlice(client, organizationId) {
   );
 
   await insertM3TenantSlice(client, organizationId);
+  await insertM4TenantSlice(client, organizationId);
 }
 
 async function insertM3TenantSlice(client, organizationId) {
@@ -1007,6 +1059,192 @@ async function insertM3TenantSlice(client, organizationId) {
       fixture.messageFirst,
       JSON.stringify({ conversation_id: fixture.conversation }),
     ],
+  );
+}
+
+async function insertM4TenantSlice(client, organizationId) {
+  const fixture = M1_FIXTURES[organizationId];
+  const suffix = organizationId === ORG_A ? "a" : "b";
+
+  await client.query(
+    `
+      INSERT INTO broadcasts (
+        id,
+        organization_id,
+        name,
+        status,
+        template,
+        filter,
+        schedule,
+        rate_limit,
+        created_by,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        $1,
+        $2,
+        $3,
+        'running',
+        $4::jsonb,
+        $5::jsonb,
+        $6::jsonb,
+        $7::jsonb,
+        $8,
+        '2026-01-01T00:09:00.000Z',
+        '2026-01-01T00:09:01.000Z'
+      )
+    `,
+    [
+      fixture.broadcast,
+      organizationId,
+      `Broadcast ${suffix.toUpperCase()}`,
+      JSON.stringify({ type: "text", body: `Hello ${suffix}` }),
+      JSON.stringify({ tags: [`segment-${suffix}`] }),
+      JSON.stringify({ mode: "immediate" }),
+      JSON.stringify({ per_minute: 120 }),
+      fixture.user,
+    ],
+  );
+
+  await client.query(
+    `
+      INSERT INTO broadcast_recipients (
+        id,
+        organization_id,
+        broadcast_id,
+        client_id,
+        endpoint_id,
+        status,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        $5,
+        'sent',
+        '2026-01-01T00:09:02.000Z',
+        '2026-01-01T00:09:03.000Z'
+      )
+    `,
+    [
+      fixture.broadcastRecipient,
+      organizationId,
+      fixture.broadcast,
+      fixture.client,
+      fixture.endpoint,
+    ],
+  );
+
+  await client.query(
+    `
+      INSERT INTO broadcast_messages (
+        id,
+        organization_id,
+        broadcast_id,
+        message_id,
+        status,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        $1,
+        $2,
+        $3,
+        $4,
+        'sent',
+        '2026-01-01T00:09:04.000Z',
+        '2026-01-01T00:09:05.000Z'
+      )
+    `,
+    [
+      fixture.broadcastMessage,
+      organizationId,
+      fixture.broadcast,
+      fixture.messageSecond,
+    ],
+  );
+
+  await client.query(
+    `
+      INSERT INTO broadcast_stats (
+        broadcast_id,
+        organization_id,
+        prepared,
+        sent,
+        delivered,
+        failed,
+        updated_at
+      )
+      VALUES ($1, $2, 1, 1, 0, 0, '2026-01-01T00:09:06.000Z')
+    `,
+    [fixture.broadcast, organizationId],
+  );
+
+  await client.query(
+    `
+      INSERT INTO notifications (
+        id,
+        organization_id,
+        recipient_user_id,
+        category,
+        title,
+        body,
+        payload,
+        status,
+        created_at,
+        read_at
+      )
+      VALUES (
+        $1,
+        $2,
+        $3,
+        'warning',
+        $4,
+        $5,
+        $6::jsonb,
+        'new',
+        '2026-01-01T00:09:07.000Z',
+        NULL
+      )
+    `,
+    [
+      fixture.notification,
+      organizationId,
+      fixture.user,
+      `Notification ${suffix.toUpperCase()}`,
+      `Broadcast ${suffix.toUpperCase()} requires attention`,
+      JSON.stringify({ broadcast_id: fixture.broadcast }),
+    ],
+  );
+
+  await client.query(
+    `
+      INSERT INTO notification_settings (
+        id,
+        organization_id,
+        user_id,
+        category,
+        channel,
+        enabled,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        $1,
+        $2,
+        $3,
+        'warning',
+        'web',
+        true,
+        '2026-01-01T00:09:08.000Z',
+        '2026-01-01T00:09:08.000Z'
+      )
+    `,
+    [fixture.notificationSetting, organizationId, fixture.user],
   );
 }
 
@@ -1408,6 +1646,162 @@ async function assertM3Invariants(client) {
   );
 }
 
+async function assertM4Invariants(client) {
+  const fixture = M1_FIXTURES[ORG_A];
+
+  const broadcastMessage = await client.query(
+    `
+      SELECT bm.broadcast_id, bm.message_id, m.organization_id, m.id
+      FROM broadcast_messages bm
+      JOIN messages m
+        ON m.id = bm.message_id
+       AND m.organization_id = bm.organization_id
+      WHERE bm.id = $1
+    `,
+    [fixture.broadcastMessage],
+  );
+  assert.deepEqual(broadcastMessage.rows[0], {
+    broadcast_id: fixture.broadcast,
+    message_id: fixture.messageSecond,
+    organization_id: ORG_A,
+    id: fixture.messageSecond,
+  });
+
+  const stats = await client.query(
+    `
+      SELECT prepared, sent, delivered, failed
+      FROM broadcast_stats
+      WHERE broadcast_id = $1 AND organization_id = $2
+    `,
+    [fixture.broadcast, ORG_A],
+  );
+  assert.deepEqual(stats.rows[0], {
+    prepared: 1,
+    sent: 1,
+    delivered: 0,
+    failed: 0,
+  });
+
+  await assert.rejects(
+    client.query(
+      `
+        INSERT INTO broadcast_recipients (
+          id,
+          organization_id,
+          broadcast_id,
+          client_id,
+          endpoint_id,
+          status
+        )
+        VALUES (
+          '10000000-0000-4000-8000-000000001091',
+          $1,
+          $2,
+          $3,
+          $4,
+          'prepared'
+        )
+      `,
+      [ORG_A, fixture.broadcast, fixture.client, fixture.endpoint],
+    ),
+    /broadcast_recipients_broadcast_endpoint_unique|duplicate key value/,
+  );
+
+  await assert.rejects(
+    client.query(
+      `
+        INSERT INTO broadcast_messages (
+          id,
+          organization_id,
+          broadcast_id,
+          message_id,
+          status
+        )
+        VALUES (
+          '10000000-0000-4000-8000-000000001092',
+          $1,
+          $2,
+          $3,
+          'sent'
+        )
+      `,
+      [ORG_A, fixture.broadcast, M1_FIXTURES[ORG_B].messageSecond],
+    ),
+    /broadcast_messages_message_organization_fk|violates foreign key constraint/,
+  );
+
+  await client.query(
+    `
+      UPDATE notifications
+      SET status = 'read', read_at = '2026-01-01T00:09:30.000Z'
+      WHERE id = $1
+    `,
+    [fixture.notification],
+  );
+  const notification = await client.query(
+    "SELECT status, read_at IS NOT NULL AS has_read_at FROM notifications WHERE id = $1",
+    [fixture.notification],
+  );
+  assert.deepEqual(notification.rows[0], {
+    status: "read",
+    has_read_at: true,
+  });
+
+  await assert.rejects(
+    client.query(
+      `
+        INSERT INTO notifications (
+          id,
+          organization_id,
+          recipient_user_id,
+          category,
+          title,
+          body,
+          payload,
+          status
+        )
+        VALUES (
+          '10000000-0000-4000-8000-000000001191',
+          $1,
+          $2,
+          'info',
+          'Broken notification',
+          'Missing read_at',
+          '{}'::jsonb,
+          'read'
+        )
+      `,
+      [ORG_A, fixture.user],
+    ),
+    /notifications_read_at_consistency_check|violates check constraint/,
+  );
+
+  await assert.rejects(
+    client.query(
+      `
+        INSERT INTO notification_settings (
+          id,
+          organization_id,
+          user_id,
+          category,
+          channel,
+          enabled
+        )
+        VALUES (
+          '10000000-0000-4000-8000-000000001192',
+          $1,
+          $2,
+          'warning',
+          'web',
+          false
+        )
+      `,
+      [ORG_A, fixture.user],
+    ),
+    /notification_settings_user_category_channel_unique|duplicate key value/,
+  );
+}
+
 async function assertWorkflowExecutionLogIsolation(adminConfig, adminClient) {
   const roleName = `wf_log_probe_${process.pid}`;
   const roleIdentifier = quoteIdentifier(roleName);
@@ -1535,7 +1929,211 @@ async function assertKnowledgeVectorSearchIsolation(adminConfig, adminClient) {
   }
 }
 
-describe("SVC-DATA M2 migrations", { timeout: 300_000 }, () => {
+async function assertEdgeRfSchema(client) {
+  const tables = await client.query(
+    `
+      SELECT table_name
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
+        AND table_name = ANY($1)
+      ORDER BY table_name
+    `,
+    [EDGE_RF_TABLES],
+  );
+  assert.deepEqual(
+    tables.rows.map((row) => row.table_name),
+    EDGE_RF_TABLES,
+  );
+
+  const columns = await client.query(
+    `
+      SELECT column_name, is_nullable
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = 'edge_message_buffer'
+      ORDER BY column_name
+    `,
+  );
+  assert.deepEqual(
+    columns.rows.map((row) => [row.column_name, row.is_nullable]),
+    [
+      ["endpoint_id", "NO"],
+      ["forwarded_at", "YES"],
+      ["id", "NO"],
+      ["idempotency_key", "NO"],
+      ["payload_encrypted", "NO"],
+      ["received_at", "NO"],
+      ["sequence_number", "NO"],
+      ["ttl", "NO"],
+    ],
+  );
+
+  const indexes = await client.query(
+    `
+      SELECT to_regclass('public.edge_message_buffer_idempotency_key_unique') AS idempotency_key_unique,
+             to_regclass('public.edge_message_buffer_endpoint_sequence_unique') AS endpoint_sequence_unique,
+             to_regclass('public.edge_message_buffer_pending_drain_idx') AS pending_drain_idx,
+             to_regclass('public.edge_message_buffer_ttl_idx') AS ttl_idx
+    `,
+  );
+  assert.deepEqual(indexes.rows[0], {
+    idempotency_key_unique: "edge_message_buffer_idempotency_key_unique",
+    endpoint_sequence_unique: "edge_message_buffer_endpoint_sequence_unique",
+    pending_drain_idx: "edge_message_buffer_pending_drain_idx",
+    ttl_idx: "edge_message_buffer_ttl_idx",
+  });
+}
+
+async function assertEdgeRfSchemaDropped(client) {
+  const objects = await client.query(`
+    SELECT to_regclass('public.edge_message_buffer') AS edge_message_buffer
+  `);
+  assert.deepEqual(objects.rows[0], {
+    edge_message_buffer: null,
+  });
+}
+
+async function assertEdgeMessageBufferInvariants(client) {
+  await client.query(
+    `
+      INSERT INTO edge_message_buffer (
+        id,
+        endpoint_id,
+        sequence_number,
+        idempotency_key,
+        payload_encrypted,
+        received_at,
+        ttl
+      )
+      VALUES
+        ($1, $2, 1, $3, $4, '2026-01-01T00:00:01.000Z', '2026-01-01T01:00:01.000Z'),
+        ($5, $2, 2, $6, $7, '2026-01-01T00:00:02.000Z', '2026-01-01T01:00:02.000Z')
+    `,
+    [
+      EDGE_FIXTURES.first,
+      EDGE_FIXTURES.endpoint,
+      EDGE_FIXTURES.firstIdempotencyKey,
+      Buffer.from("encrypted-edge-payload-1"),
+      EDGE_FIXTURES.second,
+      EDGE_FIXTURES.secondIdempotencyKey,
+      Buffer.from("encrypted-edge-payload-2"),
+    ],
+  );
+
+  await assert.rejects(
+    client.query(
+      `
+        INSERT INTO edge_message_buffer (
+          id,
+          endpoint_id,
+          sequence_number,
+          idempotency_key,
+          payload_encrypted,
+          received_at,
+          ttl
+        )
+        VALUES ($1, $2, 3, $3, $4, '2026-01-01T00:00:03.000Z', '2026-01-01T01:00:03.000Z')
+      `,
+      [
+        EDGE_FIXTURES.duplicate,
+        EDGE_FIXTURES.endpoint,
+        EDGE_FIXTURES.firstIdempotencyKey,
+        Buffer.from("duplicate-idempotency-key"),
+      ],
+    ),
+    /edge_message_buffer_idempotency_key_unique|duplicate key value/,
+  );
+
+  await assert.rejects(
+    client.query(
+      `
+        INSERT INTO edge_message_buffer (
+          id,
+          endpoint_id,
+          sequence_number,
+          idempotency_key,
+          payload_encrypted,
+          received_at,
+          ttl
+        )
+        VALUES (
+          '20000000-0000-4000-8000-000000000504',
+          $1,
+          2,
+          '20000000-0000-4000-8000-000000000604',
+          $2,
+          '2026-01-01T00:00:04.000Z',
+          '2026-01-01T01:00:04.000Z'
+        )
+      `,
+      [EDGE_FIXTURES.endpoint, Buffer.from("duplicate-sequence")],
+    ),
+    /edge_message_buffer_endpoint_sequence_unique|duplicate key value/,
+  );
+
+  const pending = await client.query(
+    `
+      SELECT id
+      FROM edge_message_buffer
+      WHERE forwarded_at IS NULL
+      ORDER BY endpoint_id, sequence_number
+    `,
+  );
+  assert.deepEqual(
+    pending.rows.map((row) => row.id),
+    [EDGE_FIXTURES.first, EDGE_FIXTURES.second],
+  );
+
+  await client.query(
+    `
+      UPDATE edge_message_buffer
+      SET forwarded_at = '2026-01-01T00:01:00.000Z'
+      WHERE id = $1
+    `,
+    [EDGE_FIXTURES.first],
+  );
+  const remaining = await client.query(
+    `
+      SELECT id
+      FROM edge_message_buffer
+      WHERE forwarded_at IS NULL
+      ORDER BY endpoint_id, sequence_number
+    `,
+  );
+  assert.deepEqual(
+    remaining.rows.map((row) => row.id),
+    [EDGE_FIXTURES.second],
+  );
+
+  await assert.rejects(
+    client.query(
+      `
+        INSERT INTO edge_message_buffer (
+          id,
+          endpoint_id,
+          sequence_number,
+          idempotency_key,
+          payload_encrypted,
+          received_at,
+          ttl
+        )
+        VALUES (
+          '20000000-0000-4000-8000-000000000505',
+          $1,
+          5,
+          '20000000-0000-4000-8000-000000000605',
+          $2,
+          '2026-01-01T01:00:00.000Z',
+          '2026-01-01T00:59:59.000Z'
+        )
+      `,
+      [EDGE_FIXTURES.endpoint, Buffer.from("expired-before-received")],
+    ),
+    /edge_message_buffer_ttl_after_received_check|violates check constraint/,
+  );
+}
+
+describe("SVC-DATA M4 migrations", { timeout: 300_000 }, () => {
   it("runs up, seeds deterministic data, enforces RLS, then runs down and up again", async () => {
     const container = await new GenericContainer(POSTGRES_IMAGE)
       .withEnvironment({
@@ -1562,6 +2160,7 @@ describe("SVC-DATA M2 migrations", { timeout: 300_000 }, () => {
         await assertKnowledgeVectorSearchIsolation(adminConfig, client);
         await assertWorkflowExecutionLogIsolation(adminConfig, client);
         await assertM3Invariants(client);
+        await assertM4Invariants(client);
 
         await runMigrations({
           databaseUrl: adminConfig,
@@ -1572,6 +2171,41 @@ describe("SVC-DATA M2 migrations", { timeout: 300_000 }, () => {
 
         await runMigrations({ databaseUrl: adminConfig, direction: "up" });
         await assertDataPlatformSchema(client, { expectSeedData: false });
+      });
+    } finally {
+      await container.stop();
+    }
+  });
+
+  it("runs RF edge buffer migrations up, down, and up again on a separate database", async () => {
+    const container = await new GenericContainer(POSTGRES_IMAGE)
+      .withEnvironment({
+        POSTGRES_DB: TEST_DB.database,
+        POSTGRES_USER: TEST_DB.user,
+        POSTGRES_PASSWORD: TEST_DB.password,
+      })
+      .withExposedPorts(POSTGRES_PORT)
+      .withWaitStrategy(Wait.forLogMessage(/database system is ready to accept connections/, 2))
+      .start();
+
+    try {
+      const adminConfig = connectionConfig(container);
+
+      await withClient(adminConfig, async (client) => {
+        await runMigrations({ databaseUrl: adminConfig, direction: "up", target: "rf" });
+        await assertEdgeRfSchema(client);
+        await assertEdgeMessageBufferInvariants(client);
+
+        await runMigrations({
+          databaseUrl: adminConfig,
+          direction: "down",
+          count: Number.POSITIVE_INFINITY,
+          target: "rf",
+        });
+        await assertEdgeRfSchemaDropped(client);
+
+        await runMigrations({ databaseUrl: adminConfig, direction: "up", target: "rf" });
+        await assertEdgeRfSchema(client);
       });
     } finally {
       await container.stop();
