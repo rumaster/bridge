@@ -1,17 +1,20 @@
 import { createHash } from "node:crypto";
 
-import {
-  C8_VERSION,
-  createBroadcastCoreDeliveryDraft,
-  createBroadcastStateChangedEvent,
-} from "../../../packages/contracts/src/c8.mjs";
+import { C8_VERSION } from "../../../packages/contracts/src/c8.mjs";
 import {
   assertCreateBroadcastRequest,
   assertStartBroadcastRequest,
 } from "./c8-dto.mjs";
+import {
+  buildBroadcastDraft,
+  createCampaignRunner,
+  createInMemoryCoreDelivery,
+} from "./campaign/index.mjs";
 
 export function createDeterministicBroadcastMock({
   now = () => new Date().toISOString(),
+  core,
+  recipientsPerBroadcast = 3,
 } = {}) {
   const createdAt = now();
   const broadcasts = new Map([
@@ -54,6 +57,16 @@ export function createDeterministicBroadcastMock({
     broadcasts_start_total: 0,
     broadcasts_stats_total: 0,
   };
+
+  // Единый механизм ядра (C1/C2). По умолчанию — in-memory мок; в тестах и
+  // интеграции подставляется реальный координатор доставки SVC-CORE (CP-6).
+  const coreDelivery = core ?? createInMemoryCoreDelivery();
+  const runner = createCampaignRunner({
+    core: coreDelivery,
+    clock: now,
+    // Dev-мок не блокируется на backpressure — пауза мгновенная.
+    sleep: async () => {},
+  });
 
   return {
     listBroadcasts({ organizationId, requestId = "req-broadcast-list-mock" }) {
@@ -119,40 +132,89 @@ export function createDeterministicBroadcastMock({
       return broadcast;
     },
 
-    startBroadcast(id, payload) {
+    async startBroadcast(id, payload) {
       const request = assertStartBroadcastRequest(payload);
-      const existing = broadcasts.get(id) ?? createImplicitBroadcast(id, request, now());
+      const existing =
+        broadcasts.get(id) ?? createImplicitBroadcast(id, request, now());
       const timestamp = now();
-      const previousStatus = existing.status;
-      const status = request.mode === "scheduled" ? "scheduled" : "running";
+
+      // Канонический вид кампании для ядра: organization_id и получатели — UUID
+      // (требование C1). Публичные C8-идентификаторы остаются как есть.
+      const canonicalOrganizationId = createDeterministicUuid([
+        "organization",
+        request.organization_id,
+      ]);
+      const canonicalBroadcast = {
+        ...existing,
+        organization_id: canonicalOrganizationId,
+      };
+      const recipients = materializeRecipients(
+        existing,
+        canonicalOrganizationId,
+        recipientsPerBroadcast,
+      );
+      const startIdempotencyKey = request.idempotency_key;
+
+      const drafts = recipients.map(
+        (recipient) =>
+          buildBroadcastDraft({
+            broadcast: canonicalBroadcast,
+            recipient,
+            startIdempotencyKey,
+            createdAt: timestamp,
+          }).draft,
+      );
+
+      metrics.broadcasts_start_total += 1;
+
+      // Запланированный запуск не доставляет немедленно — только фиксирует статус.
+      if (request.mode === "scheduled") {
+        const scheduled = {
+          ...existing,
+          organization_id: request.organization_id,
+          status: "scheduled",
+          schedule: {
+            ...existing.schedule,
+            mode: "scheduled",
+            scheduled_for: request.scheduled_for,
+          },
+          updated_at: timestamp,
+        };
+        broadcasts.set(id, scheduled);
+        stats.set(id, createStats(0, 0, 0, 0, timestamp));
+
+        return {
+          contract: "C8.StartBroadcastResponse",
+          version: C8_VERSION,
+          request_id: request.request_id,
+          organization_id: request.organization_id,
+          broadcast: scheduled,
+          degraded: false,
+          fallback_reason: null,
+          core_delivery_draft: drafts[0] ?? null,
+          core_delivery_drafts: drafts,
+          stats: stats.get(id),
+          state_changed_events: [],
+          state_changed_event: null,
+          created_at: timestamp,
+        };
+      }
+
+      // Немедленный запуск: идемпотентная генерация и доставка ЧЕРЕЗ единый
+      // механизм ядра (C1/C2), сбор `broadcast_stats` и событий C7 (CP-6).
+      const runResult = await runner.run(canonicalBroadcast, recipients, {
+        startIdempotencyKey,
+        mode: request.mode,
+      });
+
       const broadcast = {
         ...existing,
         organization_id: request.organization_id,
-        status,
-        schedule:
-          request.mode === "scheduled"
-            ? {
-                ...existing.schedule,
-                mode: "scheduled",
-                scheduled_for: request.scheduled_for,
-              }
-            : existing.schedule,
+        status: runResult.status,
         updated_at: timestamp,
       };
-      const coreDeliveryDraft = createDeliveryDraft(broadcast, request, timestamp);
-      const stateChangedEvent = createBroadcastStateChangedEvent({
-        eventId: `${id}:${status}`,
-        organizationId: request.organization_id,
-        broadcastId: id,
-        previousStatus,
-        status,
-        changedAt: timestamp,
-        reason: "mock_started",
-      });
-
-      metrics.broadcasts_start_total += 1;
       broadcasts.set(id, broadcast);
-      stats.set(id, createStats(10, status === "running" ? 4 : 0, status === "running" ? 3 : 0, status === "running" ? 1 : 0, timestamp));
+      stats.set(id, runResult.stats);
 
       return {
         contract: "C8.StartBroadcastResponse",
@@ -162,8 +224,12 @@ export function createDeterministicBroadcastMock({
         broadcast,
         degraded: false,
         fallback_reason: null,
-        core_delivery_draft: coreDeliveryDraft,
-        state_changed_event: stateChangedEvent,
+        core_delivery_draft: drafts[0] ?? null,
+        core_delivery_drafts: drafts,
+        stats: runResult.stats,
+        state_changed_events: runResult.events,
+        state_changed_event:
+          runResult.events[runResult.events.length - 1] ?? null,
         created_at: timestamp,
       };
     },
@@ -175,15 +241,18 @@ export function createDeterministicBroadcastMock({
     }) {
       metrics.broadcasts_stats_total += 1;
 
-      const broadcast = broadcasts.get(broadcastId) ?? createImplicitBroadcast(
-        broadcastId,
-        {
-          organization_id: organizationId,
-          created_by: "system",
-        },
-        now(),
-      );
-      const currentStats = stats.get(broadcastId) ?? createStats(10, 0, 0, 0, now());
+      const broadcast =
+        broadcasts.get(broadcastId) ??
+        createImplicitBroadcast(
+          broadcastId,
+          {
+            organization_id: organizationId,
+            created_by: "system",
+          },
+          now(),
+        );
+      const currentStats =
+        stats.get(broadcastId) ?? createStats(0, 0, 0, 0, now());
 
       return {
         contract: "C8.BroadcastStatsResponse",
@@ -199,6 +268,11 @@ export function createDeterministicBroadcastMock({
     getMetrics() {
       return { ...metrics };
     },
+
+    /** Доступ к единому механизму ядра — для интеграционных/e2e-проверок. */
+    getCoreDelivery() {
+      return coreDelivery;
+    },
   };
 }
 
@@ -210,27 +284,32 @@ export class BroadcastNotFoundError extends Error {
   }
 }
 
-function createDeliveryDraft(broadcast, request, timestamp) {
-  const canonicalOrganizationId = createDeterministicUuid([
-    "organization",
-    request.organization_id,
-  ]);
-  const messageId = createDeterministicUuid([
-    "broadcast-message",
-    broadcast.id,
-    request.idempotency_key,
-  ]);
+/**
+ * Материализация сегмента получателей кампании (`broadcast_recipients`, ТЗ §14.4).
+ *
+ * В dev-моке сегмент детерминирован: N получателей на первом канале фильтра.
+ * В проде сегмент строится из C3.clients на момент запуска (плана §5, M3).
+ */
+function materializeRecipients(broadcast, organizationId, count) {
+  const channel = broadcast.filter?.channels?.[0] ?? "web_chat";
 
-  return createBroadcastCoreDeliveryDraft({
-    broadcastId: broadcast.id,
-    organizationId: canonicalOrganizationId,
-    messageId,
-    conversationId: createDeterministicUuid(["conversation", broadcast.id]),
-    endpointId: createDeterministicUuid(["endpoint", broadcast.id]),
-    channel: broadcast.filter.channels[0] ?? "web_chat",
-    text: broadcast.template.body,
-    sequenceNumber: 1,
-    createdAt: timestamp,
+  return Array.from({ length: count }, (_unused, index) => {
+    const clientId = `client-${index + 1}`;
+    return {
+      client_id: clientId,
+      endpoint_id: createDeterministicUuid(["endpoint", broadcast.id, clientId]),
+      conversation_id: createDeterministicUuid([
+        "conversation",
+        broadcast.id,
+        clientId,
+      ]),
+      channel,
+      sequence_number: 1,
+      context: {
+        client: { name: `Клиент ${index + 1}` },
+        organization: { id: organizationId },
+      },
+    };
   });
 }
 
@@ -276,11 +355,11 @@ function createStats(prepared, sent, delivered, failed, updatedAt) {
 }
 
 function createStableSlug(parts) {
-  return createHash("sha256").update(parts.join("\u001f")).digest("hex").slice(0, 12);
+  return createHash("sha256").update(parts.join("")).digest("hex").slice(0, 12);
 }
 
 function createDeterministicUuid(parts) {
-  const hash = createHash("sha256").update(parts.join("\u001f")).digest("hex");
+  const hash = createHash("sha256").update(parts.join("")).digest("hex");
   const variant = (8 + (Number.parseInt(hash[16], 16) % 4)).toString(16);
 
   return [
