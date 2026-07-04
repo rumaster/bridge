@@ -222,10 +222,10 @@ message_id`), не обходя SVC-CORE; связь `broadcast_messages ↔ mes
 фиксируется на каждой доставке, повторный запуск дедуплицируется. Контракт **C8**
 заморожен как `stable_for_m5` в `packages/contracts/cp6-cp7-freeze.v1.json`
 (скреплено `tests/contract/m4-gate-freeze.test.mjs`). Покрытие: contract
-`tests/contract/m4-core-cp6-cp7.contract.test.mjs`,
 `tests/contract/c8-broadcast-contract.test.mjs`,
 `tests/contract/int-delivery-attempts-cp6.test.mjs`; e2e
-`tests/e2e/broadcast-cp6.test.mjs`, `tests/e2e/broadcast-delivery-cp6.test.mjs`.
+`tests/e2e/backend-dist-communication-core.test.mjs`,
+`tests/e2e/broadcast-delivery-cp6.test.mjs`.
 
 ### M5 — Нагрузка и устойчивость
 

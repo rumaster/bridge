@@ -5,7 +5,6 @@ import { after, before, describe, it } from "node:test";
 
 import { createWebSocketEvent } from "../../../../packages/contracts/src/c7.mjs";
 import { createEdgeTunnelMessage } from "../../../../packages/contracts/src/c9.mjs";
-import { createCommunicationCoreMock } from "../../../backend/src/modules/communication-core/mock-ingress-egress.mjs";
 import { createMockWebSocketChannel } from "../../src/mock-ws-channel.mjs";
 import { createEdgeGatewayServer } from "../../src/server.mjs";
 
@@ -36,9 +35,6 @@ describe("Edge Gateway M0 mock", () => {
   before(async () => {
     wsChannel = createMockWebSocketChannel();
     server = createEdgeGatewayServer({
-      core: createCommunicationCoreMock({
-        clock: () => "2026-07-02T16:10:04.000Z",
-      }),
       now: () => "2026-07-02T16:10:03.000Z",
       wsChannel,
     });
@@ -64,7 +60,7 @@ describe("Edge Gateway M0 mock", () => {
     assert.deepEqual(health.contracts, ["C7", "C9"]);
   });
 
-  it("accepts C9 tunnel messages and forwards their C1 payload to Core mock", async () => {
+  it("accepts C9 tunnel messages and returns a C9 ack", async () => {
     const tunnelMessage = createEdgeTunnelMessage({
       payload: canonicalMessage,
       receivedAt: "2026-07-02T16:10:01.000Z",

@@ -20,6 +20,11 @@ import {
   TelegramLoginVerifyDto,
   normalizeTelegramUsername,
 } from "./telegram-auth.dto";
+import {
+  TelegramLoginRateLimiter,
+  readPositiveIntegerEnv,
+  requireTelegramLoginRateLimit,
+} from "./telegram-login-rate-limiter";
 import { TelegramCodeDeliveryService } from "./telegram-bot.service";
 
 const TELEGRAM_LOGIN_PURPOSE = "telegram_login";
@@ -29,6 +34,8 @@ const SESSION_TTL_SECONDS = 8 * 60 * 60;
 const LOCKOUT_SECONDS = 15 * 60;
 const MAX_VERIFY_ATTEMPTS = 5;
 const IMPLEMENTATION_STAGE = "M1";
+const DEFAULT_RATE_LIMIT = 10;
+const DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60;
 
 const AUDIT_ACTIONS = {
   loginFailure: "auth.login.failure",
@@ -75,6 +82,22 @@ export interface TelegramLoginRequestMeta {
 
 @Injectable()
 export class TelegramAuthService {
+  private readonly startRateLimiter = new TelegramLoginRateLimiter({
+    limit: readPositiveIntegerEnv("TELEGRAM_LOGIN_START_RATE_LIMIT", DEFAULT_RATE_LIMIT),
+    windowSeconds: readPositiveIntegerEnv(
+      "TELEGRAM_LOGIN_RATE_LIMIT_WINDOW_SECONDS",
+      DEFAULT_RATE_LIMIT_WINDOW_SECONDS,
+    ),
+  });
+
+  private readonly verifyRateLimiter = new TelegramLoginRateLimiter({
+    limit: readPositiveIntegerEnv("TELEGRAM_LOGIN_VERIFY_RATE_LIMIT", DEFAULT_RATE_LIMIT),
+    windowSeconds: readPositiveIntegerEnv(
+      "TELEGRAM_LOGIN_RATE_LIMIT_WINDOW_SECONDS",
+      DEFAULT_RATE_LIMIT_WINDOW_SECONDS,
+    ),
+  });
+
   constructor(
     private readonly database: PgDatabase,
     private readonly audit: AuditService,
@@ -86,6 +109,7 @@ export class TelegramAuthService {
     meta: TelegramLoginRequestMeta = {},
   ): Promise<TelegramLoginStartResponseDto> {
     const telegramUsername = normalizeTelegramUsername(payload.telegramUsername);
+    this.assertStartRateLimit(telegramUsername, meta);
 
     const prepared = await this.database.withTenant(
       LOOKUP_ORGANIZATION_ID,
@@ -186,6 +210,7 @@ export class TelegramAuthService {
     if (!payload.requestId && !telegramUsername) {
       throw invalidCode("Telegram login code is invalid.");
     }
+    this.assertVerifyRateLimit(payload.requestId, telegramUsername, meta);
 
     // Locate the code + user in a read-only transaction. Failure-path mutations below
     // run in their own committed transactions, because withTenant() rolls back on throw
@@ -283,6 +308,42 @@ export class TelegramAuthService {
 
   getSession(auth: AuthSessionContext): AuthSessionContext {
     return auth;
+  }
+
+  private assertStartRateLimit(
+    telegramUsername: string,
+    meta: TelegramLoginRequestMeta,
+  ): void {
+    const decision = requireTelegramLoginRateLimit(this.startRateLimiter, [
+      `telegram-login:start:user:${telegramUsername}`,
+      meta.ip ? `telegram-login:start:ip:${meta.ip}` : "",
+    ]);
+
+    if (!decision.allowed) {
+      throw tooManyRequests(
+        "Too many Telegram login attempts. Try again later.",
+        decision.retryAfterSeconds,
+      );
+    }
+  }
+
+  private assertVerifyRateLimit(
+    requestId: string | undefined,
+    telegramUsername: string | undefined,
+    meta: TelegramLoginRequestMeta,
+  ): void {
+    const decision = requireTelegramLoginRateLimit(this.verifyRateLimiter, [
+      requestId ? `telegram-login:verify:request:${requestId}` : "",
+      telegramUsername ? `telegram-login:verify:user:${telegramUsername}` : "",
+      meta.ip ? `telegram-login:verify:ip:${meta.ip}` : "",
+    ]);
+
+    if (!decision.allowed) {
+      throw tooManyRequests(
+        "Too many Telegram code verification attempts. Try again later.",
+        decision.retryAfterSeconds,
+      );
+    }
   }
 
   private async locateLoginCode(
@@ -644,6 +705,7 @@ function tooManyRequests(description: string, retryAfterSeconds: number): HttpEx
     {
       code: "TOO_MANY_REQUESTS",
       description,
+      diagnostics: { retryAfterSeconds },
       humanMessage: "Слишком много попыток. Повторите позже.",
       retryAfterSeconds,
     },

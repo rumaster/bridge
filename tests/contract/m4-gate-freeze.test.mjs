@@ -188,17 +188,18 @@ describe("M4-99 integration gate — CP-6/CP-7/CP-8 freeze", () => {
   it("binds each M4 CP to a passing e2e scenario", () => {
     const gateEvidence = [
       // CP-6 «Broadcast: доставка кампании»
-      "tests/e2e/broadcast-cp6.test.mjs",
+      "tests/e2e/backend-dist-communication-core.test.mjs",
       "tests/e2e/broadcast-delivery-cp6.test.mjs",
       // CP-7 «Потеря соединения» + «Edge Cluster»
-      "tests/e2e/edge-connection-loss-cp7.test.mjs",
-      "tests/e2e/edge-cluster-cp7.test.mjs",
+      "services/edge-gateway/test/unit/edge-cluster.test.mjs",
+      "tests/integration/edge-message-buffer-store.test.mjs",
       "tests/e2e/mobile-connection-loss-cp7.test.mjs",
       // CP-8 «Notification в Web + Telegram»
       "tests/e2e/notification-subscriptions-cp8.test.mjs",
       "tests/e2e/telegram-console-cp8.test.mjs",
       // Cross-CP contract binding BCAST<->CORE, EDGE<->CORE, producers<->NOTIF
-      "tests/contract/m4-core-cp6-cp7.contract.test.mjs",
+      "tests/contract/c8-broadcast-contract.test.mjs",
+      "tests/contract/edge-core-c9-c7.contract.test.mjs",
       "tests/contract/c10-notification-contract.test.mjs",
     ];
     for (const evidence of gateEvidence) {

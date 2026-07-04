@@ -38,7 +38,8 @@
       ],
       "evidence": [
         "packages/contracts/message-model/message-model.test.mjs",
-        "services/backend/test/unit/communication-core.m1.test.mjs"
+        "services/backend/test/unit/message-status.spec.ts",
+        "services/backend/test/unit/internal-messaging.dto.spec.ts"
       ]
     },
     {
@@ -53,9 +54,10 @@
         "packages/contracts/json-schema/c2-egress-delivery.schema.json"
       ],
       "evidence": [
-        "tests/contract/int-core.m1.contract.test.mjs",
+        "tests/contract/int-core.c2.contract.test.mjs",
         "tests/contract/int-core-c2-c6.test.mjs",
-        "tests/e2e/web-chat-cp1.test.mjs"
+        "services/backend/test/integration/internal-messaging.spec.ts",
+        "tests/e2e/backend-dist-communication-core.test.mjs"
       ]
     },
     {

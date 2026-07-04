@@ -239,6 +239,57 @@ describe("SVC-IDN Telegram authentication (login/telegram/start + verify)", () =
       });
   });
 
+  it("rate-limits Telegram login start by user/IP with 429", async () => {
+    const limitedApp = await createRateLimitedApp({ startLimit: 2, verifyLimit: 100 });
+    try {
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        await request(limitedApp.getHttpServer())
+          .post("/api/v1/auth/login/telegram/start")
+          .send({ telegramUsername: SEEDED_ADMIN_TELEGRAM })
+          .expect(202);
+      }
+
+      await request(limitedApp.getHttpServer())
+        .post("/api/v1/auth/login/telegram/start")
+        .send({ telegramUsername: SEEDED_ADMIN_TELEGRAM })
+        .expect(429)
+        .expect(({ body }) => {
+          expect(body.code).toBe("TOO_MANY_REQUESTS");
+          expect(body.diagnostics.retryAfterSeconds).toBeGreaterThan(0);
+        });
+    } finally {
+      await limitedApp.close();
+    }
+  });
+
+  it("rate-limits Telegram login verify before lookup by requestId/IP", async () => {
+    const limitedApp = await createRateLimitedApp({ startLimit: 100, verifyLimit: 2 });
+    const missingRequestId = "00000000-0000-4000-8000-000000000999";
+
+    try {
+      for (let attempt = 1; attempt <= 2; attempt += 1) {
+        await request(limitedApp.getHttpServer())
+          .post("/api/v1/auth/login/telegram/verify")
+          .send({ code: "000000", requestId: missingRequestId })
+          .expect(401)
+          .expect(({ body }) => {
+            expect(body.code).toBe("TELEGRAM_LOGIN_INVALID");
+          });
+      }
+
+      await request(limitedApp.getHttpServer())
+        .post("/api/v1/auth/login/telegram/verify")
+        .send({ code: "000000", requestId: missingRequestId })
+        .expect(429)
+        .expect(({ body }) => {
+          expect(body.code).toBe("TOO_MANY_REQUESTS");
+          expect(body.diagnostics.retryAfterSeconds).toBeGreaterThan(0);
+        });
+    } finally {
+      await limitedApp.close();
+    }
+  });
+
   it("rejects login for an unknown Telegram username", async () => {
     await request(app.getHttpServer())
       .post("/api/v1/auth/login/telegram/start")
@@ -249,6 +300,45 @@ describe("SVC-IDN Telegram authentication (login/telegram/start + verify)", () =
       });
   });
 });
+
+async function createRateLimitedApp({
+  startLimit,
+  verifyLimit,
+}: {
+  startLimit: number;
+  verifyLimit: number;
+}): Promise<INestApplication> {
+  const previousStartLimit = process.env.TELEGRAM_LOGIN_START_RATE_LIMIT;
+  const previousVerifyLimit = process.env.TELEGRAM_LOGIN_VERIFY_RATE_LIMIT;
+  const previousWindow = process.env.TELEGRAM_LOGIN_RATE_LIMIT_WINDOW_SECONDS;
+
+  process.env.TELEGRAM_LOGIN_START_RATE_LIMIT = String(startLimit);
+  process.env.TELEGRAM_LOGIN_VERIFY_RATE_LIMIT = String(verifyLimit);
+  process.env.TELEGRAM_LOGIN_RATE_LIMIT_WINDOW_SECONDS = "60";
+
+  try {
+    const moduleRef = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+    const limitedApp = moduleRef.createNestApplication();
+    configureBackendApp(limitedApp, { installSwaggerUi: false });
+    await limitedApp.init();
+
+    return limitedApp;
+  } finally {
+    restoreEnv("TELEGRAM_LOGIN_START_RATE_LIMIT", previousStartLimit);
+    restoreEnv("TELEGRAM_LOGIN_VERIFY_RATE_LIMIT", previousVerifyLimit);
+    restoreEnv("TELEGRAM_LOGIN_RATE_LIMIT_WINDOW_SECONDS", previousWindow);
+  }
+}
+
+function restoreEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
+}
 
 function connectionString(container: StartedTestContainer): string {
   return `postgres://${DB.user}:${DB.password}@${container.getHost()}:${container.getMappedPort(

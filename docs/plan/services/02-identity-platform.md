@@ -218,12 +218,13 @@ NestJS/TypeScript-коде (компилируется в `dist/main.js`, issue 
 Telegram Bot API `sendMessage` при заданном `TELEGRAM_BOT_TOKEN`, иначе
 задокументированная деградация). C3.auth опубликован в
 `packages/contracts/openapi/auth/c3.auth.openapi.json`, e2e «Авторизация» —
-`apps/saas-admin/test/e2e/saas-admin.auth.spec.ts`. Прототипные `.mjs`-наборы
-(`identity-service.test.mjs`, `identity-postgres.test.mjs`) валидируют
-изолированный `.mjs`-прототип (`identity-service.mjs`), а не production-код;
-см. `docs/audit/backend-mjs-production-audit.md` (пункты 6–9). **Открытый гэп:**
-rate-limiting (429) на start/verify из `identity-service.mjs` в
-`telegram-auth.service.ts` пока не портирован.
+`apps/saas-admin/test/e2e/saas-admin.auth.spec.ts`. Rate-limiting 429 на
+start/verify портирован в production через `telegram-login-rate-limiter.ts` и
+покрыт `services/backend/test/unit/telegram-login-rate-limiter.spec.ts`,
+`services/backend/test/integration/telegram-auth.spec.ts` и
+`tests/e2e/backend-dist-communication-core.test.mjs`. Старые `.mjs`-наборы
+удалены как изолированный backend-прототип; см.
+`docs/audit/backend-mjs-production-audit.md` (пункты 6, 10, 12).
 
 ### M2 — Полноценный RBAC по ролям §9.3
 
@@ -263,7 +264,7 @@ rate-limiting (429) на start/verify из `identity-service.mjs` в
 **Статус реализации M3.** M3 Identity завершён для аудита доступа: login
 failure/success, logout и tenant-isolated audit path покрыты
 `services/backend/test/unit/identity-audit.spec.ts` и
-`services/backend/test/integration/identity-postgres.test.mjs`. Для CP-4/CP-5
+`services/backend/test/integration/telegram-auth.spec.ts`. Для CP-4/CP-5
 роль SVC-IDN — поставлять реального принципала и роли, по которым Backend
 проверяет AI/Workflow изменения; самодекларированные роли из Workflow-контекста
 не являются источником прав. Готовность M4: audit_events остаются стабильной
@@ -311,22 +312,22 @@ append-only базой для bootstrap/приглашений и будущих
   интерфейсов (ТЗ §9.6); отзыв сессий доступен из UI; критерии приёмки по
   безопасности пройдены.
 
-> ⚠️ **Статус в продакшн-сборке (issue #189).** Описанная ниже логика M5 (registry
-> провайдеров входа, лимиты/локаут перебора, массовый отзыв сессий) реализована в
-> прототипе `services/backend/src/identity/identity-service.mjs` и **не** входит в
-> исполняемый `dist/main.js`. В production-коде `telegram-auth.service.ts`
-> rate-limiting (429) на start/verify **не портирован** — открытый гэп. Подробности:
-> `docs/audit/backend-mjs-production-audit.md` (пункты 6, 10).
+> **Статус в продакшн-сборке (issue #192).** Backend `.mjs`-прототип удалён.
+> Telegram start/verify rate-limiting 429 работает в исполняемом
+> `telegram-auth.service.ts` через `telegram-login-rate-limiter.ts`. Лимиты
+> настраиваются переменными `TELEGRAM_LOGIN_START_RATE_LIMIT`,
+> `TELEGRAM_LOGIN_VERIFY_RATE_LIMIT`,
+> `TELEGRAM_LOGIN_RATE_LIMIT_WINDOW_SECONDS`; значения по умолчанию — 10 попыток
+> на 60 секунд.
 
-**Статус реализации M5 (прототип `.mjs`).** M5 Identity завершён: в `identity-service.mjs`
-выделен registry подключаемых провайдеров входа, где Telegram остаётся
-единственным включённым MVP-провайдером, а email зарегистрирован как отключённая
-точка расширения с `email_login`; `login_codes.purpose` допускает
-`telegram_login`/`email_login`, `invitations.contact_type` — `telegram`/`email`.
-Для UX/операций сессий добавлены список активных сессий пользователя,
-массовый отзыв и самоотзыв через существующий logout-контракт. Харденинг
-закреплён тестами лимитов/локаута, append-only аудита и отсутствия хранения
-сырого кода/токена.
+**Статус реализации M5.** Telegram остаётся единственным включённым
+MVP-провайдером входа; `login_codes.purpose` допускает
+`telegram_login`/`email_login`, `invitations.contact_type` — `telegram`/`email`,
+что оставляет точку расширения для будущего email-входа без публикации нового
+endpoint-а в C3.auth v1. Для UX/операций сессий добавлены список активных
+сессий пользователя, массовый отзыв и самоотзыв через существующий
+logout-контракт. Харденинг закреплён production-тестами лимитов/локаута,
+append-only аудита и отсутствия хранения сырого кода/токена.
 
 ---
 

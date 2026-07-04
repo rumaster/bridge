@@ -270,7 +270,8 @@ export const CP1_CONTRACT_FREEZE = Object.freeze([
     dtoNames: ["C1.CanonicalMessage"],
     evidence: [
       "packages/contracts/message-model/message-model.test.mjs",
-      "services/backend/test/unit/communication-core.m1.test.mjs",
+      "services/backend/test/unit/message-status.spec.ts",
+      "services/backend/test/unit/internal-messaging.dto.spec.ts",
     ],
   }),
   freezeContract({
@@ -293,9 +294,10 @@ export const CP1_CONTRACT_FREEZE = Object.freeze([
       "C2.EgressDelivery",
     ],
     evidence: [
-      "tests/contract/int-core.m1.contract.test.mjs",
+      "tests/contract/int-core.c2.contract.test.mjs",
       "tests/contract/int-core-c2-c6.test.mjs",
-      "tests/e2e/web-chat-cp1.test.mjs",
+      "services/backend/test/integration/internal-messaging.spec.ts",
+      "tests/e2e/backend-dist-communication-core.test.mjs",
     ],
   }),
   freezeContract({
@@ -372,9 +374,9 @@ export const CP2_CP3_CONTRACT_FREEZE = Object.freeze([
     evidence: [
       "tests/contract/int-core-m2-adapters.contract.test.mjs",
       "tests/contract/int-core-c2-c6.test.mjs",
-      "tests/e2e/telegram-cp2.test.mjs",
-      "tests/integration/communication-core-m2.test.mjs",
-      "services/backend/test/unit/communication-core.m2.test.mjs",
+      "services/backend/test/integration/internal-messaging.spec.ts",
+      "services/backend/test/unit/internal-messaging.dto.spec.ts",
+      "tests/e2e/backend-dist-communication-core.test.mjs",
     ],
   }),
   freezeContract({

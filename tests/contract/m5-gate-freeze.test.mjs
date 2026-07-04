@@ -151,11 +151,11 @@ describe("M5-99 integration gate — CP-9 final v1 freeze", () => {
       // Авторизация / Работа менеджера / Web Chat / Telegram
       "apps/saas-admin/test/e2e/saas-admin.auth.spec.ts",
       "apps/manager-workspace/test/e2e/manager-workspace.m1.spec.ts",
-      "tests/e2e/web-chat-cp1.test.mjs",
-      "tests/e2e/telegram-cp2.test.mjs",
+      "tests/e2e/backend-dist-communication-core.test.mjs",
+      "services/backend/test/integration/telegram-auth.spec.ts",
       // AI Assistant / Workflow / AI Onboarding
       "tests/e2e/ai-assistant-kb.test.mjs",
-      "tests/e2e/workflow-cp4.test.mjs",
+      "tests/e2e/workflow-engine-cp4-cp5.test.mjs",
       "tests/e2e/workflow-fbp-m5-cp9.test.mjs",
       "tests/e2e/ai-onboarding-apply.test.mjs",
       // Notification / Broadcast
@@ -163,9 +163,8 @@ describe("M5-99 integration gate — CP-9 final v1 freeze", () => {
       "tests/e2e/telegram-console-cp8.test.mjs",
       "tests/e2e/broadcast-delivery-cp6.test.mjs",
       // Edge Cluster / Потеря соединения
-      "tests/e2e/edge-cluster-cp7.test.mjs",
-      "tests/e2e/edge-connection-loss-cp7.test.mjs",
-      "tests/e2e/edge-resilience-cp9.test.mjs",
+      "services/edge-gateway/test/unit/edge-cluster.test.mjs",
+      "tests/integration/edge-message-buffer-store.test.mjs",
       "tests/e2e/mobile-connection-loss-cp7.test.mjs",
     ];
     for (const evidence of gateEvidence) {

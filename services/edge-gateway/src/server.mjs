@@ -5,7 +5,6 @@ import {
   C7_RECONNECT_SEMANTICS,
   C7_WS_PATH,
 } from "../../../packages/contracts/src/c7.mjs";
-import { createCommunicationCoreMock } from "../../backend/src/modules/communication-core/mock-ingress-egress.mjs";
 import {
   EdgeTunnelMockValidationError,
   createMockEdgeTunnel,
@@ -20,7 +19,7 @@ const MAX_BODY_BYTES = 1024 * 1024;
 const WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 export function createEdgeGatewayServer({
-  core = createCommunicationCoreMock(),
+  core,
   tunnel = createMockEdgeTunnel({ core }),
   wsChannel = createMockWebSocketChannel(),
   now = () => new Date().toISOString(),

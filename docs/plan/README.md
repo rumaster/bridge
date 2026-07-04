@@ -540,10 +540,11 @@ tunnel) в сопряжении с C1, на CP-8 — C10 (Notification) и сх�
 `packages/contracts/cp8-freeze.v1.json` (C10 и `notification.created` как
 `stable_for_m5`); оба скреплены gate-тестом
 `tests/contract/m4-gate-freeze.test.mjs`. Проверки CP-6 покрывают e2e «Broadcast:
-доставка кампании» и contract BCAST↔CORE (`m4-core-cp6-cp7.contract.test.mjs`,
-`c8-broadcast-contract.test.mjs`, `int-delivery-attempts-cp6.test.mjs`). Проверки
-CP-7 покрывают e2e «Потеря соединения» и «Edge Cluster» и contract EDGE↔CORE
-(`edge-cluster-c9-cp7.contract.test.mjs`, `edge-core-c9-c7.contract.test.mjs`).
+доставка кампании» и contract BCAST↔CORE (`backend-dist-communication-core.test.mjs`,
+`broadcast-delivery-cp6.test.mjs`, `c8-broadcast-contract.test.mjs`,
+`int-delivery-attempts-cp6.test.mjs`). Проверки CP-7 покрывают e2e «Потеря
+соединения» и contract EDGE↔CORE (`mobile-connection-loss-cp7.test.mjs`,
+`edge-core-c9-c7.contract.test.mjs`).
 Проверки CP-8 покрывают e2e «Notification в Web + Telegram» и contract
 «продюсеры↔NOTIF» и NOTIF↔MWS/TGC (`c10-notification-contract.test.mjs`,
 `manager-workspace-c10-consumer.test.mjs`, `telegram-console-cp8-consumer.test.mjs`).

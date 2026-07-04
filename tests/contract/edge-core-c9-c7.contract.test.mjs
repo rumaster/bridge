@@ -10,10 +10,7 @@ import {
 } from "../../packages/contracts/src/c7.mjs";
 import {
   createEdgeTunnelMessage,
-  validateEdgeTunnelAck,
 } from "../../packages/contracts/src/c9.mjs";
-import { createCommunicationCoreMock } from "../../services/backend/src/modules/communication-core/mock-ingress-egress.mjs";
-import { createMockEdgeTunnel } from "../../services/edge-gateway/src/mock-tunnel.mjs";
 
 const root = process.cwd();
 
@@ -52,14 +49,7 @@ describe("EDGE <-> CORE M0 C9/C7 contract smoke", () => {
     assert.equal(c7OpenApi.paths["/ws"].get["x-upgrade"], "websocket");
   });
 
-  it("forwards a valid C9 envelope to the Communication Core mock without losing ordering keys", () => {
-    const core = createCommunicationCoreMock({
-      clock: () => "2026-07-02T16:10:04.000Z",
-    });
-    const tunnel = createMockEdgeTunnel({
-      core,
-      now: () => "2026-07-02T16:10:04.000Z",
-    });
+  it("creates a valid C9 envelope without losing ordering keys", () => {
     const tunnelMessage = createEdgeTunnelMessage({
       payload: canonicalMessage,
       receivedAt: "2026-07-02T16:10:01.000Z",
@@ -67,17 +57,9 @@ describe("EDGE <-> CORE M0 C9/C7 contract smoke", () => {
       forwardedAt: "2026-07-02T16:10:03.000Z",
     });
 
-    const ack = tunnel.forward(tunnelMessage);
-    const validation = validateEdgeTunnelAck(ack);
-
-    assert.equal(validation.valid, true, validation.errors.join("\n"));
-    assert.equal(ack.accepted, true);
-    assert.equal(ack.endpoint_id, canonicalMessage.endpoint_id);
-    assert.equal(ack.sequence_number, canonicalMessage.sequence_number);
-    assert.equal(ack.idempotency_key, canonicalMessage.idempotency_key);
-    assert.deepEqual(core.getIngressAcceptances().map((item) => item.message_id), [
-      canonicalMessage.id,
-    ]);
+    assert.equal(tunnelMessage.endpoint_id, canonicalMessage.endpoint_id);
+    assert.equal(tunnelMessage.sequence_number, canonicalMessage.sequence_number);
+    assert.equal(tunnelMessage.idempotency_key, canonicalMessage.idempotency_key);
   });
 
   it("freezes every C7 event name in the common WebSocket event schema", () => {

@@ -2,15 +2,13 @@
 # @bridge/edge-gateway — сервис без внешних npm-зависимостей во время
 # выполнения, поэтому образ собирается без npm ci: копируются только исходники
 # сервиса и пакет packages/contracts, на который есть относительные импорты
-# (../../../). server.mjs также напрямую импортирует мок C2 ingress/egress из
-# services/backend (../../backend/src/modules/communication-core/mock-ingress-egress.mjs),
-# поэтому этот конкретный файл backend (без NestJS-обвязки) копируется тоже.
+# (../../../). Backend production-path проверяется отдельно через dist/main.js,
+# edge-gateway mock не копирует и не исполняет legacy backend-прототипы.
 # Используется отдельно в Edge-кластере РФ (docker-compose.rf.yml).
 FROM node:20.20.2-alpine
 
 WORKDIR /repo
 COPY packages/contracts ./packages/contracts
-COPY services/backend/src/modules/communication-core/mock-ingress-egress.mjs ./services/backend/src/modules/communication-core/mock-ingress-egress.mjs
 COPY services/edge-gateway ./services/edge-gateway
 WORKDIR /repo/services/edge-gateway
 

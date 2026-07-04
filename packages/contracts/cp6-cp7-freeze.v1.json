@@ -40,14 +40,15 @@
         "packages/contracts/src/c8.mjs",
         "services/backend/src/modules/communication-core/communication-core-m4.dto.ts",
         "services/backend/src/modules/communication-core/internal-messaging.service.ts",
-        "services/backend/src/modules/communication-core/communication-core-m1.mjs",
-        "services/backend/src/modules/communication-core/index.mjs"
+        "services/backend/src/modules/communication-core/internal-messaging.controller.ts",
+        "services/backend/src/modules/communication-core/internal-messaging.dto.ts"
       ],
       "evidence": [
-        "services/backend/test/unit/communication-core.m4.test.mjs",
-        "tests/integration/communication-core-m4.test.mjs",
-        "tests/contract/m4-core-cp6-cp7.contract.test.mjs",
-        "tests/e2e/broadcast-cp6.test.mjs"
+        "services/backend/test/integration/internal-messaging.spec.ts",
+        "tests/contract/c8-broadcast-contract.test.mjs",
+        "tests/contract/int-delivery-attempts-cp6.test.mjs",
+        "tests/e2e/backend-dist-communication-core.test.mjs",
+        "tests/e2e/broadcast-delivery-cp6.test.mjs"
       ]
     },
     {
@@ -64,14 +65,15 @@
         "services/edge-gateway/src/buffered-gateway.mjs",
         "services/backend/src/modules/communication-core/communication-core-m4.dto.ts",
         "services/backend/src/modules/communication-core/edge-intake.service.ts",
-        "services/backend/src/modules/communication-core/index.mjs"
+        "services/backend/src/modules/communication-core/internal-messaging.controller.ts"
       ],
       "evidence": [
-        "services/backend/test/unit/communication-core.m4.test.mjs",
+        "services/backend/test/integration/internal-messaging.spec.ts",
         "services/edge-gateway/test/unit/buffered-gateway.test.mjs",
-        "tests/integration/communication-core-m4.test.mjs",
-        "tests/contract/m4-core-cp6-cp7.contract.test.mjs",
-        "tests/e2e/edge-connection-loss-cp7.test.mjs"
+        "services/edge-gateway/test/integration/mock-edge-gateway.test.mjs",
+        "tests/contract/edge-core-c9-c7.contract.test.mjs",
+        "tests/e2e/backend-dist-communication-core.test.mjs",
+        "tests/e2e/mobile-connection-loss-cp7.test.mjs"
       ]
     },
     {
@@ -84,11 +86,14 @@
       ],
       "artifacts": [
         "packages/contracts/message-model",
-        "services/backend/src/modules/communication-core/communication-core-m1.mjs"
+        "services/backend/src/modules/communication-core/message-status.ts",
+        "services/backend/src/modules/communication-core/internal-messaging.dto.ts",
+        "services/backend/src/modules/communication-core/internal-messaging.service.ts"
       ],
       "evidence": [
-        "tests/integration/communication-core-m4.test.mjs",
-        "tests/contract/m4-core-cp6-cp7.contract.test.mjs"
+        "services/backend/test/unit/message-status.spec.ts",
+        "services/backend/test/integration/internal-messaging.spec.ts",
+        "tests/e2e/backend-dist-communication-core.test.mjs"
       ]
     },
     {
@@ -100,11 +105,14 @@
         { "contract": "C2.EgressDelivery" }
       ],
       "artifacts": [
-        "services/backend/src/modules/communication-core/communication-core-m1.mjs"
+        "services/backend/src/modules/communication-core/internal-messaging.dto.ts",
+        "services/backend/src/modules/communication-core/internal-messaging.service.ts",
+        "services/backend/src/modules/communication-core/internal-messaging.controller.ts"
       ],
       "evidence": [
-        "tests/contract/m4-core-cp6-cp7.contract.test.mjs",
-        "tests/e2e/broadcast-cp6.test.mjs"
+        "tests/contract/int-core.c2.contract.test.mjs",
+        "services/backend/test/integration/internal-messaging.spec.ts",
+        "tests/e2e/backend-dist-communication-core.test.mjs"
       ]
     }
   ],
