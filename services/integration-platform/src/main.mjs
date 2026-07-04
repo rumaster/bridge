@@ -20,6 +20,15 @@ const host = process.env.HOST ?? "0.0.0.0";
 const coreIngressUrl =
   process.env.CORE_INGRESS_URL ?? "http://127.0.0.1:3000/internal/ingress/messages";
 const backendBaseUrl = process.env.BACKEND_BASE_URL ?? "http://127.0.0.1:3000";
+const deliveryTimeoutMs = envInt("DELIVERY_TIMEOUT_MS", 2500);
+const deliveryCircuitFailureThreshold = envInt("DELIVERY_CIRCUIT_FAILURE_THRESHOLD", 5);
+const deliveryCircuitResetTimeoutMs = envInt("DELIVERY_CIRCUIT_RESET_TIMEOUT_MS", 10_000);
+const deliveryBulkheadMaxConcurrent = envInt("DELIVERY_BULKHEAD_MAX_CONCURRENT", 8);
+const deliveryBulkheadMaxQueue = envInt("DELIVERY_BULKHEAD_MAX_QUEUE", 16);
+const deliveryQueueConcurrency = envInt("DELIVERY_QUEUE_CONCURRENCY", 4);
+const deliveryQueueMaxSize = envInt("DELIVERY_QUEUE_MAX_SIZE", 1024);
+const deliveryQueueMaxAttempts = envInt("DELIVERY_QUEUE_MAX_ATTEMPTS", 10);
+const deliveryQueueRetryDelayMs = envInt("DELIVERY_QUEUE_RETRY_DELAY_MS", 1000);
 
 const adapter = createMockAdapter({ coreIngressUrl });
 const webChatAdapter = createWebChatAdapter({ coreIngressUrl });
@@ -48,6 +57,24 @@ const deliveryEngine = createDeliveryEngine({
     },
   }),
   backoff: createBackoffPolicy({ baseDelayMs: 500, factor: 2, maxAttempts: 5 }),
+  resilience: {
+    timeoutMs: deliveryTimeoutMs,
+    circuitBreaker: {
+      failureThreshold: deliveryCircuitFailureThreshold,
+      resetTimeoutMs: deliveryCircuitResetTimeoutMs,
+    },
+    bulkhead: {
+      maxConcurrent: deliveryBulkheadMaxConcurrent,
+      maxQueue: deliveryBulkheadMaxQueue,
+    },
+  },
+  queue: {
+    enabled: true,
+    concurrency: deliveryQueueConcurrency,
+    maxSize: deliveryQueueMaxSize,
+    maxAttempts: deliveryQueueMaxAttempts,
+    retryDelayMs: deliveryQueueRetryDelayMs,
+  },
 });
 
 const server = createIntegrationPlatformServer({
@@ -55,6 +82,7 @@ const server = createIntegrationPlatformServer({
   adapters,
   webChatAdapter,
   deliveryEngine,
+  deliveryDispatchMode: "async",
 });
 
 server.listen(port, host, () => {
@@ -67,4 +95,9 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
       process.exit(0);
     });
   });
+}
+
+function envInt(name, fallback) {
+  const value = Number.parseInt(process.env[name] ?? "", 10);
+  return Number.isFinite(value) ? value : fallback;
 }

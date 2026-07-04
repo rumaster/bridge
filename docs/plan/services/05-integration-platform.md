@@ -287,6 +287,21 @@ C2+C6 зафиксированы как `stable_for_m3` в
   «недоступность внешнего API».
 - **DoD.** § 9.4 + подтверждена деградация «канал недоступен → ядро работает».
 
+**Статус реализации M5.** M5-05 Integration Platform завершён для CP-9:
+`delivery-engine.mjs` оборачивает внешний вызов канала timeout/circuit
+breaker/bulkhead по каждому `channel_type`, retryable failures не закрывают
+`idempotency_key` как окончательно обработанный, а production `main.mjs`
+подключает async dispatch: `POST /internal/delivery/dispatch` возвращает `202
+queued` после постановки в bounded queue, фоновая доставка повторяет
+недоставленное. Деградация наблюдаема через метрики
+`integration_platform_delivery_{queued,queue_retries,degraded,timeout,circuit_open,bulkhead_rejected}_total`.
+Проверено unit `services/integration-platform/test/unit/m5-delivery-resilience.test.mjs`,
+integration
+`services/integration-platform/test/integration/m5-delivery-degradation.integration.test.mjs`
+и e2e `tests/e2e/integration-degradation-cp9.test.mjs`: зависший Telegram API не
+блокирует ответ ядру, Email доставляется параллельно, Telegram фиксируется как
+failed и повторяется через очередь без обхода `idempotency_key`.
+
 ---
 
 ## 6. Точки согласования (ЯВНО)

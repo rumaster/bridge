@@ -9,3 +9,12 @@ export {
 } from "./backend-delivery-client.mjs";
 export { createMockExternalChannel } from "./mock-external-channel.mjs";
 export { createDeliveryEngine } from "./delivery-engine.mjs";
+export {
+  BulkheadFullError,
+  ChannelTimeoutError,
+  CircuitOpenError,
+  createBulkhead,
+  createChannelResilience,
+  createCircuitBreaker,
+  withTimeout,
+} from "./resilience.mjs";
