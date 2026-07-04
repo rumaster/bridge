@@ -33,12 +33,23 @@ const SEED_SLOTS_PER_TOKEN = 4;
 /**
  * Create the deterministic mock LLM provider. No randomness, no network — same
  * input always yields the same embedding and the same generated answer.
+ *
+ * `name`, `model` and `pricing` let the provider registry stand up several
+ * distinct mock providers/models (ТЗ §12.9) — e.g. an economy and a premium
+ * model with different per-call cost — while keeping identical, reproducible
+ * behaviour. `pricing` is consumed by the resilient facade's cost estimate
+ * (micro-units per 1000 characters, per capability).
  */
 export function createDeterministicMockLlm({
   dimensions = LLM_EMBEDDING_DIMENSIONS,
+  name = "deterministic-mock",
+  model = null,
+  pricing,
 } = {}) {
   return {
-    name: "deterministic-mock",
+    name,
+    model,
+    pricing,
     dimensions,
     available: true,
 

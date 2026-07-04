@@ -6,6 +6,8 @@ import {
 
 import { assertOnboardingCommandRequest } from "./c4-dto.mjs";
 import { createDeterministicMockLlm } from "./llm.mjs";
+import { createResilientLlm } from "./llm-facade.mjs";
+import { createAiMetrics } from "./metrics.mjs";
 import {
   buildOnboardingPrompt,
   validateOnboardingDraft,
@@ -27,23 +29,29 @@ import {
  */
 export function createOnboardingCommander({
   llm = createDeterministicMockLlm(),
+  resolveLlm,
   now = () => new Date().toISOString(),
+  metrics = createAiMetrics(),
 } = {}) {
-  if (!llm || typeof llm.interpretOnboarding !== "function") {
-    throw new TypeError(
-      "createOnboardingCommander requires an llm with an interpretOnboarding() method",
-    );
+  // Single-provider path: wrap the given provider once so onboarding LLM calls
+  // also get the facade's timeout + circuit breaker (ТЗ §11.2). A router
+  // (`resolveLlm`) already hands back resilient facades, so it is used as-is.
+  let selectLlm;
+  if (typeof resolveLlm === "function") {
+    selectLlm = resolveLlm;
+  } else {
+    if (!llm || typeof llm.interpretOnboarding !== "function") {
+      throw new TypeError(
+        "createOnboardingCommander requires an llm with an interpretOnboarding() method",
+      );
+    }
+    const resilient = llm.resilient ? llm : createResilientLlm({ provider: llm, metrics });
+    selectLlm = () => resilient;
   }
-
-  const metrics = {
-    onboarding_command_total: 0,
-    onboarding_command_degraded_total: 0,
-    onboarding_command_rejected_total: 0,
-  };
 
   async function createOnboardingCommand(payload) {
     const request = assertOnboardingCommandRequest(payload);
-    metrics.onboarding_command_total += 1;
+    metrics.inc("onboarding_command_total");
 
     // Tenant isolation lives in the prompt itself: the model only ever sees its
     // own organization and the sanctioned action catalogue (ТЗ §22.6, §12.6).
@@ -54,13 +62,14 @@ export function createOnboardingCommander({
 
     let draft;
     try {
-      draft = await llm.interpretOnboarding({
+      const activeLlm = selectLlm(request.organization_id);
+      draft = await activeLlm.interpretOnboarding({
         prompt: prompt.prompt,
         organizationId: prompt.organization_id,
         actions: prompt.actions,
       });
     } catch (error) {
-      metrics.onboarding_command_degraded_total += 1;
+      metrics.inc("onboarding_command_degraded_total");
       return buildResponse(request, buildFallbackCommand(request, error, now));
     }
 
@@ -68,7 +77,7 @@ export function createOnboardingCommander({
     // before a C4 command is ever assembled (ТЗ §12.6).
     const draftValidation = validateOnboardingDraft(draft);
     if (!draftValidation.valid) {
-      metrics.onboarding_command_rejected_total += 1;
+      metrics.inc("onboarding_command_rejected_total");
       throw new OnboardingCommandRejectedError(draftValidation.errors);
     }
 
@@ -89,7 +98,7 @@ export function createOnboardingCommander({
     // §12.6 JSON-Schema before it leaves the service.
     const schemaValidation = validateAiOnboardingCommand(command);
     if (!schemaValidation.valid) {
-      metrics.onboarding_command_rejected_total += 1;
+      metrics.inc("onboarding_command_rejected_total");
       throw new OnboardingCommandRejectedError(schemaValidation.errors);
     }
 
@@ -99,7 +108,7 @@ export function createOnboardingCommander({
   return {
     createOnboardingCommand,
     getMetrics() {
-      return { ...metrics };
+      return metrics.snapshot();
     },
   };
 }
