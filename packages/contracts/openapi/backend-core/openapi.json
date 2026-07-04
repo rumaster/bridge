@@ -218,6 +218,250 @@
         ]
       }
     },
+    "/api/v1/conversations": {
+      "get": {
+        "operationId": "ConversationController_listConversations_v1",
+        "parameters": [
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Search query",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "filter",
+            "required": false,
+            "in": "query",
+            "description": "Structured resource filters",
+            "schema": {
+              "additionalProperties": true,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationListResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Proxy conversation list from Communication Core",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/api/v1/conversations/{id}": {
+      "get": {
+        "operationId": "ConversationController_getConversation_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Proxy conversation by id from Communication Core",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/api/v1/conversations/{id}/messages": {
+      "get": {
+        "operationId": "ConversationController_listMessages_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Search query",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "filter",
+            "required": false,
+            "in": "query",
+            "description": "Structured resource filters",
+            "schema": {
+              "additionalProperties": true,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageListResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Proxy conversation messages from Communication Core",
+        "tags": [
+          "conversations"
+        ]
+      }
+    },
+    "/api/v1/messages/{id}": {
+      "get": {
+        "operationId": "MessageController_getMessage_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Proxy message by id from Communication Core",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
+    "/api/v1/messages": {
+      "post": {
+        "operationId": "MessageController_createMessage_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Idempotently proxy outbound message creation to Communication Core",
+        "tags": [
+          "messages"
+        ]
+      }
+    },
     "/api/v1/channels": {
       "get": {
         "operationId": "ChannelsController_listChannels_v1",
@@ -1115,250 +1359,6 @@
         ]
       }
     },
-    "/api/v1/conversations": {
-      "get": {
-        "operationId": "ConversationController_listConversations_v1",
-        "parameters": [
-          {
-            "name": "limit",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "maximum": 100,
-              "default": 50,
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/Object"
-                }
-              ]
-            }
-          },
-          {
-            "name": "cursor",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "maxLength": 512,
-              "type": "string"
-            }
-          },
-          {
-            "name": "q",
-            "required": false,
-            "in": "query",
-            "description": "Search query",
-            "schema": {
-              "maxLength": 200,
-              "type": "string"
-            }
-          },
-          {
-            "name": "filter",
-            "required": false,
-            "in": "query",
-            "description": "Structured resource filters",
-            "schema": {
-              "additionalProperties": true,
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/Object"
-                }
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConversationListResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Proxy conversation list from Communication Core",
-        "tags": [
-          "conversations"
-        ]
-      }
-    },
-    "/api/v1/conversations/{id}": {
-      "get": {
-        "operationId": "ConversationController_getConversation_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ConversationResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Proxy conversation by id from Communication Core",
-        "tags": [
-          "conversations"
-        ]
-      }
-    },
-    "/api/v1/conversations/{id}/messages": {
-      "get": {
-        "operationId": "ConversationController_listMessages_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "maximum": 100,
-              "default": 50,
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/Object"
-                }
-              ]
-            }
-          },
-          {
-            "name": "cursor",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "maxLength": 512,
-              "type": "string"
-            }
-          },
-          {
-            "name": "q",
-            "required": false,
-            "in": "query",
-            "description": "Search query",
-            "schema": {
-              "maxLength": 200,
-              "type": "string"
-            }
-          },
-          {
-            "name": "filter",
-            "required": false,
-            "in": "query",
-            "description": "Structured resource filters",
-            "schema": {
-              "additionalProperties": true,
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/Object"
-                }
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MessageListResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Proxy conversation messages from Communication Core",
-        "tags": [
-          "conversations"
-        ]
-      }
-    },
-    "/api/v1/messages/{id}": {
-      "get": {
-        "operationId": "MessageController_getMessage_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MessageResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Proxy message by id from Communication Core",
-        "tags": [
-          "messages"
-        ]
-      }
-    },
-    "/api/v1/messages": {
-      "post": {
-        "operationId": "MessageController_createMessage_v1",
-        "parameters": [],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateMessageDto"
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MessageResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Idempotently proxy outbound message creation to Communication Core",
-        "tags": [
-          "messages"
-        ]
-      }
-    },
     "/api/v1/organizations/{organizationId}/users": {
       "get": {
         "operationId": "OrganizationUsersController_listUsers_v1",
@@ -1930,6 +1930,275 @@
         },
         "required": [
           "mode"
+        ]
+      },
+      "Object": {
+        "type": "object",
+        "properties": {}
+      },
+      "ConversationResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000501"
+          },
+          "organizationId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000101"
+          },
+          "clientId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000301"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed",
+              "pending"
+            ],
+            "example": "open"
+          },
+          "lastMessageAt": {
+            "type": "object",
+            "example": "2026-01-01T00:00:00.000Z",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "updatedAt": {
+            "type": "string",
+            "example": "2026-01-01T00:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "clientId",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ]
+      },
+      "PaginationPageDto": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "example": 50
+          },
+          "nextCursor": {
+            "type": "string",
+            "example": "eyJpZCI6IjEyMyJ9"
+          },
+          "total": {
+            "type": "number",
+            "example": 125
+          }
+        },
+        "required": [
+          "limit"
+        ]
+      },
+      "ConversationListResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConversationResponseDto"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/PaginationPageDto"
+          }
+        },
+        "required": [
+          "items",
+          "page"
+        ]
+      },
+      "MessageResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000601"
+          },
+          "organizationId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000101"
+          },
+          "conversationId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000501"
+          },
+          "endpointId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000401"
+          },
+          "channel": {
+            "type": "string",
+            "example": "web_chat"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "inbound",
+              "outbound"
+            ],
+            "example": "outbound"
+          },
+          "senderType": {
+            "type": "string",
+            "enum": [
+              "client",
+              "manager",
+              "ai",
+              "broadcast",
+              "system"
+            ],
+            "example": "manager"
+          },
+          "sequenceNumber": {
+            "type": "number",
+            "example": 2
+          },
+          "type": {
+            "type": "string",
+            "example": "text"
+          },
+          "content": {
+            "type": "object",
+            "example": {
+              "text": "Hello"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "received",
+              "routed",
+              "sent",
+              "delivered",
+              "failed"
+            ],
+            "example": "routed"
+          },
+          "createdAt": {
+            "type": "string",
+            "example": "2026-01-01T00:00:00.000Z"
+          },
+          "deliveredAt": {
+            "type": "object",
+            "example": null,
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "organizationId",
+          "conversationId",
+          "endpointId",
+          "channel",
+          "direction",
+          "senderType",
+          "sequenceNumber",
+          "type",
+          "content",
+          "status",
+          "createdAt"
+        ]
+      },
+      "MessageListResponseDto": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MessageResponseDto"
+            }
+          },
+          "page": {
+            "$ref": "#/components/schemas/PaginationPageDto"
+          }
+        },
+        "required": [
+          "items",
+          "page"
+        ]
+      },
+      "CreateMessageDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000601"
+          },
+          "conversationId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000501"
+          },
+          "endpointId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000401"
+          },
+          "channel": {
+            "type": "string",
+            "example": "web_chat"
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "inbound",
+              "outbound"
+            ],
+            "example": "outbound"
+          },
+          "senderType": {
+            "type": "string",
+            "enum": [
+              "client",
+              "manager",
+              "ai",
+              "broadcast",
+              "system"
+            ],
+            "example": "manager"
+          },
+          "sequenceNumber": {
+            "type": "number",
+            "minimum": 1
+          },
+          "type": {
+            "type": "string",
+            "example": "text"
+          },
+          "content": {
+            "type": "object",
+            "example": {
+              "text": "Hello"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "received",
+              "routed",
+              "sent",
+              "delivered",
+              "failed"
+            ],
+            "example": "routed"
+          }
+        },
+        "required": [
+          "conversationId",
+          "endpointId",
+          "content"
         ]
       },
       "ChannelResponseDto": {
@@ -2530,10 +2799,6 @@
           "value"
         ]
       },
-      "Object": {
-        "type": "object",
-        "properties": {}
-      },
       "ClientResponseDto": {
         "type": "object",
         "properties": {
@@ -2569,26 +2834,6 @@
           "organizationId",
           "createdAt",
           "updatedAt"
-        ]
-      },
-      "PaginationPageDto": {
-        "type": "object",
-        "properties": {
-          "limit": {
-            "type": "number",
-            "example": 50
-          },
-          "nextCursor": {
-            "type": "string",
-            "example": "eyJpZCI6IjEyMyJ9"
-          },
-          "total": {
-            "type": "number",
-            "example": 125
-          }
-        },
-        "required": [
-          "limit"
         ]
       },
       "ClientListResponseDto": {
@@ -2876,251 +3121,6 @@
           "movedMessageCount",
           "links",
           "mode"
-        ]
-      },
-      "ConversationResponseDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "example": "00000000-0000-4000-8000-000000000501"
-          },
-          "organizationId": {
-            "type": "string",
-            "example": "00000000-0000-4000-8000-000000000101"
-          },
-          "clientId": {
-            "type": "string",
-            "example": "00000000-0000-4000-8000-000000000301"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "open",
-              "closed",
-              "pending"
-            ],
-            "example": "open"
-          },
-          "lastMessageAt": {
-            "type": "object",
-            "example": "2026-01-01T00:00:00.000Z",
-            "nullable": true
-          },
-          "createdAt": {
-            "type": "string",
-            "example": "2026-01-01T00:00:00.000Z"
-          },
-          "updatedAt": {
-            "type": "string",
-            "example": "2026-01-01T00:00:00.000Z"
-          }
-        },
-        "required": [
-          "id",
-          "organizationId",
-          "clientId",
-          "status",
-          "createdAt",
-          "updatedAt"
-        ]
-      },
-      "ConversationListResponseDto": {
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ConversationResponseDto"
-            }
-          },
-          "page": {
-            "$ref": "#/components/schemas/PaginationPageDto"
-          }
-        },
-        "required": [
-          "items",
-          "page"
-        ]
-      },
-      "MessageResponseDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "example": "00000000-0000-4000-8000-000000000601"
-          },
-          "organizationId": {
-            "type": "string",
-            "example": "00000000-0000-4000-8000-000000000101"
-          },
-          "conversationId": {
-            "type": "string",
-            "example": "00000000-0000-4000-8000-000000000501"
-          },
-          "endpointId": {
-            "type": "string",
-            "example": "00000000-0000-4000-8000-000000000401"
-          },
-          "channel": {
-            "type": "string",
-            "example": "web_chat"
-          },
-          "direction": {
-            "type": "string",
-            "enum": [
-              "inbound",
-              "outbound"
-            ],
-            "example": "outbound"
-          },
-          "senderType": {
-            "type": "string",
-            "enum": [
-              "client",
-              "manager",
-              "ai",
-              "broadcast",
-              "system"
-            ],
-            "example": "manager"
-          },
-          "sequenceNumber": {
-            "type": "number",
-            "example": 2
-          },
-          "type": {
-            "type": "string",
-            "example": "text"
-          },
-          "content": {
-            "type": "object",
-            "example": {
-              "text": "Hello"
-            }
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "received",
-              "routed",
-              "sent",
-              "delivered",
-              "failed"
-            ],
-            "example": "routed"
-          },
-          "createdAt": {
-            "type": "string",
-            "example": "2026-01-01T00:00:00.000Z"
-          },
-          "deliveredAt": {
-            "type": "object",
-            "example": null,
-            "nullable": true
-          }
-        },
-        "required": [
-          "id",
-          "organizationId",
-          "conversationId",
-          "endpointId",
-          "channel",
-          "direction",
-          "senderType",
-          "sequenceNumber",
-          "type",
-          "content",
-          "status",
-          "createdAt"
-        ]
-      },
-      "MessageListResponseDto": {
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/MessageResponseDto"
-            }
-          },
-          "page": {
-            "$ref": "#/components/schemas/PaginationPageDto"
-          }
-        },
-        "required": [
-          "items",
-          "page"
-        ]
-      },
-      "CreateMessageDto": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "example": "00000000-0000-4000-8000-000000000601"
-          },
-          "conversationId": {
-            "type": "string",
-            "example": "00000000-0000-4000-8000-000000000501"
-          },
-          "endpointId": {
-            "type": "string",
-            "example": "00000000-0000-4000-8000-000000000401"
-          },
-          "channel": {
-            "type": "string",
-            "example": "web_chat"
-          },
-          "direction": {
-            "type": "string",
-            "enum": [
-              "inbound",
-              "outbound"
-            ],
-            "example": "outbound"
-          },
-          "senderType": {
-            "type": "string",
-            "enum": [
-              "client",
-              "manager",
-              "ai",
-              "broadcast",
-              "system"
-            ],
-            "example": "manager"
-          },
-          "sequenceNumber": {
-            "type": "number",
-            "minimum": 1
-          },
-          "type": {
-            "type": "string",
-            "example": "text"
-          },
-          "content": {
-            "type": "object",
-            "example": {
-              "text": "Hello"
-            }
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "received",
-              "routed",
-              "sent",
-              "delivered",
-              "failed"
-            ],
-            "example": "routed"
-          }
-        },
-        "required": [
-          "conversationId",
-          "endpointId",
-          "content"
         ]
       },
       "UserResponseDto": {

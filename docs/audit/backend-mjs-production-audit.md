@@ -72,27 +72,34 @@ Production backend собирается только из `.ts`: `npm run build 
 
 ### Пункт 4 — `communication-core-m4.mjs` (Edge Intake / Broadcast Delivery)
 
-**НЕ ПОРТИРОВАНО → требует портирования (зафиксировано явно).**
-- `communication-core-m4.mjs`: `createEdgeIntakeCoordinator` (CP-7/C9 — восстановление
-  порядка по `(endpoint_id, sequence_number)`, дедуп по `idempotency_key`, ack) и
-  `createBroadcastDeliveryCoordinator` (CP-6/C8 — `recordBroadcastDelivery`, связь
-  `broadcast_messages ↔ messages`, журнал попыток).
-- Поиск по `.ts` (`EdgeIntake|BroadcastDelivery|C9|C8|broadcast_messages|edge tunnel`)
-  эквивалента **не находит**. В исполняемом коде ни C9-приёма от SVC-EDGE, ни
-  C8-доставки кампаний через ядро нет.
-- **Вывод:** оба координатора отсутствуют в production. Требуют портирования в
-  отдельной задаче; логика сохранена в `communication-core-m4.mjs` как эталон.
+**ПОРТИРОВАНО в production TypeScript (issue #191).**
+- C9 Edge Intake: `communication-core-m4.dto.ts` + `edge-intake.service.ts` +
+  `POST /internal/edge/tunnel/messages` в `internal-messaging.controller.ts`.
+  Путь валидирует C9/C1, восстанавливает порядок в batch-координаторе,
+  дедуплицирует по `idempotency_key` и передаёт payload в единый ingress-путь.
+- C8 Broadcast Delivery: `communication-core-m4.dto.ts` +
+  `internal-messaging.service.ts#deliverBroadcast` +
+  `POST /internal/broadcast/deliveries`. Путь создаёт outbound
+  broadcast-сообщение, фиксирует `broadcast_messages ↔ messages`, доставляет через
+  C2 egress и пишет `message_delivery_attempts`.
+- `communication-core-m4.mjs` удалён. Старые `.mjs` contract/e2e тесты получают
+  compatibility exports из `communication-core/index.mjs`; production-сборка
+  использует NestJS `.ts`.
 
 ### Пункт 5 — `communication-core-m5.mjs` (Adapter Failure / AI Degradation / Load Probe)
 
-**НЕ ПОРТИРОВАНО и не подключено к реальному пути → требует портирования (зафиксировано).**
-- `createAdapterFailureCoordinator`, `createAiDegradationGuard`,
-  `createCommunicationCoreLoadProbe`/`runLoadProbe`.
-- Поиск по `.ts` (`AdapterFailure|DegradationGuard|LoadProbe`) — 0 совпадений. Даже
-  внутри `.mjs` эти координаторы только реэкспортируются `index.mjs` и вызываются в
-  `node --test`; к реальному message-пути не подключены нигде.
-- **Вывод:** отсутствуют в production и не связаны с реальным путём сообщений.
-  Требуют портирования при необходимости NFR-гарантий M5.
+**ПОРТИРОВАНО и подключено к реальному пути (issue #191).**
+- Adapter Failure: `communication-core-m5.service.ts#AdapterFailureCoordinator`
+  используется в `internal-messaging.service.ts` для egress и broadcast-delivery:
+  bounded timeout/retry, промежуточные failed attempts без terminal transition,
+  финальный `sent`/`failed`.
+- AI Degradation: `ai-degradation.guard.ts` зарегистрирован в
+  `AiIntegrationModule` и используется `AiIntegrationFacade` для C4 fallback.
+- Load Probe: `CommunicationCoreLoadProbeService` подключён к ingress-path и
+  экспортирует counters/latency через `MetricsService` (`/metrics`).
+- `communication-core-m5.mjs` удалён. Compatibility exports для старых `.mjs`
+  тестов оставлены в `communication-core/index.mjs`; production-сборка использует
+  `.ts`.
 
 ### Пункт 6 — `POST /auth/login/telegram/start` и `/verify` — NestJS, не `.mjs`
 
@@ -137,10 +144,10 @@ Production backend собирается только из `.ts`: `npm run build 
 
 ### Пункт 10 — по каждому оставшемуся `.mjs`: дубликат (удалить) или пропуск (портировать)
 
-См. полную сводную таблицу ниже. Кратко: **11 файлов — полные дубликаты**
-исполняемого `.ts` (подлежат удалению), **2 файла — `communication-core-m4.mjs` и
-`communication-core-m5.mjs` — содержат логику, отсутствующую в `.ts`** (подлежат
-портированию).
+См. полную сводную таблицу ниже. После issue #191 отдельные
+`communication-core-m4.mjs` и `communication-core-m5.mjs` удалены: их production
+логика портирована в `.ts`, а совместимость для старых `.mjs` contract/e2e тестов
+временно сохранена в `communication-core/index.mjs`.
 
 **Важное ограничение по удалению:** дубликаты-`.mjs` всё ещё импортируются ~25
 `.mjs`-тестами (`services/backend/test/**/*.test.mjs`, `tests/e2e/*.test.mjs`,
@@ -172,9 +179,11 @@ node dist/tools/export-openapi.js`. Синтаксическая проверк�
   `tests/integration/communication-core-m1..m5.test.mjs` и др. (всего ~25 файлов
   импортируют `src/main.mjs`/`communication-core/index.mjs`/`mock-ingress-egress.mjs`).
   Эти тесты валидируют `.mjs`-прототип, а не production-код — источник ложной уверенности.
-- **Восполнено для messaging-пути:** добавлен `test/integration/internal-messaging.spec.ts`,
-  который поднимает **реальный** `AppModule` (тот же код, что и `dist/main.js`) на
-  реальном Postgres (testcontainers) и проверяет ingress/egress/delivery end-to-end.
+- **Восполнено для messaging-пути:** `test/integration/internal-messaging.spec.ts`
+  поднимает **реальный** `AppModule` (тот же код, что и `dist/main.js`) на реальном
+  Postgres (testcontainers) и проверяет ingress/egress/delivery, C9 edge tunnel,
+  C8 broadcast delivery, adapter failure retry/degradation и `/metrics` load-probe
+  counters end-to-end.
 - **Вывод:** полная миграция ~25 `.mjs`-тестов на прогон против `dist/main.js` в Docker —
   отдельная крупная задача; зафиксирована как требующая выполнения вместе с удалением
   дубликатов-`.mjs` (пункт 10).
@@ -182,9 +191,9 @@ node dist/tools/export-openapi.js`. Синтаксическая проверк�
 ### Пункт 13 — документация отражает реальное состояние кода, не `.mjs`-прототипы
 
 **ИСПРАВЛЕНО частично (см. правки docs).**
-- `docs/plan/services/03-communication-core.md`: раздел M5 описывал
-  `communication-core-m5.mjs` как реализованный модуль — добавлена явная пометка, что
-  M4/M5 живут только в `.mjs`-прототипе и не входят в `dist/main.js`.
+- `docs/plan/services/03-communication-core.md`: разделы M4/M5 обновлены: указано,
+  что production-путь теперь реализован в NestJS `.ts`, а `.mjs` остался только как
+  test compatibility barrel (`index.mjs`) для старых contract/e2e сценариев.
 - Ссылки на `.mjs` в docs других сервисов (integration-platform, ai-platform) корректны:
   те сервисы реально исполняются как `.mjs` (это не NestJS-backend).
 
@@ -198,8 +207,8 @@ node dist/tools/export-openapi.js`. Синтаксическая проверк�
 | `common/auth/session-auth-guard.mjs` | удалить | `common/auth/session-auth.guard.ts` (`SessionAuthGuard`, `extractSessionToken`, `requestedOrganizationId`) |
 | `backend-api/m0-api-module.mjs` | удалить | `modules/health/health.controller.ts` + `health.service.ts` |
 | `communication-core/communication-core-m1.mjs` | удалить | `internal-messaging.{service,dto,controller}.ts`, `message-status.ts`, `communication-core-proxy.service.ts` |
-| `communication-core/communication-core-m4.mjs` | **портировать** | Edge Intake (C9) и Broadcast Delivery (C8) координаторы отсутствуют в `.ts` |
-| `communication-core/communication-core-m5.mjs` | **портировать** | Adapter Failure / AI Degradation / Load Probe отсутствуют в `.ts`, не подключены к пути сообщений |
+| `communication-core/communication-core-m4.mjs` | удалён (портировано) | `communication-core-m4.dto.ts`, `edge-intake.service.ts`, `internal-messaging.service.ts` |
+| `communication-core/communication-core-m5.mjs` | удалён (портировано) | `communication-core-m5.service.ts`, `ai-degradation.guard.ts`, `metrics.service.ts` |
 | `communication-core/communication-core-module.mjs` | удалить | `internal-messaging.controller.ts` + `communication-core.controller.ts`; ошибки → `api-exception.filter.ts` |
 | `communication-core/index.mjs` | удалить | barrel-реэкспорт, в prod не используется (DI-модули Nest) |
 | `communication-core/mock-ingress-egress.mjs` | удалить | тестовый мок; реальный путь → `internal-messaging.service.ts` |

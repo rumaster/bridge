@@ -11,7 +11,10 @@
 import { Body, Controller, HttpCode, Post, Version, VERSION_NEUTRAL } from "@nestjs/common";
 import { ApiExcludeController } from "@nestjs/swagger";
 
+import type { BroadcastDeliveryDraft, EdgeTunnelMessage } from "./communication-core-m4.dto";
+import { EdgeIntakeCoordinatorService } from "./edge-intake.service";
 import {
+  BroadcastDeliveryResult,
   DeliveryAttemptResult,
   EgressHandoffResult,
   IngressAcceptResult,
@@ -26,7 +29,10 @@ import type {
 @ApiExcludeController()
 @Controller("internal")
 export class InternalMessagingController {
-  constructor(private readonly messaging: InternalMessagingService) {}
+  constructor(
+    private readonly messaging: InternalMessagingService,
+    private readonly edgeIntake: EdgeIntakeCoordinatorService,
+  ) {}
 
   @Post("ingress/messages")
   @Version(VERSION_NEUTRAL)
@@ -47,5 +53,19 @@ export class InternalMessagingController {
   @HttpCode(202)
   recordDeliveryAttempt(@Body() body: DeliveryAttemptBody): Promise<DeliveryAttemptResult> {
     return this.messaging.recordDeliveryAttempt(body);
+  }
+
+  @Post("edge/tunnel/messages")
+  @Version(VERSION_NEUTRAL)
+  @HttpCode(202)
+  acceptEdgeTunnelMessage(@Body() body: EdgeTunnelMessage) {
+    return this.edgeIntake.intake(body);
+  }
+
+  @Post("broadcast/deliveries")
+  @Version(VERSION_NEUTRAL)
+  @HttpCode(202)
+  deliverBroadcast(@Body() body: BroadcastDeliveryDraft): Promise<BroadcastDeliveryResult> {
+    return this.messaging.deliverBroadcast(body);
   }
 }

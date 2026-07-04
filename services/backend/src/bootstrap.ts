@@ -39,6 +39,8 @@ export function configureBackendApp(
       { path: "internal/ingress/messages", method: RequestMethod.POST },
       { path: "internal/egress/messages", method: RequestMethod.POST },
       { path: "internal/delivery/attempts", method: RequestMethod.POST },
+      { path: "internal/edge/tunnel/messages", method: RequestMethod.POST },
+      { path: "internal/broadcast/deliveries", method: RequestMethod.POST },
     ],
   });
   app.enableVersioning({

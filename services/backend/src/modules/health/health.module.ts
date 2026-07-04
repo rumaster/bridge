@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 
 import { AiIntegrationModule } from "../ai-integration/ai-integration.module";
 import { BroadcastFacadeModule } from "../broadcast-facade/broadcast-facade.module";
+import { CommunicationCoreProxyModule } from "../communication-core/communication-core-proxy.module";
 import { FbpIntegrationModule } from "../fbp-integration/fbp-integration.module";
 import { IntegrationGatewayModule } from "../integration-gateway/integration-gateway.module";
 import { NotificationFacadeModule } from "../notification-facade/notification-facade.module";
@@ -16,6 +17,7 @@ import { MetricsService } from "./metrics.service";
     AiIntegrationModule,
     FbpIntegrationModule,
     BroadcastFacadeModule,
+    CommunicationCoreProxyModule,
     IntegrationGatewayModule,
     NotificationFacadeModule,
   ],
