@@ -36,6 +36,19 @@ const KEY_SCREENS: AdminScreen[] = [
   { path: "/notifications", heading: "Notification" }
 ];
 
+const SCREEN_READY_HEADINGS: Record<string, string[]> = {
+  "/broadcast": ["Приветственная серия", "Июльская акция"],
+  "/channels": ["Telegram Support"],
+  "/knowledge": ["FAQ возвратов", "Регламент доставки", "Прайс-лист"],
+  "/notifications": [
+    "Кампания «Приветственная серия» завершена",
+    "Канал Telegram Support недоступен",
+    "Использовано 80% месячного лимита сообщений"
+  ],
+  "/onboarding": ["Текущая конфигурация"],
+  "/workflow": ["Автоответчик обращений", "История исполнения"]
+};
+
 function renderRoute(path: string, services: SaasAdminServiceOverrides = createMockSaasAdminServices()) {
   const router = createSaasAdminRouter({ initialEntries: [path], services });
   return render(<RouterProvider router={router} />);
@@ -99,6 +112,9 @@ describe("SaaS Administration M5 acceptance and accessibility", () => {
     for (const { heading, path } of KEY_SCREENS) {
       const view = renderRoute(path);
       await screen.findByRole("heading", { level: 1, name: heading });
+      for (const readyHeading of SCREEN_READY_HEADINGS[path] ?? []) {
+        await screen.findByRole("heading", { name: readyHeading });
+      }
 
       architecture[path] = screen
         .getAllByRole("heading")

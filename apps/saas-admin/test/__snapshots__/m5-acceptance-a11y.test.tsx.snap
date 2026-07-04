@@ -141,6 +141,22 @@ exports[`SaaS Administration M5 acceptance and accessibility > фиксируе�
     },
     {
       "level": 2,
+      "name": "Редактор схемы",
+    },
+    {
+      "level": 3,
+      "name": "Палитра узлов",
+    },
+    {
+      "level": 3,
+      "name": "Свойства узла",
+    },
+    {
+      "level": 3,
+      "name": "Связи узлов",
+    },
+    {
+      "level": 2,
       "name": "История исполнения",
     },
   ],
