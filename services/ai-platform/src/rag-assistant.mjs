@@ -5,52 +5,63 @@ import {
 
 import { assertAssistantSuggestRequest } from "./c4-dto.mjs";
 import { createDeterministicMockLlm } from "./llm.mjs";
+import { createResilientLlm } from "./llm-facade.mjs";
+import { createAiMetrics } from "./metrics.mjs";
 import { createOnboardingCommander } from "./onboarding.mjs";
 import { buildPrompt, buildSources, rankChunks } from "./rag-pipeline.mjs";
 
 const DEFAULT_TOP_K = 5;
 
 /**
- * RAG-backed C4 AI Assistant (CP-3).
+ * RAG-backed C4 AI Assistant (CP-3) — hardened for M5 (ТЗ §11.2, §22.6, §24.4).
  *
  * Flow (ТЗ §12.3, §12.7): embed the query through the swappable LLM abstraction →
  * ask Backend to search the Knowledge Base (C3.kb) under tenant isolation → rank
- * the returned chunks → generate an answer with source citations. Any failure in
- * that chain degrades to a safe fallback so messaging stays usable (ТЗ §5.4): the
- * response is still a valid C4 payload, just `degraded: true` with `mode:
- * "fallback"` and `source_status: "unavailable"`.
+ * the returned chunks → generate an answer with source citations. Every LLM call
+ * goes through the resilient facade (timeout + circuit breaker + metrics), and
+ * any failure in the chain degrades to a safe fallback so messaging stays usable
+ * (ТЗ §5.4): the response is still a valid C4 payload, just `degraded: true` with
+ * `mode: "fallback"` and `source_status: "unavailable"`.
  *
- * AI Onboarding / structured commands (CP-5) are delegated to the onboarding
- * commander, which interprets the request through the same swappable LLM
- * abstraction and validates the resulting §12.6 command before it leaves SVC-AI.
+ * When several providers/models are configured (ТЗ §12.9), pass a `resolveLlm`
+ * router: the provider is chosen per request from the organization/platform
+ * config. A bare `llm` is wrapped once in the resilient facade for the
+ * single-provider case. Quality/cost signals land in a shared metrics sink
+ * surfaced on `/metrics` (ТЗ §24.4).
  */
 export function createRagAssistant({
   llm = createDeterministicMockLlm(),
+  resolveLlm,
   kbSearch,
   topK = DEFAULT_TOP_K,
   now = () => new Date().toISOString(),
-  onboarding = createOnboardingCommander({ llm, now }),
+  metrics = createAiMetrics(),
+  onboarding,
 } = {}) {
   if (!kbSearch || typeof kbSearch.search !== "function") {
     throw new TypeError("createRagAssistant requires a kbSearch with a search() method");
   }
 
-  const metrics = {
-    assistant_suggest_total: 0,
-    assistant_suggest_degraded_total: 0,
-    onboarding_command_total: 0,
-  };
+  // Single-provider path: wrap the given provider once so timeout, circuit
+  // breaker and cost/latency metrics apply even when no router is configured.
+  const singleLlm = llm.resilient ? llm : createResilientLlm({ provider: llm, metrics });
+  const selectLlm =
+    typeof resolveLlm === "function" ? resolveLlm : () => singleLlm;
+
+  const commander =
+    onboarding ??
+    createOnboardingCommander({ resolveLlm: selectLlm, now, metrics });
 
   async function suggestAssistant(payload) {
     const request = assertAssistantSuggestRequest(payload);
-    metrics.assistant_suggest_total += 1;
+    metrics.inc("assistant_suggest_total");
 
     try {
       const response = await runPipeline(request);
       assertValid(response);
       return response;
     } catch (error) {
-      metrics.assistant_suggest_degraded_total += 1;
+      metrics.inc("assistant_suggest_degraded_total");
       const response = buildFallback(request, error);
       assertValid(response);
       return response;
@@ -58,13 +69,10 @@ export function createRagAssistant({
   }
 
   async function runPipeline(request) {
-    const embedding = await llm.embed(request.query);
-    const { results } = await kbSearch.search({
-      organizationId: request.organization_id,
-      embedding,
-      query: request.query,
-      limit: topK,
-    });
+    const activeLlm = selectLlm(request.organization_id);
+    const embedding = await activeLlm.embed(request.query);
+
+    const { results } = await searchKb(request, embedding);
 
     const ranked = rankChunks(results, {
       organizationId: request.organization_id,
@@ -79,7 +87,7 @@ export function createRagAssistant({
       organizationId: request.organization_id,
     });
 
-    const generated = await llm.generate({
+    const generated = await activeLlm.generate({
       query: request.query,
       chunks: ranked,
       organizationId: request.organization_id,
@@ -101,6 +109,21 @@ export function createRagAssistant({
       fallbackReason: null,
       now,
     });
+  }
+
+  async function searchKb(request, embedding) {
+    metrics.inc("kb_search_total");
+    try {
+      return await kbSearch.search({
+        organizationId: request.organization_id,
+        embedding,
+        query: request.query,
+        limit: topK,
+      });
+    } catch (error) {
+      metrics.inc("kb_search_failed_total");
+      throw error;
+    }
   }
 
   function buildFallback(request, error) {
@@ -126,15 +149,37 @@ export function createRagAssistant({
     suggestAssistant,
 
     async createOnboardingCommand(payload) {
-      const command = await onboarding.createOnboardingCommand(payload);
-      metrics.onboarding_command_total += 1;
-      return command;
+      return commander.createOnboardingCommand(payload);
     },
 
     getMetrics() {
-      return { ...metrics };
+      return metrics.snapshot();
+    },
+
+    getHealth() {
+      return {
+        llm: describeLlm(selectLlm),
+      };
     },
   };
+}
+
+/**
+ * Best-effort snapshot of the active provider's breaker for `/health`. With a
+ * router we cannot know an organization ahead of time, so we probe the default
+ * selection; a router without a default simply reports nothing.
+ */
+function describeLlm(selectLlm) {
+  try {
+    const llm = selectLlm(undefined);
+    return {
+      name: llm.name ?? null,
+      model: llm.model ?? null,
+      breaker: typeof llm.getBreakerState === "function" ? llm.getBreakerState() : null,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function fallbackReasonFor(error) {
