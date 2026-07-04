@@ -309,6 +309,19 @@ C9↔C1) зафиксированы в `packages/contracts/cp6-cp7-freeze.v1.jso
   (регрессия, CP-9).
 - **DoD.** Пройдены нагрузка/деградация; критерии приёмки ядра (мастер §9.4, CP-9).
 
+**Статус реализации M5.** Добавлен модуль `communication-core-m5.mjs`:
+`createCommunicationCoreLoadProbe` измеряет приём/маршрутизацию без новых типов
+сообщений, `createAdapterFailureCoordinator` ограничивает вызовы адаптеров
+таймаутом/ретраями и переводит финальный отказ в `status=failed`,
+`createAiDegradationGuard` возвращает структурированный fallback при недоступном
+AI. Для общей PostgreSQL-модели добавлена повторная проверка idempotency после
+endpoint-lock: несколько экземпляров ядра используют единый `idempotency_key` и
+сохраняют монотонный `sequence_number` в рамках endpoint. Контракты C1/C2/C7 и
+route/message-типы не менялись. Покрытие: `communication-core.m5.test.mjs`,
+`tests/integration/communication-core-m5.test.mjs`,
+`tests/e2e/communication-core-cp9.test.mjs`; порядок запуска и операционные
+заметки по пробникам — в `docs/operations/communication-core-m5-load-probes.md`.
+
 ---
 
 ## 6. Точки согласования
