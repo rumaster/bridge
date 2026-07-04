@@ -280,6 +280,16 @@ Telegram Console.
 - **Тесты.** *Unit*: валидаторы DTO broadcast/notification, идемпотентность создания, логика деградации. *Integration*: Backend↔BCAST и Backend↔NOTIF через моки контрактов; эндпоинты покрыты 3 случаями. *E2e*: участие в «Broadcast: доставка кампании» и «Notification в Web + Telegram».
 - **DoD.** Фасады BCAST/NOTIF реализованы; деградация проверена; эндпоинты покрыты integration-тестами.
 
+**Статус реализации M4 (M4-99).** M4 Backend API завершён для CP-6/CP-8: фасады
+`broadcast-facade` (C8) и `notification-facade` (C10) проксируют вызовы в
+SVC-BCAST и SVC-NOTIF по замороженным контрактам, идемпотентное создание и
+деградация без блокировки ядра. Контракты C8/C10 стабилизированы `stable_for_m5`
+(`packages/contracts/cp6-cp7-freeze.v1.json`, `packages/contracts/cp8-freeze.v1.json`,
+скреплено `tests/contract/m4-gate-freeze.test.mjs`). Покрытие: e2e
+`tests/e2e/facades-cp6-cp8.test.mjs`, contract
+`tests/contract/c8-broadcast-contract.test.mjs`,
+`tests/contract/c10-notification-contract.test.mjs`.
+
 ### M5 — Полнота OpenAPI и контроль версии API (M) — стабилизация
 
 - **Цель.** Полнота и корректность контракта, нагрузочная проверка NFR.

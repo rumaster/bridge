@@ -227,6 +227,15 @@ SVC-TGC входит в дорожную карту начиная с **M3** (м
 - **DoD.** AI-подсказки доступны в боте; недоступность AI не ломает уведомления/
   ответы; ответ остаётся идемпотентным (мастер §9.4).
 
+**Статус реализации M4 (M4-99).** На интеграционном gate CP-8 telegram-потребитель
+C10 подтверждён: SVC-TGC доставляет тот же замороженный C10-payload в Telegram
+Console, что и web-часть, ответ клиенту идемпотентен. Контракты
+C10/`notification.created` зафиксированы `stable_for_m5`
+(`packages/contracts/cp8-freeze.v1.json`, скреплено
+`tests/contract/m4-gate-freeze.test.mjs`). Покрытие CP-8 telegram-части:
+`tests/contract/telegram-console-cp8-consumer.test.mjs`,
+`tests/e2e/telegram-console-cp8.test.mjs`.
+
 ### M5 — Приёмка, устойчивость, ограничения Telegram
 
 - **Цель.** Стабильная работа бота под ограничениями Telegram и приёмка.
