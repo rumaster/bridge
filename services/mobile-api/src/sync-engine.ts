@@ -23,11 +23,23 @@ import {
  *    сдвигает курсор лишь применив дельты;
  *  - изоляция арендатора — курсор жёстко привязан к organization_id/user_id.
  */
+export interface SyncEngineContext {
+  organizationId?: string;
+  userId?: string;
+  deviceId?: string;
+}
+
+export interface CreateSyncEngineOptions {
+  backend?: any;
+  context?: SyncEngineContext;
+  now?: () => string;
+}
+
 export function createSyncEngine({
   backend,
   context = {},
   now = () => new Date().toISOString(),
-}) {
+}: CreateSyncEngineOptions) {
   const metrics = {
     sync_total: 0,
     sync_empty_total: 0,
@@ -174,7 +186,7 @@ function buildDialogDeltas({
     return [];
   }
 
-  const conversationsById = new Map(
+  const conversationsById = new Map<string, any>(
     backend
       .listConversations({ organizationId })
       .map((conversation) => [conversation.id, conversation]),

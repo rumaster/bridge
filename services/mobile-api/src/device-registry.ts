@@ -6,6 +6,17 @@
  *
  * Изоляция арендатора — устройство несёт organization_id/user_id. Детерминирован.
  */
+export interface RegisterDeviceInput {
+  organizationId: string;
+  userId: string;
+  deviceId: string;
+  platform: string;
+  pushProvider: string;
+  pushToken: string;
+  appVersion?: string;
+  locale?: string;
+}
+
 export function createDeviceRegistry({ now = () => new Date().toISOString() } = {}) {
   const devices = new Map();
   const metrics = {
@@ -30,7 +41,7 @@ export function createDeviceRegistry({ now = () => new Date().toISOString() } = 
       pushToken,
       appVersion,
       locale,
-    }) {
+    }: RegisterDeviceInput) {
       const existing = devices.get(deviceId);
       const device = {
         organization_id: organizationId,

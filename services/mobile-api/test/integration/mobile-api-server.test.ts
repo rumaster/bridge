@@ -16,7 +16,7 @@ function listen(server) {
 }
 
 async function close(server) {
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }
@@ -51,7 +51,7 @@ describe("Mobile API deterministic mock server", () => {
 
   it("exposes client connection config without Edge by default", async () => {
     const response = await fetch(`${baseUrl}/mobile/v1/config`);
-    const body = await response.json();
+    const body: any = await response.json();
 
     assert.equal(response.status, 200);
     assert.equal(body.api_base_url, "/mobile/v1");
@@ -69,18 +69,18 @@ describe("Mobile API deterministic mock server", () => {
     assert.equal(dialogs.status, 200);
     assert.equal(messages.status, 200);
     assert.equal(notifications.status, 200);
-    assert.equal((await dialogs.json()).items[0].dialog_id, "dialog-1");
-    assert.equal((await messages.json()).items.length, 2);
-    assert.equal((await notifications.json()).items[0].notification_id, "notification-1");
+    assert.equal(((await dialogs.json()) as any).items[0].dialog_id, "dialog-1");
+    assert.equal(((await messages.json()) as any).items.length, 2);
+    assert.equal(((await notifications.json()) as any).items[0].notification_id, "notification-1");
   });
 
   it("serves sync cursors and empty follow-up deltas", async () => {
     const firstResponse = await fetch(`${baseUrl}/mobile/v1/sync?device_id=device-1`);
-    const first = await firstResponse.json();
+    const first: any = await firstResponse.json();
     const secondResponse = await fetch(
       `${baseUrl}/mobile/v1/sync?device_id=device-1&cursor=${encodeURIComponent(first.cursor)}`,
     );
-    const second = await secondResponse.json();
+    const second: any = await secondResponse.json();
 
     assert.equal(firstResponse.status, 200);
     assert.match(first.cursor, /^mob1\.[A-Za-z0-9_-]+$/);
@@ -106,7 +106,7 @@ describe("Mobile API deterministic mock server", () => {
         push_token: "fcm-token-1",
       }),
     });
-    const body = await response.json();
+    const body: any = await response.json();
 
     assert.equal(response.status, 201);
     assert.equal(body.device.device_id, "device-1");
@@ -146,9 +146,9 @@ describe("Mobile API deterministic mock server", () => {
     });
 
     assert.equal(valid.status, 202);
-    assert.equal((await valid.json()).proxied_to, "C3.messages");
+    assert.equal(((await valid.json()) as any).proxied_to, "C3.messages");
     assert.equal(invalid.status, 400);
-    assert.equal((await invalid.json()).title, "Validation failed");
+    assert.equal(((await invalid.json()) as any).title, "Validation failed");
   });
 });
 
@@ -168,7 +168,7 @@ describe("Mobile API server — маршрутизация клиентов РФ
 
   it("health сообщает о подключении через Edge с туннелем mobile", async () => {
     const response = await fetch(`${baseUrl}/health`);
-    const body = await response.json();
+    const body: any = await response.json();
 
     assert.equal(response.status, 200);
     assert.deepEqual(body.edge, { via_edge: true, tunnel: "mobile" });
@@ -176,7 +176,7 @@ describe("Mobile API server — маршрутизация клиентов РФ
 
   it("config выдаёт клиенту РФ базовый URL Edge и заголовок C9-туннеля", async () => {
     const response = await fetch(`${baseUrl}/mobile/v1/config`);
-    const body = await response.json();
+    const body: any = await response.json();
 
     assert.equal(response.status, 200);
     assert.equal(body.api_base_url, EDGE_BASE);

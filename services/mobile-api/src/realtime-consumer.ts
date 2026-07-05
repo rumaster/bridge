@@ -7,6 +7,12 @@
  * SVC-MOB здесь только потребляет и переупаковывает — порядок/буфер/дедуп на
  * разрыве обеспечивает C7/Edge (границы §1, §7.10).
  */
+export interface RealtimeConnectOptions {
+  subscription?: any;
+  afterSequenceNumber?: number;
+  lastEventId?: string;
+}
+
 export function createRealtimeConsumer({ backend, pushDispatcher, registry }) {
   const metrics = {
     realtime_events_total: 0,
@@ -78,7 +84,7 @@ export function createRealtimeConsumer({ backend, pushDispatcher, registry }) {
      * сохранённых событий после курсора + живой поток. Возвращает управление
      * закрытием и последний применённый event_id (для докачки при реконнекте).
      */
-    connect(wsChannel, { subscription, afterSequenceNumber, lastEventId } = {}) {
+    connect(wsChannel, { subscription, afterSequenceNumber, lastEventId }: RealtimeConnectOptions = {}) {
       return wsChannel.connect({
         subscription,
         afterSequenceNumber,

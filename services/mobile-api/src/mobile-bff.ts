@@ -37,7 +37,28 @@ const DEFAULT_CONTEXT = Object.freeze({
  * `mock: false`, режим — `bff`. Здесь нет бизнес-логики — только композиция и
  * проксирование к апстрим-контрактам (границы §1).
  */
-export function createMobileBff(options = {}) {
+export interface MobileBffContext {
+  organizationId?: string;
+  userId?: string;
+  deviceId?: string;
+  roles?: string[];
+  locale?: string;
+}
+
+export interface CreateMobileBffOptions {
+  now?: () => string;
+  context?: MobileBffContext;
+  backend?: any;
+  deviceRegistry?: any;
+  pushProvider?: any;
+  wsChannel?: any;
+}
+
+interface MobileAuthPayload {
+  request_id?: string;
+}
+
+export function createMobileBff(options: CreateMobileBffOptions = {}) {
   const now = options.now ?? (() => new Date().toISOString());
   const context = { ...DEFAULT_CONTEXT, ...(options.context ?? {}) };
   const backend = options.backend ?? createMockBackendApi({ now });
@@ -71,7 +92,7 @@ export function createMobileBff(options = {}) {
   const api = {
     mode: "bff",
 
-    startTelegramLogin(payload = {}) {
+    startTelegramLogin(payload: MobileAuthPayload = {}) {
       metrics.auth_proxy_total += 1;
       return {
         contract: "MOBILE.AuthProxyResponse",
@@ -84,7 +105,7 @@ export function createMobileBff(options = {}) {
       };
     },
 
-    verifyTelegramLogin(payload = {}) {
+    verifyTelegramLogin(payload: MobileAuthPayload = {}) {
       metrics.auth_proxy_total += 1;
       return sessionResponse(payload.request_id ?? "req-mobile-auth-verify");
     },

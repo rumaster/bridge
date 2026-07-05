@@ -2,7 +2,20 @@ import {
   MOBILE_SYNC_CURSOR_PREFIX,
 } from "../../../packages/contracts/src/mobile.js";
 
+export interface MobileSyncCursorIssue {
+  field: string;
+  message: string;
+}
+
+export interface MobileSyncCursorResult {
+  ok: boolean;
+  value?: any;
+  errors?: MobileSyncCursorIssue[];
+}
+
 export class MobileSyncCursorError extends Error {
+  readonly errors: MobileSyncCursorIssue[];
+
   constructor(errors) {
     super(`Mobile sync cursor validation failed: ${errors.map((error) => error.field).join(", ")}`);
     this.name = "MobileSyncCursorError";
@@ -34,7 +47,7 @@ export function createSyncCursor({
   return `${MOBILE_SYNC_CURSOR_PREFIX}.${Buffer.from(JSON.stringify(payload)).toString("base64url")}`;
 }
 
-export function parseSyncCursor(cursor) {
+export function parseSyncCursor(cursor): MobileSyncCursorResult {
   if (typeof cursor !== "string" || cursor.trim() === "") {
     return invalidCursor("cursor", "cursor must be a non-empty string.");
   }
@@ -65,7 +78,7 @@ export function assertSyncCursor(cursor) {
   return result.value;
 }
 
-function validateCursorPayload(payload) {
+function validateCursorPayload(payload): MobileSyncCursorResult {
   const errors = [];
 
   if (!isRecord(payload)) {
@@ -126,7 +139,7 @@ function expectNonEmptyString(errors, value, field) {
   }
 }
 
-function invalidCursor(field, message) {
+function invalidCursor(field, message): MobileSyncCursorResult {
   return {
     ok: false,
     errors: [

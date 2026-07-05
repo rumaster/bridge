@@ -21,7 +21,7 @@ function listen(server) {
 }
 
 async function close(server) {
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }
@@ -52,7 +52,8 @@ async function postJson(baseUrl, path, body) {
     headers: JSON_HEADERS,
     body: JSON.stringify(body),
   });
-  return { status: response.status, body: await response.json() };
+  const responseBody: any = await response.json();
+  return { status: response.status, body: responseBody };
 }
 
 describe("SVC-MOB BFF integration — offline→online sync (§19.3)", () => {
@@ -72,7 +73,7 @@ describe("SVC-MOB BFF integration — offline→online sync (§19.3)", () => {
 
   it("delivers every change accumulated while offline exactly once", async () => {
     // Клиент онлайн: берёт стартовый курсор на пустой ленте.
-    const baseline = await (await fetch(`${baseUrl}/mobile/v1/sync?device_id=device-1`)).json();
+    const baseline: any = await (await fetch(`${baseUrl}/mobile/v1/sync?device_id=device-1`)).json();
     assert.equal(baseline.deltas.messages.length, 0);
 
     // Клиент офлайн: копятся два исходящих сообщения и уведомление C10.
@@ -87,7 +88,7 @@ describe("SVC-MOB BFF integration — offline→online sync (§19.3)", () => {
     await postJson(baseUrl, "/mobile/v1/messages", sendMessageBody({ message_id: "message-2", idempotency_key: "message-2", request_id: "req-2" }));
 
     // Клиент онлайн: догоняет по своему курсору — без потерь.
-    const resumed = await (
+    const resumed: any = await (
       await fetch(`${baseUrl}/mobile/v1/sync?device_id=device-1&cursor=${encodeURIComponent(baseline.cursor)}`)
     ).json();
     assert.deepEqual(
@@ -97,14 +98,14 @@ describe("SVC-MOB BFF integration — offline→online sync (§19.3)", () => {
     assert.equal(resumed.deltas.notifications.length, 1);
 
     // Дальнейший sync по новому курсору — пусто, без дублей.
-    const caughtUp = await (
+    const caughtUp: any = await (
       await fetch(`${baseUrl}/mobile/v1/sync?device_id=device-1&cursor=${encodeURIComponent(resumed.cursor)}`)
     ).json();
     assert.equal(caughtUp.deltas.messages.length, 0);
     assert.equal(caughtUp.deltas.notifications.length, 0);
 
     // Повторная докачка по старому курсору отдаёт тот же срез (стабильное чтение).
-    const replay = await (
+    const replay: any = await (
       await fetch(`${baseUrl}/mobile/v1/sync?device_id=device-1&cursor=${encodeURIComponent(baseline.cursor)}`)
     ).json();
     assert.deepEqual(

@@ -13,6 +13,10 @@ const MOCK_ORGANIZATION_ID = "org-1";
 const MOCK_USER_ID = "manager-1";
 const MOCK_DEVICE_ID = "device-mock-1";
 
+interface MobileAuthPayload {
+  request_id?: string;
+}
+
 export function createDeterministicMobileApiMock({
   now = () => new Date().toISOString(),
 } = {}) {
@@ -29,7 +33,7 @@ export function createDeterministicMobileApiMock({
   };
 
   return {
-    startTelegramLogin(payload = {}) {
+    startTelegramLogin(payload: MobileAuthPayload = {}) {
       metrics.auth_proxy_total += 1;
       return {
         contract: "MOBILE.AuthProxyResponse",
@@ -42,7 +46,7 @@ export function createDeterministicMobileApiMock({
       };
     },
 
-    verifyTelegramLogin(payload = {}) {
+    verifyTelegramLogin(payload: MobileAuthPayload = {}) {
       metrics.auth_proxy_total += 1;
       return createSessionResponse(payload.request_id ?? "req-mobile-auth-verify", now);
     },

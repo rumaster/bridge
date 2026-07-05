@@ -12,13 +12,21 @@ import { MobileSyncCursorError } from "./sync-cursor.js";
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 const MAX_BODY_BYTES = 1024 * 1024;
 
+export interface CreateMobileApiServerOptions {
+  mobileApi?: any;
+  now?: () => string;
+  apiBaseUrl?: string;
+  realtimeUrl?: string;
+  edgeBaseUrl?: string;
+}
+
 export function createMobileApiServer({
   mobileApi,
   now = () => new Date().toISOString(),
   apiBaseUrl = MOBILE_API_BASE_PATH,
   realtimeUrl,
   edgeBaseUrl = process.env.EDGE_BASE_URL,
-} = {}) {
+}: CreateMobileApiServerOptions = {}) {
   const mockMobileApi = mobileApi ?? createDeterministicMobileApiMock({ now });
   // CP-7: подключение мобильных клиентов РФ через Edge Cluster (§7.6). Резолвим один
   // раз при старте — клиент узнаёт маршрут и заголовок туннеля через /config и /health.
@@ -256,6 +264,9 @@ function renderMetrics(metrics) {
 }
 
 class PayloadError extends Error {
+  readonly status: number;
+  readonly title: string;
+
   constructor(status, title, message) {
     super(message);
     this.name = "PayloadError";

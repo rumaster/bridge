@@ -23,7 +23,13 @@ export const EDGE_TUNNEL_HEADER_VALUE = "mobile";
  * @param {string} [input.edgeBaseUrl] базовый URL Edge; пусто → без Edge
  * @returns {{ apiBaseUrl: string|undefined, realtimeUrl: string|undefined, viaEdge: boolean, tunnel: string|null, headers: Record<string,string> }}
  */
-export function resolveMobileEdgeConnection({ apiBaseUrl, realtimeUrl, edgeBaseUrl } = {}) {
+export interface MobileEdgeConnectionOptions {
+  apiBaseUrl?: string;
+  realtimeUrl?: string;
+  edgeBaseUrl?: string;
+}
+
+export function resolveMobileEdgeConnection({ apiBaseUrl, realtimeUrl, edgeBaseUrl }: MobileEdgeConnectionOptions = {}) {
   const normalizedEdgeBaseUrl = typeof edgeBaseUrl === "string" ? edgeBaseUrl.trim() : "";
 
   if (!normalizedEdgeBaseUrl) {

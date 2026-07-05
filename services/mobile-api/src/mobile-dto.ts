@@ -35,7 +35,14 @@ const SYNC_QUERY_FIELDS = new Set(["cursor", "device_id", "limit"]);
 const DEVICE_PLATFORMS = new Set(["ios", "android"]);
 const PUSH_PROVIDERS = new Set(["apns", "fcm"]);
 
+export interface MobileDtoValidationIssue {
+  field: string;
+  message: string;
+}
+
 export class MobileDtoValidationError extends Error {
+  readonly errors: MobileDtoValidationIssue[];
+
   constructor(errors) {
     super(`Mobile DTO validation failed: ${errors.map((error) => error.field).join(", ")}`);
     this.name = "MobileDtoValidationError";

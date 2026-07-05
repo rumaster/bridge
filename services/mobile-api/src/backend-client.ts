@@ -15,6 +15,60 @@
  * Модуль не тянет рантайм-зависимостей и детерминирован (инъектируемые часы).
  */
 
+export interface BackendClientInput {
+  clientId: string;
+  displayName?: string;
+}
+
+export interface BackendConversationInput {
+  conversationId: string;
+  clientId?: string;
+  createdAt?: string;
+}
+
+export interface SeedClientInput {
+  organizationId: string;
+  clientId: string;
+  displayName?: string;
+}
+
+export interface SeedConversationInput {
+  organizationId: string;
+  conversationId: string;
+  clientId?: string;
+  displayName?: string;
+  createdAt?: string;
+}
+
+export interface SendMessageInput {
+  organizationId: string;
+  conversationId: string;
+  messageId: string;
+  idempotencyKey: string;
+  senderType?: string;
+  senderUserId?: string;
+  text?: string;
+  occurredAt?: string;
+}
+
+export interface ApplyStatusChangeInput {
+  organizationId: string;
+  messageId: string;
+  status: string;
+  occurredAt?: string;
+}
+
+export interface CreateNotificationInput {
+  organizationId: string;
+  notificationId: string;
+  recipientUserId: string;
+  category?: string;
+  title?: string;
+  body?: string;
+  payload?: Record<string, unknown>;
+  createdAt?: string;
+}
+
 const SENDER_TYPES = new Set(["client", "manager", "system", "ai"]);
 
 export function createMockBackendApi({ now = () => new Date().toISOString() } = {}) {
@@ -81,7 +135,7 @@ export function createMockBackendApi({ now = () => new Date().toISOString() } = 
     }
   }
 
-  function ensureConversation(state, { conversationId, clientId, createdAt }) {
+  function ensureConversation(state, { conversationId, clientId, createdAt }: BackendConversationInput) {
     let conversation = state.conversations.get(conversationId);
     if (!conversation) {
       const resolvedClientId = clientId ?? `client-of-${conversationId}`;
@@ -99,7 +153,7 @@ export function createMockBackendApi({ now = () => new Date().toISOString() } = 
     return conversation;
   }
 
-  function ensureClient(state, { clientId, displayName }) {
+  function ensureClient(state, { clientId, displayName }: BackendClientInput) {
     let client = state.clients.get(clientId);
     if (!client) {
       client = {
@@ -143,12 +197,12 @@ export function createMockBackendApi({ now = () => new Date().toISOString() } = 
 
   return {
     /** Тестовый посев клиента C3.clients. */
-    seedClient({ organizationId, clientId, displayName }) {
+    seedClient({ organizationId, clientId, displayName }: SeedClientInput) {
       return { ...ensureClient(orgState(organizationId), { clientId, displayName }) };
     },
 
     /** Тестовый посев разговора C3.conversations. */
-    seedConversation({ organizationId, conversationId, clientId, displayName, createdAt }) {
+    seedConversation({ organizationId, conversationId, clientId, displayName, createdAt }: SeedConversationInput) {
       const state = orgState(organizationId);
       if (clientId) {
         ensureClient(state, { clientId, displayName });
@@ -169,7 +223,7 @@ export function createMockBackendApi({ now = () => new Date().toISOString() } = 
       senderUserId,
       text = "",
       occurredAt,
-    }) {
+    }: SendMessageInput) {
       if (idempotencyKey !== messageId) {
         throw new TypeError("idempotency_key must equal message_id (ТЗ §11.12)");
       }
@@ -261,7 +315,7 @@ export function createMockBackendApi({ now = () => new Date().toISOString() } = 
     },
 
     /** Смена статуса сообщения (C3.messages / C7 message.status_changed). */
-    applyStatusChange({ organizationId, messageId, status, occurredAt }) {
+    applyStatusChange({ organizationId, messageId, status, occurredAt }: ApplyStatusChangeInput) {
       const state = orgState(organizationId);
       const message = state.messages.get(messageId);
       if (!message) {
@@ -295,7 +349,7 @@ export function createMockBackendApi({ now = () => new Date().toISOString() } = 
       body = "",
       payload = {},
       createdAt,
-    }) {
+    }: CreateNotificationInput) {
       const state = orgState(organizationId);
       const at = createdAt ?? now();
       const notification = {
