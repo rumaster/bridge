@@ -50,7 +50,7 @@ export function formatPgVector(value, fieldName = "embedding") {
   return `[${assertEmbeddingVector(value, fieldName).join(",")}]`;
 }
 
-export function createTestOrganization(overrides = {}) {
+export function createTestOrganization(overrides: Record<string, any> = {}) {
   const createdAt = overrides.created_at ?? toUtcTimestamptz();
   const organization = {
     id: randomUUID(),
@@ -71,7 +71,7 @@ export function createTestOrganization(overrides = {}) {
   return organization;
 }
 
-export function createTestUser(overrides = {}) {
+export function createTestUser(overrides: Record<string, any> = {}) {
   const createdAt = overrides.created_at ?? toUtcTimestamptz();
   const user = {
     id: randomUUID(),
@@ -96,7 +96,7 @@ export function createTestUser(overrides = {}) {
   return user;
 }
 
-export function createTestClient(overrides = {}) {
+export function createTestClient(overrides: Record<string, any> = {}) {
   const createdAt = overrides.created_at ?? toUtcTimestamptz();
   const client = {
     id: randomUUID(),
@@ -122,7 +122,7 @@ export function createTestClient(overrides = {}) {
   return client;
 }
 
-export function createTestConversation(overrides = {}) {
+export function createTestConversation(overrides: Record<string, any> = {}) {
   const createdAt = overrides.created_at ?? toUtcTimestamptz();
   const conversation = {
     id: randomUUID(),
@@ -150,7 +150,7 @@ export function createTestConversation(overrides = {}) {
   return conversation;
 }
 
-export function createTestMessage(overrides = {}) {
+export function createTestMessage(overrides: Record<string, any> = {}) {
   const createdAt = overrides.created_at ?? toUtcTimestamptz();
   const message = {
     id: randomUUID(),
@@ -196,7 +196,7 @@ export function createTestMessage(overrides = {}) {
   return message;
 }
 
-export function createTestKnowledgeDocument(overrides = {}) {
+export function createTestKnowledgeDocument(overrides: Record<string, any> = {}) {
   const createdAt = overrides.created_at ?? toUtcTimestamptz();
   const document = {
     id: randomUUID(),
@@ -228,7 +228,7 @@ export function createTestKnowledgeDocument(overrides = {}) {
   return document;
 }
 
-export function createTestKnowledgeChunk(overrides = {}) {
+export function createTestKnowledgeChunk(overrides: Record<string, any> = {}) {
   const chunkNo = overrides.chunk_no ?? 1;
   const chunk = {
     id: randomUUID(),
@@ -293,7 +293,7 @@ function assertNonNegativeInteger(value, fieldName) {
   return value;
 }
 
-export function createTestWorkflow(overrides = {}) {
+export function createTestWorkflow(overrides: Record<string, any> = {}) {
   const createdAt = overrides.created_at ?? toUtcTimestamptz();
   const workflow = {
     id: randomUUID(),
@@ -321,7 +321,7 @@ export function createTestWorkflow(overrides = {}) {
   return workflow;
 }
 
-export function createTestWorkflowVersion(overrides = {}) {
+export function createTestWorkflowVersion(overrides: Record<string, any> = {}) {
   const versionNo = overrides.version_no ?? 1;
   const version = {
     id: randomUUID(),
@@ -384,7 +384,7 @@ export function isMonotonicWorkflowVersionNumbers(versions) {
   }
 }
 
-export function createTestWorkflowVersionSequence(count = 2, overrides = {}) {
+export function createTestWorkflowVersionSequence(count = 2, overrides: Record<string, any> = {}) {
   assertPositiveInteger(count, "workflow_version_sequence.count");
   const workflowId = overrides.workflow_id ?? randomUUID();
   const organizationId = overrides.organization_id ?? randomUUID();
@@ -399,7 +399,7 @@ export function createTestWorkflowVersionSequence(count = 2, overrides = {}) {
   );
 }
 
-export function createTestWorkflowInstance(overrides = {}) {
+export function createTestWorkflowInstance(overrides: Record<string, any> = {}) {
   const createdAt = overrides.created_at ?? toUtcTimestamptz();
   const instance = {
     id: randomUUID(),
@@ -443,7 +443,7 @@ export function createTestWorkflowInstance(overrides = {}) {
   return instance;
 }
 
-export function createTestWorkflowInstanceState(overrides = {}) {
+export function createTestWorkflowInstanceState(overrides: Record<string, any> = {}) {
   const state = {
     instance_id: randomUUID(),
     organization_id: randomUUID(),
@@ -460,7 +460,7 @@ export function createTestWorkflowInstanceState(overrides = {}) {
   return state;
 }
 
-export function createTestWorkflowExecutionLog(overrides = {}) {
+export function createTestWorkflowExecutionLog(overrides: Record<string, any> = {}) {
   const log = {
     id: randomUUID(),
     organization_id: randomUUID(),
@@ -485,7 +485,7 @@ export function createTestWorkflowExecutionLog(overrides = {}) {
   return log;
 }
 
-export function createTestOutboxEvent(overrides = {}) {
+export function createTestOutboxEvent(overrides: Record<string, any> = {}) {
   const createdAt = overrides.created_at ?? toUtcTimestamptz();
   const event = {
     id: randomUUID(),
@@ -533,7 +533,7 @@ export function createTestOutboxEvent(overrides = {}) {
   return event;
 }
 
-export function createTestBroadcast(overrides = {}) {
+export function createTestBroadcast(overrides: Record<string, any> = {}) {
   const createdAt = overrides.created_at ?? toUtcTimestamptz();
   const broadcast = {
     id: randomUUID(),
@@ -574,7 +574,7 @@ export function createTestBroadcast(overrides = {}) {
   return broadcast;
 }
 
-export function createTestBroadcastRecipient(overrides = {}) {
+export function createTestBroadcastRecipient(overrides: Record<string, any> = {}) {
   const recipient = {
     id: randomUUID(),
     organization_id: randomUUID(),
@@ -608,7 +608,7 @@ export function createTestBroadcastRecipient(overrides = {}) {
   return recipient;
 }
 
-export function createTestBroadcastMessage(overrides = {}) {
+export function createTestBroadcastMessage(overrides: Record<string, any> = {}) {
   const message = {
     id: randomUUID(),
     organization_id: randomUUID(),
@@ -640,7 +640,7 @@ export function createTestBroadcastMessage(overrides = {}) {
   return message;
 }
 
-export function createTestBroadcastStats(overrides = {}) {
+export function createTestBroadcastStats(overrides: Record<string, any> = {}) {
   const stats = {
     broadcast_id: randomUUID(),
     organization_id: randomUUID(),
@@ -663,7 +663,7 @@ export function createTestBroadcastStats(overrides = {}) {
   return stats;
 }
 
-export function createTestNotification(overrides = {}) {
+export function createTestNotification(overrides: Record<string, any> = {}) {
   const createdAt = overrides.created_at ?? toUtcTimestamptz();
   const notification = {
     id: randomUUID(),
@@ -715,7 +715,7 @@ export function createTestNotification(overrides = {}) {
   return notification;
 }
 
-export function createTestNotificationSetting(overrides = {}) {
+export function createTestNotificationSetting(overrides: Record<string, any> = {}) {
   const createdAt = overrides.created_at ?? toUtcTimestamptz();
   const setting = {
     id: randomUUID(),
@@ -756,7 +756,7 @@ export function createTestNotificationSetting(overrides = {}) {
   return setting;
 }
 
-export function createTestEdgeMessageBufferEntry(overrides = {}) {
+export function createTestEdgeMessageBufferEntry(overrides: Record<string, any> = {}) {
   const receivedAt = overrides.received_at ?? toUtcTimestamptz();
   const ttl =
     overrides.ttl ??

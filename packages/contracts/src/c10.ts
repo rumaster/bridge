@@ -49,6 +49,22 @@ export const NOTIFICATION_TRIGGER_EVENT_SCHEMA = Object.freeze(
   ),
 );
 
+/** Входные данные {@link createNotification} (C10.Notification). */
+export interface CreateNotificationInput {
+  notificationId: string;
+  organizationId: string;
+  recipientUserId: string;
+  category: string;
+  title: string;
+  body?: string;
+  payload?: Record<string, unknown>;
+  status?: string;
+  channels?: string[];
+  createdAt?: string;
+  readAt?: string | null;
+  dedupeKey?: string;
+}
+
 export function createNotification({
   notificationId,
   organizationId,
@@ -62,7 +78,7 @@ export function createNotification({
   createdAt = new Date().toISOString(),
   readAt = null,
   dedupeKey,
-}) {
+}: CreateNotificationInput) {
   assertOneOf(category, NOTIFICATION_CATEGORIES, "category");
   assertOneOf(status, NOTIFICATION_STATUSES, "status");
 

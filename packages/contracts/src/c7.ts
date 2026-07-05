@@ -51,6 +51,17 @@ export const C7_WEBSOCKET_EVENT_SCHEMA = Object.freeze(
 
 const C7_EVENT_TYPE_SET = new Set(C7_EVENT_TYPES);
 
+/** Входные данные {@link createWebSocketEvent} (C7.WebSocketEvent). */
+export interface CreateWebSocketEventInput {
+  eventId: string;
+  organizationId: string;
+  event: string;
+  sequenceNumber: number;
+  payload: unknown;
+  occurredAt?: string;
+  subscriptionId?: string;
+}
+
 export function createWebSocketEvent({
   eventId,
   organizationId,
@@ -59,7 +70,7 @@ export function createWebSocketEvent({
   payload,
   occurredAt = new Date().toISOString(),
   subscriptionId,
-}) {
+}: CreateWebSocketEventInput) {
   if (!C7_EVENT_TYPE_SET.has(event)) {
     throw new TypeError(`Unsupported C7 WebSocket event: ${event}`);
   }

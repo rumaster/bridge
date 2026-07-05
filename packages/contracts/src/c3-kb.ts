@@ -24,6 +24,49 @@ export const C3_KB_SEARCH_RESPONSE_SCHEMA = Object.freeze(
   ),
 );
 
+/** Полезная нагрузка запроса C3.kb.SearchRequest. */
+export interface KnowledgeSearchRequest {
+  contract: string;
+  version: string;
+  organization_id: string;
+  embedding: number[];
+  query?: string;
+  limit?: number;
+}
+
+/** Входные данные {@link createKnowledgeSearchRequest}. */
+export interface CreateKnowledgeSearchRequestInput {
+  organizationId: string;
+  embedding: number[];
+  query?: string;
+  limit?: number;
+}
+
+/** Одна запись результата поиска по базе знаний (C3.kb). */
+export interface KnowledgeHit {
+  document_id: unknown;
+  chunk_id: unknown;
+  chunk_no: unknown;
+  content: unknown;
+  distance: unknown;
+  title?: unknown;
+  metadata?: unknown;
+}
+
+/** Полезная нагрузка ответа C3.kb.SearchResponse. */
+export interface KnowledgeSearchResponse {
+  contract: string;
+  version: string;
+  organization_id: string;
+  results: KnowledgeHit[];
+}
+
+/** Входные данные {@link createKnowledgeSearchResponse}. */
+export interface CreateKnowledgeSearchResponseInput {
+  organizationId: string;
+  results?: KnowledgeHit[];
+}
+
 /**
  * Build a C3.kb search request. The embedding is computed by SVC-AI (through the
  * swappable LLM abstraction); the actual pgvector search with tenant isolation is
@@ -34,7 +77,7 @@ export function createKnowledgeSearchRequest({
   embedding,
   query,
   limit,
-}) {
+}: CreateKnowledgeSearchRequestInput): KnowledgeSearchRequest {
   if (typeof organizationId !== "string" || organizationId.trim() === "") {
     throw new TypeError("createKnowledgeSearchRequest requires organizationId");
   }
@@ -45,7 +88,7 @@ export function createKnowledgeSearchRequest({
     );
   }
 
-  const request = {
+  const request: KnowledgeSearchRequest = {
     contract: "C3.kb.SearchRequest",
     version: C3_KB_VERSION,
     organization_id: organizationId,
@@ -67,7 +110,10 @@ export function validateKnowledgeSearchRequest(request) {
   return validateJsonSchema(request, C3_KB_SEARCH_REQUEST_SCHEMA);
 }
 
-export function createKnowledgeSearchResponse({ organizationId, results = [] }) {
+export function createKnowledgeSearchResponse({
+  organizationId,
+  results = [],
+}: CreateKnowledgeSearchResponseInput): KnowledgeSearchResponse {
   return {
     contract: "C3.kb.SearchResponse",
     version: C3_KB_VERSION,
@@ -80,8 +126,8 @@ export function validateKnowledgeSearchResponse(response) {
   return validateJsonSchema(response, C3_KB_SEARCH_RESPONSE_SCHEMA);
 }
 
-function normalizeHit(hit) {
-  const normalized = {
+function normalizeHit(hit): KnowledgeHit {
+  const normalized: KnowledgeHit = {
     document_id: hit.document_id,
     chunk_id: hit.chunk_id,
     chunk_no: hit.chunk_no,

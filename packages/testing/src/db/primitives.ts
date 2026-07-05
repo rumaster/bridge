@@ -15,7 +15,7 @@ export function assertUuid(value, fieldName = "uuid") {
   return value;
 }
 
-export function toUtcTimestamptz(value = new Date()) {
+export function toUtcTimestamptz(value: Date | string = new Date()) {
   const date = value instanceof Date ? value : new Date(value);
 
   if (Number.isNaN(date.getTime())) {

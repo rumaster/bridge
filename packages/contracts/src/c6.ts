@@ -17,6 +17,37 @@ export const C6_CAPABILITIES = Object.freeze([
 
 const C6_CAPABILITY_SET = new Set(C6_CAPABILITIES);
 
+/** Описание одной возможности канала (C6.CapabilityDescriptor). */
+export interface CapabilityValue {
+  supported: boolean;
+  constraints?: Record<string, unknown>;
+  notes?: string;
+}
+
+/** Карта возможностей канала: ключ — имя возможности из {@link C6_CAPABILITIES}. */
+export type CapabilityMap = Record<string, CapabilityValue>;
+
+/** Полезная нагрузка контракта C6.CapabilityDescriptor. */
+export interface CapabilityDescriptor {
+  contract: string;
+  version: string;
+  channel_type: string;
+  channel_id?: string;
+  adapter: { name: string; version: string };
+  capabilities: CapabilityMap;
+  generated_at: string;
+}
+
+/** Входные данные {@link createCapabilityDescriptor}. */
+export interface CreateCapabilityDescriptorInput {
+  channelType: string;
+  channelId?: string;
+  adapterName: string;
+  adapterVersion?: string;
+  capabilities: CapabilityMap;
+  generatedAt?: string;
+}
+
 export function createCapabilityDescriptor({
   channelType,
   channelId,
@@ -24,8 +55,8 @@ export function createCapabilityDescriptor({
   adapterVersion = "0.0.0",
   capabilities,
   generatedAt = new Date().toISOString(),
-}) {
-  const descriptor = {
+}: CreateCapabilityDescriptorInput): CapabilityDescriptor {
+  const descriptor: CapabilityDescriptor = {
     contract: C6_CONTRACT,
     version: C6_VERSION,
     channel_type: channelType,
@@ -75,7 +106,7 @@ export function validateCapabilityDescriptor(descriptor) {
   };
 }
 
-function validateCapabilities(errors, capabilities) {
+function validateCapabilities(errors, capabilities: unknown) {
   if (!isRecord(capabilities)) {
     errors.push("capabilities must be an object");
     return;
@@ -130,6 +161,6 @@ function expectIsoDateTime(errors, value, path) {
   }
 }
 
-function isRecord(value) {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
