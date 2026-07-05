@@ -70,7 +70,7 @@ function normalizeSecret(secret) {
   }
   if (typeof secret === "string" && secret.length > 0) {
     const trimmed = secret.trim();
-    for (const encoding of ["base64", "hex"]) {
+    for (const encoding of ["base64", "hex"] as const) {
       const candidate = Buffer.from(trimmed, encoding);
       if (candidate.length === VPN_SESSION_SECRET_BYTES) {
         return candidate;
@@ -188,6 +188,34 @@ export function createVpnLink({ up = true } = {}) {
  * @param {ReturnType<typeof createVpnLink>} [options.link]
  * @param {() => Buffer} [options.nonceFactory]
  */
+export interface VpnTunnelIdentity {
+  id: string;
+  certificate: string;
+}
+
+export interface VpnTunnelClientHello {
+  certificate?: string;
+  nonce?: Buffer;
+  clientId?: string;
+}
+
+export interface VpnTunnelDeliverOptions {
+  sessionId?: string;
+  frame?: any;
+  aad?: any;
+}
+
+export interface CreateVpnTunnelAppEndpointOptions {
+  identity?: VpnTunnelIdentity;
+  trustedCertificates?: string[];
+  authenticatePeer?: (certificate: any, hello: any) => boolean;
+  sessionSecret?: Buffer | string;
+  handle?: (tunnelMessage: any) => any;
+  capacity?: number;
+  link?: ReturnType<typeof createVpnLink>;
+  nonceFactory?: () => Buffer;
+}
+
 export function createVpnTunnelAppEndpoint({
   identity,
   trustedCertificates,
@@ -197,7 +225,7 @@ export function createVpnTunnelAppEndpoint({
   capacity = Number.POSITIVE_INFINITY,
   link = createVpnLink(),
   nonceFactory = () => randomBytes(16),
-} = {}) {
+}: CreateVpnTunnelAppEndpointOptions = {}) {
   if (!identity?.id || !identity?.certificate) {
     throw new VpnTunnelError("App endpoint identity {id, certificate} is required");
   }
@@ -224,7 +252,7 @@ export function createVpnTunnelAppEndpoint({
     link,
 
     /** Приём handshake от Edge: взаимная mTLS-проверка + установка сессии. */
-    handshake(clientHello = {}) {
+    handshake(clientHello: VpnTunnelClientHello = {}) {
       if (!link.isUp()) {
         metrics.channel_down_total += 1;
         throw new VpnTunnelChannelDownError("VPN tunnel channel is down during handshake");
@@ -252,7 +280,7 @@ export function createVpnTunnelAppEndpoint({
     },
 
     /** Приём запечатанного C9-кадра: расшифровка, валидация, обработка, ack. */
-    async deliver({ sessionId, frame, aad } = {}) {
+    async deliver({ sessionId, frame, aad }: VpnTunnelDeliverOptions = {}) {
       if (!link.isUp()) {
         metrics.channel_down_total += 1;
         throw new VpnTunnelChannelDownError("VPN tunnel channel is down");
@@ -322,6 +350,20 @@ export function createVpnTunnelAppEndpoint({
  * @param {() => Buffer} [options.ivFactory]
  * @param {string} [options.clientId]
  */
+export interface CreateVpnTunnelEdgeClientOptions {
+  identity?: VpnTunnelIdentity;
+  server?: any;
+  trustedCertificates?: string[];
+  verifyServer?: (certificate: any, hello: any) => boolean;
+  sessionSecret?: Buffer | string;
+  link?: ReturnType<typeof createVpnLink>;
+  backoff?: number[];
+  sleep?: (ms: number) => Promise<void>;
+  nonceFactory?: () => Buffer;
+  ivFactory?: () => Buffer;
+  clientId?: string;
+}
+
 export function createVpnTunnelEdgeClient({
   identity,
   server,
@@ -334,7 +376,7 @@ export function createVpnTunnelEdgeClient({
   nonceFactory = () => randomBytes(16),
   ivFactory = () => randomBytes(IV_BYTES),
   clientId = "edge",
-} = {}) {
+}: CreateVpnTunnelEdgeClientOptions = {}) {
   if (!identity?.id || !identity?.certificate) {
     throw new VpnTunnelError("Edge client identity {id, certificate} is required");
   }

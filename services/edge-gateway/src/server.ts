@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
+import type { Duplex } from "node:stream";
 
 import {
   C7_RECONNECT_SEMANTICS,
@@ -18,15 +19,22 @@ const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 const MAX_BODY_BYTES = 1024 * 1024;
 const WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
+export interface CreateEdgeGatewayServerOptions {
+  core?: any;
+  tunnel?: any;
+  wsChannel?: any;
+  now?: () => string;
+}
+
 export function createEdgeGatewayServer({
   core,
   tunnel = createMockEdgeTunnel({ core }),
   wsChannel = createMockWebSocketChannel(),
   now = () => new Date().toISOString(),
-} = {}) {
+}: CreateEdgeGatewayServerOptions = {}) {
   const edgeTunnel = tunnel;
   const webSocketChannel = wsChannel;
-  const upgradedSockets = new Set();
+  const upgradedSockets = new Set<Duplex>();
 
   const server = createServer(async (request, response) => {
     try {
@@ -308,7 +316,10 @@ function encodeWebSocketTextFrame(text) {
 }
 
 class PayloadError extends Error {
-  constructor(status, title, message) {
+  readonly status: number;
+  readonly title: string;
+
+  constructor(status: number, title: string, message: string) {
     super(message);
     this.name = "PayloadError";
     this.status = status;

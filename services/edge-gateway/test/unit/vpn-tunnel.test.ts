@@ -55,7 +55,15 @@ const MSG = {
 };
 
 /** Собирает пару Edge↔App с общим доверием (mTLS) и секретом туннеля. */
-function buildPair({ capacity, handle, link = createVpnLink() } = {}) {
+function buildPair({
+  capacity,
+  handle,
+  link = createVpnLink(),
+}: {
+  capacity?: number;
+  handle?: (tunnel: any) => any;
+  link?: ReturnType<typeof createVpnLink>;
+} = {}) {
   const accepted = [];
   const app = createVpnTunnelAppEndpoint({
     identity: { id: "app-core", certificate: APP_CERT },

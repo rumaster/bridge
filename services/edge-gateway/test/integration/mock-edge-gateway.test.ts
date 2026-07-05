@@ -46,14 +46,14 @@ describe("Edge Gateway M0 mock", () => {
   });
 
   after(async () => {
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     });
   });
 
   it("starts a mock tunnel and publishes health", async () => {
     const response = await fetch(`${baseUrl}/health`);
-    const health = await response.json();
+    const health: any = await response.json();
 
     assert.equal(response.status, 200);
     assert.equal(health.service, "edge-gateway");
@@ -75,7 +75,7 @@ describe("Edge Gateway M0 mock", () => {
       },
       body: JSON.stringify(tunnelMessage),
     });
-    const ack = await response.json();
+    const ack: any = await response.json();
 
     assert.equal(response.status, 202);
     assert.equal(ack.contract, "C9.EdgeTunnelAck");
@@ -85,7 +85,7 @@ describe("Edge Gateway M0 mock", () => {
 
   it("starts a mock WebSocket channel at GET /ws", async () => {
     const response = await fetch(`${baseUrl}/api/v1/ws`);
-    const body = await response.json();
+    const body: any = await response.json();
 
     assert.equal(response.status, 426);
     assert.equal(body.contract, "C7");
@@ -95,7 +95,7 @@ describe("Edge Gateway M0 mock", () => {
 
   it("handles a minimal WebSocket upgrade for the mock channel", async () => {
     const address = server.address();
-    const handshake = await requestWebSocketUpgrade(address.port, "/api/v1/ws");
+    const handshake: any = await requestWebSocketUpgrade(address.port, "/api/v1/ws");
 
     assert.match(handshake, /^HTTP\/1\.1 101 Switching Protocols/);
     assert.match(handshake, /Sec-WebSocket-Accept:/);
@@ -131,7 +131,7 @@ describe("Edge Gateway M0 mock", () => {
       },
       body: JSON.stringify(event),
     });
-    const body = await response.json();
+    const body: any = await response.json();
 
     assert.equal(response.status, 202);
     assert.equal(body.accepted, true);

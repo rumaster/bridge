@@ -37,7 +37,7 @@ function normalizeKey(key) {
   if (typeof key === "string") {
     const trimmed = key.trim();
     // Ключ секрет-менеджера приходит как base64; поддерживаем и hex/utf8 длины 32.
-    for (const encoding of ["base64", "hex"]) {
+    for (const encoding of ["base64", "hex"] as const) {
       const candidate = Buffer.from(trimmed, encoding);
       if (candidate.length === RF_PAYLOAD_KEY_BYTES) {
         return candidate;
@@ -72,7 +72,19 @@ function normalizeAad(aad) {
  * @param {Buffer|string} options.key ключ AES-256 (32 байта) из секрет-менеджера
  * @param {() => Buffer} [options.ivFactory] генератор IV (по умолчанию randomBytes)
  */
-export function createRfPayloadCipher({ key, ivFactory = () => randomBytes(IV_BYTES) } = {}) {
+export interface CreateRfPayloadCipherOptions {
+  key?: Buffer | string;
+  ivFactory?: () => Buffer;
+}
+
+export interface RfPayloadCipherAadOptions {
+  aad?: object | Buffer | string;
+}
+
+export function createRfPayloadCipher({
+  key,
+  ivFactory = () => randomBytes(IV_BYTES),
+}: CreateRfPayloadCipherOptions = {}) {
   if (key === undefined || key === null || key === "") {
     throw new RfPayloadCipherError("encryption key is required (secret manager)");
   }
@@ -92,7 +104,7 @@ export function createRfPayloadCipher({ key, ivFactory = () => randomBytes(IV_BY
      * @param {object|Buffer|string} [options.aad] дополнительные аутентифицируемые данные
      * @returns {Buffer}
      */
-    encrypt(payload, { aad } = {}) {
+    encrypt(payload, { aad }: RfPayloadCipherAadOptions = {}) {
       if (payload === undefined || payload === null) {
         throw new RfPayloadCipherError("payload is required for encryption");
       }
@@ -122,7 +134,7 @@ export function createRfPayloadCipher({ key, ivFactory = () => randomBytes(IV_BY
      * @param {object|Buffer|string} [options.aad]
      * @returns {object}
      */
-    decrypt(envelope, { aad } = {}) {
+    decrypt(envelope, { aad }: RfPayloadCipherAadOptions = {}) {
       const buffer = Buffer.isBuffer(envelope) ? envelope : Buffer.from(envelope ?? []);
       if (buffer.length < HEADER_BYTES) {
         throw new RfPayloadCipherError("encrypted payload is too short");

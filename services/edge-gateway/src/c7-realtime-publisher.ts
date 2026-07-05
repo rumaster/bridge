@@ -2,11 +2,17 @@ import { randomUUID } from "node:crypto";
 
 import { createWebSocketEvent } from "../../../packages/contracts/src/c7.js";
 
+export interface CreateC7RealtimePublisherOptions {
+  clock?: () => string;
+  eventIdFactory?: () => string;
+  wsChannel?: any;
+}
+
 export function createC7RealtimePublisher({
   clock = () => new Date().toISOString(),
   eventIdFactory = randomUUID,
   wsChannel,
-} = {}) {
+}: CreateC7RealtimePublisherOptions = {}) {
   if (!wsChannel || typeof wsChannel.publish !== "function") {
     throw new TypeError("wsChannel with publish(event) is required");
   }

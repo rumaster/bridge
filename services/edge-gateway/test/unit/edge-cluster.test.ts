@@ -75,7 +75,7 @@ function createFakeCore() {
 }
 
 /** Собирает Edge Cluster поверх реального VPN-туннеля к fake-ядру (RF-first конвейер). */
-function buildCluster({ capacity } = {}) {
+function buildCluster({ capacity }: { capacity?: number } = {}) {
   const link = createVpnLink();
   const core = createFakeCore();
   const app = createVpnTunnelAppEndpoint({

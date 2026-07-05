@@ -4,17 +4,24 @@ import {
 } from "../../../packages/contracts/src/c9.js";
 
 export class EdgeTunnelMockValidationError extends Error {
-  constructor(message, errors) {
+  readonly errors: string[];
+
+  constructor(message: string, errors: string[]) {
     super(message);
     this.name = "EdgeTunnelMockValidationError";
     this.errors = errors;
   }
 }
 
+export interface CreateMockEdgeTunnelOptions {
+  core?: any;
+  now?: () => string;
+}
+
 export function createMockEdgeTunnel({
   core,
   now = () => new Date().toISOString(),
-} = {}) {
+}: CreateMockEdgeTunnelOptions = {}) {
   const acceptedByIdempotencyKey = new Map();
   const metrics = {
     forwarded_total: 0,

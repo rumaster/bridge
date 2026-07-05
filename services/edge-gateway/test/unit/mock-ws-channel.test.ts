@@ -8,7 +8,19 @@ import {
   createMockWebSocketChannel,
 } from "../../src/mock-ws-channel.js";
 
-function makeEvent(index, overrides = {}) {
+interface MakeEventOverrides {
+  eventId?: string;
+  organizationId?: string;
+  event?: string;
+  sequenceNumber?: number;
+  conversationId?: string;
+  endpointId?: string;
+  clientId?: string;
+  payload?: Record<string, unknown>;
+  subscriptionId?: string;
+}
+
+function makeEvent(index, overrides: MakeEventOverrides = {}) {
   return createWebSocketEvent({
     eventId: overrides.eventId ?? `event-${index}`,
     organizationId: overrides.organizationId ?? "org-1",

@@ -11,18 +11,26 @@ import { validateEdgeTunnelMessage } from "../../../packages/contracts/src/c9.js
  * дедуплицирует. Сам шлюз порядок не восстанавливает: это ответственность ядра.
  */
 export class BufferedEdgeGatewayValidationError extends Error {
-  constructor(message, errors = []) {
+  readonly errors: string[];
+
+  constructor(message: string, errors: string[] = []) {
     super(message);
     this.name = "BufferedEdgeGatewayValidationError";
     this.errors = errors;
   }
 }
 
+export interface CreateBufferedEdgeGatewayOptions {
+  forward?: (tunnelMessages: any) => any;
+  now?: () => string;
+  connected?: boolean;
+}
+
 export function createBufferedEdgeGateway({
   forward,
   now = () => new Date().toISOString(),
   connected = true,
-} = {}) {
+}: CreateBufferedEdgeGatewayOptions = {}) {
   if (typeof forward !== "function") {
     throw new TypeError("forward(tunnelMessages) callback is required");
   }

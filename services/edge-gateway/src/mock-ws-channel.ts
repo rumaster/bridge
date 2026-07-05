@@ -2,15 +2,76 @@ import {
   validateWebSocketEvent,
 } from "../../../packages/contracts/src/c7.js";
 
+interface C7Event {
+  event_id: string;
+  sequence_number?: number;
+  payload?: unknown;
+  [key: string]: unknown;
+}
+
+type C7EventSubscriber = (event: C7Event) => void;
+
+export interface NormalizedSubscription {
+  organizationId?: string;
+  subscriptionId?: string;
+  conversationId?: string;
+  endpointId?: string;
+  clientId?: string;
+  recipientUserId?: string;
+  userId?: string;
+  managerUserId?: string;
+  visitorSessionId?: string;
+}
+
+export interface CreateInMemoryC7EventStoreOptions {
+  initialEvents?: C7Event[];
+}
+
+export interface C7EventSelectOptions {
+  afterSequenceNumber?: number | string;
+  lastEventId?: string;
+  subscription?: NormalizedSubscription;
+}
+
+interface MockWebSocketClient {
+  closed: boolean;
+  lastEventId?: string;
+  subscription: NormalizedSubscription;
+  sendEvent(event: C7Event): void;
+}
+
+export interface C7ChannelConnectOptions {
+  afterSequenceNumber?: number | string;
+  lastEventId?: string;
+  send?: C7EventSubscriber;
+  subscription?: unknown;
+}
+
+export interface C7ChannelGetEventsOptions {
+  afterEventId?: string;
+  afterSequenceNumber?: number | string;
+  subscription?: unknown;
+}
+
+export interface CreateMockWebSocketChannelOptions {
+  eventBus?: any;
+  eventStore?: any;
+  initialEvents?: C7Event[];
+}
+
 export class WebSocketChannelMockValidationError extends Error {
-  constructor(message, errors) {
+  readonly errors: string[];
+
+  constructor(message: string, errors: string[]) {
     super(message);
     this.name = "WebSocketChannelMockValidationError";
     this.errors = errors;
   }
 }
 
-export function createInMemoryC7EventStore({ initialEvents = [] } = {}) {
+export function createInMemoryC7EventStore({
+  initialEvents = [],
+}: CreateInMemoryC7EventStoreOptions = {}) {
   const events = [];
   const eventIds = new Set();
 
@@ -33,7 +94,7 @@ export function createInMemoryC7EventStore({ initialEvents = [] } = {}) {
       };
     },
 
-    select({ afterSequenceNumber, lastEventId, subscription } = {}) {
+    select({ afterSequenceNumber, lastEventId, subscription }: C7EventSelectOptions = {}) {
       const scopedEvents = events.filter((event) =>
         eventMatchesSubscription(event, subscription),
       );
@@ -65,7 +126,7 @@ export function createInMemoryC7EventStore({ initialEvents = [] } = {}) {
 }
 
 export function createInMemoryC7EventBus() {
-  const subscribers = new Set();
+  const subscribers = new Set<C7EventSubscriber>();
 
   return {
     publish(event) {
@@ -92,8 +153,8 @@ export function createMockWebSocketChannel({
   eventBus = createInMemoryC7EventBus(),
   eventStore = createInMemoryC7EventStore(),
   initialEvents = [],
-} = {}) {
-  const clients = new Set();
+}: CreateMockWebSocketChannelOptions = {}) {
+  const clients = new Set<MockWebSocketClient>();
   const metrics = {
     connection_total: 0,
     event_published_total: 0,
@@ -109,7 +170,7 @@ export function createMockWebSocketChannel({
   });
 
   const channel = {
-    connect({ afterSequenceNumber, lastEventId, send, subscription } = {}) {
+    connect({ afterSequenceNumber, lastEventId, send, subscription }: C7ChannelConnectOptions = {}) {
       if (typeof send !== "function") {
         throw new TypeError("send must be a function");
       }
@@ -183,7 +244,7 @@ export function createMockWebSocketChannel({
       };
     },
 
-    getEvents({ afterEventId, afterSequenceNumber, subscription } = {}) {
+    getEvents({ afterEventId, afterSequenceNumber, subscription }: C7ChannelGetEventsOptions = {}) {
       return eventStore.select({
         afterSequenceNumber,
         lastEventId: afterEventId,
@@ -215,7 +276,7 @@ export function createMockWebSocketChannel({
   return channel;
 }
 
-function normalizeSubscription(subscription) {
+function normalizeSubscription(subscription): NormalizedSubscription {
   if (subscription === null || typeof subscription !== "object" || Array.isArray(subscription)) {
     return {};
   }

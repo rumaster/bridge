@@ -33,6 +33,16 @@ export class EdgeClusterError extends Error {
 
 const DEFAULT_BUFFER_TTL_MS = 60 * 60 * 1000; // 1 час
 
+export interface CreateEdgeClusterOptions {
+  cipher?: any;
+  tunnel?: any;
+  sequencer?: any;
+  bufferStore?: any;
+  now?: () => string;
+  bufferTtlMs?: number;
+  region?: string;
+}
+
 export function createEdgeCluster({
   cipher,
   tunnel,
@@ -41,7 +51,7 @@ export function createEdgeCluster({
   now = () => new Date().toISOString(),
   bufferTtlMs = DEFAULT_BUFFER_TTL_MS,
   region = "RF",
-} = {}) {
+}: CreateEdgeClusterOptions = {}) {
   if (!cipher || typeof cipher.encrypt !== "function" || typeof cipher.decrypt !== "function") {
     throw new EdgeClusterError("cipher {encrypt, decrypt} is required (RF payload cipher)");
   }

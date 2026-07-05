@@ -31,18 +31,26 @@ export class EdgeMessageBufferError extends Error {
 }
 
 export class EdgeMessageBufferBackpressureError extends EdgeMessageBufferError {
-  constructor(message, details = {}) {
+  readonly details: Record<string, unknown>;
+
+  constructor(message: string, details: Record<string, unknown> = {}) {
     super(message);
     this.name = "EdgeMessageBufferBackpressureError";
     this.details = details;
   }
 }
 
+export interface EdgeMessageBufferCapacityOptions {
+  capacity?: number;
+  highWatermarkRatio?: number;
+  notify?: (event: any) => any;
+}
+
 function normalizeCapacityPolicy({
   capacity = Number.POSITIVE_INFINITY,
   highWatermarkRatio = 0.8,
   notify,
-} = {}) {
+}: EdgeMessageBufferCapacityOptions = {}) {
   if (
     capacity !== Number.POSITIVE_INFINITY &&
     (!Number.isSafeInteger(capacity) || capacity <= 0)
@@ -316,7 +324,14 @@ export function createInMemoryEdgeMessageBufferStore(options = {}) {
  * @param {object} options
  * @param {{ query: Function }} options.client pg.Client/Pool
  */
-export function createPostgresEdgeMessageBufferStore(options = {}) {
+export interface CreatePostgresEdgeMessageBufferStoreOptions
+  extends EdgeMessageBufferCapacityOptions {
+  client?: any;
+}
+
+export function createPostgresEdgeMessageBufferStore(
+  options: CreatePostgresEdgeMessageBufferStoreOptions = {},
+) {
   const { client } = options;
   if (!client || typeof client.query !== "function") {
     throw new EdgeMessageBufferError("client с query(sql, params) обязателен");
