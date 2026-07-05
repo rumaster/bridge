@@ -26,6 +26,17 @@ export interface BackendDeliveryClientOptions {
   now?: () => string;
 }
 
+/** Вход `recordAttempt`: строка журнала попытки доставки (колонки `message_delivery_attempts`). */
+export interface RecordDeliveryAttemptInput {
+  organizationId: string;
+  messageId: string;
+  adapter: string;
+  attemptNo: number;
+  status: string;
+  error?: unknown;
+  occurredAt?: string;
+}
+
 export function createBackendDeliveryClient({
   baseUrl,
   path = DEFAULT_PATH,
@@ -52,7 +63,7 @@ export function createBackendDeliveryClient({
       status,
       error = null,
       occurredAt,
-    }) {
+    }: RecordDeliveryAttemptInput) {
       assertNonEmptyString(organizationId, "organizationId");
       assertNonEmptyString(messageId, "messageId");
       assertNonEmptyString(adapter, "adapter");
