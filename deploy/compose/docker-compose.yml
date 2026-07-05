@@ -96,6 +96,24 @@ services:
     environment:
       PORT: ${AI_PLATFORM_PORT:-3006}
       AI_BACKEND_KB_URL: ${AI_BACKEND_KB_URL:-http://backend:3000}
+      # Выбор LLM-провайдера (issue #199, ТЗ §12.9). Пусто/mock — детерминированная
+      # заглушка (значение по умолчанию), поэтому локальный запуск и M0-smoke не
+      # затрагиваются. Реальные ключи задаются только в .env, не в образе.
+      LLM_PROVIDER: ${LLM_PROVIDER:-}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-}
+      LLM_MODEL_NAME: ${LLM_MODEL_NAME:-}
+      LLM_EMBEDDING_MODEL_NAME: ${LLM_EMBEDDING_MODEL_NAME:-}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-}
+      LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-}
+      AZURE_OPENAI_EMBEDDING_DEPLOYMENT: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT:-}
+      # Пер-организационный роутер провайдеров (JSON, ТЗ §12.9). Пусто — единый
+      # провайдер из LLM_PROVIDER выше.
+      AI_LLM_CONFIG: ${AI_LLM_CONFIG:-}
     ports:
       - "${AI_PLATFORM_PORT:-3006}:${AI_PLATFORM_PORT:-3006}"
     depends_on:
