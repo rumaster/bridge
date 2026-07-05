@@ -24,7 +24,7 @@ function requireOption(values, name) {
 }
 
 async function run(command, args) {
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     const child = spawn(command, args, { stdio: "inherit" });
 
     child.on("error", reject);

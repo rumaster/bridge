@@ -31,18 +31,16 @@ bff.backend.sendMessage({
 const server = createMobileApiServer({ mobileApi: bff, now });
 const baseUrl = await new Promise((resolve) => {
   server.listen(0, "127.0.0.1", () => {
-    const address = server.address();
+    const address = server.address() as { address: string; port: number };
     resolve(`http://${address.address}:${address.port}`);
   });
 });
 
 try {
-  const health = await (await fetch(`${baseUrl}/health`)).json();
-  assert.equal(health.mode, "bff", "health.mode = bff");
+  const health: any = await (await fetch(`${baseUrl}/health`)).json();  assert.equal(health.mode, "bff", "health.mode = bff");
   assert.equal(health.contract, "MOBILE.v1");
 
-  const dialogs = await (await fetch(`${baseUrl}/mobile/v1/dialogs`)).json();
-  assert.equal(dialogs.mock, false, "BFF ответы mock:false");
+  const dialogs: any = await (await fetch(`${baseUrl}/mobile/v1/dialogs`)).json();  assert.equal(dialogs.mock, false, "BFF ответы mock:false");
   assert.equal(dialogs.items.length, 1);
   assert.equal(dialogs.items[0].last_message.text, "hi");
   assert.equal(dialogs.items[0].unread_count, 1, "непрочитанное клиентское сообщение");
@@ -70,16 +68,14 @@ try {
     body: JSON.stringify(sendBody),
   });
   assert.equal(first.status, 202);
-  const firstJson = await first.json();
-  assert.equal(firstJson.duplicate, false);
+  const firstJson: any = await first.json();  assert.equal(firstJson.duplicate, false);
 
   const second = await fetch(`${baseUrl}/mobile/v1/messages`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ ...sendBody, request_id: "req-2" }),
   });
-  const secondJson = await second.json();
-  assert.equal(secondJson.duplicate, true, "повтор idempotency_key → duplicate:true");
+  const secondJson: any = await second.json();  assert.equal(secondJson.duplicate, true, "повтор idempotency_key → duplicate:true");
 
   console.log("BFF server smoke: OK (health.mode=bff, mock:false, dedup, metrics)");
 } finally {

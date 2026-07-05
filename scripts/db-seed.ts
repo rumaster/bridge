@@ -4,13 +4,22 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import pg from "pg";
 
+import type { DatabaseConnection } from "./db-connection.js";
+
 const SEEDS_DIR = fileURLToPath(new URL("../db/seeds", import.meta.url));
+
+/** Опции запуска сидов (общий контракт CLI и интеграционных тестов). */
+export interface RunSeedsOptions {
+  databaseUrl?: DatabaseConnection;
+  client?: pg.Client | null;
+  seedsDir?: string;
+}
 
 export async function runSeeds({
   databaseUrl = process.env.DATABASE_URL,
   client,
   seedsDir = SEEDS_DIR,
-} = {}) {
+}: RunSeedsOptions = {}) {
   if (!client && !databaseUrl) {
     throw new Error("DATABASE_URL is required to run seeds");
   }

@@ -2,6 +2,17 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { runner } from "node-pg-migrate";
 
+import type { DatabaseConnection } from "./db-connection.js";
+
+/** Опции запуска миграций (общий контракт CLI и интеграционных тестов). */
+export interface RunMigrationsOptions {
+  databaseUrl?: DatabaseConnection;
+  direction?: "up" | "down";
+  count?: number;
+  target?: string;
+  verbose?: boolean;
+}
+
 const MIGRATION_TARGETS = {
   app: {
     dir: fileURLToPath(new URL("../db/migrations", import.meta.url)),
@@ -28,7 +39,7 @@ export async function runMigrations({
   count,
   target = process.env.DB_MIGRATE_TARGET ?? "app",
   verbose = process.env.DB_MIGRATE_VERBOSE === "1",
-} = {}) {
+}: RunMigrationsOptions = {}) {
   if (direction !== "up" && direction !== "down") {
     throw new TypeError("direction must be either 'up' or 'down'");
   }
