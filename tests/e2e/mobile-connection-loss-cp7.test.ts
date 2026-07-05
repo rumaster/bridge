@@ -79,17 +79,17 @@ function listen(server) {
 }
 
 async function close(server) {
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }
 
 async function getJson(baseUrl, path) {
   const response = await fetch(`${baseUrl}${path}`);
-  return { status: response.status, body: await response.json() };
+  return { status: response.status, body: (await response.json()) as any };
 }
 
-function syncPath(cursor) {
+function syncPath(cursor?) {
   const params = new URLSearchParams({ device_id: MOBILE_DEVICE_ID });
   if (cursor) {
     params.set("cursor", cursor);

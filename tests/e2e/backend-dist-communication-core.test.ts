@@ -307,7 +307,7 @@ function runRootScript(scriptPath, args, databaseUrl) {
   let lastError;
   for (let attempt = 1; attempt <= 20; attempt += 1) {
     try {
-      execFileSync("node", [scriptPath, ...args], {
+      execFileSync("node", ["--import", "tsx", scriptPath, ...args], {
         cwd: process.cwd(),
         env: { ...process.env, DATABASE_URL: databaseUrl },
         stdio: "pipe",
@@ -396,12 +396,12 @@ async function seedFixtures(databaseUrl) {
 
 async function getAvailablePort() {
   const server = createNetServer();
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
+    server.listen(0, "127.0.0.1", () => resolve());
   });
-  const port = server.address().port;
-  await new Promise((resolve, reject) => {
+  const port = (server.address() as { port: number }).port;
+  await new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 
@@ -419,7 +419,7 @@ async function listenHttp(server) {
 }
 
 async function closeHttp(server) {
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }
@@ -449,7 +449,7 @@ async function getJson(url, headers = {}) {
 
   return {
     status: response.status,
-    body: await response.json(),
+    body: (await response.json()) as any,
   };
 }
 
@@ -462,7 +462,7 @@ async function postJson(url, body, headers = {}) {
 
   return {
     status: response.status,
-    body: await response.json(),
+    body: (await response.json()) as any,
   };
 }
 

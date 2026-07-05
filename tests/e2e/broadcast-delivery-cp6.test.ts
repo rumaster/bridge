@@ -24,7 +24,7 @@ function listen(server) {
 }
 
 async function close(server) {
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }
@@ -123,7 +123,7 @@ describe("CP-6 Broadcast: доставка кампании с ретраями 
       headers: JSON_HEADERS,
       body: JSON.stringify(payload),
     });
-    return { status: response.status, body: await response.json() };
+    return { status: response.status, body: (await response.json()) as any };
   }
 
   it("доставляет всю кампанию: ретрай без дублей, лимиты, фиксация попыток", async () => {

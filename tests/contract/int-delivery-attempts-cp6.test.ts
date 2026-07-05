@@ -43,7 +43,7 @@ describe("CP-6 SVC-INT delivery attempts contract", () => {
       baseUrl: "http://backend.local",
       now: fixedNow,
       fetchImpl: async (url, init) => {
-        captured = { url, body: JSON.parse(init.body), method: init.method };
+        captured = { url, body: JSON.parse(init.body as string), method: init.method };
         return new Response(JSON.stringify({ recorded: true }), { status: 201 });
       },
     });

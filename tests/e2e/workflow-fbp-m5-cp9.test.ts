@@ -152,7 +152,7 @@ describe("M5-10 e2e (CP-9): нагрузка + харденинг + полнот
       async call(args) {
         if (!backendUp) {
           const error = new Error("Backend недоступен.");
-          error.reason = "backend_unavailable";
+          (error as any).reason = "backend_unavailable";
           throw error;
         }
         return healthy.call(args);

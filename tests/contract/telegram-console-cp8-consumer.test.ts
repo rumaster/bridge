@@ -176,8 +176,8 @@ describe("SVC-TGC CP-8 Telegram Console consumer contract", () => {
 
     await router.handleUpdate(startUpdate());
     await router.handleUpdate(callbackUpdate("reply-prompt", "reply.prompt:conv-1"));
-    const first = await router.handleUpdate(replyUpdate(33));
-    const repeated = await router.handleUpdate(replyUpdate(33));
+    const first: any = await router.handleUpdate(replyUpdate(33));
+    const repeated: any = await router.handleUpdate(replyUpdate(33));
 
     assert.equal(first.message.id, repeated.message.id);
     assert.equal(first.idempotency_key, "tgc-1001-33-conv-1");

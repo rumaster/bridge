@@ -36,7 +36,7 @@ describe("NOTIF <-> producers/MWS/TGC M0 C10 contract", () => {
   });
 
   after(async () => {
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     });
   });
@@ -111,8 +111,7 @@ describe("NOTIF <-> producers/MWS/TGC M0 C10 contract", () => {
         body: JSON.stringify(trigger),
       },
     );
-    const accepted = await producerResponse.json();
-
+    const accepted: any = await producerResponse.json();
     assert.equal(producerResponse.status, 202);
     assert.equal(accepted.contract, "C10.AcceptNotificationTriggerResponse");
     assert.equal(accepted.notification.category, "critical");
@@ -130,8 +129,7 @@ describe("NOTIF <-> producers/MWS/TGC M0 C10 contract", () => {
         },
       },
     );
-    const list = await listResponse.json();
-
+    const list: any = await listResponse.json();
     assert.equal(listResponse.status, 200);
     assert.equal(list.items.length, 1);
     assert.equal(list.items[0].id, accepted.notification.id);
@@ -154,14 +152,14 @@ describe("NOTIF <-> producers/MWS/TGC M0 C10 contract", () => {
         occurredAt: fixedNow(),
       });
 
-    const first = await (
+    const first: any = await (
       await fetch(`${baseUrl}/api/v1/internal/notifications/events`, {
         method: "POST",
         headers: JSON_HEADERS,
         body: JSON.stringify(build("ai-insight-1:notif")),
       })
     ).json();
-    const second = await (
+    const second: any = await (
       await fetch(`${baseUrl}/api/v1/internal/notifications/events`, {
         method: "POST",
         headers: JSON_HEADERS,
@@ -190,8 +188,7 @@ describe("NOTIF <-> producers/MWS/TGC M0 C10 contract", () => {
         "x-request-id": "req-settings-get-1",
       },
     });
-    const settings = await settingsResponse.json();
-
+    const settings: any = await settingsResponse.json();
     assert.equal(settingsResponse.status, 200);
     assert.equal(settings.contract, "C10.NotificationSettingsResponse");
     assert.ok(settings.settings.some((item) => item.channel === "telegram"));
@@ -222,8 +219,7 @@ describe("NOTIF <-> producers/MWS/TGC M0 C10 contract", () => {
         ],
       }),
     });
-    const updated = await updateResponse.json();
-
+    const updated: any = await updateResponse.json();
     assert.equal(updateResponse.status, 200);
     assert.deepEqual(
       updated.settings
@@ -239,8 +235,7 @@ describe("NOTIF <-> producers/MWS/TGC M0 C10 contract", () => {
         "x-request-id": "req-list-read-1",
       },
     });
-    const list = await listResponse.json();
-    const readResponse = await fetch(
+    const list: any = await listResponse.json();    const readResponse = await fetch(
       `${baseUrl}/api/v1/notifications/${list.items[0].id}:read`,
       {
         method: "POST",
@@ -250,8 +245,7 @@ describe("NOTIF <-> producers/MWS/TGC M0 C10 contract", () => {
         },
       },
     );
-    const read = await readResponse.json();
-
+    const read: any = await readResponse.json();
     assert.equal(readResponse.status, 200);
     assert.equal(read.notification.status, "read");
   });

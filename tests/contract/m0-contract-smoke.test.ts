@@ -295,17 +295,17 @@ async function withServer(server, callback) {
     const address = server.address();
     await callback(`http://127.0.0.1:${address.port}`);
   } finally {
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     });
   }
 }
 
-async function fetchJson(url, init) {
+async function fetchJson(url, init?) {
   const response = await fetch(url, init);
 
   return {
     statusCode: response.status,
-    body: await response.json(),
+    body: (await response.json()) as any,
   };
 }

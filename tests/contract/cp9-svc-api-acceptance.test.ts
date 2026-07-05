@@ -54,7 +54,7 @@ describe("CP-9 SVC-API M5 acceptance", () => {
     const c3 = acceptance.contracts.find((contract) => contract.id === "C3");
     const openApi = readJson(c3.openapi.artifact);
     const operationCount = Object.values(openApi.paths).reduce(
-      (count, methods) => count + Object.keys(methods).length,
+      (count: number, methods) => count + Object.keys(methods).length,
       0,
     );
 
@@ -74,7 +74,7 @@ describe("CP-9 SVC-API M5 acceptance", () => {
     const acceptance = readAcceptance();
     const c3 = acceptance.contracts.find((contract) => contract.id === "C3");
     const openApi = readJson(c3.openapi.artifact);
-    const probesByKey = new Map(c3.nfr.probes.map((probe) => [probe.key, probe]));
+    const probesByKey = new Map<string, any>(c3.nfr.probes.map((probe) => [probe.key, probe]));
 
     for (const { method, path, nfr_key: nfrKey } of c3.surface) {
       assert.ok(openApi.paths[path], `backend-core OpenAPI is missing ${path}`);

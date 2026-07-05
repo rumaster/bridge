@@ -23,7 +23,7 @@ function listen(server) {
 }
 
 function close(server) {
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }
@@ -125,7 +125,7 @@ describe("E2E — AI Onboarding применяет конфиг (CP-5)", () => {
       }),
     });
     assert.equal(response.status, 200);
-    return response.json();
+    return response.json() as any;
   }
 
   async function apply(backendUrl, organizationId, command, roles) {
@@ -134,7 +134,7 @@ describe("E2E — AI Onboarding применяет конфиг (CP-5)", () => {
       headers: JSON_HEADERS,
       body: JSON.stringify({ command, organization_id: organizationId, roles }),
     });
-    return { status: response.status, body: await response.json() };
+    return { status: response.status, body: (await response.json()) as any };
   }
 
   it("превращает NL-запрос администратора в команду и применяет её через Backend", async () => {

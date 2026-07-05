@@ -19,7 +19,7 @@ describe("CP-4/CP-5 facade e2e (contract-level chain)", () => {
   it("CP-4: AI Onboarding produces a valid §12.6 config command for the Backend to apply", () => {
     const ai = createDeterministicAiMock({ now: fixedNow });
 
-    const response = ai.createOnboardingCommand({
+    const response: any = ai.createOnboardingCommand({
       contract: "C4.OnboardingCommandRequest",
       version: "1.0.0",
       request_id: "req-onboarding-cp4",

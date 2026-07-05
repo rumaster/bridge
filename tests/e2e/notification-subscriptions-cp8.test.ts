@@ -68,7 +68,7 @@ describe("CP-8 e2e: notification in Web + Telegram under different subscriptions
   });
 
   after(async () => {
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     });
   });
@@ -80,7 +80,7 @@ describe("CP-8 e2e: notification in Web + Telegram under different subscriptions
       { category: "critical", channel: "telegram", enabled: true },
     ]);
 
-    const accepted = await (
+    const accepted: any = await (
       await triggerFor(baseUrl, user, "cp8:both:1", "cp8-both:notif")
     ).json();
 
@@ -102,7 +102,7 @@ describe("CP-8 e2e: notification in Web + Telegram under different subscriptions
       { category: "critical", channel: "telegram", enabled: false },
     ]);
 
-    const accepted = await (
+    const accepted: any = await (
       await triggerFor(baseUrl, user, "cp8:webonly:1", "cp8-webonly:notif")
     ).json();
 
@@ -123,12 +123,12 @@ describe("CP-8 e2e: notification in Web + Telegram under different subscriptions
     ]);
 
     await triggerFor(baseUrl, user, "cp8:dedupe:1", "cp8-dedupe:notif-a");
-    const replay = await (
+    const replay: any = await (
       await triggerFor(baseUrl, user, "cp8:dedupe:1", "cp8-dedupe:notif-b")
     ).json();
     assert.equal(replay.duplicate, true);
 
-    const list = await (
+    const list: any = await (
       await fetch(`${baseUrl}/api/v1/notifications?category=critical`, {
         headers: headersFor(user, { "x-request-id": "req-dedupe-list" }),
       })

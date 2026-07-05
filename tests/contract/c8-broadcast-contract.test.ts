@@ -30,7 +30,7 @@ describe("BCAST <-> CORE M0 C8 contract", () => {
   });
 
   after(async () => {
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     });
   });
@@ -85,8 +85,7 @@ describe("BCAST <-> CORE M0 C8 contract", () => {
         mode: "immediate",
       }),
     });
-    const started = await startResponse.json();
-
+    const started: any = await startResponse.json();
     assert.equal(startResponse.status, 200);
     assert.equal(started.core_delivery_draft.delivery_path, "C1/C2");
 

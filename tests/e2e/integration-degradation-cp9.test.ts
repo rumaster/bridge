@@ -22,7 +22,7 @@ function listen(server) {
 }
 
 async function close(server) {
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }
@@ -141,7 +141,7 @@ describe("CP-9 Integration Platform: деградация внешнего API �
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(1000),
     });
-    return { status: response.status, body: await response.json() };
+    return { status: response.status, body: (await response.json()) as any };
   }
 
   it("принимает недоступный канал в очередь, доставляет другой канал и публикует метрики деградации", async () => {

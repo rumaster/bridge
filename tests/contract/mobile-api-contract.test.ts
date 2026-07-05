@@ -27,7 +27,7 @@ describe("Mobile app <-> SVC-MOB M5 contract", () => {
   });
 
   after(async () => {
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     });
   });
@@ -100,10 +100,10 @@ describe("Mobile app <-> SVC-MOB M5 contract", () => {
     });
 
     assert.equal(dialogs.status, 200);
-    assert.equal((await dialogs.json()).contract, "MOBILE.DialogListResponse");
+    assert.equal(((await dialogs.json()) as any).contract, "MOBILE.DialogListResponse");
     assert.equal(sync.status, 200);
-    assert.match((await sync.json()).cursor, /^mob1\.[A-Za-z0-9_-]+$/);
+    assert.match(((await sync.json()) as any).cursor, /^mob1\.[A-Za-z0-9_-]+$/);
     assert.equal(device.status, 201);
-    assert.equal((await device.json()).push_payload_stub.contract, "MOBILE.PushPayloadStub");
+    assert.equal(((await device.json()) as any).push_payload_stub.contract, "MOBILE.PushPayloadStub");
   });
 });

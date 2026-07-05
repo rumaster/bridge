@@ -30,7 +30,7 @@ describe("API <-> FBP M0 C5 contract", () => {
   });
 
   after(async () => {
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     });
   });
@@ -88,8 +88,7 @@ describe("API <-> FBP M0 C5 contract", () => {
         },
       }),
     });
-    const started = await startResponse.json();
-
+    const started: any = await startResponse.json();
     assert.equal(startResponse.status, 201);
     assert.equal(started.contract, "C5.StartWorkflowInstanceResponse");
     assert.equal(started.status, "started");
@@ -122,8 +121,7 @@ describe("API <-> FBP M0 C5 contract", () => {
         }),
       },
     );
-    const callback = await callbackResponse.json();
-
+    const callback: any = await callbackResponse.json();
     assert.equal(callbackResponse.status, 200);
     assert.equal(callback.contract, "C5.BackendApiNodeCallbackResponse");
     assert.equal(callback.backend_response.body.mock, true);

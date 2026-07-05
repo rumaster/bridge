@@ -66,7 +66,7 @@ describe("INT <-> CORE M0 contracts", () => {
       coreIngressUrl: "http://core.local/internal/ingress/messages",
       fetchImpl: async (url, init) => {
         calls.push({
-          body: JSON.parse(init.body),
+          body: JSON.parse(init.body as string),
           method: init.method,
           url,
         });

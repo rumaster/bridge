@@ -74,8 +74,7 @@ describe("CP-6/CP-8 facade e2e (contract-level chain)", () => {
         },
       }),
     });
-    const created = await createResponse.json();
-
+    const created: any = await createResponse.json();
     assert.equal(createResponse.status, 201);
     assert.equal(created.contract, "C8.CreateBroadcastResponse");
     assert.equal(created.broadcast.organization_id, ORG);
@@ -96,8 +95,7 @@ describe("CP-6/CP-8 facade e2e (contract-level chain)", () => {
         }),
       },
     );
-    const started = await startResponse.json();
-
+    const started: any = await startResponse.json();
     assert.equal(startResponse.status, 200);
     assert.equal(started.contract, "C8.StartBroadcastResponse");
     // CP-6/M4: :start прогоняет кампанию через единый механизм ядра до конца.
@@ -111,8 +109,7 @@ describe("CP-6/CP-8 facade e2e (contract-level chain)", () => {
     const statsResponse = await fetch(
       `${broadcastBaseUrl}/api/v1/broadcasts/${created.broadcast.id}/stats?organization_id=${ORG}&request_id=req-cp6-broadcast-stats`,
     );
-    const stats = await statsResponse.json();
-
+    const stats: any = await statsResponse.json();
     assert.equal(statsResponse.status, 200);
     assert.equal(stats.contract, "C8.BroadcastStatsResponse");
     assert.equal(stats.broadcast_id, created.broadcast.id);
@@ -150,8 +147,7 @@ describe("CP-6/CP-8 facade e2e (contract-level chain)", () => {
         }),
       },
     );
-    const updatedSettings = await settingsUpdateResponse.json();
-
+    const updatedSettings: any = await settingsUpdateResponse.json();
     assert.equal(settingsUpdateResponse.status, 200);
     assert.deepEqual(
       updatedSettings.settings
@@ -186,8 +182,7 @@ describe("CP-6/CP-8 facade e2e (contract-level chain)", () => {
         body: JSON.stringify(trigger),
       },
     );
-    const accepted = await producerResponse.json();
-
+    const accepted: any = await producerResponse.json();
     assert.equal(producerResponse.status, 202);
     assert.equal(accepted.contract, "C10.AcceptNotificationTriggerResponse");
     assert.equal(accepted.notification.category, "critical");
@@ -206,8 +201,7 @@ describe("CP-6/CP-8 facade e2e (contract-level chain)", () => {
         },
       },
     );
-    const list = await listResponse.json();
-
+    const list: any = await listResponse.json();
     assert.equal(listResponse.status, 200);
     assert.equal(list.items.length, 1);
     assert.equal(list.items[0].id, accepted.notification.id);
@@ -222,8 +216,7 @@ describe("CP-6/CP-8 facade e2e (contract-level chain)", () => {
         },
       },
     );
-    const read = await readResponse.json();
-
+    const read: any = await readResponse.json();
     assert.equal(readResponse.status, 200);
     assert.equal(read.contract, "C10.MarkNotificationReadResponse");
     assert.equal(read.notification.status, "read");
@@ -237,8 +230,7 @@ describe("CP-6/CP-8 facade e2e (contract-level chain)", () => {
         },
       },
     );
-    const currentSettings = await settingsGetResponse.json();
-
+    const currentSettings: any = await settingsGetResponse.json();
     assert.equal(settingsGetResponse.status, 200);
     assert.deepEqual(
       currentSettings.settings
@@ -264,7 +256,7 @@ function close(server) {
     return Promise.resolve();
   }
 
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }

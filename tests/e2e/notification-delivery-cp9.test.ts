@@ -85,15 +85,14 @@ describe("CP-9 e2e: critical notification degrades across Web + Telegram", () =>
   });
 
   after(async () => {
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     });
   });
 
   it("keeps Web delivery and C10 state when Telegram Console delivery fails", async () => {
     const response = await triggerCriticalNotification(baseUrl);
-    const accepted = await response.json();
-
+    const accepted: any = await response.json();
     assert.equal(response.status, 202);
     assert.equal(accepted.degraded, true);
     assert.deepEqual(
@@ -110,7 +109,7 @@ describe("CP-9 e2e: critical notification degrades across Web + Telegram", () =>
       true,
     );
 
-    const listed = await (
+    const listed: any = await (
       await fetch(`${baseUrl}/api/v1/notifications?category=critical`, {
         headers: headers({ "x-request-id": "req-cp9-list" }),
       })

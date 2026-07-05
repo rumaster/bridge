@@ -61,20 +61,20 @@ describe("CP-8 e2e: Telegram Console consumes C10, C3 and C4", () => {
     assert.equal(delivered.status, "delivered");
     assert.match(telegramApi.getSentMessages().at(-1).text, /Новое сообщение клиента/);
 
-    const opened = await router.handleUpdate(callbackUpdate("open-1", "dialog.open:conv-1"));
+    const opened: any = await router.handleUpdate(callbackUpdate("open-1", "dialog.open:conv-1"));
     assert.equal(opened.route, "callback:dialog.open");
     assert.equal(opened.dialog.conversation.id, "conv-1");
     assert.ok(
       opened.dialog.messages.some((message) => message.content.text.includes("статус заказа")),
     );
 
-    const ai = await router.handleUpdate(callbackUpdate("ai-1", "ai.summary:conv-1"));
+    const ai: any = await router.handleUpdate(callbackUpdate("ai-1", "ai.summary:conv-1"));
     assert.equal(ai.route, "callback:ai.summary");
     assert.equal(ai.suggestion.degraded, false);
     assert.match(telegramApi.getSentMessages().at(-1).text, /Применение подсказки выполняется вручную/);
 
     await router.handleUpdate(callbackUpdate("reply-1", "reply.prompt:conv-1"));
-    const reply = await router.handleUpdate({
+    const reply: any = await router.handleUpdate({
       update_id: 4,
       message: {
         message_id: 33,
@@ -148,7 +148,7 @@ async function triggerNotification(baseUrl) {
   });
 
   assert.equal(response.status, 202);
-  return response.json();
+  return response.json() as any;
 }
 
 function headers(extra = {}) {
@@ -232,7 +232,7 @@ function close(server) {
     return Promise.resolve();
   }
 
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }

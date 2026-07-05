@@ -166,7 +166,7 @@ describe("CP-5: Admin правит Workflow (валидация + сохране
     };
   }
 
-  function baseSchema(pathSuffix = "records") {
+  function baseSchema(pathSuffix = "records"): any {
     return {
       schema_version: "1.0.0",
       entry: "start",

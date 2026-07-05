@@ -55,7 +55,7 @@ function listen(server) {
 }
 
 function close(server) {
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }
@@ -141,7 +141,7 @@ describe("E2E — AI Assistant из базы знаний (CP-3)", () => {
       }),
     });
     assert.equal(response.status, 200);
-    return response.json();
+    return response.json() as any;
   }
 
   it("returns a KB-grounded answer with ranked source citations", async () => {

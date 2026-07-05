@@ -215,12 +215,12 @@ function listen(server) {
 }
 
 function close(server) {
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }
 
-function suggest(baseUrl, organizationId, query) {
+function suggest(baseUrl, organizationId, query): Promise<any> {
   return fetch(`${baseUrl}/api/v1/ai/assistant:suggest`, {
     method: "POST",
     headers: { "content-type": "application/json" },
