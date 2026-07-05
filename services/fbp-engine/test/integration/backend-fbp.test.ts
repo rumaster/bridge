@@ -160,7 +160,7 @@ describe("Интеграция Backend↔FBP: узел Backend API через м
       connections: [{ from: "wait", to: "after" }],
     };
 
-    const result = await engine.runWorkflow({ schema, context: context(ORG_A, "user-a"), input: { order: 1 } });
+    const result: any = await engine.runWorkflow({ schema, context: context(ORG_A, "user-a"), input: { order: 1 } });
 
     assert.equal(result.status, "waiting");
     assert.equal(result.wait.event_type, "payment.confirmed");

@@ -23,7 +23,7 @@ function createUnavailableBackend() {
     async call() {
       calls += 1;
       const error = new Error("Backend недоступен (соединение отклонено).");
-      error.reason = "backend_unavailable";
+      (error as any).reason = "backend_unavailable";
       throw error;
     },
   };
@@ -118,7 +118,7 @@ describe("Деградация при недоступном Backend (ТЗ §5.4
       async call(args) {
         if (!up) {
           const error = new Error("Backend недоступен.");
-          error.reason = "backend_unavailable";
+          (error as any).reason = "backend_unavailable";
           throw error;
         }
         return healthy.call(args);

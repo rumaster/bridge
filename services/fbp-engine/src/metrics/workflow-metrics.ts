@@ -15,6 +15,29 @@
  * канонический журнал остаётся `workflow_execution_logs` (§13.9), владеет им
  * Backend; здесь — сводные счётчики для `/metrics` и для нагрузочных пробников M5.
  */
+
+/** Событие запуска экземпляра для коллектора метрик. */
+export interface WorkflowMetricStartEvent {
+  workflowId?: string | null;
+}
+
+/** Событие завершения экземпляра для коллектора метрик. */
+export interface WorkflowMetricCompletionEvent {
+  workflowId?: string | null;
+  status?: string;
+  durationMs?: number;
+}
+
+/** Строка снимка метрик (суммарная — без `workflow_id`, по-Workflow — с ним). */
+export interface WorkflowMetricsRow {
+  workflow_id?: string;
+  runs: number;
+  successes: number;
+  errors: number;
+  active: number;
+  avg_duration_ms: number;
+}
+
 export function createWorkflowMetrics() {
   const perWorkflow = new Map(); // workflow_id -> counters
   const totals = newCounters(null);
@@ -31,7 +54,7 @@ export function createWorkflowMetrics() {
 
   return {
     /** Зафиксировать запуск экземпляра (инкремент `runs` и `active`). */
-    recordStart({ workflowId } = {}) {
+    recordStart({ workflowId }: WorkflowMetricStartEvent = {}) {
       const counters = bucket(workflowId);
       counters.runs += 1;
       counters.active += 1;
@@ -44,7 +67,7 @@ export function createWorkflowMetrics() {
      * `failed` уменьшает `active` и учитывает длительность; для `waiting` и прочих
      * НЕтерминальных статусов — ничего не меняет (экземпляр остаётся активным).
      */
-    recordCompletion({ workflowId, status, durationMs = 0 } = {}) {
+    recordCompletion({ workflowId, status, durationMs = 0 }: WorkflowMetricCompletionEvent = {}) {
       if (status !== "completed" && status !== "failed") {
         return;
       }
@@ -85,7 +108,7 @@ function newCounters(workflowId) {
   return { workflowId, runs: 0, successes: 0, errors: 0, active: 0, durationSum: 0, finished: 0 };
 }
 
-function shape(counters) {
+function shape(counters): WorkflowMetricsRow {
   const base = {
     runs: counters.runs,
     successes: counters.successes,

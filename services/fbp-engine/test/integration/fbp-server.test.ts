@@ -19,7 +19,7 @@ describe("FBP Engine M0 mock server", () => {
   });
 
   after(async () => {
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     });
   });
@@ -44,7 +44,7 @@ describe("FBP Engine M0 mock server", () => {
       }),
     });
 
-    const body = await response.json();
+    const body: any = await response.json();
 
     assert.equal(response.status, 201);
     assert.equal(body.contract, "C5.StartWorkflowInstanceResponse");
@@ -72,7 +72,7 @@ describe("FBP Engine M0 mock server", () => {
         },
       }),
     });
-    const started = await startResponse.json();
+    const started: any = await startResponse.json();
 
     const callbackResponse = await fetch(
       `${baseUrl}/api/v1/workflows/workflow-1/instances/${started.instance_id}/backend-api-callbacks`,
@@ -102,7 +102,7 @@ describe("FBP Engine M0 mock server", () => {
         }),
       },
     );
-    const callback = await callbackResponse.json();
+    const callback: any = await callbackResponse.json();
 
     assert.equal(callbackResponse.status, 200);
     assert.equal(callback.contract, "C5.BackendApiNodeCallbackResponse");

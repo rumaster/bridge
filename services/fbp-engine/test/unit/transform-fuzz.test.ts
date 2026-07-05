@@ -222,7 +222,7 @@ describe("Transform Node — фаззинг грамматики (§13.4): из�
 
   it("лимиты ресурсов соблюдаются: превышение глубины/узлов AST отвергается валидацией", () => {
     // Слишком глубокое дерево — отвергается на ВАЛИДАЦИИ (не на исполнении).
-    let deep = { op: "input" };
+    let deep: any = { op: "input" };
     for (let i = 0; i < TRANSFORM_DEFAULT_LIMITS.maxAstDepth + 5; i += 1) {
       deep = { op: "not", args: [deep] };
     }

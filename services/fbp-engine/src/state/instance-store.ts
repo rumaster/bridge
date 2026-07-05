@@ -2,6 +2,36 @@ import { WorkflowStoreError } from "../core/errors.js";
 
 const INSTANCE_STATUSES = new Set(["pending", "running", "waiting", "completed", "failed", "cancelled"]);
 
+/** Ссылка на экземпляр в пределах арендатора. */
+export interface InstanceRef {
+  organizationId?: string;
+  instanceId?: string;
+}
+
+/** Аргументы создания экземпляра (version pinning). */
+export interface CreateInstanceOptions {
+  organizationId?: string;
+  workflowId?: string;
+  versionId?: string;
+  instanceId?: string;
+  status?: string;
+}
+
+/** Аргументы обновления статуса/меток экземпляра. */
+export interface UpdateInstanceOptions {
+  organizationId?: string;
+  instanceId?: string;
+  status?: string;
+  finishedAt?: string | null;
+}
+
+/** Аргументы сохранения снимка состояния экземпляра. */
+export interface SaveInstanceStateOptions {
+  organizationId?: string;
+  instanceId?: string;
+  state?: unknown;
+}
+
 /**
  * Референс-модель таблиц `workflow_instances` (version pinning) и
  * `workflow_instance_state` (состояние ВНЕ исполнителя, stateless executor,
@@ -47,7 +77,7 @@ export function createInstanceStore({ now = () => new Date().toISOString() } = {
      * Создать экземпляр, ЗАКРЕПИВ его за версией (`versionId`). Это и есть version
      * pinning: связь экземпляр↔версия неизменна на всём его жизненном цикле.
      */
-    createInstance({ organizationId, workflowId, versionId, instanceId, status = "running" } = {}) {
+    createInstance({ organizationId, workflowId, versionId, instanceId, status = "running" }: CreateInstanceOptions = {}) {
       requireId(organizationId, "organization_id");
       requireId(workflowId, "workflow_id");
       requireId(versionId, "version_id");
@@ -78,14 +108,14 @@ export function createInstanceStore({ now = () => new Date().toISOString() } = {
     },
 
     /** Получить экземпляр (с закреплённой версией). Бросает, если не найден. */
-    getInstance({ organizationId, instanceId } = {}) {
+    getInstance({ organizationId, instanceId }: InstanceRef = {}) {
       requireId(organizationId, "organization_id");
       requireId(instanceId, "instance_id");
       return { ...loadInstance(organizationId, instanceId) };
     },
 
     /** Обновить статус/временные метки экземпляра. `version_id` менять нельзя. */
-    updateInstance({ organizationId, instanceId, status, finishedAt } = {}) {
+    updateInstance({ organizationId, instanceId, status, finishedAt }: UpdateInstanceOptions = {}) {
       const record = loadInstance(organizationId, instanceId);
       if (status !== undefined) {
         if (!INSTANCE_STATUSES.has(status)) {
@@ -104,7 +134,7 @@ export function createInstanceStore({ now = () => new Date().toISOString() } = {
      * Снимок замораживается копией — исполнитель не должен полагаться на общий с
      * хранилищем объект. Требует существующего экземпляра (FK на `workflow_instances`).
      */
-    saveState({ organizationId, instanceId, state } = {}) {
+    saveState({ organizationId, instanceId, state }: SaveInstanceStateOptions = {}) {
       requireId(organizationId, "organization_id");
       requireId(instanceId, "instance_id");
       loadInstance(organizationId, instanceId);
@@ -120,7 +150,7 @@ export function createInstanceStore({ now = () => new Date().toISOString() } = {
      * Загрузить снимок состояния экземпляра (для продолжения другим узлом). Копия,
      * не общий объект. Возвращает `null`, если состояние ещё не сохранялось.
      */
-    loadState({ organizationId, instanceId } = {}) {
+    loadState({ organizationId, instanceId }: InstanceRef = {}) {
       requireId(organizationId, "organization_id");
       requireId(instanceId, "instance_id");
       const record = states.get(key(organizationId, instanceId));
@@ -128,7 +158,7 @@ export function createInstanceStore({ now = () => new Date().toISOString() } = {
     },
 
     /** Удалить внешнее состояние (например, после завершения экземпляра). */
-    clearState({ organizationId, instanceId } = {}) {
+    clearState({ organizationId, instanceId }: InstanceRef = {}) {
       requireId(organizationId, "organization_id");
       requireId(instanceId, "instance_id");
       return states.delete(key(organizationId, instanceId));

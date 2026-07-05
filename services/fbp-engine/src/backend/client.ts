@@ -1,5 +1,20 @@
 import { WorkflowExecutionError } from "../core/errors.js";
 
+/** Ответ Backend API (канал C3): статус, заголовки и разобранное тело. */
+export interface BackendApiResponse {
+  status_code: number;
+  headers: Record<string, string>;
+  body: unknown;
+}
+
+/**
+ * Клиент публичного Backend API — ЕДИНСТВЕННЫЙ канал данных движка (канал C3).
+ * Форма запроса: `{ method, path, query?, body?, timeout_ms?, context }`.
+ */
+export interface BackendApiClient {
+  call(request: any): Promise<any>;
+}
+
 /**
  * Клиент публичного Backend API (канал C3, ТЗ §13.13-п.3). ЕДИНСТВЕННЫЙ канал,
  * через который движок меняет или читает данные: прямого доступа к БД/внутренним
@@ -12,6 +27,13 @@ import { WorkflowExecutionError } from "../core/errors.js";
  * и НЕ может быть переопределён узлом.
  */
 
+/** Опции HTTP-клиента Backend API. */
+export interface HttpBackendApiClientOptions {
+  baseUrl?: string;
+  fetchImpl?: typeof globalThis.fetch;
+  defaultTimeoutMs?: number;
+}
+
 /**
  * HTTP-реализация поверх `fetch` (боевой режим). В тестах используется
  * `createTenantBackendApiMock` — он же демонстрирует изоляцию арендаторов.
@@ -20,7 +42,7 @@ export function createHttpBackendApiClient({
   baseUrl,
   fetchImpl = globalThis.fetch,
   defaultTimeoutMs = 250,
-} = {}) {
+}: HttpBackendApiClientOptions = {}) {
   if (typeof fetchImpl !== "function") {
     throw new TypeError("createHttpBackendApiClient требует доступный fetch.");
   }

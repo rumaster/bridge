@@ -3,6 +3,28 @@ import { WorkflowExecutionError } from "./errors.js";
 
 const DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 
+/** Опции конструктора {@link ExecutionContext}. */
+export interface ExecutionContextOptions {
+  organizationId?: string;
+  actorUserId?: string | null;
+  trigger?: string | null;
+  roles?: string[];
+  correlationId?: string | null;
+  locale?: string | null;
+  instanceId?: string;
+  workflowId?: string | null;
+  workflowVersionId?: string | null;
+  input?: Record<string, unknown> | null;
+  outputs?: Record<string, unknown> | null;
+  seq?: number;
+  now?: () => string;
+}
+
+/** Опции восстановления контекста из снимка. */
+export interface ExecutionContextSnapshotOptions {
+  now?: () => string;
+}
+
 /**
  * Контекст исполнения одного экземпляра Workflow (ТЗ §13.13-п.4, §22.6).
  *
@@ -42,7 +64,7 @@ export class ExecutionContext {
     outputs = null,
     seq = 0,
     now = () => new Date().toISOString(),
-  }) {
+  }: ExecutionContextOptions) {
     if (typeof organizationId !== "string" || organizationId.trim() === "") {
       throw new WorkflowExecutionError(
         "invalid_context",
@@ -79,7 +101,7 @@ export class ExecutionContext {
    * узел-исполнитель может поднять по нему контекст и продолжить экземпляр —
    * исполнитель не держит состояние между шагами.
    */
-  static fromSnapshot(snapshot, { now } = {}) {
+  static fromSnapshot(snapshot, { now }: ExecutionContextSnapshotOptions = {}) {
     if (!isRecord(snapshot)) {
       throw new WorkflowExecutionError(
         "invalid_instance_state",
@@ -111,7 +133,7 @@ export class ExecutionContext {
    * копится в `workflow_execution_logs` и сохраняется Backend отдельно.
    */
   snapshot() {
-    const outputs = {};
+    const outputs: Record<string, any> = {};
     for (const [nodeId, value] of this.#outputs) {
       outputs[nodeId] = clone(value);
     }
@@ -165,7 +187,7 @@ export class ExecutionContext {
     if (inputSpec === undefined || inputSpec === null) {
       return {};
     }
-    const result = {};
+    const result: Record<string, any> = {};
     for (const [key, source] of Object.entries(inputSpec)) {
       if (DANGEROUS_KEYS.has(key)) {
         continue;

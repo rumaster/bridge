@@ -122,8 +122,8 @@ describe("Transform Node — безопасный вычислитель выр�
       {},
     );
     assert.deepEqual(merged, { safe: 1 });
-    assert.equal({}.polluted, undefined);
-    assert.equal(Object.prototype.polluted, undefined);
+    assert.equal(({} as any).polluted, undefined);
+    assert.equal((Object.prototype as any).polluted, undefined);
   });
 
   it("обрывает вычисление по бюджету шагов (нет неограниченных циклов)", () => {

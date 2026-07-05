@@ -92,7 +92,7 @@ describe("ExecutionContext: сборка входа узла из проводк
   it("опасные ключи входа игнорируются (защита от загрязнения прототипа)", () => {
     const ctx = makeContext();
     const input = ctx.assembleInput({ __proto__: { kind: "const", value: { polluted: true } } });
-    assert.equal(Object.prototype.polluted, undefined);
+    assert.equal((Object.prototype as any).polluted, undefined);
     assert.equal(input.polluted, undefined);
   });
 });
@@ -179,7 +179,7 @@ describe("ExecutionContext: внешнее состояние (workflow_instance
       },
       { now: () => "2026-07-04T00:00:00.000Z" },
     );
-    assert.equal(Object.prototype.polluted, undefined);
+    assert.equal((Object.prototype as any).polluted, undefined);
     assert.equal(restored.hasNodeOutput("safe"), true);
   });
 

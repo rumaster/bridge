@@ -25,7 +25,7 @@ function stubCtx(overrides = {}) {
   };
 }
 
-function capturingClient(response = { status_code: 200, headers: {}, body: { ok: true } }) {
+function capturingClient(response: any = { status_code: 200, headers: {}, body: { ok: true } }) {
   const calls = [];
   return {
     calls,

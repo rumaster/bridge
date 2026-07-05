@@ -10,6 +10,11 @@ import { getNodeDefinition } from "../nodes/registry.js";
 const DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 const INPUT_KINDS = new Set(FBP_INPUT_SOURCE_KINDS);
 
+/** Опции валидации схемы Workflow. */
+export interface ValidateWorkflowOptions {
+  limits?: Record<string, unknown>;
+}
+
 /**
  * Валидация схемы Workflow НА ЭТАПЕ СОХРАНЕНИЯ (ТЗ §13.13-п.5, §16.7). Всё, что
  * можно проверить статически, проверяется до создания новой версии: версия
@@ -20,7 +25,7 @@ const INPUT_KINDS = new Set(FBP_INPUT_SOURCE_KINDS);
  *
  * Возвращает `{ valid, errors: [{ path, message }] }`.
  */
-export function validateWorkflowSchema(schema, options = {}) {
+export function validateWorkflowSchema(schema, options: ValidateWorkflowOptions = {}) {
   const limits = { ...TRANSFORM_DEFAULT_LIMITS, ...(options.limits ?? {}) };
   const errors = [];
 
@@ -53,7 +58,7 @@ export function validateWorkflowSchema(schema, options = {}) {
   return { valid: errors.length === 0, errors };
 }
 
-export function assertWorkflowSchema(schema, options = {}) {
+export function assertWorkflowSchema(schema, options: ValidateWorkflowOptions = {}) {
   const result = validateWorkflowSchema(schema, options);
   if (!result.valid) {
     throw new WorkflowSchemaValidationError(result.errors);
@@ -97,7 +102,7 @@ function validateNode(node, index, nodeIds, errors, limits) {
   }
 }
 
-function validateInputSpec(inputSpec, path, selfId, nodeIds, errors) {
+function validateInputSpec(inputSpec: Record<string, any>, path, selfId, nodeIds, errors) {
   if (!isRecord(inputSpec)) {
     errors.push({ path, message: "input должен быть объектом отображения порт → источник." });
     return;

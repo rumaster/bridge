@@ -7,7 +7,7 @@ import {
   validateWorkflowSchema,
 } from "../../src/schema/validate-workflow.js";
 
-function validSchema() {
+function validSchema(): any {
   return {
     schema_version: "1.0.0",
     entry: "start",

@@ -4,6 +4,34 @@ import { WorkflowExecutionError, WorkflowStoreError } from "../core/errors.js";
 import { buildGraph, DEFAULT_PORT } from "../core/graph.js";
 import { runGraph } from "../core/executor.js";
 import { deterministicUuid } from "../core/ids.js";
+import type { BackendApiClient } from "../backend/client.js";
+
+/** Опции сборки оркестратора {@link createInstanceRuntime}. */
+export interface InstanceRuntimeOptions {
+  backendClient?: BackendApiClient;
+  versions?: any;
+  instances?: any;
+  metrics?: any;
+  limits?: Record<string, unknown>;
+  now?: () => string;
+}
+
+/** Аргументы запуска экземпляра ({@link createInstanceRuntime} `start`). */
+export interface StartInstanceOptions {
+  organizationId?: string;
+  workflowId?: string;
+  context?: any;
+  input?: Record<string, unknown>;
+  versionId?: string;
+  instanceId?: string;
+}
+
+/** Аргументы продолжения экземпляра ({@link createInstanceRuntime} `resume`). */
+export interface ResumeInstanceOptions {
+  organizationId?: string;
+  instanceId?: string;
+  event?: unknown;
+}
 
 /**
  * Оркестратор жизненного цикла экземпляров Workflow вехи M4 — связывает три
@@ -30,7 +58,7 @@ export function createInstanceRuntime({
   metrics = null,
   limits = {},
   now = () => new Date().toISOString(),
-} = {}) {
+}: InstanceRuntimeOptions = {}) {
   if (!backendClient || typeof backendClient.call !== "function") {
     throw new TypeError(
       "createInstanceRuntime требует backendClient с методом call — данные идут только через Backend API (C3).",
@@ -49,7 +77,7 @@ export function createInstanceRuntime({
    * граф. Если экземпляр ушёл в ожидание — снимок состояния уходит в
    * `workflow_instance_state`, статус `waiting`; при завершении — `completed`/`failed`.
    */
-  async function start({ organizationId, workflowId, context, input = {}, versionId, instanceId } = {}) {
+  async function start({ organizationId, workflowId, context, input = {}, versionId, instanceId }: StartInstanceOptions = {}) {
     const org = requireOrg(organizationId, context);
     requireId(workflowId, "workflow_id");
 
@@ -77,7 +105,7 @@ export function createInstanceRuntime({
    * `workflow_instance_state` и схему ЗАФИКСИРОВАННОЙ версии — может выполняться
    * на другом узле-исполнителе (stateless, §25.3).
    */
-  async function resume({ organizationId, instanceId, event = null } = {}) {
+  async function resume({ organizationId, instanceId, event = null }: ResumeInstanceOptions = {}) {
     requireId(organizationId, "organization_id");
     requireId(instanceId, "instance_id");
 

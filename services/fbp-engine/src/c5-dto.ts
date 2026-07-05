@@ -44,8 +44,16 @@ const BACKEND_REQUEST_FIELDS = new Set([
 const TRIGGERS = new Set(["manual", "message", "system", "workflow"]);
 const HTTP_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
 
+/** Единичное нарушение валидации DTO C5. */
+export interface C5ValidationIssue {
+  field: string;
+  message: string;
+}
+
 export class C5DtoValidationError extends Error {
-  constructor(errors) {
+  readonly errors: C5ValidationIssue[];
+
+  constructor(errors: C5ValidationIssue[]) {
     super(`C5 DTO validation failed: ${errors.map((error) => error.field).join(", ")}`);
     this.name = "C5DtoValidationError";
     this.errors = errors;

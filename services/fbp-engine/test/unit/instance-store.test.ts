@@ -26,7 +26,7 @@ describe("Хранилище экземпляров: version pinning (ТЗ §13.
     assert.equal(created.version_id, "ver-1");
 
     // updateInstance меняет только статус/метки, но не version_id.
-    store.updateInstance({ organizationId: ORG_A, instanceId: "inst-1", status: "waiting", version_id: "ver-2" });
+    store.updateInstance({ organizationId: ORG_A, instanceId: "inst-1", status: "waiting", version_id: "ver-2" } as any);
     assert.equal(store.getInstance({ organizationId: ORG_A, instanceId: "inst-1" }).version_id, "ver-1");
   });
 

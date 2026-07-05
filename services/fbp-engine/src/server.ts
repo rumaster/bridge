@@ -6,10 +6,16 @@ import { createDeterministicFbpMock } from "./deterministic-fbp.js";
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 const MAX_BODY_BYTES = 1024 * 1024;
 
+/** Опции HTTP-сервера движка FBP ({@link createFbpEngineServer}). */
+export interface FbpEngineServerOptions {
+  fbp?: any;
+  now?: () => string;
+}
+
 export function createFbpEngineServer({
   fbp,
   now = () => new Date().toISOString(),
-} = {}) {
+}: FbpEngineServerOptions = {}) {
   const mockFbp = fbp ?? createDeterministicFbpMock({ now });
 
   return createServer(async (request, response) => {
@@ -170,7 +176,10 @@ function renderMetrics(metrics) {
 }
 
 class PayloadError extends Error {
-  constructor(status, title, message) {
+  readonly status: number;
+  readonly title: string;
+
+  constructor(status: number, title: string, message: string) {
     super(message);
     this.name = "PayloadError";
     this.status = status;

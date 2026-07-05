@@ -4,6 +4,12 @@ import {
 } from "../../../../packages/contracts/src/c5.js";
 import { TransformValidationError } from "./errors.js";
 
+/** Опции валидации выражения Transform Node. */
+export interface ValidateTransformExpressionOptions {
+  limits?: Record<string, unknown>;
+  boundVars?: Iterable<string>;
+}
+
 /**
  * Валидация выражения Transform Node НА ЭТАПЕ СОХРАНЕНИЯ СХЕМЫ (ТЗ §13.4): любая
  * операция вне whitelist, некорректная форма AST, несвязанная переменная или
@@ -11,7 +17,7 @@ import { TransformValidationError } from "./errors.js";
  *
  * Возвращает `{ valid, errors: [{ path, message }] }`.
  */
-export function validateTransformExpression(expression, options = {}) {
+export function validateTransformExpression(expression, options: ValidateTransformExpressionOptions = {}) {
   const limits = { ...TRANSFORM_DEFAULT_LIMITS, ...(options.limits ?? {}) };
   const context = { errors: [], count: 0, limits };
   const boundVars = new Set(options.boundVars ?? []);
@@ -21,7 +27,7 @@ export function validateTransformExpression(expression, options = {}) {
   return { valid: context.errors.length === 0, errors: context.errors };
 }
 
-export function assertTransformExpression(expression, options = {}) {
+export function assertTransformExpression(expression, options: ValidateTransformExpressionOptions = {}) {
   const result = validateTransformExpression(expression, options);
   if (!result.valid) {
     throw new TransformValidationError(result.errors);

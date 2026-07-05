@@ -62,7 +62,7 @@ describe("Transform Node — валидация выражения на этап
   });
 
   it("ограничивает глубину AST", () => {
-    let expression = { op: "input" };
+    let expression: any = { op: "input" };
     for (let depth = 0; depth < 20; depth += 1) {
       expression = { op: "not", args: [expression] };
     }

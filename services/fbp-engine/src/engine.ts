@@ -8,6 +8,32 @@ import { createVersionRegistry } from "./versions/version-registry.js";
 import { createInstanceStore } from "./state/instance-store.js";
 import { createInstanceRuntime } from "./runtime/instance-runtime.js";
 import { createWorkflowMetrics } from "./metrics/workflow-metrics.js";
+import type { BackendApiClient } from "./backend/client.js";
+
+/** Опции фасада движка {@link createFbpEngine}. */
+export interface FbpEngineOptions {
+  backendClient?: BackendApiClient;
+  limits?: Record<string, unknown>;
+  now?: () => string;
+}
+
+/** Аргументы {@link createFbpEngine.runWorkflow}. */
+export interface RunWorkflowOptions {
+  schema?: any;
+  context?: any;
+  input?: Record<string, unknown>;
+  instanceId?: string;
+}
+
+/** Опции сборки рантайма {@link createFbpRuntime}. */
+export interface FbpRuntimeOptions {
+  backendClient?: BackendApiClient;
+  now?: () => string;
+  versions?: ReturnType<typeof createVersionRegistry>;
+  instances?: ReturnType<typeof createInstanceStore>;
+  metrics?: ReturnType<typeof createWorkflowMetrics>;
+  limits?: Record<string, unknown>;
+}
 
 /**
  * Фасад движка Workflow (форк fbp-engine, ТЗ §13.13). Предоставляет две операции:
@@ -23,7 +49,7 @@ import { createWorkflowMetrics } from "./metrics/workflow-metrics.js";
  * прямого доступа к БД/внутренним сервисам: единственный канал данных — узел
  * Backend API через переданный `backendClient` (канал C3, §13.12, §13.13-п.3).
  */
-export function createFbpEngine({ backendClient, limits = {}, now } = {}) {
+export function createFbpEngine({ backendClient, limits = {}, now }: FbpEngineOptions = {}) {
   if (!backendClient || typeof backendClient.call !== "function") {
     throw new TypeError(
       "createFbpEngine требует backendClient с методом call — движок меняет и читает данные только через Backend API (C3).",
@@ -44,7 +70,7 @@ export function createFbpEngine({ backendClient, limits = {}, now } = {}) {
      * как `status:"failed"` — журнал возвращается ВСЕГДА, чтобы Backend мог его
      * сохранить в `workflow_execution_logs`.
      */
-    async runWorkflow({ schema, context, input = {}, instanceId } = {}) {
+    async runWorkflow({ schema, context, input = {}, instanceId }: RunWorkflowOptions = {}) {
       assertWorkflowSchema(schema, { limits: effectiveLimits });
       const resolvedInstanceId = resolveInstanceId(instanceId, context, schema, input);
       const ctx = createContext({ context, schema, input, instanceId: resolvedInstanceId, now });
@@ -95,7 +121,7 @@ export function createFbpRuntime({
   instances = createInstanceStore({ ...(now ? { now } : {}) }),
   metrics = createWorkflowMetrics(),
   limits = {},
-} = {}) {
+}: FbpRuntimeOptions = {}) {
   if (!backendClient || typeof backendClient.call !== "function") {
     throw new TypeError(
       "createFbpRuntime требует backendClient с методом call — данные идут только через Backend API (C3).",

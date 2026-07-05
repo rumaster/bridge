@@ -2,6 +2,28 @@ import { deterministicUuid } from "../core/ids.js";
 import { VersionImmutabilityError, WorkflowStoreError } from "../core/errors.js";
 import { validateWorkflowSchema } from "../schema/validate-workflow.js";
 
+/** Ссылка на workflow в пределах арендатора. */
+export interface WorkflowRef {
+  organizationId?: string;
+  workflowId?: string;
+}
+
+/** Ссылка на конкретную версию workflow. */
+export interface VersionRef {
+  organizationId?: string;
+  workflowId?: string;
+  versionId?: string;
+}
+
+/** Аргументы публикации новой версии схемы. */
+export interface PublishVersionOptions {
+  organizationId?: string;
+  workflowId?: string;
+  schema?: any;
+  createdBy?: string | null;
+  versionNo?: number;
+}
+
 /**
  * Реестр НЕИЗМЕНЯЕМЫХ версий Workflow (ТЗ §13.10). Референс-модель таблиц
  * `workflows` и `workflow_versions`, которыми в бою владеет Backend, а SVC-FBP
@@ -56,7 +78,7 @@ export function createVersionRegistry({
      * отклоняется (`VersionImmutabilityError`) — правка обязана дать новую версию.
      * Первая опубликованная версия становится версией по умолчанию.
      */
-    publishVersion({ organizationId, workflowId, schema, createdBy = null, versionNo } = {}) {
+    publishVersion({ organizationId, workflowId, schema, createdBy = null, versionNo }: PublishVersionOptions = {}) {
       requireId(organizationId, "organization_id");
       requireId(workflowId, "workflow_id");
 
@@ -105,7 +127,7 @@ export function createVersionRegistry({
     },
 
     /** Получить конкретную версию (неизменяемую). Бросает, если версии нет. */
-    getVersion({ organizationId, workflowId, versionId } = {}) {
+    getVersion({ organizationId, workflowId, versionId }: VersionRef = {}) {
       requireId(organizationId, "organization_id");
       requireId(workflowId, "workflow_id");
       requireId(versionId, "version_id");
@@ -120,7 +142,7 @@ export function createVersionRegistry({
     },
 
     /** Все версии workflow в порядке возрастания `version_no` (копия). */
-    listVersions({ organizationId, workflowId } = {}) {
+    listVersions({ organizationId, workflowId }: WorkflowRef = {}) {
       requireId(organizationId, "organization_id");
       requireId(workflowId, "workflow_id");
       return [...(workflows.get(key(organizationId, workflowId))?.versions ?? [])];
@@ -131,14 +153,14 @@ export function createVersionRegistry({
      * только на последующие запуски: уже идущие экземпляры закреплены за своей
      * версией (version pinning) и не переключаются.
      */
-    setDefaultVersion({ organizationId, workflowId, versionId } = {}) {
+    setDefaultVersion({ organizationId, workflowId, versionId }: VersionRef = {}) {
       const version = this.getVersion({ organizationId, workflowId, versionId });
       workflows.get(key(organizationId, workflowId)).defaultVersionId = version.id;
       return version;
     },
 
     /** Текущая версия по умолчанию workflow (или бросает, если версий нет). */
-    getDefaultVersion({ organizationId, workflowId } = {}) {
+    getDefaultVersion({ organizationId, workflowId }: WorkflowRef = {}) {
       requireId(organizationId, "organization_id");
       requireId(workflowId, "workflow_id");
       const entry = workflows.get(key(organizationId, workflowId));
@@ -156,7 +178,7 @@ export function createVersionRegistry({
      * заданную `versionId` либо текущую версию по умолчанию. Возвращает
      * неизменяемую запись версии — именно она фиксируется в `workflow_instances`.
      */
-    resolveVersion({ organizationId, workflowId, versionId } = {}) {
+    resolveVersion({ organizationId, workflowId, versionId }: VersionRef = {}) {
       if (versionId !== undefined && versionId !== null) {
         return this.getVersion({ organizationId, workflowId, versionId });
       }

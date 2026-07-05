@@ -1,10 +1,19 @@
+/** Единичное нарушение валидации схемы Workflow. */
+export interface WorkflowSchemaIssue {
+  path: string;
+  message: string;
+  [key: string]: unknown;
+}
+
 /**
  * Ошибка валидации схемы Workflow НА ЭТАПЕ СОХРАНЕНИЯ (ТЗ §13.13-п.5, §16.7).
  * Держит машиночитаемый список `{ path, message }`, чтобы редактор Workflow
  * (SVC-ADMIN) мог показать проблемы до создания новой версии.
  */
 export class WorkflowSchemaValidationError extends Error {
-  constructor(errors) {
+  readonly errors: WorkflowSchemaIssue[];
+
+  constructor(errors: WorkflowSchemaIssue[]) {
     super(
       `Схема Workflow не прошла валидацию: ${errors
         .map((error) => error.path)
@@ -19,8 +28,23 @@ export class WorkflowSchemaValidationError extends Error {
  * Ошибка ВРЕМЕНИ ИСПОЛНЕНИЯ узла графа. Несёт `node_id`, тип узла и причину,
  * чтобы попасть в журнал исполнения (`workflow_execution_logs`).
  */
+/** Дополнительный контекст ошибки исполнения узла графа. */
+export interface WorkflowExecutionErrorOptions {
+  nodeId?: string | null;
+  nodeType?: string | null;
+}
+
 export class WorkflowExecutionError extends Error {
-  constructor(reason, message, { nodeId = null, nodeType = null } = {}) {
+  readonly reason: string;
+  // nodeId/nodeType дополняются постфактум в decorateError (executor), поэтому изменяемы.
+  nodeId: string | null;
+  nodeType: string | null;
+
+  constructor(
+    reason: string,
+    message: string,
+    { nodeId = null, nodeType = null }: WorkflowExecutionErrorOptions = {},
+  ) {
     super(message);
     this.name = "WorkflowExecutionError";
     this.reason = reason;
@@ -35,8 +59,21 @@ export class WorkflowExecutionError extends Error {
  * обязана порождать НОВУЮ версию, а не менять существующую. Зеркалит запрет
  * `UPDATE/DELETE` на уровне БД (триггер `workflow_versions_immutable`).
  */
+/** Дополнительный контекст ошибки неизменяемости версии Workflow. */
+export interface VersionImmutabilityErrorOptions {
+  workflowId?: string | null;
+  versionNo?: number | null;
+}
+
 export class VersionImmutabilityError extends Error {
-  constructor(message, { workflowId = null, versionNo = null } = {}) {
+  readonly reason: string;
+  readonly workflowId: string | null;
+  readonly versionNo: number | null;
+
+  constructor(
+    message: string,
+    { workflowId = null, versionNo = null }: VersionImmutabilityErrorOptions = {},
+  ) {
     super(message);
     this.name = "VersionImmutabilityError";
     this.reason = "version_immutable";
@@ -51,7 +88,9 @@ export class VersionImmutabilityError extends Error {
  * версия не найдена против экземпляр не найден).
  */
 export class WorkflowStoreError extends Error {
-  constructor(reason, message) {
+  readonly reason: string;
+
+  constructor(reason: string, message: string) {
     super(message);
     this.name = "WorkflowStoreError";
     this.reason = reason;
