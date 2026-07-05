@@ -23,7 +23,7 @@ function listen(server) {
 }
 
 async function close(server) {
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }
@@ -126,7 +126,8 @@ describe("M4 SVC-INT доставка: Backend <-> Integration через мок
       headers: JSON_HEADERS,
       body: JSON.stringify(payload),
     });
-    return { status: response.status, body: await response.json() };
+    const body: any = await response.json();
+    return { status: response.status, body };
   }
 
   it("доставляет сообщение и фиксирует попытку в message_delivery_attempts", async () => {

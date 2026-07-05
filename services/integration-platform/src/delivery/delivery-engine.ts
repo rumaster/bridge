@@ -15,6 +15,19 @@ import { createChannelResilience } from "./resilience.js";
  *      (= `message_id`) — повтор с обработанным ключом отбрасывается без
  *      создания второго внешнего сообщения.
  */
+/** Опции {@link createDeliveryEngine}. */
+export interface DeliveryEngineOptions {
+  channel?: any;
+  backendClient?: any;
+  rateLimiter?: any;
+  backoff?: any;
+  resilience?: any;
+  queue?: any;
+  now?: () => string;
+  sleep?: (ms: any) => Promise<unknown>;
+  maxBackpressureWaitMs?: number;
+}
+
 export function createDeliveryEngine({
   channel,
   backendClient,
@@ -25,7 +38,7 @@ export function createDeliveryEngine({
   now = () => new Date().toISOString(),
   sleep = defaultSleep,
   maxBackpressureWaitMs = Number.POSITIVE_INFINITY,
-} = {}) {
+}: DeliveryEngineOptions = {}) {
   if (!channel || typeof channel.deliver !== "function") {
     throw new TypeError("channel with a deliver() method is required");
   }

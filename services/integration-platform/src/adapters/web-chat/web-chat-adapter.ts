@@ -18,11 +18,18 @@ const WEB_CHAT_SUPPORTED_CAPABILITIES = new Set([
 ]);
 const WEB_CHAT_MESSAGE_TYPES = new Set(["text", "image", "file"]);
 
+/** Опции {@link createWebChatAdapter}. */
+export interface WebChatAdapterOptions {
+  coreIngressUrl?: string;
+  fetchImpl?: typeof globalThis.fetch;
+  now?: () => string;
+}
+
 export function createWebChatAdapter({
   coreIngressUrl,
   fetchImpl = globalThis.fetch,
   now = () => new Date().toISOString(),
-} = {}) {
+}: WebChatAdapterOptions = {}) {
   if (typeof fetchImpl !== "function") {
     throw new TypeError("fetchImpl must be a function");
   }
@@ -131,10 +138,16 @@ export function createWebChatAdapter({
   };
 }
 
+/** Опции {@link createWebChatCapabilityDescriptor}. */
+export interface WebChatCapabilityDescriptorOptions {
+  channelId?: any;
+  generatedAt?: string;
+}
+
 export function createWebChatCapabilityDescriptor({
   channelId,
   generatedAt = new Date().toISOString(),
-} = {}) {
+}: WebChatCapabilityDescriptorOptions = {}) {
   const descriptor = createCapabilityDescriptor({
     channelType: WEB_CHAT_CHANNEL_TYPE,
     channelId,

@@ -17,7 +17,7 @@ function listen(server) {
 }
 
 async function close(server) {
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.close((error) => {
       if (error) {
         reject(error);
@@ -82,7 +82,7 @@ describe("mock adapter <-> mock core smoke", () => {
 
     const capabilitiesResponse = await fetch(`${integrationBaseUrl}/mock/capabilities`);
     assert.equal(capabilitiesResponse.status, 200);
-    const capabilities = await capabilitiesResponse.json();
+    const capabilities: any = await capabilitiesResponse.json();
     assert.equal(capabilities.contract, "C6.CapabilityDescriptor");
     assert.equal(capabilities.capabilities.text.supported, true);
     assert.equal(capabilities.capabilities.read_receipt.supported, true);
@@ -135,7 +135,7 @@ describe("mock adapter <-> mock core smoke", () => {
     });
 
     assert.equal(response.status, 202);
-    const body = await response.json();
+    const body: any = await response.json();
     assert.equal(body.accepted, true);
     assert.equal(body.delivery.channel_id, "channel-mock");
 

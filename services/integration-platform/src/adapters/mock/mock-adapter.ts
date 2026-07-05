@@ -9,11 +9,18 @@ import {
 const C2_VERSION = "1.0.0";
 const MOCK_CHANNEL_TYPE = "mock";
 
+/** Опции {@link createMockAdapter}. */
+export interface MockAdapterOptions {
+  coreIngressUrl?: string;
+  fetchImpl?: typeof globalThis.fetch;
+  now?: () => string;
+}
+
 export function createMockAdapter({
   coreIngressUrl,
   fetchImpl = globalThis.fetch,
   now = () => new Date().toISOString(),
-} = {}) {
+}: MockAdapterOptions = {}) {
   if (typeof fetchImpl !== "function") {
     throw new TypeError("fetchImpl must be a function");
   }

@@ -63,7 +63,7 @@ describe("M4 delivery — классификация ошибок доставк
 
   it("сетевые коды повторяемы", () => {
     for (const code of ["ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "EAI_AGAIN"]) {
-      const error = new Error("net");
+      const error: Error & { code?: string } = new Error("net");
       error.code = code;
       const result = classifyDeliveryError(error);
       assert.equal(result.retryable, true, `code ${code}`);

@@ -115,9 +115,11 @@ export function createChannelRateLimiter({
         metrics.throttled_total += 1;
         const wait = state.retryAfterMs;
         if (waited + wait > maxWaitMs) {
-          const error = new Error(
-            `rate limit backpressure timeout for channel ${channel}`,
-          );
+          const error: Error & {
+            code?: string;
+            channel?: string;
+            retryAfterMs?: number;
+          } = new Error(`rate limit backpressure timeout for channel ${channel}`);
           error.code = "RATE_LIMIT_BACKPRESSURE_TIMEOUT";
           error.channel = channel;
           error.retryAfterMs = wait;

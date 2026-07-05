@@ -1,4 +1,8 @@
 export class ChannelTimeoutError extends Error {
+  readonly code: string;
+  readonly retryable: boolean;
+  readonly category: string;
+
   constructor(message = "external channel delivery timed out") {
     super(message);
     this.name = "ChannelTimeoutError";
@@ -9,6 +13,10 @@ export class ChannelTimeoutError extends Error {
 }
 
 export class CircuitOpenError extends Error {
+  readonly code: string;
+  readonly retryable: boolean;
+  readonly category: string;
+
   constructor(message = "external channel circuit breaker is open") {
     super(message);
     this.name = "CircuitOpenError";
@@ -19,6 +27,10 @@ export class CircuitOpenError extends Error {
 }
 
 export class BulkheadFullError extends Error {
+  readonly code: string;
+  readonly retryable: boolean;
+  readonly category: string;
+
   constructor(message = "external channel bulkhead is full") {
     super(message);
     this.name = "BulkheadFullError";

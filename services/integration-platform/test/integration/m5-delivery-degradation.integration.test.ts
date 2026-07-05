@@ -21,7 +21,7 @@ function listen(server) {
 }
 
 async function close(server) {
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }
@@ -132,14 +132,15 @@ describe("M5 SVC-INT деградация: внешний API недоступе
     await close(backendServer);
   });
 
-  async function dispatch(payload, { signal } = {}) {
+  async function dispatch(payload, { signal }: { signal?: AbortSignal } = {}) {
     const response = await fetch(`${integrationBaseUrl}/internal/delivery/dispatch`, {
       method: "POST",
       headers: JSON_HEADERS,
       body: JSON.stringify(payload),
       signal,
     });
-    return { status: response.status, body: await response.json() };
+    const body: any = await response.json();
+    return { status: response.status, body };
   }
 
   it("сразу принимает доставку в очередь и продолжает доставлять другой канал", async () => {

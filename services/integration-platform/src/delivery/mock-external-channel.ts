@@ -2,6 +2,13 @@ import { randomUUID } from "node:crypto";
 
 import { ChannelDeliveryError } from "./errors.js";
 
+/** Вход {@link createMockExternalChannel} `deliver()`. */
+export interface MockExternalDeliverInput {
+  idempotencyKey?: string;
+  channelType?: string;
+  message?: any;
+}
+
 /**
  * Мок внешнего API канала — фасад доставки для тестов и локального запуска
  * (ТЗ §26.3: реальные внешние сервисы в CI не вызываются).
@@ -59,7 +66,7 @@ export function createMockExternalChannel({
       return attemptsByKey.get(idempotencyKey) ?? 0;
     },
 
-    async deliver({ idempotencyKey, channelType, message } = {}) {
+    async deliver({ idempotencyKey, channelType, message }: MockExternalDeliverInput = {}) {
       if (typeof idempotencyKey !== "string" || idempotencyKey.trim() === "") {
         throw new TypeError("idempotencyKey must be a non-empty string");
       }

@@ -17,7 +17,7 @@ function listen(server) {
 }
 
 async function close(server) {
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.close((error) => {
       if (error) {
         reject(error);
@@ -75,7 +75,7 @@ describe("Web Chat adapter <-> mock core CP-1 slice", () => {
     const response = await fetch(`${integrationBaseUrl}/web-chat/capabilities`);
 
     assert.equal(response.status, 200);
-    const capabilities = await response.json();
+    const capabilities: any = await response.json();
     assert.equal(capabilities.contract, "C6.CapabilityDescriptor");
     assert.equal(capabilities.channel_type, "web_chat");
     assert.equal(capabilities.capabilities.text.supported, true);
@@ -163,7 +163,7 @@ describe("Web Chat adapter <-> mock core CP-1 slice", () => {
     });
 
     assert.equal(response.status, 400);
-    const body = await response.json();
+    const body: any = await response.json();
     assert.equal(body.accepted, false);
     assert.match(body.errors[0], /channel_id or endpoint_id/);
   });
@@ -199,8 +199,8 @@ describe("Web Chat adapter <-> mock core CP-1 slice", () => {
     assert.equal(first.status, 202);
     assert.equal(second.status, 202);
 
-    const firstBody = await first.json();
-    const secondBody = await second.json();
+    const firstBody: any = await first.json();
+    const secondBody: any = await second.json();
     assert.equal(firstBody.accepted, true);
     assert.equal(firstBody.duplicate, false);
     assert.equal(secondBody.accepted, true);

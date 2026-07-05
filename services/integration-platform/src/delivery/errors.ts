@@ -28,12 +28,32 @@ const RETRYABLE_ERROR_NAMES = new Set([
   "TimeoutError",
 ]);
 
+/** Опции {@link ChannelDeliveryError}. */
+export interface ChannelDeliveryErrorOptions {
+  status?: number;
+  code?: string;
+  retryable?: boolean;
+  category?: string;
+  retryAfterMs?: number;
+}
+
 /**
  * Ошибка доставки во внешний канал. Несёт HTTP-статус внешнего API и/или
  * явный флаг повторяемости, чтобы движок доставки принял решение о ретрае.
  */
 export class ChannelDeliveryError extends Error {
-  constructor(message, { status, code, retryable, category, retryAfterMs } = {}) {
+  // `declare`: поля объявляются только на уровне типов и присваиваются условно
+  // в конструкторе — без эмита инициализаторов, чтобы не менять рантайм.
+  declare readonly status?: number;
+  declare readonly code?: string;
+  declare readonly retryable?: boolean;
+  declare readonly category?: string;
+  declare readonly retryAfterMs?: number;
+
+  constructor(
+    message: string,
+    { status, code, retryable, category, retryAfterMs }: ChannelDeliveryErrorOptions = {},
+  ) {
     super(message);
     this.name = "ChannelDeliveryError";
     this.status = status;

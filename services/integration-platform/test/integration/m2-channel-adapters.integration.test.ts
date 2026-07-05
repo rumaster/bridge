@@ -23,7 +23,7 @@ function listen(server) {
 }
 
 async function close(server) {
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.close((error) => {
       if (error) {
         reject(error);
@@ -90,7 +90,7 @@ describe("M2 channel adapters <-> mock core slice", () => {
       const response = await fetch(`${integrationBaseUrl}/${channelType}/capabilities`);
 
       assert.equal(response.status, 200, channelType);
-      const capabilities = await response.json();
+      const capabilities: any = await response.json();
       assert.equal(capabilities.contract, "C6.CapabilityDescriptor");
       assert.equal(capabilities.channel_type, channelType);
       assert.equal(capabilities.capabilities.text.supported, true);
@@ -152,8 +152,8 @@ describe("M2 channel adapters <-> mock core slice", () => {
     assert.equal(first.status, 202);
     assert.equal(second.status, 202);
 
-    const firstBody = await first.json();
-    const secondBody = await second.json();
+    const firstBody: any = await first.json();
+    const secondBody: any = await second.json();
     assert.equal(firstBody.accepted, true);
     assert.equal(firstBody.duplicate, false);
     assert.equal(secondBody.accepted, true);

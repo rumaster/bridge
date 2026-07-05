@@ -17,6 +17,11 @@ const DEFAULT_OPTIONS = Object.freeze({
   jitter: false,
 });
 
+/** Подсказка о задержке от внешнего API (например, заголовок Retry-After). */
+export interface BackoffDelayHint {
+  retryAfterMs?: number;
+}
+
 export function createBackoffPolicy(options = {}) {
   const config = normalizeOptions(options);
 
@@ -31,7 +36,7 @@ export function createBackoffPolicy(options = {}) {
      * @param {{ retryAfterMs?: number }} [hint] Подсказка от внешнего API
      *   (например, заголовок Retry-After при 429), имеет приоритет над формулой.
      */
-    delayForAttempt(attemptNo, hint = {}) {
+    delayForAttempt(attemptNo, hint: BackoffDelayHint = {}) {
       if (!Number.isInteger(attemptNo) || attemptNo < 1) {
         throw new TypeError("attemptNo must be a positive integer");
       }

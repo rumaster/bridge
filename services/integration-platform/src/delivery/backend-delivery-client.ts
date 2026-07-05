@@ -18,12 +18,20 @@ export const DELIVERY_ATTEMPT_STATUSES = Object.freeze([
 
 const DEFAULT_PATH = "/internal/delivery/attempts";
 
+/** Опции {@link createBackendDeliveryClient}. */
+export interface BackendDeliveryClientOptions {
+  baseUrl?: string;
+  path?: string;
+  fetchImpl?: typeof globalThis.fetch;
+  now?: () => string;
+}
+
 export function createBackendDeliveryClient({
   baseUrl,
   path = DEFAULT_PATH,
   fetchImpl = globalThis.fetch,
   now = () => new Date().toISOString(),
-} = {}) {
+}: BackendDeliveryClientOptions = {}) {
   if (typeof baseUrl !== "string" || baseUrl.trim() === "") {
     throw new TypeError("baseUrl is required to record delivery attempts");
   }
@@ -77,7 +85,7 @@ export function createBackendDeliveryClient({
 
       if (!response.ok) {
         const detail = await safeReadText(response);
-        const failure = new Error(
+        const failure: Error & { status?: number } = new Error(
           `Backend rejected delivery attempt with HTTP ${response.status}${
             detail ? `: ${detail}` : ""
           }`,

@@ -10,13 +10,22 @@ export const C2_VERSION = "1.0.0";
 
 const ATTACHMENT_KINDS = new Set(["image", "file", "voice", "video"]);
 
+/** Опции {@link createM2ChannelAdapter}. */
+export interface M2ChannelAdapterOptions {
+  spec?: any;
+  coreIngressUrl?: string;
+  fetchImpl?: typeof globalThis.fetch;
+  now?: () => string;
+  channelClient?: any;
+}
+
 export function createM2ChannelAdapter({
   spec,
   coreIngressUrl,
   fetchImpl = globalThis.fetch,
   now = () => new Date().toISOString(),
   channelClient,
-} = {}) {
+}: M2ChannelAdapterOptions = {}) {
   if (!spec || typeof spec !== "object") {
     throw new TypeError("spec must be an object");
   }
@@ -133,11 +142,18 @@ export function createM2ChannelAdapter({
   };
 }
 
+/** Опции {@link createM2CapabilityDescriptor}. */
+export interface M2CapabilityDescriptorOptions {
+  spec?: any;
+  channelId?: any;
+  generatedAt?: string;
+}
+
 export function createM2CapabilityDescriptor({
   spec,
   channelId,
   generatedAt = new Date().toISOString(),
-}) {
+}: M2CapabilityDescriptorOptions) {
   const descriptor = createCapabilityDescriptor({
     channelType: spec.channelType,
     channelId,
@@ -294,6 +310,16 @@ export function attachmentKindFromMime(mime, fallback = "file") {
   return fallback;
 }
 
+/** Поля вложения для {@link normalizeExternalAttachment}. */
+export interface NormalizeExternalAttachmentInput {
+  id?: any;
+  kind?: any;
+  storageRef?: any;
+  mime?: any;
+  filename?: any;
+  size?: any;
+}
+
 export function normalizeExternalAttachment({
   id,
   kind,
@@ -301,7 +327,7 @@ export function normalizeExternalAttachment({
   mime,
   filename,
   size,
-}) {
+}: NormalizeExternalAttachmentInput) {
   return {
     id,
     kind,

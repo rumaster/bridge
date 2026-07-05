@@ -5,6 +5,15 @@ import { isWebChatEgressDelivery } from "./adapters/web-chat/web-chat-adapter.js
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 
+/** Опции {@link createIntegrationPlatformServer}. */
+export interface IntegrationPlatformServerOptions {
+  adapter?: any;
+  webChatAdapter?: any;
+  adapters?: Record<string, any>;
+  deliveryEngine?: any;
+  deliveryDispatchMode?: string;
+}
+
 export function createIntegrationPlatformServer({
   adapter = createMockAdapter({
     coreIngressUrl: process.env.CORE_INGRESS_URL,
@@ -13,7 +22,7 @@ export function createIntegrationPlatformServer({
   adapters = {},
   deliveryEngine,
   deliveryDispatchMode = "sync",
-} = {}) {
+}: IntegrationPlatformServerOptions = {}) {
   const channelAdapters = createChannelAdapterRegistry({ adapters, webChatAdapter });
 
   return createServer(async (request, response) => {
