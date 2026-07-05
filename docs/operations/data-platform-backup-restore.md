@@ -20,7 +20,7 @@
 Логический backup/restore на чистую БД выполняется одним probe-командой.
 
 ```bash
-node scripts/db-backup-restore.mjs probe \
+node --import tsx scripts/db-backup-restore.ts probe \
   --target app \
   --source-url "$DATABASE_URL" \
   --restore-url "$RESTORE_DATABASE_URL" \
@@ -30,7 +30,7 @@ node scripts/db-backup-restore.mjs probe \
 Для RF-контура используется отдельная строка подключения и отдельный dump:
 
 ```bash
-node scripts/db-backup-restore.mjs probe \
+node --import tsx scripts/db-backup-restore.ts probe \
   --target rf \
   --source-url "$RF_DATABASE_URL" \
   --restore-url "$RF_RESTORE_DATABASE_URL" \
@@ -40,8 +40,8 @@ node scripts/db-backup-restore.mjs probe \
 Ручной раздельный запуск:
 
 ```bash
-node scripts/db-backup-restore.mjs backup --database-url "$DATABASE_URL" --file ./artifacts/backups/app.dump
-node scripts/db-backup-restore.mjs restore --database-url "$RESTORE_DATABASE_URL" --file ./artifacts/backups/app.dump --clean
+node --import tsx scripts/db-backup-restore.ts backup --database-url "$DATABASE_URL" --file ./artifacts/backups/app.dump
+node --import tsx scripts/db-backup-restore.ts restore --database-url "$RESTORE_DATABASE_URL" --file ./artifacts/backups/app.dump --clean
 ```
 
 ## PITR-процедура
@@ -78,7 +78,7 @@ node scripts/db-backup-restore.mjs restore --database-url "$RESTORE_DATABASE_URL
 | Журнал аудита | 0 | минуты - единицы часов | append-only `audit_events`, WAL archive без пропусков |
 | RF Edge buffer | ограничен TTL и емкостью буфера | после восстановления канала | отдельный RF backup/restore probe |
 
-Контрольная M5-проба в `tests/integration/data-platform.test.mjs` выполняет
+Контрольная M5-проба в `tests/integration/data-platform.test.ts` выполняет
 логический `pg_dump`/`pg_restore` на чистую БД для обоих контуров и сверяет
 критические счетчики после восстановления. Порог smoke-пробы: полный backup +
 restore каждого контура меньше 300 секунд на CI/Testcontainers; целевые

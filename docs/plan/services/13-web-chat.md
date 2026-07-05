@@ -202,7 +202,7 @@ M4 §26.6).
 
 **Статус реализации CP-1.** M1 Web Chat завершён для первого канала: клиентские
 API/MSW проверки живут в `apps/web-chat/test/**`, а production backend gate
-`tests/e2e/backend-dist-communication-core.test.mjs` поднимает `dist/main.js`,
+`tests/e2e/backend-dist-communication-core.test.ts` поднимает `dist/main.js`,
 принимает inbound через C2 Ingress, создаёт manager reply через C3
 `POST /messages` и доставляет outbound обратно через C2 Egress.
 
@@ -225,7 +225,7 @@ API/MSW проверки живут в `apps/web-chat/test/**`, а production ba
 **Статус реализации M2.** M2 Web Chat завершён как участник CP-3: клиентская
 история, realtime-подгрузка и AI-ответы через стандартный message flow
 покрываются unit/MSW тестами `apps/web-chat/test/**`, а сквозной AI-срез
-зафиксирован `tests/e2e/ai-assistant-kb.test.mjs` через общий C4/C7 контракт без
+зафиксирован `tests/e2e/ai-assistant-kb.test.ts` через общий C4/C7 контракт без
 специального режима доставки AI-сообщений.
 
 ### 5.4 M3 — без крупных задач у SVC-CHAT
@@ -278,11 +278,11 @@ API/MSW проверки живут в `apps/web-chat/test/**`, а production ba
 
 **Статус реализации M5 (M5-99).** На интеграционном gate CP-9 SVC-CHAT принят:
 сценарии «Web Chat» и «Потеря соединения» зелёные
-(`tests/e2e/backend-dist-communication-core.test.mjs`,
-`tests/e2e/mobile-connection-loss-cp7.test.mjs`), без потерь/дублей и с
+(`tests/e2e/backend-dist-communication-core.test.ts`,
+`tests/e2e/mobile-connection-loss-cp7.test.ts`), без потерь/дублей и с
 сохранением порядка. Потребляемые контракты (C2, C7, C9) финально заморожены как
 `released_v1` в `packages/contracts/cp9-freeze.v1.json` (скреплено
-`tests/contract/m5-gate-freeze.test.mjs`).
+`tests/contract/m5-gate-freeze.test.ts`).
 
 ---
 

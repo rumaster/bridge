@@ -4,6 +4,11 @@
 **Область:** `services/backend/src`, backend-тесты и root e2e/contract/integration
 проверки, которые раньше поднимали backend `.mjs`-прототип.
 
+> **Обновление issue #203 (2026-07-05):** миграция распространена на весь
+> репозиторий — `.mjs` больше нет ни в одном сервисе. Разделы ниже сохраняют
+> исторический контекст issue #192; формулировки про «оставшиеся `.mjs`»
+> приведены в соответствие с этим фактом.
+
 ## Итог issue #192
 
 Backend `.mjs`-прототип удалён из `services/backend/src`. Production backend
@@ -12,15 +17,17 @@ Backend `.mjs`-прототип удалён из `services/backend/src`. Produc
 и Docker-образ запускает `node dist/main.js`.
 
 Удалённые backend `.mjs` файлы больше не участвуют ни в runtime, ни в backend
-test scripts. Оставшиеся `.mjs` в репозитории относятся к другим Node-сервисам
-или к root contract/e2e тестам, которые не импортируют backend-прототип.
+test scripts. После полной миграции репозитория на TypeScript (issue #203)
+`.mjs`-файлов не осталось: прочие Node-сервисы (integration-platform,
+edge-gateway, broadcast-platform и т.п.) и root contract/e2e тесты также
+переведены на `.ts` и не импортируют backend-прототип.
 
 ## Production-покрытие вместо backend `.mjs`
 
 - C1/C2 ingress/egress, public conversations/messages, C8 broadcast delivery,
   C9 edge intake, `/metrics` и Telegram login rate-limit проверяются against
   собранного `services/backend/dist/main.js` в
-  `tests/e2e/backend-dist-communication-core.test.mjs`.
+  `tests/e2e/backend-dist-communication-core.test.ts`.
 - Реальный NestJS `AppModule` + PostgreSQL/testcontainers покрыт в
   `services/backend/test/integration/internal-messaging.spec.ts`.
 - Contract freeze evidence обновлён на production artifacts:
@@ -43,7 +50,7 @@ Rate limiting 429 для `POST /api/v1/auth/login/telegram/start` и
 - tests:
   `services/backend/test/unit/telegram-login-rate-limiter.spec.ts`,
   `services/backend/test/integration/telegram-auth.spec.ts`,
-  `tests/e2e/backend-dist-communication-core.test.mjs`.
+  `tests/e2e/backend-dist-communication-core.test.ts`.
 
 Verify rate-limit выполняется до lookup requestId в БД, поэтому повторный перебор
 несуществующего requestId тоже получает 429 после исчерпания лимита.
@@ -102,16 +109,18 @@ Verify rate-limit выполняется до lookup requestId в БД, поэт
 импортировали `services/backend/src/main.mjs`,
 `communication-core/index.mjs` или `mock-ingress-egress.mjs`.
 
-Сохранённые root `.mjs` tests теперь либо проверяют отдельные `.mjs` сервисы
-(integration-platform, edge-gateway, broadcast-platform и т.п.), либо работают
+Root-тесты (после issue #203 — `.ts`, запускаются через `node --import tsx`)
+либо проверяют отдельные Node-сервисы (integration-platform, edge-gateway,
+broadcast-platform и т.п.), также переведённые на `.ts`, либо работают
 с production backend через `dist/main.js`.
 
-## Допустимые оставшиеся упоминания `.mjs`
+## Ссылки на прототип в production TS
 
-Комментарии в production TS могут ссылаться на старый `.mjs` как на источник
-портирования, например `communication-core-m1.mjs` в doc-комментариях
-`internal-messaging.dto.ts`/`internal-messaging.service.ts`. Эти ссылки не
-являются runtime dependency и не требуют сохранения файлов.
+Комментарии в production TS могут ссылаться на исходный прототип как на источник
+портирования, например `communication-core-m1` в doc-комментариях
+`internal-messaging.dto.ts`/`internal-messaging.service.ts`. После issue #203
+расширение `.mjs` из этих комментариев убрано (файлов-прототипов не осталось);
+ссылки не являются runtime dependency и не требуют сохранения файлов.
 
 Для проверки отсутствия runtime-coupling использовать:
 

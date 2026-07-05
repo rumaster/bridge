@@ -269,9 +269,9 @@ KB; M3 — Onboarding, структ. команды; M5 — изоляция, м
 **Статус реализации M2.** M2 AI Platform завершён для CP-3: RAG pipeline,
 детерминированный LLM/embedding mock, цитирование KB-источников и fallback при
 недоступности AI покрыты unit/integration тестами `services/ai-platform/test/**`,
-contract-тестами `tests/contract/ai-integration-c4-consumer.test.mjs` и
-сквозным `tests/e2e/ai-assistant-kb.test.mjs`; реальный pgvector/RLS-путь
-дополнительно проверен в `tests/integration/ai-rag-kb.test.mjs`. C4 зафиксирован
+contract-тестами `tests/contract/ai-integration-c4-consumer.test.ts` и
+сквозным `tests/e2e/ai-assistant-kb.test.ts`; реальный pgvector/RLS-путь
+дополнительно проверен в `tests/integration/ai-rag-kb.test.ts`. C4 зафиксирован
 как `stable_for_m3` в `packages/contracts/cp2-cp3-freeze.v1.json`.
 
 ### M3 — AI Onboarding: структурированные команды (CP-5)
@@ -305,11 +305,11 @@ contract-тестами `tests/contract/ai-integration-c4-consumer.test.mjs` и
 **Статус реализации M3.** M3 AI Platform завершён для CP-5: AI Onboarding
 формирует только структурированные команды §12.6 без прямого доступа к данным, а
 Backend повторно валидирует и применяет их через C3. Покрытие:
-`services/ai-platform/test/unit/onboarding*.test.mjs`,
-`services/ai-platform/test/integration/onboarding-server.test.mjs`,
-`tests/contract/c4-onboarding-command-cp5.test.mjs`,
-`tests/integration/ai-onboarding-backend.test.mjs` и
-`tests/e2e/ai-onboarding-apply.test.mjs`. C4 стабилизирован вместе с C3/C5 в
+`services/ai-platform/test/unit/onboarding*.test.ts`,
+`services/ai-platform/test/integration/onboarding-server.test.ts`,
+`tests/contract/c4-onboarding-command-cp5.test.ts`,
+`tests/integration/ai-onboarding-backend.test.ts` и
+`tests/e2e/ai-onboarding-apply.test.ts`. C4 стабилизирован вместе с C3/C5 в
 `packages/contracts/cp4-cp5-freeze.v1.json` как baseline для M4.
 
 ### M5 — Харденинг: изоляция, мониторинг, деградация
@@ -338,22 +338,22 @@ Backend повторно валидирует и применяет их чер�
   доступен; деградация без остановки платформы (ТЗ §5.4); критерии приёмки пройдены
   (мастер-план §9.4).
 - **Реализация (M5-09).**
-  - **Отказоустойчивый фасад LLM** (`src/llm-facade.mjs`): на каждый вызов провайдера —
-    таймаут (`Promise.race`, таймер `unref`) и circuit breaker (`src/circuit-breaker.mjs`,
+  - **Отказоустойчивый фасад LLM** (`src/llm-facade.ts`): на каждый вызов провайдера —
+    таймаут (`Promise.race`, таймер `unref`) и circuit breaker (`src/circuit-breaker.ts`,
     состояния CLOSED/OPEN/HALF_OPEN с инъектируемыми часами). Таймаут → `fallback_reason:
     "timeout"`, открытый контур → `"unavailable"` (значения из замороженного C4). Фасад
     сохраняет интерфейс провайдера, поэтому Assistant и Onboarding не знают о нём.
-  - **Выбор провайдера/модели по конфигурации (ТЗ §12.9)** — `src/provider-registry.mjs`:
+  - **Выбор провайдера/модели по конфигурации (ТЗ §12.9)** — `src/provider-registry.ts`:
     реестр именованных фабрик + роутер, выбирающий провайдера на запрос (override по
     организации → платформенный default), с мемоизацией одного фасада (и брейкера) на
     пару провайдер+модель. Изоляция при этом не ослабляется: выбор меняет лишь *какая*
     модель отвечает, а не *чьи* данные она видит.
-  - **Мониторинг качества/стоимости (ТЗ §24.4)** — `src/metrics.mjs`: общий сток метрик
+  - **Мониторинг качества/стоимости (ТЗ §24.4)** — `src/metrics.ts`: общий сток метрик
     (счётчики запросов/деградаций/KB, задержка и детерминированная оценка стоимости
     LLM), рендер в формате Prometheus на `GET /metrics`; состояние брейкера отдаётся
     gauge-метрикой и в `GET /health`.
   - **Изоляция арендаторов (ТЗ §22.6)** — подтверждена: KB-поиск идёт только через Backend
-    (C3.kb) с фильтром и повторной проверкой `organization_id` (`src/kb-search.mjs`);
+    (C3.kb) с фильтром и повторной проверкой `organization_id` (`src/kb-search.ts`);
     `organization_id` команды Onboarding пиннится к запросу, а не к выводу модели. Проверки
     сохранены и в пути деградации, и под роутером выбора провайдера.
   - **Тесты.** unit: `circuit-breaker`, `llm-facade`, `provider-registry`, `metrics`;
