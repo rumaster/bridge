@@ -27,7 +27,7 @@ describe("Telegram Console CP-8 handler routing", () => {
       telegramDelivery: noTelegramWaits,
     });
 
-    const result = await router.handleUpdate(startUpdate());
+    const result: any = await router.handleUpdate(startUpdate());
 
     assert.equal(result.route, "command:start");
     assert.equal(result.account_link.status, "linked");
@@ -53,7 +53,7 @@ describe("Telegram Console CP-8 handler routing", () => {
       telegramDelivery: noTelegramWaits,
     });
 
-    const result = await router.handleUpdate({
+    const result: any = await router.handleUpdate({
       update_id: 2,
       message: {
         message_id: 11,
@@ -79,7 +79,7 @@ describe("Telegram Console CP-8 handler routing", () => {
     });
 
     await router.handleUpdate(startUpdate());
-    const result = await router.handleUpdate({
+    const result: any = await router.handleUpdate({
       update_id: 2,
       message: {
         message_id: 11,
@@ -108,7 +108,7 @@ describe("Telegram Console CP-8 handler routing", () => {
       telegramDelivery: noTelegramWaits,
     });
 
-    const result = await router.handleUpdate({
+    const result: any = await router.handleUpdate({
       update_id: 3,
       callback_query: {
         id: "callback-1",

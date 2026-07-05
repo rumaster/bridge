@@ -46,7 +46,10 @@ describe("Telegram Console M5 Telegram delivery queue", () => {
       async sendMessage(payload) {
         attempts.push({ at: clock.now(), payload });
         if (attempts.length === 1) {
-          const error = new Error("Too Many Requests");
+          const error = new Error("Too Many Requests") as Error & {
+            status?: number;
+            parameters?: { retry_after: number };
+          };
           error.status = 429;
           error.parameters = { retry_after: 2 };
           throw error;
@@ -81,7 +84,7 @@ describe("Telegram Console M5 Telegram delivery queue", () => {
       },
     });
 
-    const sent = await reliableTelegramApi.sendMessage({ chat_id: 1001, text: "retry me" });
+    const sent: any = await reliableTelegramApi.sendMessage({ chat_id: 1001, text: "retry me" });
 
     assert.equal(sent.message_id, "mock-message-retry");
     assert.deepEqual(

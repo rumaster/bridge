@@ -4,6 +4,8 @@ import {
   defaultSleep,
   executeWithRetries,
   isRetryableTransientError,
+  type BackoffOption,
+  type BackoffPolicy,
 } from "./retry-policy.js";
 import {
   QUICK_REPLIES,
@@ -28,7 +30,11 @@ import {
   TELEGRAM_CONSOLE_COMMANDS,
   TELEGRAM_CONSOLE_SCOPE,
 } from "./scope.js";
-import { createReliableTelegramApiAdapter } from "./telegram-delivery.js";
+import {
+  createReliableTelegramApiAdapter,
+  type TelegramApiClient,
+  type TelegramRateLimitConfig,
+} from "./telegram-delivery.js";
 
 const DEFAULT_LOGIN_CODE = "000000";
 const DEFAULT_WORKSPACE_URL = "https://manager.bridge.local";
@@ -38,6 +44,26 @@ const DEFAULT_BACKEND_RETRY = Object.freeze({
   maxDelayMs: 2_000,
   maxAttempts: 3,
 });
+
+export interface TelegramDeliveryOptions {
+  now?: () => number;
+  sleep?: (ms: number) => Promise<unknown>;
+  limits?: TelegramRateLimitConfig;
+  backoff?: BackoffOption;
+}
+
+export interface TelegramConsoleRouterOptions {
+  telegramApi?: TelegramApiClient;
+  backendApi?: any;
+  now?: () => string;
+  sleep?: (ms: number) => Promise<unknown>;
+  sessionStore?: any;
+  telegramDelivery?: TelegramDeliveryOptions | false;
+  backendRetry?: BackoffOption | false;
+  aiAvailable?: boolean;
+  workspaceBaseUrl?: string;
+  loginCode?: string;
+}
 
 export function createTelegramConsoleRouter({
   telegramApi,
@@ -50,7 +76,7 @@ export function createTelegramConsoleRouter({
   aiAvailable = true,
   workspaceBaseUrl = DEFAULT_WORKSPACE_URL,
   loginCode = DEFAULT_LOGIN_CODE,
-} = {}) {
+}: TelegramConsoleRouterOptions = {}) {
   if (!telegramApi || typeof telegramApi.sendMessage !== "function") {
     throw new TypeError("telegramApi with sendMessage is required");
   }
@@ -926,9 +952,10 @@ async function executeBackendOperation({ operation, backendRetryPolicy, sleep })
   });
 }
 
-function resolveBackoffPolicy(backoff) {
+function resolveBackoffPolicy(backoff: BackoffOption): BackoffPolicy {
   if (backoff && typeof backoff.delayForAttempt === "function") {
-    return backoff;
+    // backoff is a fully-formed policy when it exposes delayForAttempt.
+    return backoff as BackoffPolicy;
   }
   return createBackoffPolicy(backoff);
 }

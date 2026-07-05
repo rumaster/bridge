@@ -1,6 +1,62 @@
+// Array.prototype.toSorted is available at runtime (Node 20+) but is part of
+// the ES2023 lib, which this workspace's ES2022 lib target does not declare.
+declare global {
+  interface Array<T> {
+    toSorted(compareFn?: (a: T, b: T) => number): T[];
+  }
+}
+
 const DEFAULT_ORGANIZATION_ID = "org-1";
 const DEFAULT_MANAGER_ID = "manager-1";
 const DEFAULT_MANAGER_USERNAME = "manager_demo";
+
+export interface TelegramUserRef {
+  id?: number | null;
+  username?: string | null;
+  first_name?: string | null;
+  last_name?: string | null;
+}
+
+export interface StartTelegramLoginRequest {
+  telegram_username?: string;
+  telegramUsername?: string;
+  telegram_user?: TelegramUserRef | null;
+  chat_id?: number | null;
+}
+
+export interface VerifyTelegramLoginRequest {
+  request_id?: string;
+  code?: string;
+  telegram_username?: string;
+  telegram_user?: TelegramUserRef | null;
+  chat_id?: number | null;
+}
+
+export interface SessionTokenRequest {
+  token?: string;
+}
+
+export interface CreateManagerMessageRequest {
+  idempotency_key?: string;
+  organization_id?: string;
+  conversation_id?: string;
+  sender_type?: string;
+  type?: string;
+  content?: { text: string };
+}
+
+export interface AssistantSuggestRequest {
+  contract?: string;
+  version?: string;
+  request_id?: string;
+  organization_id?: string;
+  query?: string;
+}
+
+export interface ActiveConversationRequest {
+  session_token?: string;
+  conversation_id?: string;
+}
 
 export function createMockTelegramConsoleBackendApi({
   now = () => new Date().toISOString(),
@@ -17,7 +73,7 @@ export function createMockTelegramConsoleBackendApi({
 
   const backend = {
     auth: {
-      async startTelegramLogin(request = {}) {
+      async startTelegramLogin(request: StartTelegramLoginRequest = {}) {
         record("POST", "/auth/login/telegram/start", request);
         const telegramUsername = request.telegram_username ?? request.telegramUsername;
         if (!isNonEmptyString(telegramUsername)) {
@@ -46,7 +102,7 @@ export function createMockTelegramConsoleBackendApi({
         };
       },
 
-      async verifyTelegramLogin(request = {}) {
+      async verifyTelegramLogin(request: VerifyTelegramLoginRequest = {}) {
         record("POST", "/auth/login/telegram/verify", request);
         if (!isNonEmptyString(request.request_id) || !isNonEmptyString(request.code)) {
           throw new MockBackendApiError("request_id and code are required", 400);
@@ -66,7 +122,7 @@ export function createMockTelegramConsoleBackendApi({
         return clone(session);
       },
 
-      async getSession({ token } = {}) {
+      async getSession({ token }: SessionTokenRequest = {}) {
         record("GET", "/auth/session", { token });
         const session = sessionsByToken.get(token);
         if (!session) {
@@ -83,7 +139,7 @@ export function createMockTelegramConsoleBackendApi({
         });
       },
 
-      async logout({ token } = {}) {
+      async logout({ token }: SessionTokenRequest = {}) {
         record("POST", "/auth/logout", { token });
         const session = sessionsByToken.get(token);
         if (!session) {
@@ -134,7 +190,7 @@ export function createMockTelegramConsoleBackendApi({
     },
 
     messages: {
-      async create(request = {}) {
+      async create(request: CreateManagerMessageRequest = {}) {
         record("POST", "/messages", request);
         validateManagerMessageRequest(request);
 
@@ -203,7 +259,7 @@ export function createMockTelegramConsoleBackendApi({
     },
 
     ai: {
-      async suggest(request = {}) {
+      async suggest(request: AssistantSuggestRequest = {}) {
         record("POST", "/ai/assistant:suggest", request);
         if (!aiAvailable) {
           throw new MockBackendApiError("C4 AI unavailable", 503);
@@ -238,7 +294,7 @@ export function createMockTelegramConsoleBackendApi({
     },
 
     telegramConsole: {
-      async setActiveConversation({ session_token, conversation_id } = {}) {
+      async setActiveConversation({ session_token, conversation_id }: ActiveConversationRequest = {}) {
         record("PUT", "/telegram-console/active-conversation", {
           session_token,
           conversation_id,
@@ -254,7 +310,7 @@ export function createMockTelegramConsoleBackendApi({
         });
       },
 
-      async getActiveConversation({ session_token } = {}) {
+      async getActiveConversation({ session_token }: ActiveConversationRequest = {}) {
         record("GET", "/telegram-console/active-conversation", { session_token });
         assertActiveSession(session_token, sessionsByToken, now);
         return clone({
@@ -294,7 +350,9 @@ export function createMockTelegramConsoleBackendApi({
 }
 
 export class MockBackendApiError extends Error {
-  constructor(message, status) {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
     super(message);
     this.name = "MockBackendApiError";
     this.status = status;
@@ -516,7 +574,9 @@ function assertActiveSession(token, sessionsByToken, now) {
   }
 }
 
-function validateManagerMessageRequest(request) {
+function validateManagerMessageRequest(
+  request: CreateManagerMessageRequest,
+): asserts request is Required<CreateManagerMessageRequest> {
   if (!isNonEmptyString(request.idempotency_key)) {
     throw new MockBackendApiError("idempotency_key is required", 400);
   }

@@ -4,7 +4,38 @@ import {
   executeWithRetries,
   isRetryableTransientError,
   retryAfterMsFromError,
+  type BackoffOption,
+  type BackoffPolicy,
 } from "./retry-policy.js";
+
+export type TelegramApiMethod = "sendMessage" | "answerCallbackQuery";
+
+export interface TelegramApiClient {
+  sendMessage(payload: any): any;
+  answerCallbackQuery(payload: any): any;
+  getMetrics?(): any;
+  drain?(): any;
+}
+
+export interface TelegramRateLimitConfig {
+  globalIntervalMs?: number;
+  perChatIntervalMs?: number;
+  groupChatIntervalMs?: number;
+}
+
+export interface ReliableTelegramApiAdapterOptions {
+  telegramApi?: TelegramApiClient;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<unknown>;
+  limits?: TelegramRateLimitConfig;
+  backoff?: BackoffOption;
+}
+
+export interface TelegramRateLimiterOptions {
+  now?: () => number;
+  sleep?: (ms: number) => Promise<unknown>;
+  limits?: TelegramRateLimitConfig;
+}
 
 export const TELEGRAM_CONSOLE_DEFAULT_DELIVERY_LIMITS = Object.freeze({
   globalIntervalMs: Math.ceil(1_000 / 30),
@@ -25,13 +56,14 @@ export function createReliableTelegramApiAdapter({
   sleep = defaultSleep,
   limits = {},
   backoff = {},
-} = {}) {
+}: ReliableTelegramApiAdapterOptions = {}) {
   assertTelegramApi(telegramApi);
 
   const limiter = createTelegramRateLimiter({ now, sleep, limits });
-  const backoffPolicy =
+  const backoffPolicy: BackoffPolicy =
     typeof backoff.delayForAttempt === "function"
-      ? backoff
+      ? // backoff is a fully-formed policy when it exposes delayForAttempt.
+        (backoff as BackoffPolicy)
       : createBackoffPolicy({ ...DEFAULT_TELEGRAM_BACKOFF, ...backoff });
   const metrics = {
     queued_total: 0,
@@ -71,7 +103,7 @@ export function createReliableTelegramApiAdapter({
     return run;
   }
 
-  async function dispatchWithRetries(method, payload) {
+  async function dispatchWithRetries(method: TelegramApiMethod, payload) {
     try {
       return await executeWithRetries({
         backoff: backoffPolicy,
@@ -81,7 +113,8 @@ export function createReliableTelegramApiAdapter({
         operation: async () => {
           const rateLimit = await limiter.acquire(method, payload);
           metrics.rate_limit_wait_ms_total += rateLimit.waitedMs;
-          const result = await telegramApi[method](payload);
+          // telegramApi presence is guaranteed by assertTelegramApi above.
+          const result = await (telegramApi as TelegramApiClient)[method](payload);
           metrics.sent_total += 1;
           return result;
         },
@@ -101,7 +134,7 @@ export function createTelegramRateLimiter({
   now = () => Date.now(),
   sleep = defaultSleep,
   limits = {},
-} = {}) {
+}: TelegramRateLimiterOptions = {}) {
   const config = { ...TELEGRAM_CONSOLE_DEFAULT_DELIVERY_LIMITS, ...limits };
   assertInterval(config.globalIntervalMs, "globalIntervalMs");
   assertInterval(config.perChatIntervalMs, "perChatIntervalMs");

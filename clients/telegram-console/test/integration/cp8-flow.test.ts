@@ -26,7 +26,7 @@ describe("Telegram Console CP-8 flow", () => {
     });
 
     await router.handleUpdate(startUpdate());
-    const dialogs = await router.handleUpdate({
+    const dialogs: any = await router.handleUpdate({
       update_id: 2,
       message: {
         message_id: 11,
@@ -40,7 +40,7 @@ describe("Telegram Console CP-8 flow", () => {
     assert.equal(dialogs.status, "ok");
     assert.equal(dialogs.conversations[0].id, "conv-1");
 
-    const opened = await router.handleUpdate(callbackUpdate("callback-open", "dialog.open:conv-1"));
+    const opened: any = await router.handleUpdate(callbackUpdate("callback-open", "dialog.open:conv-1"));
 
     assert.equal(opened.route, "callback:dialog.open");
     assert.equal(opened.dialog.conversation.id, "conv-1");
@@ -119,7 +119,7 @@ describe("Telegram Console CP-8 flow", () => {
     await router.handleUpdate(startUpdate());
     await router.handleUpdate(callbackUpdate("callback-reply", "reply.prompt:conv-1"));
 
-    const first = await router.handleUpdate({
+    const first: any = await router.handleUpdate({
       update_id: 3,
       message: {
         message_id: 33,
@@ -128,7 +128,7 @@ describe("Telegram Console CP-8 flow", () => {
         text: "Здравствуйте, проверяю статус доставки.",
       },
     });
-    const repeated = await router.handleUpdate({
+    const repeated: any = await router.handleUpdate({
       update_id: 4,
       message: {
         message_id: 33,
@@ -167,7 +167,7 @@ describe("Telegram Console CP-8 flow", () => {
     assert.match(telegramApi.getSentMessages().at(-1).text, /AI недоступен/);
 
     await router.handleUpdate(callbackUpdate("callback-reply", "reply.prompt:conv-1"));
-    const reply = await router.handleUpdate({
+    const reply: any = await router.handleUpdate({
       update_id: 5,
       message: {
         message_id: 34,

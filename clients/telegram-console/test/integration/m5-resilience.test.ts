@@ -29,7 +29,9 @@ describe("Telegram Console M5 resilience", () => {
       const result = await originalCreate(request);
       if (firstCreate) {
         firstCreate = false;
-        const error = new Error("Backend timeout after message commit");
+        const error = new Error("Backend timeout after message commit") as Error & {
+          code?: string;
+        };
         error.code = "ETIMEDOUT";
         throw error;
       }
@@ -50,7 +52,7 @@ describe("Telegram Console M5 resilience", () => {
 
     await router.handleUpdate(startUpdate());
     await router.handleUpdate(callbackUpdate("reply-prompt", "reply.prompt:conv-1"));
-    const reply = await router.handleUpdate(replyUpdate(33));
+    const reply: any = await router.handleUpdate(replyUpdate(33));
 
     assert.equal(reply.route, "message:reply");
     assert.equal(reply.idempotency_key, "tgc-1001-33-conv-1");
@@ -92,7 +94,7 @@ describe("Telegram Console M5 resilience", () => {
     );
     sessionStore.clearActiveConversation(1001);
 
-    const reply = await router.handleUpdate(replyUpdate(44));
+    const reply: any = await router.handleUpdate(replyUpdate(44));
 
     assert.equal(reply.route, "message:reply");
     assert.equal(reply.idempotency_key, "tgc-1001-44-conv-1");
@@ -112,7 +114,9 @@ describe("Telegram Console M5 resilience", () => {
     backendApi.auth.getSession = async (request) => {
       if (firstGetSession) {
         firstGetSession = false;
-        const error = new Error("temporary auth session outage");
+        const error = new Error("temporary auth session outage") as Error & {
+          status?: number;
+        };
         error.status = 503;
         throw error;
       }

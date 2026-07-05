@@ -5,6 +5,13 @@ const C3_AUTH_OPERATIONS = Object.freeze([
   "POST /auth/login/telegram/verify",
 ]);
 
+export interface CreateLinkingIntentInput {
+  telegramUser?: unknown;
+  chatId?: number | null;
+  updateId?: number | null;
+  source?: string;
+}
+
 export function createAccountLinkingDraft({
   c3AuthBasePath = "/api/v1",
   now = () => new Date().toISOString(),
@@ -15,7 +22,7 @@ export function createAccountLinkingDraft({
       chatId,
       updateId,
       source = "telegram-console",
-    } = {}) {
+    }: CreateLinkingIntentInput = {}) {
       return {
         contract: "TGC.AccountLinkingDraft",
         version: "0.0.0",

@@ -17,7 +17,44 @@ const TRANSIENT_ERROR_CODES = new Set([
   "TIMEOUT",
 ]);
 
-export function createBackoffPolicy(options = {}) {
+export interface BackoffPolicy {
+  readonly maxAttempts: number;
+  delayForAttempt(attemptNo: number): number;
+  schedule(): number[];
+}
+
+export interface BackoffConfig {
+  baseDelayMs?: number;
+  factor?: number;
+  maxDelayMs?: number;
+  maxAttempts?: number;
+}
+
+export interface BackoffOption extends BackoffConfig {
+  delayForAttempt?: (attemptNo: number) => number;
+  schedule?: () => number[];
+}
+
+export interface RetryAttemptContext {
+  attempt: number;
+}
+
+export interface RetryNoticeContext {
+  attempt: number;
+  delayMs: number;
+  error: unknown;
+}
+
+export interface ExecuteWithRetriesOptions {
+  operation?: (context: RetryAttemptContext) => any;
+  backoff?: BackoffPolicy;
+  sleep?: (ms: number) => Promise<unknown>;
+  isRetryable?: (error: unknown) => boolean;
+  retryAfterMs?: (error: unknown) => number | null;
+  onRetry?: (context: RetryNoticeContext) => unknown;
+}
+
+export function createBackoffPolicy(options: BackoffConfig = {}): BackoffPolicy {
   const config = { ...DEFAULT_BACKOFF, ...options };
 
   assertNonNegativeNumber(config.baseDelayMs, "baseDelayMs");
@@ -62,7 +99,7 @@ export async function executeWithRetries({
   isRetryable = isRetryableTransientError,
   retryAfterMs = retryAfterMsFromError,
   onRetry = () => {},
-} = {}) {
+}: ExecuteWithRetriesOptions = {}) {
   if (typeof operation !== "function") {
     throw new TypeError("operation must be a function");
   }
