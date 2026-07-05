@@ -68,8 +68,8 @@ describe("SVC-API M3 facades (C4/C5)", () => {
     databaseUrl = connectionString(container);
     process.env.DATABASE_URL = databaseUrl;
 
-    runRootScript("scripts/db-migrate.mjs", ["up"], databaseUrl);
-    runRootScript("scripts/db-seed.mjs", [], databaseUrl);
+    runRootScript("scripts/db-migrate.ts", ["up"], databaseUrl);
+    runRootScript("scripts/db-seed.ts", [], databaseUrl);
     await seedFixtures(databaseUrl);
 
     const moduleRef = await Test.createTestingModule({
@@ -204,7 +204,7 @@ function connectionString(container: StartedTestContainer): string {
 }
 
 function runRootScript(scriptPath: string, args: string[], databaseUrl: string): void {
-  execFileSync("node", [scriptPath, ...args], {
+  execFileSync("node", ["--import", "tsx", scriptPath, ...args], {
     cwd: resolve(__dirname, "../../../.."),
     env: { ...process.env, DATABASE_URL: databaseUrl },
     stdio: "pipe",

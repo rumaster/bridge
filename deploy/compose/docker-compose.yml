@@ -49,7 +49,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    command: ["node", "scripts/db-migrate.mjs", "up"]
+    command: ["node", "--import", "tsx", "scripts/db-migrate.ts", "up"]
 
   seed:
     profiles: ["seed"]
@@ -61,7 +61,7 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
-    command: ["node", "scripts/db-seed.mjs"]
+    command: ["node", "--import", "tsx", "scripts/db-seed.ts"]
 
   backend:
     build:

@@ -89,7 +89,7 @@
         "services/backend/test/integration/m1-domain-api.spec.ts",
         "services/backend/test/integration/m3-facades.spec.ts",
         "services/backend/test/integration/m4-facades.spec.ts",
-        "tests/contract/cp9-svc-api-acceptance.test.mjs"
+        "tests/contract/cp9-svc-api-acceptance.test.ts"
       ]
     }
   ],

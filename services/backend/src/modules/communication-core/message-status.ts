@@ -1,10 +1,10 @@
 /**
  * Машина состояний статуса сообщения (контракт C1).
  *
- * Портирована из `packages/contracts/message-model/index.mjs`
+ * Портирована из `packages/contracts/message-model/index.ts`
  * (`MESSAGE_STATUS`, `MESSAGE_STATUS_TRANSITIONS`, `assertMessageStatusTransition`)
  * в исполняемый TypeScript, компилируемый в `dist/main.js`. Ранее эта логика
- * существовала только в `.mjs`-прототипах, которые не попадали в production-сборку
+ * существовала только в прототипах, которые не попадали в production-сборку
  * backend (см. issue #189, пункт 3).
  */
 

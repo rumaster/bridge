@@ -11,31 +11,31 @@
 
 ## Слои
 
-- `src/core/*` — доменно-нейтральное ядро: граф (`graph.mjs`, Node/Connection,
+- `src/core/*` — доменно-нейтральное ядро: граф (`graph.ts`, Node/Connection,
   проверка DAG), `ExecutionContext` (арендатор, актор, журнал), пошаговый
-  `executor.mjs`, детерминированные идентификаторы (`ids.mjs`, без ГСЧ/времени).
-- `src/nodes/*` — нейтральный набор узлов и реестр (`registry.mjs`).
+  `executor.ts`, детерминированные идентификаторы (`ids.ts`, без ГСЧ/времени).
+- `src/nodes/*` — нейтральный набор узлов и реестр (`registry.ts`).
 - `src/transform/*` — безопасный вычислитель выражений Transform Node.
-- `src/schema/validate-workflow.mjs` — валидация схемы **на этапе сохранения**.
-- `src/backend/client.mjs` — клиент Backend API (канал C3) и мок с изоляцией
+- `src/schema/validate-workflow.ts` — валидация схемы **на этапе сохранения**.
+- `src/backend/client.ts` — клиент Backend API (канал C3) и мок с изоляцией
   арендаторов для тестов.
-- `src/versions/version-registry.mjs` — реестр **неизменяемых версий** схем
+- `src/versions/version-registry.ts` — реестр **неизменяемых версий** схем
   (M4): публикация правки = НОВАЯ версия, перезапись отклоняется, версия по
   умолчанию переключается конфигурацией.
-- `src/state/instance-store.mjs` — референс-модель `workflow_instances`
+- `src/state/instance-store.ts` — референс-модель `workflow_instances`
   (закрепление версии) и `workflow_instance_state` (**внешнее** состояние).
-- `src/runtime/instance-runtime.mjs` — оркестратор `start`/`resume` с version
+- `src/runtime/instance-runtime.ts` — оркестратор `start`/`resume` с version
   pinning и stateless-продолжением.
-- `src/engine.mjs` — прикладные фасады (`createFbpEngine`, `createFbpRuntime`).
+- `src/engine.ts` — прикладные фасады (`createFbpEngine`, `createFbpRuntime`).
 
-> `src/server.mjs`, `src/deterministic-fbp.mjs`, `src/c5-dto.mjs`, `src/main.mjs`
+> `src/server.ts`, `src/deterministic-fbp.ts`, `src/c5-dto.ts`, `src/main.ts`
 > — замороженный детерминированный C5-сервер этапа M0 (wire-контракт CP-4/CP-5).
 > Движок M3 добавлен аддитивно и его не затрагивает.
 
 ## Публичный API
 
 ```js
-import { createFbpEngine } from "./src/engine.mjs";
+import { createFbpEngine } from "./src/engine.ts";
 
 const engine = createFbpEngine({ backendClient /* { call(request) } */ });
 
@@ -54,7 +54,7 @@ const result = await engine.runWorkflow({
 ## Рантайм M4: версии, pinning, stateless-масштабирование (§13.10, §25.3)
 
 ```js
-import { createFbpRuntime } from "./src/engine.mjs";
+import { createFbpRuntime } from "./src/engine.ts";
 
 const runtime = createFbpRuntime({ backendClient });
 
@@ -98,8 +98,8 @@ const done = await nodeB.resume({ organizationId, instanceId: started.instance_i
 | `transform` | Безопасное декларативное преобразование данных (§13.4). |
 | `wait-event` | Перевод экземпляра в ожидание внешнего события. |
 
-Каталог заморожен в `packages/contracts/src/c5.mjs` (`FBP_NODE_TYPES`) и сверяется
-контрактным тестом `tests/contract/c5-fbp-node-catalog.test.mjs`. Доменных/БД-узлов
+Каталог заморожен в `packages/contracts/src/c5.ts` (`FBP_NODE_TYPES`) и сверяется
+контрактным тестом `tests/contract/c5-fbp-node-catalog.test.ts`. Доменных/БД-узлов
 исходного проекта нет.
 
 ## Гарантии безопасности

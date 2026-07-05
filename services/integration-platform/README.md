@@ -89,9 +89,9 @@ Endpoint-ы и метрики:
 `DELIVERY_QUEUE_CONCURRENCY`, `DELIVERY_QUEUE_MAX_SIZE`,
 `DELIVERY_QUEUE_MAX_ATTEMPTS`, `DELIVERY_QUEUE_RETRY_DELAY_MS`.
 
-Проверки M5: unit `test/unit/m5-delivery-resilience.test.mjs`, integration
-`test/integration/m5-delivery-degradation.integration.test.mjs`, e2e
-`tests/e2e/integration-degradation-cp9.test.mjs`.
+Проверки M5: unit `test/unit/m5-delivery-resilience.test.ts`, integration
+`test/integration/m5-delivery-degradation.integration.test.ts`, e2e
+`tests/e2e/integration-degradation-cp9.test.ts`.
 
 Вне области SVC-INT: генерация кампаний остаётся в SVC-BCAST; персистентная
 очередь доставки может заменить in-memory queue без изменения C2-контракта.

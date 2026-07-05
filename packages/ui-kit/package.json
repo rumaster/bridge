@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "node ../../scripts/workspace-command.mjs lint",
-    "test": "node ../../scripts/workspace-command.mjs test",
-    "build": "node ../../scripts/workspace-command.mjs build"
+    "lint": "node --import tsx ../../scripts/workspace-command.ts lint",
+    "test": "node --import tsx ../../scripts/workspace-command.ts test",
+    "build": "node --import tsx ../../scripts/workspace-command.ts build"
   }
 }

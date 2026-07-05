@@ -72,14 +72,14 @@
       "artifacts": [
         "packages/contracts/message-model/message.schema.json",
         "packages/contracts/message-model/status-machine.v1.json",
-        "packages/contracts/message-model/index.mjs"
+        "packages/contracts/message-model/index.ts"
       ],
       "evidence": [
-        "packages/contracts/message-model/message-model.test.mjs",
+        "packages/contracts/message-model/message-model.test.ts",
         "services/backend/test/unit/message-status.spec.ts",
         "services/backend/test/unit/internal-messaging.dto.spec.ts",
         "services/backend/test/integration/internal-messaging.spec.ts",
-        "tests/e2e/backend-dist-communication-core.test.mjs"
+        "tests/e2e/backend-dist-communication-core.test.ts"
       ]
     },
     {
@@ -99,11 +99,11 @@
         "packages/contracts/json-schema/c2-egress-delivery.schema.json"
       ],
       "evidence": [
-        "tests/contract/int-core.c2.contract.test.mjs",
-        "tests/contract/int-core-m2-adapters.contract.test.mjs",
-        "tests/contract/int-core-c2-c6.test.mjs",
+        "tests/contract/int-core.c2.contract.test.ts",
+        "tests/contract/int-core-m2-adapters.contract.test.ts",
+        "tests/contract/int-core-c2-c6.test.ts",
         "services/backend/test/integration/internal-messaging.spec.ts",
-        "tests/e2e/backend-dist-communication-core.test.mjs"
+        "tests/e2e/backend-dist-communication-core.test.ts"
       ]
     },
     {
@@ -118,7 +118,7 @@
         "packages/contracts/consumer/saas-admin-c3.consumer.v1.json"
       ],
       "evidence": [
-        "tests/contract/saas-admin-c3-consumer.test.mjs",
+        "tests/contract/saas-admin-c3-consumer.test.ts",
         "apps/saas-admin/test/e2e/saas-admin.auth.spec.ts"
       ]
     },
@@ -141,8 +141,8 @@
         "packages/contracts/consumer/manager-workspace-c3.consumer.v1.json"
       ],
       "evidence": [
-        "tests/contract/manager-workspace-c3-consumer.test.mjs",
-        "tests/contract/cp9-svc-api-acceptance.test.mjs",
+        "tests/contract/manager-workspace-c3-consumer.test.ts",
+        "tests/contract/cp9-svc-api-acceptance.test.ts",
         "services/backend/test/integration/m1-domain-api.spec.ts",
         "services/backend/test/integration/m5-openapi-contract.spec.ts",
         "services/backend/test/integration/m5-nfr.spec.ts",
@@ -160,15 +160,15 @@
         "packages/contracts/openapi/ai/c4.ai.openapi.json",
         "packages/contracts/json-schema/c4-ai-assistant-suggest-response.schema.json",
         "packages/contracts/json-schema/c4-ai-onboarding-command.schema.json",
-        "packages/contracts/src/c4.mjs"
+        "packages/contracts/src/c4.ts"
       ],
       "evidence": [
-        "tests/contract/c4-ai-contract.test.mjs",
-        "tests/contract/ai-integration-c4-consumer.test.mjs",
-        "tests/contract/c4-onboarding-command-cp5.test.mjs",
-        "tests/e2e/ai-assistant-kb.test.mjs",
-        "tests/e2e/ai-onboarding-apply.test.mjs",
-        "tests/integration/ai-rag-kb.test.mjs"
+        "tests/contract/c4-ai-contract.test.ts",
+        "tests/contract/ai-integration-c4-consumer.test.ts",
+        "tests/contract/c4-onboarding-command-cp5.test.ts",
+        "tests/e2e/ai-assistant-kb.test.ts",
+        "tests/e2e/ai-onboarding-apply.test.ts",
+        "tests/integration/ai-rag-kb.test.ts"
       ]
     },
     {
@@ -181,13 +181,13 @@
       "artifacts": [
         "packages/contracts/openapi/fbp/c5.fbp.openapi.json",
         "packages/contracts/events/workflow-state-changed.schema.json",
-        "packages/contracts/src/c5.mjs"
+        "packages/contracts/src/c5.ts"
       ],
       "evidence": [
-        "tests/contract/c5-fbp-contract.test.mjs",
-        "tests/contract/c5-fbp-node-catalog.test.mjs",
-        "tests/e2e/workflow-engine-cp4-cp5.test.mjs",
-        "tests/e2e/workflow-fbp-m5-cp9.test.mjs"
+        "tests/contract/c5-fbp-contract.test.ts",
+        "tests/contract/c5-fbp-node-catalog.test.ts",
+        "tests/e2e/workflow-engine-cp4-cp5.test.ts",
+        "tests/e2e/workflow-fbp-m5-cp9.test.ts"
       ]
     },
     {
@@ -198,12 +198,12 @@
       "status": "released_v1",
       "artifacts": [
         "packages/contracts/json-schema/c6-capability-descriptor.schema.json",
-        "packages/contracts/src/c6.mjs"
+        "packages/contracts/src/c6.ts"
       ],
       "evidence": [
-        "tests/contract/int-core-m2-adapters.contract.test.mjs",
-        "tests/contract/int-core-c2-c6.test.mjs",
-        "tests/e2e/integration-degradation-cp9.test.mjs"
+        "tests/contract/int-core-m2-adapters.contract.test.ts",
+        "tests/contract/int-core-c2-c6.test.ts",
+        "tests/e2e/integration-degradation-cp9.test.ts"
       ]
     },
     {
@@ -221,11 +221,11 @@
         "packages/contracts/openapi/edge/c7.websocket.openapi.json",
         "packages/contracts/events/c7-websocket-event.schema.json",
         "packages/contracts/events/notification-created.schema.json",
-        "packages/contracts/src/c7.mjs"
+        "packages/contracts/src/c7.ts"
       ],
       "evidence": [
-        "packages/contracts/test/unit/c7-websocket-event-schema.test.mjs",
-        "tests/contract/c10-notification-contract.test.mjs"
+        "packages/contracts/test/unit/c7-websocket-event-schema.test.ts",
+        "tests/contract/c10-notification-contract.test.ts"
       ]
     },
     {
@@ -241,13 +241,13 @@
       "artifacts": [
         "packages/contracts/openapi/broadcasts/c8.broadcasts.openapi.json",
         "packages/contracts/json-schema/c8-core-delivery-draft.schema.json",
-        "packages/contracts/src/c8.mjs"
+        "packages/contracts/src/c8.ts"
       ],
       "evidence": [
-        "tests/contract/c8-broadcast-contract.test.mjs",
-        "tests/contract/int-delivery-attempts-cp6.test.mjs",
-        "tests/e2e/backend-dist-communication-core.test.mjs",
-        "tests/e2e/broadcast-delivery-cp6.test.mjs"
+        "tests/contract/c8-broadcast-contract.test.ts",
+        "tests/contract/int-delivery-attempts-cp6.test.ts",
+        "tests/e2e/backend-dist-communication-core.test.ts",
+        "tests/e2e/broadcast-delivery-cp6.test.ts"
       ]
     },
     {
@@ -264,15 +264,15 @@
         "packages/contracts/openapi/edge/c9.edge-tunnel.openapi.json",
         "packages/contracts/json-schema/c9-edge-tunnel-message.schema.json",
         "packages/contracts/json-schema/c9-edge-tunnel-ack.schema.json",
-        "packages/contracts/src/c9.mjs"
+        "packages/contracts/src/c9.ts"
       ],
       "evidence": [
-        "tests/contract/edge-core-c9-c7.contract.test.mjs",
-        "services/edge-gateway/test/unit/edge-cluster.test.mjs",
-        "services/edge-gateway/test/integration/mock-edge-gateway.test.mjs",
-        "tests/e2e/backend-dist-communication-core.test.mjs",
-        "tests/e2e/mobile-connection-loss-cp7.test.mjs",
-        "tests/integration/edge-message-buffer-store.test.mjs"
+        "tests/contract/edge-core-c9-c7.contract.test.ts",
+        "services/edge-gateway/test/unit/edge-cluster.test.ts",
+        "services/edge-gateway/test/integration/mock-edge-gateway.test.ts",
+        "tests/e2e/backend-dist-communication-core.test.ts",
+        "tests/e2e/mobile-connection-loss-cp7.test.ts",
+        "tests/integration/edge-message-buffer-store.test.ts"
       ]
     },
     {
@@ -294,15 +294,15 @@
         "packages/contracts/openapi/notifications/c10.notifications.openapi.json",
         "packages/contracts/events/notification-created.schema.json",
         "packages/contracts/events/notification-trigger.schema.json",
-        "packages/contracts/src/c10.mjs"
+        "packages/contracts/src/c10.ts"
       ],
       "evidence": [
-        "tests/contract/c10-notification-contract.test.mjs",
-        "tests/contract/manager-workspace-c10-consumer.test.mjs",
-        "tests/contract/telegram-console-cp8-consumer.test.mjs",
-        "tests/e2e/notification-delivery-cp9.test.mjs",
-        "tests/e2e/notification-subscriptions-cp8.test.mjs",
-        "tests/e2e/telegram-console-cp8.test.mjs"
+        "tests/contract/c10-notification-contract.test.ts",
+        "tests/contract/manager-workspace-c10-consumer.test.ts",
+        "tests/contract/telegram-console-cp8-consumer.test.ts",
+        "tests/e2e/notification-delivery-cp9.test.ts",
+        "tests/e2e/notification-subscriptions-cp8.test.ts",
+        "tests/e2e/telegram-console-cp8.test.ts"
       ]
     },
     {
@@ -320,11 +320,11 @@
       "artifacts": [
         "packages/contracts/openapi/mobile/mobile.v1.openapi.json",
         "packages/contracts/mobile/consumer-contracts.v1.json",
-        "packages/contracts/src/mobile.mjs"
+        "packages/contracts/src/mobile.ts"
       ],
       "evidence": [
-        "tests/contract/mobile-api-contract.test.mjs",
-        "tests/e2e/mobile-connection-loss-cp7.test.mjs"
+        "tests/contract/mobile-api-contract.test.ts",
+        "tests/e2e/mobile-connection-loss-cp7.test.ts"
       ]
     }
   ],
@@ -343,8 +343,8 @@
         "services/backend/test/integration/m5-nfr.spec.ts",
         "docs/operations/communication-core-m5-load-probes.md",
         "docs/operations/mobile-api-m5-acceptance.md",
-        "experiments/m5-fbp-load-probe.mjs",
-        "experiments/edge-ws-load-probe.mjs"
+        "experiments/m5-fbp-load-probe.ts",
+        "experiments/edge-ws-load-probe.ts"
       ]
     },
     "security_review": {
@@ -357,7 +357,7 @@
         "отзыв сессий/доступа"
       ],
       "evidence": [
-        "tests/integration/data-platform.test.mjs",
+        "tests/integration/data-platform.test.ts",
         "docs/operations/data-platform-backup-restore.md",
         "docs/operations/m5-security-review.md"
       ]
@@ -365,8 +365,8 @@
     "rpo_rto": {
       "spec": "ТЗ §25.3",
       "evidence": [
-        "tests/integration/data-platform.test.mjs",
-        "tests/integration/edge-message-buffer-store.test.mjs",
+        "tests/integration/data-platform.test.ts",
+        "tests/integration/edge-message-buffer-store.test.ts",
         "docs/operations/data-platform-backup-restore.md"
       ]
     }

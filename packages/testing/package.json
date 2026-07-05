@@ -4,8 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "node --check src/db/anonymization.mjs && node --check src/db/factories.mjs && node --check src/db/m0-seed-data.mjs && node --check src/db/primitives.mjs && node --check test/unit/anonymization-fields.test.mjs && node --check test/unit/db-primitives.test.mjs && node --check test/unit/workflow-factories.test.mjs && node --check test/unit/m4-factories.test.mjs",
-    "test": "node --test test/unit/*.test.mjs",
-    "build": "node --check src/db/anonymization.mjs && node --check src/db/factories.mjs && node --check src/db/m0-seed-data.mjs && node --check src/db/primitives.mjs"
+    "lint": "tsc -p tsconfig.json",
+    "test": "node --import tsx --test test/unit/*.test.ts",
+    "build": "tsc -p tsconfig.json"
   }
 }

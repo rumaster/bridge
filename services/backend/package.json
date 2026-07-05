@@ -4,7 +4,7 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "lint": "tsc --noEmit -p tsconfig.json && find src test -name '*.mjs' -print0 | xargs -0 -r -n 1 node --check",
+    "lint": "tsc --noEmit -p tsconfig.json",
     "test": "jest --config jest.config.cjs --runInBand",
     "test:unit": "jest --config jest.config.cjs --runInBand test/unit",
     "test:integration": "jest --config jest.config.cjs --runInBand test/integration",

@@ -88,7 +88,7 @@ Chat как первый канал будущего CP-1: вертикальн�
   `sequence_number`, поэтому первый event после истории может обнаружить gap и
   запустить catch-up. Повторный replay по `event_id` не добавляет дубли.
 - **Bundle budget.** `npm run build --workspace @bridge/web-chat` после Vite-сборки
-  запускает `scripts/check-bundle-size.mjs`: проверяет ленивый loader
+  запускает `scripts/check-bundle-size.ts`: проверяет ленивый loader
   `bridge-web-chat.js`, gzip-бюджет production JS и raw CSS budget.
 
 ## Commands

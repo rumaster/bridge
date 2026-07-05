@@ -2,7 +2,7 @@
  * Canonical C4 AI Onboarding structured command (ТЗ §12.6). The schema and
  * action list are embedded here — rather than read from the ESM-only
  * `@bridge/contracts` package — because the backend compiles to CommonJS and
- * cannot statically import the `.mjs` contract sources at runtime. The
+ * cannot statically import the TypeScript contract sources at runtime. The
  * `json-schema-drift.spec.ts` test asserts this embedded copy stays byte-for-byte
  * equal to `packages/contracts/json-schema/c4-ai-onboarding-command.schema.json`,
  * so any contract change fails the build until this copy is updated.

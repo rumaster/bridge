@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "lint": "find src test -name '*.mjs' -print0 | xargs -0 -r -n 1 node --check",
-    "test": "find test -name '*.test.mjs' -print0 | xargs -0 -r node --test",
-    "test:unit": "node --test test/unit/*.test.mjs",
-    "test:integration": "node --test test/integration/*.test.mjs",
-    "build": "find src -name '*.mjs' -print0 | xargs -0 -r -n 1 node --check",
-    "start": "node src/main.mjs"
+    "lint": "tsc -p tsconfig.json",
+    "test": "find test -name '*.test.ts' -print0 | xargs -0 -r node --import tsx --test",
+    "test:unit": "node --import tsx --test test/unit/*.test.ts",
+    "test:integration": "node --import tsx --test test/integration/*.test.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node --import tsx src/main.ts"
   }
 }
