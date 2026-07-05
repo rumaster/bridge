@@ -47,8 +47,16 @@ const START_MODES = new Set(["immediate", "scheduled"]);
 const RATE_LIMIT_STRATEGIES = new Set(["fixed", "channel_capability"]);
 const BROADCAST_STATUS_SET = new Set(BROADCAST_STATUSES);
 
+/** Единичное нарушение валидации DTO C8. */
+export interface C8ValidationIssue {
+  field: string;
+  message: string;
+}
+
 export class C8DtoValidationError extends Error {
-  constructor(errors) {
+  readonly errors: C8ValidationIssue[];
+
+  constructor(errors: C8ValidationIssue[]) {
     super(`C8 DTO validation failed: ${errors.map((error) => error.field).join(", ")}`);
     this.name = "C8DtoValidationError";
     this.errors = errors;

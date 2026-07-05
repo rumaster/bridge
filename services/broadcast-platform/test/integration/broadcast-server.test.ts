@@ -16,7 +16,7 @@ function listen(server) {
 }
 
 async function close(server) {
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }
@@ -48,7 +48,7 @@ describe("Broadcast Platform C8 deterministic mock server", () => {
 
   it("lists deterministic seed broadcasts", async () => {
     const response = await fetch(`${baseUrl}/api/v1/broadcasts?organization_id=org-1`);
-    const body = await response.json();
+    const body: any = await response.json();
 
     assert.equal(response.status, 200);
     assert.equal(body.contract, "C8.ListBroadcastsResponse");
@@ -108,7 +108,7 @@ describe("Broadcast Platform C8 deterministic mock server", () => {
         mode: "immediate",
       }),
     });
-    const started = await startResponse.json();
+    const started: any = await startResponse.json();
 
     assert.equal(startResponse.status, 200);
     assert.equal(started.contract, "C8.StartBroadcastResponse");
@@ -126,7 +126,7 @@ describe("Broadcast Platform C8 deterministic mock server", () => {
     const statsResponse = await fetch(
       `${baseUrl}/api/v1/broadcasts/broadcast-1/stats?organization_id=org-1`,
     );
-    const stats = await statsResponse.json();
+    const stats: any = await statsResponse.json();
 
     assert.equal(statsResponse.status, 200);
     assert.equal(stats.contract, "C8.BroadcastStatsResponse");

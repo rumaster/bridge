@@ -18,7 +18,7 @@ function listen(server) {
 }
 
 async function close(server) {
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }
@@ -57,7 +57,7 @@ describe("E2E CP-6 — Broadcast: доставка кампании через �
       headers: JSON_HEADERS,
       body: JSON.stringify(startRequest("campaign-run-1")),
     });
-    const body = await response.json();
+    const body: any = await response.json();
 
     assert.equal(response.status, 200);
     assert.equal(body.broadcast.status, "done");
@@ -83,7 +83,7 @@ describe("E2E CP-6 — Broadcast: доставка кампании через �
       headers: JSON_HEADERS,
       body: JSON.stringify(startRequest("campaign-run-1")),
     });
-    const body = await response.json();
+    const body: any = await response.json();
 
     assert.equal(response.status, 200);
     assert.equal(body.stats.sent, 3, "статистика повторного запуска консистентна");
@@ -99,7 +99,7 @@ describe("E2E CP-6 — Broadcast: доставка кампании через �
     const response = await fetch(
       `${baseUrl}/api/v1/broadcasts/broadcast-1/stats?organization_id=org-1`,
     );
-    const body = await response.json();
+    const body: any = await response.json();
 
     assert.equal(response.status, 200);
     assert.equal(body.status, "done");

@@ -9,10 +9,16 @@ import {
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 const MAX_BODY_BYTES = 1024 * 1024;
 
+/** Опции dev-сервера SVC-BCAST (C8 deterministic mock). */
+export interface BroadcastPlatformServerOptions {
+  broadcast?: any;
+  now?: () => string;
+}
+
 export function createBroadcastPlatformServer({
   broadcast,
   now = () => new Date().toISOString(),
-} = {}) {
+}: BroadcastPlatformServerOptions = {}) {
   const mockBroadcast = broadcast ?? createDeterministicBroadcastMock({ now });
 
   return createServer(async (request, response) => {
@@ -214,7 +220,10 @@ function renderMetrics(metrics) {
 }
 
 class PayloadError extends Error {
-  constructor(status, title, message) {
+  readonly status: number;
+  readonly title: string;
+
+  constructor(status: number, title: string, message: string) {
     super(message);
     this.name = "PayloadError";
     this.status = status;

@@ -23,6 +23,27 @@ import { createBroadcastStats } from "./broadcast-stats.js";
  * Итог — `broadcast_stats` (prepared/sent/delivered/failed) и события
  * `broadcast.state_changed` (C7) на переходах статуса кампании.
  */
+
+/** Опции конструктора оркестратора запуска кампании (CP-6, M4). */
+export interface CampaignRunnerOptions {
+  core?: any;
+  rateLimiter?: any;
+  backoff?: any;
+  capabilities?: Record<string, any>;
+  clock?: () => string;
+  sleep?: (ms: number) => unknown;
+  batchSize?: number;
+  coreMaxAttempts?: number;
+  maxBackpressureWaitMs?: number;
+}
+
+/** Опции одного запуска кампании (`run`). */
+export interface CampaignRunOptions {
+  startIdempotencyKey?: string;
+  mode?: string;
+  reason?: string;
+}
+
 export function createCampaignRunner({
   core,
   rateLimiter = createBroadcastRateLimiter(),
@@ -33,7 +54,7 @@ export function createCampaignRunner({
   batchSize = 100,
   coreMaxAttempts,
   maxBackpressureWaitMs = Number.POSITIVE_INFINITY,
-} = {}) {
+}: CampaignRunnerOptions = {}) {
   if (!core || typeof core.deliver !== "function") {
     throw new TypeError("core with deliver(draft) is required");
   }
@@ -51,7 +72,7 @@ export function createCampaignRunner({
    *   Материализованный сегмент получателей (`broadcast_recipients`, ТЗ §14.4).
    * @param {{ startIdempotencyKey: string, mode?: string, reason?: string }} options
    */
-  async function run(broadcast, recipients, options = {}) {
+  async function run(broadcast, recipients, options: CampaignRunOptions = {}) {
     if (!broadcast || typeof broadcast !== "object") {
       throw new TypeError("broadcast must be an object");
     }

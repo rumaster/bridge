@@ -32,13 +32,13 @@ export function createBroadcastStats({ now = () => new Date().toISOString() } = 
 
   return {
     /** Сообщение сформировано и передано в ядро. */
-    markPrepared(occurredAt) {
+    markPrepared(occurredAt?: string) {
       counters.prepared += 1;
       touch(occurredAt);
     },
 
     /** Получатель пропущен (несовместимый канал) — сообщение не формировалось. */
-    markSkipped(occurredAt) {
+    markSkipped(occurredAt?: string) {
       counters.skipped += 1;
       touch(occurredAt);
     },
@@ -47,7 +47,7 @@ export function createBroadcastStats({ now = () => new Date().toISOString() } = 
      * Учитывает итоговый статус сообщения ядра для одного получателя.
      * @param {string} status Значение `messages.status` (C1).
      */
-    recordStatus(status, occurredAt) {
+    recordStatus(status, occurredAt?: string) {
       switch (status) {
         case MESSAGE_STATUS.DELIVERED:
           counters.sent += 1;

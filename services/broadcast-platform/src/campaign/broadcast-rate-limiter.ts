@@ -14,6 +14,20 @@
 
 const MINUTE_MS = 60_000;
 
+/** Опции получения токена ведром rate limiter (ТЗ §14.6). */
+export interface RateLimiterAcquireOptions {
+  messagesPerMinute?: number;
+  burst?: number;
+  maxWaitMs?: number;
+}
+
+/** Ошибка исчерпания бюджета backpressure (`maxWaitMs`). */
+interface BackpressureTimeoutError extends Error {
+  code?: string;
+  key?: string;
+  retryAfterMs?: number;
+}
+
 export function createBroadcastRateLimiter({
   now = () => Date.now(),
   sleep = defaultSleep,
@@ -87,7 +101,7 @@ export function createBroadcastRateLimiter({
         messagesPerMinute = Number.POSITIVE_INFINITY,
         burst,
         maxWaitMs = Number.POSITIVE_INFINITY,
-      } = {},
+      }: RateLimiterAcquireOptions = {},
     ) {
       assertKey(key);
       const bucket = bucketFor(key, messagesPerMinute, burst);
@@ -104,7 +118,9 @@ export function createBroadcastRateLimiter({
         metrics.throttled_total += 1;
         const wait = retryAfterMs(bucket);
         if (waited + wait > maxWaitMs) {
-          const error = new Error(`broadcast rate limit backpressure timeout for ${key}`);
+          const error: BackpressureTimeoutError = new Error(
+            `broadcast rate limit backpressure timeout for ${key}`,
+          );
           error.code = "RATE_LIMIT_BACKPRESSURE_TIMEOUT";
           error.key = key;
           error.retryAfterMs = wait;

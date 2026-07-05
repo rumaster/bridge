@@ -163,7 +163,9 @@ describe("SVC-BCAST M4 — оркестратор запуска кампани�
     const rejectingCore = {
       async deliver() {
         calls += 1;
-        const error = new Error("Invalid C8 broadcast delivery draft");
+        const error: Error & { retryable?: boolean } = new Error(
+          "Invalid C8 broadcast delivery draft",
+        );
         error.name = "CommunicationCoreM4ValidationError";
         error.retryable = false;
         throw error;

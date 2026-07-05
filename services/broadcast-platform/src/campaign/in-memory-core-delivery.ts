@@ -14,17 +14,36 @@ import { validateBroadcastCoreDeliveryDraft } from "../../../../packages/contrac
  * В интеграционных/e2e-тестах вместо мока подставляется РЕАЛЬНЫЙ координатор
  * ядра — доставка идёт строго через SVC-CORE (CP-6).
  */
+
+/** Результат инъектируемого egress (успех/отказ доставки). */
+export interface CoreEgressResult {
+  accepted?: boolean;
+  status?: string;
+  error?: string;
+  [key: string]: unknown;
+}
+
+/** Опции конструктора in-memory мока единого механизма ядра. */
+export interface InMemoryCoreDeliveryOptions {
+  egress?: (draft: any) => Promise<CoreEgressResult> | CoreEgressResult;
+}
+
+/** Ошибка валидации канонического C8-черновика (нетранзиентная). */
+interface CoreValidationError extends Error {
+  retryable?: boolean;
+}
+
 export function createInMemoryCoreDelivery({
   egress = async () => ({ accepted: true, status: "sent" }),
-} = {}) {
+}: InMemoryCoreDeliveryOptions = {}) {
   const messagesById = new Map();
   const broadcastMessages = [];
 
   return {
-    async deliver(draft) {
+    async deliver(draft, _options?: unknown) {
       const validation = validateBroadcastCoreDeliveryDraft(draft);
       if (!validation.valid) {
-        const error = new Error(
+        const error: CoreValidationError = new Error(
           `Invalid C8 broadcast delivery draft: ${validation.errors.join("; ")}`,
         );
         error.name = "CommunicationCoreM4ValidationError";

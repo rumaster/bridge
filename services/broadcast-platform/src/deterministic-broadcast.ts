@@ -11,11 +11,18 @@ import {
   createInMemoryCoreDelivery,
 } from "./campaign/index.js";
 
+/** Опции детерминированного мока SVC-BCAST (dev-сервер / тесты). */
+export interface DeterministicBroadcastMockOptions {
+  now?: () => string;
+  core?: any;
+  recipientsPerBroadcast?: number;
+}
+
 export function createDeterministicBroadcastMock({
   now = () => new Date().toISOString(),
   core,
   recipientsPerBroadcast = 3,
-} = {}) {
+}: DeterministicBroadcastMockOptions = {}) {
   const createdAt = now();
   const broadcasts = new Map([
     [
@@ -277,7 +284,9 @@ export function createDeterministicBroadcastMock({
 }
 
 export class BroadcastNotFoundError extends Error {
-  constructor(id) {
+  readonly id: string;
+
+  constructor(id: string) {
     super(`Broadcast ${id} was not found in the M0 mock.`);
     this.name = "BroadcastNotFoundError";
     this.id = id;
