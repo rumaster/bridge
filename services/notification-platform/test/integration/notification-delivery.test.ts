@@ -69,7 +69,7 @@ async function listen(server) {
 }
 
 async function close(server) {
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }
@@ -107,7 +107,7 @@ describe("Notification Platform delivery over HTTP (M3/M4)", () => {
 
   it("accepts a producer event and emits a valid C7 notification.created event", async () => {
     const response = await postEvent(baseUrl, trigger());
-    const accepted = await response.json();
+    const accepted: any = await response.json();
 
     assert.equal(response.status, 202);
     assert.equal(accepted.contract, "C10.AcceptNotificationTriggerResponse");
@@ -125,8 +125,8 @@ describe("Notification Platform delivery over HTTP (M3/M4)", () => {
 
   it("deduplicates a replayed producer event over HTTP", async () => {
     const dedupeKey = "SVC-BCAST:dedupe-http:1";
-    const first = await (await postEvent(baseUrl, trigger({ dedupeKey }))).json();
-    const second = await (
+    const first: any = await (await postEvent(baseUrl, trigger({ dedupeKey }))).json();
+    const second: any = await (
       await postEvent(baseUrl, trigger({ dedupeKey, eventId: "evt-int-1-retry" }))
     ).json();
 
@@ -142,7 +142,7 @@ describe("Notification Platform delivery over HTTP (M3/M4)", () => {
       { category: "warning", channel: "email", enabled: true },
     ]);
 
-    const accepted = await (
+    const accepted: any = await (
       await postEvent(
         baseUrl,
         trigger({
@@ -171,7 +171,7 @@ describe("Notification Platform delivery over HTTP (M3/M4)", () => {
         }),
       },
     );
-    const otherList = await otherOrgResponse.json();
+    const otherList: any = await otherOrgResponse.json();
 
     assert.equal(otherList.items.length, 0);
   });
@@ -222,7 +222,7 @@ describe("Notification Platform delivery degradation over HTTP (M5)", () => {
         baseUrl,
         trigger({ dedupeKey: "SVC-BCAST:degradation-http:1" }),
       );
-      const accepted = await response.json();
+      const accepted: any = await response.json();
 
       assert.equal(response.status, 202);
       assert.equal(accepted.degraded, true);

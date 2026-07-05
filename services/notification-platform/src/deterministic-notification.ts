@@ -20,7 +20,9 @@ import {
 } from "./notification-routing.js";
 
 export class C10NotificationNotFoundError extends Error {
-  constructor(notificationId) {
+  readonly notificationId: string;
+
+  constructor(notificationId: string) {
     super(`Notification ${notificationId} was not found for the current user.`);
     this.name = "C10NotificationNotFoundError";
     this.notificationId = notificationId;
@@ -333,6 +335,16 @@ export function createDeterministicNotificationMock({
   };
 }
 
+interface AcceptResponseInput {
+  event: any;
+  notification: any;
+  duplicate: boolean;
+  deliveries: any;
+  failedDeliveries?: any;
+  webEvent?: any;
+  skippedChannels?: any[];
+}
+
 function acceptResponse({
   event,
   notification,
@@ -341,7 +353,7 @@ function acceptResponse({
   failedDeliveries,
   webEvent,
   skippedChannels = [],
-}) {
+}: AcceptResponseInput) {
   const failureRecords =
     failedDeliveries ?? deliveries.filter((record) => record.status === "failed");
   const publicFailedDeliveries = failureRecords.map((record) => publicDelivery(record));

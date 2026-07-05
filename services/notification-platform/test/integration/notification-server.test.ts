@@ -19,7 +19,7 @@ describe("Notification Platform deterministic mock server", () => {
   });
 
   after(async () => {
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       server.close((error) => (error ? reject(error) : resolve()));
     });
   });
@@ -46,7 +46,7 @@ describe("Notification Platform deterministic mock server", () => {
     });
 
     assert.equal(listResponse.status, 200);
-    const list = await listResponse.json();
+    const list: any = await listResponse.json();
     assert.equal(list.contract, "C10.ListNotificationsResponse");
     assert.equal(list.items.length, 1);
 
@@ -63,7 +63,7 @@ describe("Notification Platform deterministic mock server", () => {
     );
 
     assert.equal(readResponse.status, 200);
-    const read = await readResponse.json();
+    const read: any = await readResponse.json();
     assert.equal(read.notification.status, "read");
     assert.equal(read.notification.read_at, "2026-07-02T16:31:00.000Z");
   });
@@ -93,7 +93,7 @@ describe("Notification Platform deterministic mock server", () => {
     });
 
     assert.equal(response.status, 400);
-    const body = await response.json();
+    const body: any = await response.json();
     assert.equal(body.title, "Validation failed");
     assert.match(body.errors.map((error) => error.field).join(","), /organization_id/);
   });

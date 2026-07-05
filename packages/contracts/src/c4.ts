@@ -116,8 +116,14 @@ export function validateAiOnboardingCommand(command) {
   return validateJsonSchema(command, AI_ONBOARDING_COMMAND_SCHEMA);
 }
 
-export function validateJsonSchema(value, schema) {
-  const errors = [];
+/** Результат валидации по JSON-схеме (общий контракт C4). */
+export interface JsonSchemaValidationResult {
+  valid: boolean;
+  errors: string[];
+}
+
+export function validateJsonSchema(value, schema): JsonSchemaValidationResult {
+  const errors: string[] = [];
   visitJsonSchema(value, schema, "$", errors);
 
   return {

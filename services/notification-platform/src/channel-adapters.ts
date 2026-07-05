@@ -80,6 +80,13 @@ export function createPushChannelAdapter(options = {}) {
   });
 }
 
+/** Опции {@link createRecordingChannelAdapter} и адаптеров-обёрток. */
+export interface RecordingChannelAdapterOptions {
+  channel?: string;
+  provider?: string;
+  now?: () => string;
+}
+
 /**
  * Универсальный записывающий адаптер для внешних каналов (telegram/email/push):
  * фиксирует доставку и возвращает детерминированный `provider_ref`.
@@ -88,7 +95,7 @@ export function createRecordingChannelAdapter({
   channel,
   provider,
   now = () => new Date().toISOString(),
-} = {}) {
+}: RecordingChannelAdapterOptions = {}) {
   const dispatches = [];
 
   return {

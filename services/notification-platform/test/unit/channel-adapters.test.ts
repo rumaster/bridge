@@ -63,7 +63,7 @@ describe("channel adapters (M3/M4 delivery)", () => {
     ];
 
     for (const { adapter, channel, provider } of cases) {
-      const record = adapter.deliver({ notification: notification() });
+      const record: any = adapter.deliver({ notification: notification() });
       assert.equal(record.channel, channel);
       assert.equal(record.status, "sent");
       assert.equal(record.provider, provider);

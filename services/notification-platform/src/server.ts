@@ -9,10 +9,15 @@ import {
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 const MAX_BODY_BYTES = 1024 * 1024;
 
+export interface NotificationPlatformServerOptions {
+  notifications?: any;
+  now?: () => string;
+}
+
 export function createNotificationPlatformServer({
   notifications,
   now = () => new Date().toISOString(),
-} = {}) {
+}: NotificationPlatformServerOptions = {}) {
   const mockNotifications =
     notifications ?? createDeterministicNotificationMock({ now });
 
@@ -243,7 +248,10 @@ function renderMetrics(metrics) {
 }
 
 class PayloadError extends Error {
-  constructor(status, title, message) {
+  readonly status: number;
+  readonly title: string;
+
+  constructor(status: number, title: string, message: string) {
     super(message);
     this.name = "PayloadError";
     this.status = status;

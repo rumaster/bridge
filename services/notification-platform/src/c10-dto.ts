@@ -17,15 +17,23 @@ const SETTINGS_FIELDS = new Set([
 
 const SETTING_FIELDS = new Set(["category", "channel", "enabled"]);
 
+/** Единичное нарушение валидации DTO C10. */
+export interface C10ValidationIssue {
+  field: string;
+  message: string;
+}
+
 export class C10DtoValidationError extends Error {
-  constructor(errors) {
+  readonly errors: C10ValidationIssue[];
+
+  constructor(errors: C10ValidationIssue[]) {
     super(`C10 DTO validation failed: ${errors.map((error) => error.field).join(", ")}`);
     this.name = "C10DtoValidationError";
     this.errors = errors;
   }
 }
 
-export function validateListNotificationsQuery(input = {}) {
+export function validateListNotificationsQuery(input: unknown = {}) {
   const errors = [];
 
   if (!isRecord(input)) {
@@ -92,7 +100,9 @@ export function validateUpdateNotificationSettingsRequest(input) {
     ok: true,
     value: {
       ...input,
-      settings: input.settings.map((setting) => ({ ...setting })),
+      settings: (input.settings as Array<Record<string, unknown>>).map((setting) => ({
+        ...setting,
+      })),
     },
   };
 }
@@ -124,12 +134,24 @@ export function assertListNotificationsQuery(input) {
   return result.value;
 }
 
-export function assertUpdateNotificationSettingsRequest(input) {
+/** Проверенный запрос обновления настроек уведомлений (C10). */
+export interface UpdateNotificationSettingsRequestDto {
+  contract: string;
+  version: string;
+  request_id: string;
+  organization_id: string;
+  user_id: string;
+  settings: Array<Record<string, unknown>>;
+}
+
+export function assertUpdateNotificationSettingsRequest(
+  input,
+): UpdateNotificationSettingsRequestDto {
   const result = validateUpdateNotificationSettingsRequest(input);
   if (!result.ok) {
     throw new C10DtoValidationError(result.errors);
   }
-  return result.value;
+  return result.value as UpdateNotificationSettingsRequestDto;
 }
 
 export function assertNotificationTriggerEventPayload(input) {
@@ -245,6 +267,6 @@ function schemaErrorField(error) {
   return match ? match[1] : "$";
 }
 
-function isRecord(value) {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
