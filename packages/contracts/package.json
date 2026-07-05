@@ -4,20 +4,20 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.mjs",
-    "./registry": "./src/registry.mjs",
-    "./c5": "./src/c5.mjs",
-    "./c4": "./src/c4.mjs",
-    "./c6": "./src/c6.mjs",
-    "./c7": "./src/c7.mjs",
-    "./c8": "./src/c8.mjs",
-    "./c9": "./src/c9.mjs",
-    "./c10": "./src/c10.mjs",
-    "./mobile": "./src/mobile.mjs"
+    ".": "./src/index.ts",
+    "./registry": "./src/registry.ts",
+    "./c5": "./src/c5.ts",
+    "./c4": "./src/c4.ts",
+    "./c6": "./src/c6.ts",
+    "./c7": "./src/c7.ts",
+    "./c8": "./src/c8.ts",
+    "./c9": "./src/c9.ts",
+    "./c10": "./src/c10.ts",
+    "./mobile": "./src/mobile.ts"
   },
   "scripts": {
-    "lint": "node --check message-model/index.mjs && node --check message-model/message-model.test.mjs && node --check scripts/verify-auth-contract.mjs && find src test -name '*.mjs' -print0 | xargs -0 -n1 node --check",
-    "test": "node --test message-model/*.test.mjs test/*.test.mjs test/unit/*.test.mjs",
-    "build": "node --check message-model/index.mjs && node scripts/verify-auth-contract.mjs && find src -name '*.mjs' -print0 | xargs -0 -n1 node --check"
+    "lint": "tsc -p tsconfig.json",
+    "test": "node --import tsx --test message-model/*.test.ts test/*.test.ts test/unit/*.test.ts",
+    "build": "node --import tsx scripts/verify-auth-contract.ts && tsc -p tsconfig.json"
   }
 }

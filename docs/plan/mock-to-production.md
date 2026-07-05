@@ -13,6 +13,24 @@
 > как принятые решения (§4). Терминология проекта сохранена (M0–M5, CP-*, SVC-*,
 > C1–C10, ТЗ §…).
 
+> **Обновление по итогам issue #203 (миграция на TypeScript).** Репозиторий
+> полностью переведён с `.mjs` на TypeScript: файлов `.mjs` не осталось (проверка
+> `find . -name '*.mjs' -not -path '*/node_modules/*'` даёт пустой результат),
+> рантайм исполняется через `tsx` (стирание типов, поведение неизменно), а типовой
+> слой доведён до зелёного `tsc --noEmit` — и по каждому workspace (`apps/*`,
+> `services/*`, `clients/*`, `packages/*`), и по корневому `tsconfig.json`
+> (`scripts/*`, `db/*`, `tests/*`, `experiments/*`). Обе проверки входят в CI
+> `npm run lint`. Введены **согласованные общие интерфейсы** для точек соприкосновения
+> CLI, интеграционных тестов и сервисов — например `scripts/db-connection.ts`
+> (`DatabaseConnection`, `DatabaseConnectionConfig`), опции запуска сидов/миграций
+> (`RunSeedsOptions`, `RunMigrationsOptions`) и DTO попытки доставки
+> `RecordDeliveryAttemptInput` (SVC-INT). Импорты в `.ts`-источниках сохраняют
+> расширения `.js` согласно `NodeNext` (переименование расширений в спецификаторах не
+> требуется). Ссылки `путь:строка` ниже механически обновлены `.mjs`→`.ts`;
+> переименование файла строки не сдвигает, но добавленные интерфейсы/аннотации могли
+> сместить часть ссылок внутрь мигрированных файлов на несколько строк — считайте
+> номера ориентировочными (до-миграционными).
+
 ---
 
 ## 0. Ключевые уточнения перед инвентаризацией
@@ -33,7 +51,7 @@
   (`docs/audit/backend-mjs-production-audit.md:70-71`).
 - **SVC-INT → CORE, C1-ingress** через `CORE_INGRESS_URL` (`.env.example:71`).
 - **SVC-AI → Backend KB-search.** Реальный HTTP на `POST /knowledge:search`
-  (`services/ai-platform/src/kb-search.mjs:29-93`), подключён в compose
+  (`services/ai-platform/src/kb-search.ts:29-93`), подключён в compose
   (`deploy/compose/docker-compose.yml:98`, `AI_BACKEND_KB_URL`).
 
 То есть «хребет» CORE↔INT по C2 частично реален (реальный транспорт), но
@@ -71,20 +89,20 @@ LLM-провайдеры существуют только на неслитой
 | MP-03 | Backend C8 Broadcast-фасад | Транспорт backend→SVC-BCAST | `BROADCAST_UPSTREAM_CLIENT` `useValue:null` — `broadcast-facade.module.ts:16-17` | B | MP-09, транспорт backend→фасады |
 | MP-04 | Backend C10 Notification-фасад | Транспорт backend→SVC-NOTIF | `NOTIFICATION_UPSTREAM_CLIENT` `useValue:null` — `notification-facade.module.ts:16-17` | B | MP-10, транспорт backend→фасады |
 | MP-05 | Backend C6 Integration Gateway | Каналы/профили целиком | in-memory `Map<string,ChannelFacade>` — `integration-gateway.facade.ts:193`; интерфейса/DI-токена upstream нет | B | MP-06, контрактное решение C6 |
-| MP-06 | SVC-INT доставка во внешние каналы | Внешний транспорт всех каналов | `createMockExternalChannel()` — `main.mjs:47`; адаптеры «только формат» | B | Аккаунты провайдеров, MP-20, MP-05 |
-| MP-07 | SVC-AI LLM-провайдеры | Реальная LLM-модель (embed/generate) | `createDeterministicMockLlm` — `llm.mjs:43`; 3 фабрики = один мок `main.mjs:66-83` | B | LLM-провайдер+ключи, MP-20, контракт C4-enum |
-| MP-08 | SVC-FBP исполнение workflow | Реальный движок FBP | `createDeterministicFbpMock` (deploy), реальный `engine.mjs` — «полочный код» | B | БД M3, согласование интерфейса, MP-02 |
-| MP-09 | SVC-BCAST рассылки | Оркестрация + доставка в C1/C2 | `mode:"deterministic-mock"` `server.mjs:27`; mock core-delivery | B | MP-06, C3.clients, MP-03 |
-| MP-10 | SVC-NOTIF уведомления | Доставка в каналы web/tg/email/push | `mode:"deterministic-mock"` `server.mjs:29`; адаптеры «только запись» | B | MP-06 (tg), SMTP, MP-11 (push), MP-04 |
-| MP-11 | SVC-MOB BFF-бэкенд + push | Backend-транспорт и FCM/APNs | `createMockBackendApi` `backend-client.mjs:20`, `createMockPushProvider` `push-provider.mjs:10` | B | Backend REST, push-ключи, MP-20, MP-19 |
-| MP-12 | SVC-EDGE VPN-туннель + WS + RF-буфер | Межсерверный туннель, WS-состояние, RF-персист | `createMockEdgeTunnel` `mock-tunnel.mjs:14`; реальный конвейер — «полочный код» | B | MP-22, VPN Tunnel Service, App-сторона, RF-БД |
-| MP-13 | SVC-TGC Telegram Console | Весь клиент (нет боевого входа) | Демо-скрипт `main.mjs:4,12-29`; mock Telegram+backend по умолчанию | B | Реальный Telegram-транспорт, Backend REST (C3/C4/C10) |
+| MP-06 | SVC-INT доставка во внешние каналы | Внешний транспорт всех каналов | `createMockExternalChannel()` — `main.ts:47`; адаптеры «только формат» | B | Аккаунты провайдеров, MP-20, MP-05 |
+| MP-07 | SVC-AI LLM-провайдеры | Реальная LLM-модель (embed/generate) | `createDeterministicMockLlm` — `llm.ts:43`; 3 фабрики = один мок `main.ts:66-83` | B | LLM-провайдер+ключи, MP-20, контракт C4-enum |
+| MP-08 | SVC-FBP исполнение workflow | Реальный движок FBP | `createDeterministicFbpMock` (deploy), реальный `engine.ts` — «полочный код» | B | БД M3, согласование интерфейса, MP-02 |
+| MP-09 | SVC-BCAST рассылки | Оркестрация + доставка в C1/C2 | `mode:"deterministic-mock"` `server.ts:27`; mock core-delivery | B | MP-06, C3.clients, MP-03 |
+| MP-10 | SVC-NOTIF уведомления | Доставка в каналы web/tg/email/push | `mode:"deterministic-mock"` `server.ts:29`; адаптеры «только запись» | B | MP-06 (tg), SMTP, MP-11 (push), MP-04 |
+| MP-11 | SVC-MOB BFF-бэкенд + push | Backend-транспорт и FCM/APNs | `createMockBackendApi` `backend-client.ts:20`, `createMockPushProvider` `push-provider.ts:10` | B | Backend REST, push-ключи, MP-20, MP-19 |
+| MP-12 | SVC-EDGE VPN-туннель + WS + RF-буфер | Межсерверный туннель, WS-состояние, RF-персист | `createMockEdgeTunnel` `mock-tunnel.ts:14`; реальный конвейер — «полочный код» | B | MP-22, VPN Tunnel Service, App-сторона, RF-БД |
+| MP-13 | SVC-TGC Telegram Console | Весь клиент (нет боевого входа) | Демо-скрипт `main.ts:4,12-29`; mock Telegram+backend по умолчанию | B | Реальный Telegram-транспорт, Backend REST (C3/C4/C10) |
 | MP-14 | SVC-CHAT web-chat | dev-MSW REST+WS | `enableMockApi: import.meta.env.DEV` — `main.tsx:9` (без флага) | C | Реальные C1/C3/C7 endpoints, MP-06/MP-05 (доставка) |
 | MP-15 | SVC-ADMIN saas-admin | dev-MSW REST + mock C7 | `VITE_SAAS_ADMIN_MOCKS` — `main.tsx:8`, `admin.tsx:59-65` | C | Реальные C3/C7/C8/C10 endpoints |
 | MP-16 | SVC-MWS manager-workspace | dev-MSW REST+WS | `VITE_MWS_MOCKS` — `main.tsx:8`, `handlers.ts:8` | C | Реальные C3/C7/C10 endpoints |
-| MP-17 | C1 mock-схема | Замороженный M0-артефакт схемы | `message-model/c1-message.mock.schema.json` vs канон `index.mjs` | C | Техдолг M0→M1 |
+| MP-17 | C1 mock-схема | Замороженный M0-артефакт схемы | `message-model/c1-message.mock.schema.json` vs канон `index.ts` | C | Техдолг M0→M1 |
 | MP-18 | C2 mock-handoff endpoint | Эгресс без реальной доставки | `communication-core-c2.openapi.json:217,252` `mock_delivery:{const:true}` | B/техдолг | Замещён `/deliveries` (MP-06) |
-| MP-19 | MOBILE push-stub | DTO вместо реального push | `MOBILE.PushPayloadStub` — `registry.mjs`; `m0-contract-smoke.test.mjs:254-277` | B | MP-11, push-провайдер |
+| MP-19 | MOBILE push-stub | DTO вместо реального push | `MOBILE.PushPayloadStub` — `registry.ts`; `m0-contract-smoke.test.ts:254-277` | B | MP-11, push-провайдер |
 | MP-20 | Secrets management | Централизованный секрет-менеджер | Плоские заглушки `.env.example:16,40,52`; ТЗ §23.7 не реализован | B (кросс) | Все реальные провайдеры/ключи |
 | MP-21 | Слой k8s/helm | staging/prod-оркестрация | `deploy/k8s/` = только `.gitkeep`; ТЗ §25.8 | B (кросс) | Все сервисы, MP-20 |
 | MP-22 | Проброс RF-секретов в edge-gateway | env-инъекция ключей RF | `docker-compose.rf.yml:64-68` — только `HOST`/`PORT` | B | MP-12 |
@@ -254,36 +272,36 @@ Resilience-примитивы **готовы и framework-agnostic** —
 - **DoD:** capability каналов приходят из реального SVC-INT/провайдеров, а не из
   захардкоженной Map; введён интерфейс+resilience; health отражает реальный статус.
 
-### 3.2. Outsourced-сервисы (Node.js ESM `.mjs`)
+### 3.2. Outsourced-сервисы (Node.js ESM `.ts`)
 
 Общий паттерн (важен для §4): у SVC-FBP и SVC-EDGE **полноценная боевая
 реализация уже существует в коде, но подключена только в тестах** — в
-`main.mjs`/`server.mjs` разворачивается детерминированный мок («полочный код»).
+`main.ts`/`server.ts` разворачивается детерминированный мок («полочный код»).
 
 #### MP-06 — SVC-INT: доставка во внешние каналы
 
 - **Замокано:** внешний сетевой транспорт всех каналов. Два egress-пути, **оба
   мок**:
-  1. `POST /internal/delivery/dispatch` (`server.mjs:109`) → `deliveryEngine` →
-     `channel.deliver`, где канал = `createMockExternalChannel()` (`main.mjs:47`),
+  1. `POST /internal/delivery/dispatch` (`server.ts:109`) → `deliveryEngine` →
+     `channel.deliver`, где канал = `createMockExternalChannel()` (`main.ts:47`),
      фиктивный `external_message_id="ext-<channel>-<uuid>"`
-     (`mock-external-channel.mjs:90`); `createExternalPayload` **не вызывается** —
-     сырой C2 (`delivery-engine.mjs:275-280`). Это канонический async-путь M4/M5
+     (`mock-external-channel.ts:90`); `createExternalPayload` **не вызывается** —
+     сырой C2 (`delivery-engine.ts:275-280`). Это канонический async-путь M4/M5
      (202 queued, см. `docs/plan/services/05-integration-platform.md` §5.5).
   2. `POST /internal/egress/deliveries` → `adapter.acceptEgressDelivery`,
-     **форматирует** `external_payload` (`m2-channel-adapter.mjs:247`), но клиент —
-     NOOP (`m2-channel-adapter.mjs:35,315-319`).
+     **форматирует** `external_payload` (`m2-channel-adapter.ts:247`), но клиент —
+     NOOP (`m2-channel-adapter.ts:35,315-319`).
   - **Расхождение:** dispatch имеет resilience, но не форматирует; egress
     форматирует, но клиент-NOOP. Требует согласования (см. §4).
-- **Граница:** `createMockExternalChannel` (`main.mjs:47`) / NOOP `externalClient`
-  (`m2-channel-adapter.mjs:35`). Реальный сетевой вызов ни в один канал не
+- **Граница:** `createMockExternalChannel` (`main.ts:47`) / NOOP `externalClient`
+  (`m2-channel-adapter.ts:35`). Реальный сетевой вызов ни в один канал не
   встроен (0 совпадений по `telegram.org|graph.facebook|api.vk.com|nodemailer|smtp|twilio|sendgrid`).
-- **Есть:** реальная resilience-обвязка (`resilience.mjs:31-84`, `errors.mjs:60-125`,
-  `backoff.mjs:34-53`, `rate-limiter.mjs`), журнал попыток
-  (`backend-delivery-client.mjs:39-90`), async retry-queue
-  (`delivery-engine.mjs:314-430`); адаптеры Telegram/WhatsApp/SMS/Email/VK/MAX/WebChat
+- **Есть:** реальная resilience-обвязка (`resilience.ts:31-84`, `errors.ts:60-125`,
+  `backoff.ts:34-53`, `rate-limiter.ts`), журнал попыток
+  (`backend-delivery-client.ts:39-90`), async retry-queue
+  (`delivery-engine.ts:314-430`); адаптеры Telegram/WhatsApp/SMS/Email/VK/MAX/WebChat
   умеют форматировать payload; VK — нативная идемпотентность
-  (`vk-adapter.mjs:143-144`, `random_id=idempotency_key`). **Нет:** реальных
+  (`vk-adapter.ts:143-144`, `random_id=idempotency_key`). **Нет:** реальных
   сетевых клиентов и секретов каналов (env только
   `PORT/HOST/CORE_INGRESS_URL/BACKEND_BASE_URL` + rate/resilience-конфиг).
 - **Зависимости:** аккаунты/доступы провайдеров (Telegram Bot API, WhatsApp
@@ -301,21 +319,21 @@ Resilience-примитивы **готовы и framework-agnostic** —
 #### MP-07 — SVC-AI: LLM-провайдеры
 
 - **Замокано:** реальная LLM-модель. Все пути исполнения заканчиваются в
-  `createDeterministicMockLlm` (`llm.mjs:43`): `embed()` = FNV-1a bag-of-words,
+  `createDeterministicMockLlm` (`llm.ts:43`): `embed()` = FNV-1a bag-of-words,
   `generate()` = конкатенация шаблонов, `interpretOnboarding()` = keyword→action,
   `available:true` захардкожено. Три фабрики (`deterministic-mock`/`economy`/`premium`)
   — **один и тот же мок**, различаются только именем/ценой
-  (`main.mjs:66-83`, «All are deterministic mocks today»).
-- **Граница:** фабрика провайдера в `main.mjs:66-83` / роутер провайдеров. Реальный
+  (`main.ts:66-83`, «All are deterministic mocks today»).
+- **Граница:** фабрика провайдера в `main.ts:66-83` / роутер провайдеров. Реальный
   провайдер в базе **не существует** (см. §0-D).
-- **Есть:** KB-search **уже реальный** (`kb-search.mjs:29-93`, подключён в compose);
+- **Есть:** KB-search **уже реальный** (`kb-search.ts:29-93`, подключён в compose);
   размерность эмбеддинга 1536; контракт C4. **Нет:** реального провайдера, ключей,
   `AI_LLM_CONFIG` в `.env.example`/compose (роутер не активирован).
 - **Зависимости:** выбранный LLM-провайдер + ключи, MP-20; **жёсткое контрактное
   ограничение:** `suggestion.mode` enum = `[deterministic_mock, fallback]`
   (`json-schema/c4-ai-assistant-suggest-response.schema.json:60-63`), `generated_by` enum =
   `[deterministic-mock-ai, fallback]`; ответ захардкожен `mode:"deterministic_mock"`
-  (`rag-assistant.mjs:102`). **Реальный провайдер невозможно честно промаркировать
+  (`rag-assistant.ts:102`). **Реальный провайдер невозможно честно промаркировать
   без расширения enum контракта C4.**
 - **Ограничения:** контракт C4; резидентность ПДн 152-ФЗ при передаче контента
   внешней модели (ТЗ §7.14).
@@ -327,25 +345,25 @@ Resilience-примитивы **готовы и framework-agnostic** —
 
 #### MP-08 — SVC-FBP: исполнение workflow
 
-- **Замокано:** реальный движок. Deploy-путь: `main.mjs`→`server.mjs`→
-  `deterministic-fbp.mjs` `createDeterministicFbpMock` (Dockerfile `CMD node
-  src/main.mjs`, `Dockerfile:18`). Мок **не обходит узлы** (`deterministic-fbp.mjs:31-42`),
+- **Замокано:** реальный движок. Deploy-путь: `main.ts`→`server.ts`→
+  `deterministic-fbp.ts` `createDeterministicFbpMock` (Dockerfile `CMD node
+  src/main.ts`, `Dockerfile:18`). Мок **не обходит узлы** (`deterministic-fbp.ts:31-42`),
   callback backend_api в режиме `stub` (`:39`), тело узла `{mock:true}` (`:100-116`).
-- **Граница:** `createDeterministicFbpMock` (deploy) vs реальный `engine.mjs`
+- **Граница:** `createDeterministicFbpMock` (deploy) vs реальный `engine.ts`
   `createFbpEngine`/`createFbpRuntime` — импортируется **только тестами**.
-- **Есть (реально, «полочный код»):** `runGraph` (`core/executor.mjs:29-133`),
+- **Есть (реально, «полочный код»):** `runGraph` (`core/executor.ts:29-133`),
   safe-evaluator Transform с whitelist и защитой от prototype-pollution
-  (`transform/evaluator.mjs:20`), пиннинг версий (`version-registry.mjs:159-164`,
+  (`transform/evaluator.ts:20`), пиннинг версий (`version-registry.ts:159-164`,
   `deepFreeze`), журнал = форма `workflow_execution_logs`
-  (`execution-context.mjs:226-239`); DDL M3 (`db/migrations/20260703140000000_m3_schema.sql`).
-  **Мёртвый код:** `createHttpBackendApiClient` (`backend/client.mjs:19`) — 2
+  (`execution-context.ts:226-239`); DDL M3 (`db/migrations/20260703140000000_m3_schema.sql`).
+  **Мёртвый код:** `createHttpBackendApiClient` (`backend/client.ts:19`) — 2
   вхождения в репозитории, оба в своём файле, никогда не инстанцируется.
   **Нет:** подключения движка в рантайм, связи с БД (состояние — in-memory Map).
 - **Зависимости:** БД M3, MP-02; **несоответствие интерфейсов** — мок
   (`startWorkflow`/`recordBackendApiCallback`) vs движок
   (`runWorkflow`/`start`/`resume`), адаптера нет.
 - **Ограничения:** контракт C5; персистентность в Backend-owned таблицах
-  (`instance-store.mjs` как референс-модель).
+  (`instance-store.ts` как референс-модель).
 - **Риски:** сложность Высокая, риск Низкий/Средний (внешних провайдеров нет,
   но нужно свести два интерфейса и подключить БД).
 - **DoD:** workflow исполняется реальным движком (узлы обходятся, Transform
@@ -354,15 +372,15 @@ Resilience-примитивы **готовы и framework-agnostic** —
 
 #### MP-09 — SVC-BCAST: рассылки
 
-- **Замокано:** полностью in-memory (`mode:"deterministic-mock"`, `server.mjs:27`),
+- **Замокано:** полностью in-memory (`mode:"deterministic-mock"`, `server.ts:27`),
   1 сид `broadcast-1` (`:20-52`), БД нет. Транспорт = мок ядра C1/C2
-  (`campaign/in-memory-core-delivery.mjs`, egress по умолчанию
+  (`campaign/in-memory-core-delivery.ts`, egress по умолчанию
   `async ()=>({accepted:true,status:"sent"})` `:17-19`). Планировщик **не
-  исполняется** (`deterministic-broadcast.mjs:171-201`, нет таймера/cron).
+  исполняется** (`deterministic-broadcast.ts:171-201`, нет таймера/cron).
   Получатели = 3 фейковых клиента (`:293-314`), не из C3.clients.
   `createBroadcastDeliveryCoordinator` существует **только как строка в
   комментарии** — реальной реализации нет; интеграционные/e2e-тесты переинжектят мок.
-- **Граница:** `in-memory-core-delivery.mjs` vs реальная оркестрация `campaign/*`
+- **Граница:** `in-memory-core-delivery.ts` vs реальная оркестрация `campaign/*`
   (runner, token-bucket rate-limiter, backoff, stats, capability, template-renderer,
   idempotency, C7-события) — инжектируемая, **нигде не подключена**.
 - **Есть:** реальная оркестрация (инжектируемая). **Нет:** реальной доставки в C1/C2,
@@ -376,13 +394,13 @@ Resilience-примитивы **готовы и framework-agnostic** —
 
 #### MP-10 — SVC-NOTIF: уведомления
 
-- **Замокано:** полностью in-memory (`mode:"deterministic-mock"`, `server.mjs:29`),
+- **Замокано:** полностью in-memory (`mode:"deterministic-mock"`, `server.ts:29`),
   5 Map + сид `notification-m0-1`. События продюсятся HTTP-вызовом
-  `POST /internal/notifications/events` (`server.mjs:75`), **не через шину** (нет
-  kafka/amqp/nats). Каналы web/telegram/email/push (`channel-adapters.mjs`) — **только
+  `POST /internal/notifications/events` (`server.ts:75`), **не через шину** (нет
+  kafka/amqp/nats). Каналы web/telegram/email/push (`channel-adapters.ts`) — **только
   запись в память** (`:31-57` web, `:87-118` tg/email/push пишут `provider_ref` без
   отправки); провайдеры-заглушки `svc-tgc`/`smtp-gateway`/`push-gateway`.
-- **Граница:** `channel-adapters.mjs` (запись) vs реальные провайдеры (нет).
+- **Граница:** `channel-adapters.ts` (запись) vs реальные провайдеры (нет).
 - **Есть:** реальные routing/dedup/retry/settings. **Замечание:** `dedupeKeyOf`
   конкатенирует без разделителя (`:478-480`) — теоретическая коллизия ключей.
   **Нет:** реальной доставки, шины событий.
@@ -395,11 +413,11 @@ Resilience-примитивы **готовы и framework-agnostic** —
 #### MP-11 — SVC-MOB: mobile-api (BFF + push)
 
 - **Замокано:** даже в боевом Docker (`NODE_ENV=production`) — мок-обвязка.
-  `createMockBackendApi` (`backend-client.mjs:20`, in-memory C3.*/C10),
-  `createMockPushProvider` (`push-provider.mjs:10`, без APNs/FCM),
+  `createMockBackendApi` (`backend-client.ts:20`, in-memory C3.*/C10),
+  `createMockPushProvider` (`push-provider.ts:10`, без APNs/FCM),
   `createDeterministicMobileApiMock` (fallback при `MOBILE_API_MODE=mock`).
-  `main.mjs:9-10`: `useBff=(MOBILE_API_MODE ?? "bff")!=="mock"`. WS-канала нет
-  (`mobile-bff.mjs:46`, `wsChannel ?? null`).
+  `main.ts:9-10`: `useBff=(MOBILE_API_MODE ?? "bff")!=="mock"`. WS-канала нет
+  (`mobile-bff.ts:46`, `wsChannel ?? null`).
 - **Граница:** `createMockBackendApi`/`createMockPushProvider` vs реальные
   клиенты. **Расхождение метки и реальности:** BFF-ответы помечены `mock:false`
   поверх мок-бэкенда.
@@ -417,15 +435,15 @@ Resilience-примитивы **готовы и framework-agnostic** —
 
 #### MP-12 — SVC-EDGE: edge-gateway (VPN-туннель + WS + RF-буфер)
 
-- **Замокано:** в проде — мок-обвязка. `createMockEdgeTunnel` (`mock-tunnel.mjs:14`),
-  `createMockWebSocketChannel` (`mock-ws-channel.mjs:91`); состояние — только в
+- **Замокано:** в проде — мок-обвязка. `createMockEdgeTunnel` (`mock-tunnel.ts:14`),
+  `createMockWebSocketChannel` (`mock-ws-channel.ts:91`); состояние — только в
   памяти.
 - **Граница:** мок-туннель/канал vs реальный RF-first конвейер, подключённый
-  **только в тестах** (`edge-cluster.test.mjs:78-107`).
-- **Есть (реально, «полочный код»):** `createEdgeCluster` (`edge-cluster.mjs:36`),
-  VPN Tunnel (`vpn-tunnel.mjs:191/325` — mTLS, AES-256-GCM, HKDF,
-  `EDGE_VPN_SESSION_KEY`), буфер in-memory (`edge-message-buffer.mjs:137`) и Postgres
-  (`:319`), шифр RF-payload (`rf-payload-cipher.mjs:75/168`, `EDGE_BUFFER_ENCRYPTION_KEY`),
+  **только в тестах** (`edge-cluster.test.ts:78-107`).
+- **Есть (реально, «полочный код»):** `createEdgeCluster` (`edge-cluster.ts:36`),
+  VPN Tunnel (`vpn-tunnel.ts:191/325` — mTLS, AES-256-GCM, HKDF,
+  `EDGE_VPN_SESSION_KEY`), буфер in-memory (`edge-message-buffer.ts:137`) и Postgres
+  (`:319`), шифр RF-payload (`rf-payload-cipher.ts:75/168`, `EDGE_BUFFER_ENCRYPTION_KEY`),
   DDL (`db/rf-migrations/20260703151000000_m4_edge_message_buffer.sql`). **Но:** туннель
   работает поверх in-process `createVpnLink` (`:164`), **не TCP/TLS-сокета**; в
   `docker-compose.rf.yml` привязка к сокету явно отложена. **Нет:** сетевого
@@ -443,22 +461,22 @@ Resilience-примитивы **готовы и framework-agnostic** —
 
 #### MP-13 — SVC-TGC: Telegram Console
 
-- **Замокано:** **весь клиент** — боевого входа нет. `main.mjs` — демо-скрипт:
+- **Замокано:** **весь клиент** — боевого входа нет. `main.ts` — демо-скрипт:
   инжектит `createMockTelegramApiAdapter` (`:4`) и подаёт 2 захардкоженных
-  Update-объекта (`:12-29`), печатает результат (`:31-43`). `mock-telegram-api.mjs`
+  Update-объекта (`:12-29`), печатает результат (`:31-43`). `mock-telegram-api.ts`
   складывает payload в массивы, возвращает `message_id:"mock-message-N"`, `mock:true`
   (`:47,53`) — без HTTP. Backend по умолчанию — in-memory мок
-  (`handler-router.mjs:61-62`), логин-код `"000000"` захардкожен (`:33`).
+  (`handler-router.ts:61-62`), логин-код `"000000"` захардкожен (`:33`).
 - **Граница:** инъекция `telegramApi`/`backendApi` в роутер; единственный
-  вызывающий (`main.mjs:7-10`) всегда передаёт мок; переключателя «мок/бой» и env нет.
-- **Есть:** транспортно-агностичный роутер (`handler-router.mjs:80-107`), надёжная
-  доставка `createReliableTelegramApiAdapter` (`telegram-delivery.mjs:22-98`,
+  вызывающий (`main.ts:7-10`) всегда передаёт мок; переключателя «мок/бой» и env нет.
+- **Есть:** транспортно-агностичный роутер (`handler-router.ts:80-107`), надёжная
+  доставка `createReliableTelegramApiAdapter` (`telegram-delivery.ts:22-98`,
   rate-limit+retry — уже обёрнута вокруг мока). **Нет:** клиента `api.telegram.org`,
   `getUpdates`/webhook, чтения токена, процесса-демона, реального Backend-клиента.
   Черновик привязки помечен `real_auth_performed:false, mock:true`
-  (`account-linking.mjs:32-33`).
+  (`account-linking.ts:32-33`).
 - **Зависимости:** реальный Telegram-транспорт (совместно с MP-06 telegram),
-  Backend REST (C3/C4/C10). **C7 (WS) вне scope намеренно** (`scope.mjs:26-32`) —
+  Backend REST (C3/C4/C10). **C7 (WS) вне scope намеренно** (`scope.ts:26-32`) —
   уведомления доставляются push-методом C10.
 - **Ограничения:** контракты C3/C4/C10; идемпотентность `messages.create`.
 - **Риски:** сложность Высокая, риск Высокий (нужен полноценный боевой процесс-хост).
@@ -475,7 +493,7 @@ Runnable mock-провайдеров в `packages/contracts` **нет** — па
 - `message-model/c1-message.mock.schema.json` (title «C1 Message Model M0 Mock»)
   со старыми именами полей (`message_id`, `channel_id`, `direction:inbound/outbound`),
   сосуществует с каноном `validateCanonicalMessage`
-  (`message-model/index.mjs`, `MESSAGE_MODEL_VERSION="1.0.0"`, поля
+  (`message-model/index.ts`, `MESSAGE_MODEL_VERSION="1.0.0"`, поля
   `id`/`endpoint_id`/`sender_type` + машина статусов). Слой C (техдолг M0→M1).
 - **DoD/вопрос:** мок-схема удалена либо явно согласована как отдельный
   M0-freeze-артефакт; канон и мок не расходятся.
@@ -487,7 +505,7 @@ Runnable mock-провайдеров в `packages/contracts` **нет** — па
   `EgressHandoffResponse.mock_delivery:{const:true}`, `delivery_status:{const:"sent"}`
   (`:217,252`) — доставка фиктивна. **Боевой путь** эгресса —
   `/internal/egress/deliveries` (через `INTEGRATION_EGRESS_URL`), уже
-  проверяется contract-smoke (`tests/contract/m0-contract-smoke.test.mjs:67-99`).
+  проверяется contract-smoke (`tests/contract/m0-contract-smoke.test.ts:67-99`).
 - **Зависимости:** замещается MP-06.
 - **DoD/вопрос:** судьба `/internal/egress/messages` после перехода на `/deliveries`
   (удалить или оставить как M0-артефакт).
@@ -495,9 +513,9 @@ Runnable mock-провайдеров в `packages/contracts` **нет** — па
 #### MP-19 — MOBILE.PushPayloadStub
 
 - DTO-заглушка: регистрация устройства возвращает `push_payload_stub` вместо
-  реальной отправки (`registry.mjs` MOBILE.v1; smoke ждёт
+  реальной отправки (`registry.ts` MOBILE.v1; smoke ждёт
   `push_payload_stub.contract==="MOBILE.PushPayloadStub"`,
-  `m0-contract-smoke.test.mjs:254-277`).
+  `m0-contract-smoke.test.ts:254-277`).
 - **Зависимости:** MP-11; push-провайдер; ключи FCM/APNs (в `.env.example` их нет).
 - **DoD:** контракт возвращает реальный результат отправки push, а не stub-DTO.
 
@@ -513,7 +531,7 @@ Runnable mock-провайдеров в `packages/contracts` **нет** — па
   приходить из секрет-менеджера, а НЕ коммититься» (`:13-15`).
 - **Есть:** принцип «конфиг только через env» (ТЗ §25.10) соблюдён; резолверы
   секретов централизованы и **бросают исключение при отсутствии**
-  (`rf-payload-cipher.mjs:168-183`, `vpn-tunnel.mjs:87-99`); compose требует
+  (`rf-payload-cipher.ts:168-183`, `vpn-tunnel.ts:87-99`); compose требует
   `AUTH_HASH_SECRET` обязательным (`docker-compose.yml:77`). **Нет:** самого
   менеджера, ротации, разыменования `channels.credentials_ref` (ссылка на секрет,
   не сам секрет).
@@ -540,8 +558,8 @@ Runnable mock-провайдеров в `packages/contracts` **нет** — па
   **только** `HOST` и `PORT` (`docker-compose.rf.yml:64-68`), без `env_file` —
   `EDGE_BUFFER_ENCRYPTION_KEY`/`EDGE_VPN_SESSION_KEY` в контейнер **не попадают**, а
   `DATABASE_URL` не задан → Postgres-буфер не используется. При вызове крипто-путей
-  резолверы бросят исключение (`rf-payload-cipher.mjs:168-183`,
-  `vpn-tunnel.mjs:87-99`).
+  резолверы бросят исключение (`rf-payload-cipher.ts:168-183`,
+  `vpn-tunnel.ts:87-99`).
 - **Зависимости:** MP-12, MP-20.
 - **Риски:** сложность Низкая, риск Средний.
 - **DoD:** RF-секреты и `DATABASE_URL` пробрасываются в контейнер (env_file/
@@ -588,22 +606,22 @@ Runnable mock-провайдеров в `packages/contracts` **нет** — па
 
 Перечислено для полноты инвентаризации; это **не** production-моки:
 
-- **Contract-smoke харнесс** — `tests/contract/m0-contract-smoke.test.mjs:289-302`
+- **Contract-smoke харнесс** — `tests/contract/m0-contract-smoke.test.ts:289-302`
   поднимает реальные in-process серверы сервисов только внутри теста (contract-gate).
-- **Детерминированные сиды/фикстуры** — `packages/testing/src/db/m0-seed-data.mjs`,
-  `db/seeds/000001_m0_seed.mjs` (фиксированные UUID, `M0_SEED_TIMESTAMP`); применяются
-  реальным идемпотентным сидером (`scripts/db-seed.mjs`).
-- **Тест-фабрики и анонимизация ПДн** — `packages/testing/src/db/factories.mjs`,
-  `anonymization.mjs` (реальная data-ops логика 152-ФЗ, не мок).
-- **api-client** — реальный ручной JSON-клиент (`packages/api-client/src/index.mjs`),
+- **Детерминированные сиды/фикстуры** — `packages/testing/src/db/m0-seed-data.ts`,
+  `db/seeds/000001_m0_seed.ts` (фиксированные UUID, `M0_SEED_TIMESTAMP`); применяются
+  реальным идемпотентным сидером (`scripts/db-seed.ts`).
+- **Тест-фабрики и анонимизация ПДн** — `packages/testing/src/db/factories.ts`,
+  `anonymization.ts` (реальная data-ops логика 152-ФЗ, не мок).
+- **api-client** — реальный ручной JSON-клиент (`packages/api-client/src/index.ts`),
   **не** мок; расхождение план↔факт: мастер-план называет его «сгенерированным из
   OpenAPI», но генерации нет (техдолг, см. §4).
 - **MSW-конфиг фронтов** — dev-only (`package.json` msw.workerDirectory).
-- **CI-заглушки** — `scripts/ci-placeholder.mjs` — **сирота**, не вызывается из
+- **CI-заглушки** — `scripts/ci-placeholder.ts` — **сирота**, не вызывается из
   `package.json`; CI фактически гоняет реальные `test:contract`/`test:e2e`. Имена
   шагов «placeholder» — техдолг именования.
 - **ui-kit** — пустой каркас (`packages/ui-kit`, `.gitkeep`), `lint/test/build`
-  делегированы в no-op `scripts/workspace-command.mjs`.
+  делегированы в no-op `scripts/workspace-command.ts`.
 
 ---
 
@@ -644,7 +662,7 @@ Runnable mock-провайдеров в `packages/contracts` **нет** — па
 **FBP / SVC-FBP (MP-08):**
 10. Какой интерфейс канонический — мок (`startWorkflow`/`recordBackendApiCallback`)
     или движок (`runWorkflow`/`start`/`resume`), и кто владелец таблиц состояния
-    (Backend-owned по образцу `instance-store.mjs`)?
+    (Backend-owned по образцу `instance-store.ts`)?
 
 **Notification (MP-10):**
 11. Продюсер событий уведомлений — остаётся HTTP `POST
@@ -683,7 +701,7 @@ Runnable mock-провайдеров в `packages/contracts` **нет** — па
 
 - **Runtime-прогон не выполнялся.** Все выводы — из чтения кода и конфигов, не из
   фактического запуска docker-compose/сервисов. Поведение «полочного» реального
-  кода (SVC-FBP `engine.mjs`, SVC-EDGE `edge-cluster.mjs`) подтверждено только
+  кода (SVC-FBP `engine.ts`, SVC-EDGE `edge-cluster.ts`) подтверждено только
   наличием и тестами, не production-прогоном; наличие ≠ production-ready.
 - **Другие ветки, кроме `issue-201-f89a765260f1`, не анализировались подробно.**
   Проверен лишь факт, что реальные LLM-провайдеры (PR #200 / ветка

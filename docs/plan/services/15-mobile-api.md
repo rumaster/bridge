@@ -209,10 +209,10 @@ e2e) · DoD (единый — мастер §9.4). Основная работа
 потерь/дублей, идемпотентная отправка (`idempotency_key = message_id`) и push из
 C10. Контракт **C9** (Edge↔App tunnel) в сопряжении с C1 заморожен `stable_for_m5`
 (`packages/contracts/cp6-cp7-freeze.v1.json`, скреплено
-`tests/contract/m4-gate-freeze.test.mjs`). Покрытие: e2e
-`tests/e2e/mobile-connection-loss-cp7.test.mjs`,
-`tests/e2e/backend-dist-communication-core.test.mjs`;
-contract `tests/contract/mobile-api-contract.test.mjs`.
+`tests/contract/m4-gate-freeze.test.ts`). Покрытие: e2e
+`tests/e2e/mobile-connection-loss-cp7.test.ts`,
+`tests/e2e/backend-dist-communication-core.test.ts`;
+contract `tests/contract/mobile-api-contract.test.ts`.
 
 ### M5 — Независимое версионирование §19.6, приёмка, производительность, устойчивость
 
@@ -233,9 +233,9 @@ contract `tests/contract/mobile-api-contract.test.mjs`.
 **Статус реализации M5 (M5-99).** На интеграционном gate CP-9 SVC-API-MOB принят:
 приёмка и NFR §25.2 подтверждены (`docs/operations/mobile-api-m5-acceptance.md`),
 сценарий «Потеря соединения» для мобильных клиентов зелёный
-(`tests/e2e/mobile-connection-loss-cp7.test.mjs`). Контракт **MOBILE.v1** финально
+(`tests/e2e/mobile-connection-loss-cp7.test.ts`). Контракт **MOBILE.v1** финально
 заморожен как `released_v1` на независимой линии `1.1.0` (совместимость с `1.0.0`) в
-`packages/contracts/cp9-freeze.v1.json` (скреплено `tests/contract/m5-gate-freeze.test.mjs`).
+`packages/contracts/cp9-freeze.v1.json` (скреплено `tests/contract/m5-gate-freeze.test.ts`).
 
 ---
 

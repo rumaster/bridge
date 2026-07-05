@@ -22,7 +22,7 @@ license/copyright notices для заимствованных файлов и я
 ## M3 — форк как clean-room переработка (ТЗ §13.13)
 
 Движок этапа M3 (`src/core/*`, `src/nodes/*`, `src/transform/*`, `src/schema/*`,
-`src/backend/*`, `src/engine.mjs`) — **clean-room реализация**: ни один файл
+`src/backend/*`, `src/engine.ts`) — **clean-room реализация**: ни один файл
 upstream-проекта `rumaster/fbp-engine` не копировался и не адаптировался
 построчно. «Форк» из ТЗ §13.13 трактуется как переработка идеи
 Flow-Based Programming (граф Node/Connection, Execution Context, пошаговое

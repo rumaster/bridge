@@ -37,7 +37,7 @@
         { "contract": "C8.BroadcastCoreDeliveryDraft", "delivery_path": "C1/C2", "core_contracts": ["C1", "C2"] }
       ],
       "artifacts": [
-        "packages/contracts/src/c8.mjs",
+        "packages/contracts/src/c8.ts",
         "services/backend/src/modules/communication-core/communication-core-m4.dto.ts",
         "services/backend/src/modules/communication-core/internal-messaging.service.ts",
         "services/backend/src/modules/communication-core/internal-messaging.controller.ts",
@@ -45,10 +45,10 @@
       ],
       "evidence": [
         "services/backend/test/integration/internal-messaging.spec.ts",
-        "tests/contract/c8-broadcast-contract.test.mjs",
-        "tests/contract/int-delivery-attempts-cp6.test.mjs",
-        "tests/e2e/backend-dist-communication-core.test.mjs",
-        "tests/e2e/broadcast-delivery-cp6.test.mjs"
+        "tests/contract/c8-broadcast-contract.test.ts",
+        "tests/contract/int-delivery-attempts-cp6.test.ts",
+        "tests/e2e/backend-dist-communication-core.test.ts",
+        "tests/e2e/broadcast-delivery-cp6.test.ts"
       ]
     },
     {
@@ -61,19 +61,19 @@
         { "contract": "C9.EdgeTunnelAck" }
       ],
       "artifacts": [
-        "packages/contracts/src/c9.mjs",
-        "services/edge-gateway/src/buffered-gateway.mjs",
+        "packages/contracts/src/c9.ts",
+        "services/edge-gateway/src/buffered-gateway.ts",
         "services/backend/src/modules/communication-core/communication-core-m4.dto.ts",
         "services/backend/src/modules/communication-core/edge-intake.service.ts",
         "services/backend/src/modules/communication-core/internal-messaging.controller.ts"
       ],
       "evidence": [
         "services/backend/test/integration/internal-messaging.spec.ts",
-        "services/edge-gateway/test/unit/buffered-gateway.test.mjs",
-        "services/edge-gateway/test/integration/mock-edge-gateway.test.mjs",
-        "tests/contract/edge-core-c9-c7.contract.test.mjs",
-        "tests/e2e/backend-dist-communication-core.test.mjs",
-        "tests/e2e/mobile-connection-loss-cp7.test.mjs"
+        "services/edge-gateway/test/unit/buffered-gateway.test.ts",
+        "services/edge-gateway/test/integration/mock-edge-gateway.test.ts",
+        "tests/contract/edge-core-c9-c7.contract.test.ts",
+        "tests/e2e/backend-dist-communication-core.test.ts",
+        "tests/e2e/mobile-connection-loss-cp7.test.ts"
       ]
     },
     {
@@ -93,7 +93,7 @@
       "evidence": [
         "services/backend/test/unit/message-status.spec.ts",
         "services/backend/test/integration/internal-messaging.spec.ts",
-        "tests/e2e/backend-dist-communication-core.test.mjs"
+        "tests/e2e/backend-dist-communication-core.test.ts"
       ]
     },
     {
@@ -110,9 +110,9 @@
         "services/backend/src/modules/communication-core/internal-messaging.controller.ts"
       ],
       "evidence": [
-        "tests/contract/int-core.c2.contract.test.mjs",
+        "tests/contract/int-core.c2.contract.test.ts",
         "services/backend/test/integration/internal-messaging.spec.ts",
-        "tests/e2e/backend-dist-communication-core.test.mjs"
+        "tests/e2e/backend-dist-communication-core.test.ts"
       ]
     }
   ],

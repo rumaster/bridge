@@ -217,12 +217,12 @@ SVC-NOTIF использует их так:
 (категория × канал), одинаковый C10-payload идёт в Web (SVC-MWS) и Telegram
 Console (SVC-TGC). Контракты **C10** и схема **`notification.created`** заморожены
 как `stable_for_m5` в `packages/contracts/cp8-freeze.v1.json` (скреплено
-`tests/contract/m4-gate-freeze.test.mjs`). Покрытие: contract
-`tests/contract/c10-notification-contract.test.mjs`,
-`tests/contract/manager-workspace-c10-consumer.test.mjs`,
-`tests/contract/telegram-console-cp8-consumer.test.mjs`; e2e
-`tests/e2e/notification-subscriptions-cp8.test.mjs`,
-`tests/e2e/telegram-console-cp8.test.mjs`; unit/integration
+`tests/contract/m4-gate-freeze.test.ts`). Покрытие: contract
+`tests/contract/c10-notification-contract.test.ts`,
+`tests/contract/manager-workspace-c10-consumer.test.ts`,
+`tests/contract/telegram-console-cp8-consumer.test.ts`; e2e
+`tests/e2e/notification-subscriptions-cp8.test.ts`,
+`tests/e2e/telegram-console-cp8.test.ts`; unit/integration
 `services/notification-platform/test/**`.
 
 ### M5 — Тонкие настройки, устойчивость, приоритеты категорий

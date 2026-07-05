@@ -242,12 +242,12 @@ FBP.
 **Статус реализации M3.** M3 FBP Engine завершён для CP-4/CP-5: движок исполняет
 нейтральный граф, валидирует Transform Node на сохранении схемы, вызывает
 Backend API как единственный write path и не имеет прямого SQL-доступа. Покрытие:
-`services/fbp-engine/test/unit/{validate-workflow,nodes,transform-validate}.test.mjs`,
-`services/fbp-engine/test/integration/backend-fbp.test.mjs`,
-`tests/contract/c5-fbp-contract.test.mjs`,
-`tests/contract/c5-fbp-node-catalog.test.mjs`,
-`tests/e2e/workflow-fbp-m5-cp9.test.mjs` и
-`tests/e2e/workflow-engine-cp4-cp5.test.mjs`. C5 заморожен на CP-4 и вместе с
+`services/fbp-engine/test/unit/{validate-workflow,nodes,transform-validate}.test.ts`,
+`services/fbp-engine/test/integration/backend-fbp.test.ts`,
+`tests/contract/c5-fbp-contract.test.ts`,
+`tests/contract/c5-fbp-node-catalog.test.ts`,
+`tests/e2e/workflow-fbp-m5-cp9.test.ts` и
+`tests/e2e/workflow-engine-cp4-cp5.test.ts`. C5 заморожен на CP-4 и вместе с
 C3/C4 стабилизирован на CP-5 в `packages/contracts/cp4-cp5-freeze.v1.json`.
 Готовность M4: базовые `workflow_*` стабильны; version pinning/stateless
 масштабирование остаются следующим этапом.
@@ -291,11 +291,11 @@ C3/C4 стабилизирован на CP-5 в `packages/contracts/cp4-cp5-free
   журнал полон; критерии приёмки (мастер §9.4, CP-9).
 
 **Статус реализации M5 (M5-99).** На интеграционном gate CP-9 SVC-FBP принят:
-нагрузочный пробник исполнителей (`experiments/m5-fbp-load-probe.mjs`) в бюджете,
+нагрузочный пробник исполнителей (`experiments/m5-fbp-load-probe.ts`) в бюджете,
 харденинг Transform Node подтверждён фаззингом (`docs/operations/m5-security-review.md`,
-§2), участие в полном наборе §26.6 зелёное (`tests/e2e/workflow-fbp-m5-cp9.test.mjs`).
+§2), участие в полном наборе §26.6 зелёное (`tests/e2e/workflow-fbp-m5-cp9.test.ts`).
 Контракт **C5** финально заморожен как `released_v1` в
-`packages/contracts/cp9-freeze.v1.json` (скреплено `tests/contract/m5-gate-freeze.test.mjs`).
+`packages/contracts/cp9-freeze.v1.json` (скреплено `tests/contract/m5-gate-freeze.test.ts`).
 
 ---
 

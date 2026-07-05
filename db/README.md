@@ -43,7 +43,7 @@ npm run test:integration
   `app.is_platform_operator()`;
 - RLS-политики для `organizations` и `users`.
 
-Сиды `000001_m0_seed.mjs` создают детерминированные роли
+Сиды `000001_m0_seed.ts` создают детерминированные роли
 `platform_operator`, `administrator`, `manager`, демо-организацию и
 `seeded-admin`.
 

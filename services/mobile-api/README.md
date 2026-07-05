@@ -16,38 +16,38 @@
 
 ## Слои
 
-- `src/backend-client.mjs` — мок Backend API (канал C3.\*): разговоры, сообщения,
+- `src/backend-client.ts` — мок Backend API (канал C3.\*): разговоры, сообщения,
   уведомления C10, приём канонических сообщений от Edge (`ingestEdgeBatch`) и
   проекция C7-событий; монотонная лента изменений на организацию
   (`getChangesSince`, `sequence_number` §7.10), дедуп по `idempotency_key` (§11.12).
-- `src/aggregators.mjs` — сборка «экранных» DTO (диалоги с превью/счётчиками,
+- `src/aggregators.ts` — сборка «экранных» DTO (диалоги с превью/счётчиками,
   история, уведомления) из вызовов C3.\* → компактные мобильные DTO (ТЗ §19.2).
-- `src/sync-engine.mjs` + `src/sync-cursor.mjs` — дельта-синхронизация
+- `src/sync-engine.ts` + `src/sync-cursor.ts` — дельта-синхронизация
   `GET /mobile/v1/sync`: изменения после курсора + новый курсор; курсор
   `mob1.<base64url-json>` монотонен, устойчив к «оффлайн → онлайн» без потерь и
   дублей (ТЗ §19.3).
-- `src/device-registry.mjs` — реестр устройств/push-токенов и онлайн-присутствия
+- `src/device-registry.ts` — реестр устройств/push-токенов и онлайн-присутствия
   (для fallback «нет WS → push»); отзыв и деактивация мёртвых токенов (ТЗ §19.4).
-- `src/push-payload.mjs` + `src/push-provider.mjs` + `src/push-dispatcher.mjs` —
+- `src/push-payload.ts` + `src/push-provider.ts` + `src/push-dispatcher.ts` —
   маппинг C10 → payload FCM/APNs, мок-провайдер (ретраи, transient/dead-токены) и
   диспетчер доставки с деактивацией мёртвых токенов (ТЗ §19.4, §15.4).
-- `src/realtime-consumer.mjs` — потребление C7-событий (`message.created`,
+- `src/realtime-consumer.ts` — потребление C7-событий (`message.created`,
   `message.status_changed`, `notification.created`, `typing.*`), дедуп по
   `event_id`, доставка по WS либо fallback в push при отсутствии живого WS.
-- `src/mobile-bff.mjs` — прикладной фасад `createMobileBff`, связывающий слои и
+- `src/mobile-bff.ts` — прикладной фасад `createMobileBff`, связывающий слои и
   экспонирующий методы для HTTP-сервера, Edge-приёма и realtime.
-- `src/mobile-dto.mjs` — валидация входных DTO мобильного контракта (MOBILE.v1).
+- `src/mobile-dto.ts` — валидация входных DTO мобильного контракта (MOBILE.v1).
 
-> `src/server.mjs`, `src/deterministic-mobile-api.mjs`, `src/main.mjs` — HTTP-слой
+> `src/server.ts`, `src/deterministic-mobile-api.ts`, `src/main.ts` — HTTP-слой
 > и замороженный детерминированный M0-мок (wire-контракт). Реальный BFF (M4)
-> подключается в `server.mjs` через параметр `mobileApi`; `MOBILE_API_MODE=mock`
-> откатывает `main.mjs` на M0-мок.
+> подключается в `server.ts` через параметр `mobileApi`; `MOBILE_API_MODE=mock`
+> откатывает `main.ts` на M0-мок.
 
 ## Публичный API
 
 ```js
-import { createMobileBff } from "./src/mobile-bff.mjs";
-import { createMobileApiServer } from "./src/server.mjs";
+import { createMobileBff } from "./src/mobile-bff.ts";
+import { createMobileApiServer } from "./src/server.ts";
 
 // BFF со всеми слоями; now — инъектируемые часы (детерминизм, без ГСЧ/времени).
 const bff = createMobileBff({ now, context: { organizationId, userId, deviceId } });
@@ -114,7 +114,7 @@ npm run test:e2e                           # CP-7: «Потеря соедине
   синхронизация, доставка push через мок-провайдер, `POST /messages` с
   дедупликацией, бюджеты латентности (диалоги ≤ 1 с, история ≤ 2 с,
   уведомления ≤ 1 с, ТЗ §25.2).
-- **e2e** — `tests/e2e/mobile-connection-loss-cp7.test.mjs` (CP-7, ТЗ §26.6):
+- **e2e** — `tests/e2e/mobile-connection-loss-cp7.test.ts` (CP-7, ТЗ §26.6):
   клиент РФ через Edge — разрыв → восстановление → синхронизация без потерь/дублей
   и без нарушения порядка; мобильный realtime — реконнект WS C7 с реплеем без
   потерь и дублей, `GET /sync` доотдаёт накопленное.

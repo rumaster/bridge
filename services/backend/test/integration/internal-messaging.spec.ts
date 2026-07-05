@@ -138,7 +138,7 @@ describe("Внутренний messaging-путь (issue #189/#191)", () => {
     databaseUrl = connectionString(container);
     process.env.DATABASE_URL = databaseUrl;
 
-    runRootScript("scripts/db-migrate.mjs", ["up"], databaseUrl);
+    runRootScript("scripts/db-migrate.ts", ["up"], databaseUrl);
     await seedFixtures(databaseUrl);
 
     const moduleRef = await Test.createTestingModule({
@@ -459,7 +459,7 @@ function runRootScript(scriptPath: string, args: string[], databaseUrl: string):
   let lastError: unknown;
   for (let attempt = 1; attempt <= 20; attempt += 1) {
     try {
-      execFileSync("node", [scriptPath, ...args], {
+      execFileSync("node", ["--import", "tsx", scriptPath, ...args], {
         cwd: resolve(__dirname, "../../../.."),
         env: { ...process.env, DATABASE_URL: databaseUrl },
         stdio: "pipe",

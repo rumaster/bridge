@@ -20,7 +20,7 @@ NestJS `AppModule` и `dist/main.js`.
 - первые `sample_results` для быстрой сверки маршрутизации.
 
 Integration-фикстуры `services/backend/test/integration/internal-messaging.spec.ts`
-и `tests/e2e/backend-dist-communication-core.test.mjs` проверяют, что ядро
+и `tests/e2e/backend-dist-communication-core.test.ts` проверяют, что ядро
 принимает сообщения, сохраняет idempotency и отдаёт измеримые counters/latency.
 Эти проверки не являются заменой продакшн-SLA из ТЗ §25.11, а дают повторяемую
 регрессию для CI.

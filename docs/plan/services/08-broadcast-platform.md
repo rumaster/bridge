@@ -221,11 +221,11 @@ SVC-MWS). SVC-BCAST использует их так:
 message_id`), не обходя SVC-CORE; связь `broadcast_messages ↔ messages`
 фиксируется на каждой доставке, повторный запуск дедуплицируется. Контракт **C8**
 заморожен как `stable_for_m5` в `packages/contracts/cp6-cp7-freeze.v1.json`
-(скреплено `tests/contract/m4-gate-freeze.test.mjs`). Покрытие: contract
-`tests/contract/c8-broadcast-contract.test.mjs`,
-`tests/contract/int-delivery-attempts-cp6.test.mjs`; e2e
-`tests/e2e/backend-dist-communication-core.test.mjs`,
-`tests/e2e/broadcast-delivery-cp6.test.mjs`.
+(скреплено `tests/contract/m4-gate-freeze.test.ts`). Покрытие: contract
+`tests/contract/c8-broadcast-contract.test.ts`,
+`tests/contract/int-delivery-attempts-cp6.test.ts`; e2e
+`tests/e2e/backend-dist-communication-core.test.ts`,
+`tests/e2e/broadcast-delivery-cp6.test.ts`.
 
 ### M5 — Нагрузка и устойчивость
 
@@ -246,9 +246,9 @@ message_id`), не обходя SVC-CORE; связь `broadcast_messages ↔ mes
 
 **Статус реализации M5 (M5-99).** На интеграционном gate CP-9 SVC-BCAST принят:
 крупные кампании доставляются строго через C1/C2 ядра без дублей под нагрузкой,
-регрессия §26.6 зелёная (`tests/e2e/broadcast-delivery-cp6.test.mjs`). Контракт
+регрессия §26.6 зелёная (`tests/e2e/broadcast-delivery-cp6.test.ts`). Контракт
 **C8** финально заморожен как `released_v1` в
-`packages/contracts/cp9-freeze.v1.json` (скреплено `tests/contract/m5-gate-freeze.test.mjs`).
+`packages/contracts/cp9-freeze.v1.json` (скреплено `tests/contract/m5-gate-freeze.test.ts`).
 
 ---
 

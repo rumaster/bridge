@@ -222,7 +222,7 @@ Telegram Bot API `sendMessage` при заданном `TELEGRAM_BOT_TOKEN`, и�
 start/verify портирован в production через `telegram-login-rate-limiter.ts` и
 покрыт `services/backend/test/unit/telegram-login-rate-limiter.spec.ts`,
 `services/backend/test/integration/telegram-auth.spec.ts` и
-`tests/e2e/backend-dist-communication-core.test.mjs`. Старые `.mjs`-наборы
+`tests/e2e/backend-dist-communication-core.test.ts`. Старые `.mjs`-наборы
 удалены как изолированный backend-прототип; см.
 `docs/audit/backend-mjs-production-audit.md` (пункты 6, 10, 12).
 

@@ -232,9 +232,9 @@ C10 подтверждён: SVC-TGC доставляет тот же замор�
 Console, что и web-часть, ответ клиенту идемпотентен. Контракты
 C10/`notification.created` зафиксированы `stable_for_m5`
 (`packages/contracts/cp8-freeze.v1.json`, скреплено
-`tests/contract/m4-gate-freeze.test.mjs`). Покрытие CP-8 telegram-части:
-`tests/contract/telegram-console-cp8-consumer.test.mjs`,
-`tests/e2e/telegram-console-cp8.test.mjs`.
+`tests/contract/m4-gate-freeze.test.ts`). Покрытие CP-8 telegram-части:
+`tests/contract/telegram-console-cp8-consumer.test.ts`,
+`tests/e2e/telegram-console-cp8.test.ts`.
 
 ### M5 — Приёмка, устойчивость, ограничения Telegram
 
@@ -257,10 +257,10 @@ C10/`notification.created` зафиксированы `stable_for_m5`
 
 **Статус реализации M5 (M5-99).** На интеграционном gate CP-9 SVC-TGC принят:
 telegram-часть сценария «Notification в Web + Telegram» зелёная
-(`tests/e2e/telegram-console-cp8.test.mjs`, `tests/e2e/notification-delivery-cp9.test.mjs`),
+(`tests/e2e/telegram-console-cp8.test.ts`, `tests/e2e/notification-delivery-cp9.test.ts`),
 ответ клиенту идемпотентен. Потребляемый контракт **C10** финально заморожен как
 `released_v1` в `packages/contracts/cp9-freeze.v1.json` (скреплено
-`tests/contract/m5-gate-freeze.test.mjs`).
+`tests/contract/m5-gate-freeze.test.ts`).
 
 ---
 

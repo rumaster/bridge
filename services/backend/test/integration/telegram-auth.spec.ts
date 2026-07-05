@@ -49,8 +49,8 @@ describe("SVC-IDN Telegram authentication (login/telegram/start + verify)", () =
     const databaseUrl = connectionString(container);
     process.env.DATABASE_URL = databaseUrl;
 
-    runRootScript("scripts/db-migrate.mjs", ["up"], databaseUrl);
-    runRootScript("scripts/db-seed.mjs", [], databaseUrl);
+    runRootScript("scripts/db-migrate.ts", ["up"], databaseUrl);
+    runRootScript("scripts/db-seed.ts", [], databaseUrl);
 
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
@@ -347,7 +347,7 @@ function connectionString(container: StartedTestContainer): string {
 }
 
 function runRootScript(scriptPath: string, args: string[], databaseUrl: string): void {
-  execFileSync("node", [scriptPath, ...args], {
+  execFileSync("node", ["--import", "tsx", scriptPath, ...args], {
     cwd: resolve(__dirname, "../../../.."),
     env: {
       ...process.env,
