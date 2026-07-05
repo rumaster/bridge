@@ -4,10 +4,11 @@ import {
 } from "../../../packages/contracts/src/c4.js";
 
 import { assertAssistantSuggestRequest } from "./c4-dto.js";
-import { createDeterministicMockLlm } from "./llm.js";
+import { createDeterministicMockLlm, type LlmProvider } from "./llm.js";
 import { createResilientLlm } from "./llm-facade.js";
-import { createAiMetrics } from "./metrics.js";
-import { createOnboardingCommander } from "./onboarding.js";
+import { createAiMetrics, type AiMetrics } from "./metrics.js";
+import { createOnboardingCommander, type OnboardingCommander } from "./onboarding.js";
+import type { KbSearch } from "./kb-search.js";
 import { buildPrompt, buildSources, rankChunks } from "./rag-pipeline.js";
 
 const DEFAULT_TOP_K = 5;
@@ -29,6 +30,17 @@ const DEFAULT_TOP_K = 5;
  * single-provider case. Quality/cost signals land in a shared metrics sink
  * surfaced on `/metrics` (ТЗ §24.4).
  */
+/** Options accepted by {@link createRagAssistant}. */
+export interface RagAssistantOptions {
+  llm?: LlmProvider;
+  resolveLlm?: (organizationId?: any) => LlmProvider;
+  kbSearch?: KbSearch;
+  topK?: number;
+  now?: () => string;
+  metrics?: AiMetrics;
+  onboarding?: OnboardingCommander;
+}
+
 export function createRagAssistant({
   llm = createDeterministicMockLlm(),
   resolveLlm,
@@ -37,7 +49,7 @@ export function createRagAssistant({
   now = () => new Date().toISOString(),
   metrics = createAiMetrics(),
   onboarding,
-} = {}) {
+}: RagAssistantOptions = {}) {
   if (!kbSearch || typeof kbSearch.search !== "function") {
     throw new TypeError("createRagAssistant requires a kbSearch with a search() method");
   }

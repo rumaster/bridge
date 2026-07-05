@@ -7,11 +7,24 @@ import { renderPrometheus } from "./metrics.js";
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 const MAX_BODY_BYTES = 1024 * 1024;
 
+/**
+ * Options accepted by {@link createAiPlatformServer}. `ai` is the AI
+ * implementation (RAG assistant or deterministic mock) injected in tests and
+ * production; it is typed permissively (`any`) because the two variants expose
+ * different optional surfaces and the server only feature-detects a method
+ * (`getHealth`, `getMetrics`, ...) before calling it.
+ */
+export interface AiPlatformServerOptions {
+  ai?: any;
+  mode?: string;
+  now?: () => string;
+}
+
 export function createAiPlatformServer({
   ai,
   mode,
   now = () => new Date().toISOString(),
-} = {}) {
+}: AiPlatformServerOptions = {}) {
   const mockAi = ai ?? createDeterministicAiMock({ now });
   const serviceMode = mode ?? mockAi.mode ?? "deterministic-mock";
 
@@ -174,7 +187,10 @@ function breakerGauges(mockAi) {
 }
 
 class PayloadError extends Error {
-  constructor(status, title, message) {
+  readonly status: number;
+  readonly title: string;
+
+  constructor(status: number, title: string, message: string) {
     super(message);
     this.name = "PayloadError";
     this.status = status;

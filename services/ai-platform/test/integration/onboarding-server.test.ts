@@ -21,7 +21,7 @@ function listen(server) {
 }
 
 function close(server) {
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }
@@ -65,7 +65,7 @@ describe("AI Platform onboarding server (mock LLM commander)", () => {
     const response = await command("Установи часовой пояс Europe/Moscow");
     assert.equal(response.status, 200);
 
-    const body = await response.json();
+    const body: any = await response.json();
     assert.equal(body.contract, "C4.OnboardingCommandResponse");
     assert.equal(body.command.action, "configuration.upsert");
     assert.equal(body.command.organization_id, ORG);
@@ -76,7 +76,7 @@ describe("AI Platform onboarding server (mock LLM commander)", () => {
     const response = await command("Подключи Telegram канал");
     assert.equal(response.status, 200);
 
-    const body = await response.json();
+    const body: any = await response.json();
     assert.equal(body.command.action, "channel.connect");
     assert.equal(body.command.params.channel_type, "telegram");
   });
@@ -84,7 +84,7 @@ describe("AI Platform onboarding server (mock LLM commander)", () => {
   it("returns controlled validation errors for a malformed request", async () => {
     const response = await command("");
     assert.equal(response.status, 400);
-    const body = await response.json();
+    const body: any = await response.json();
     assert.equal(body.title, "Validation failed");
   });
 });

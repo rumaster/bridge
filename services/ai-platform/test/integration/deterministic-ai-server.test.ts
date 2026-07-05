@@ -15,7 +15,7 @@ function listen(server) {
 }
 
 async function close(server) {
-  await new Promise((resolve, reject) => {
+  await new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }
@@ -89,7 +89,7 @@ describe("AI Platform deterministic mock server", () => {
     });
 
     assert.equal(response.status, 200);
-    const body = await response.json();
+    const body: any = await response.json();
     assert.equal(body.command.action, "channel.connect");
     assert.equal(body.command.params.channel_type, "telegram");
   });
@@ -107,7 +107,7 @@ describe("AI Platform deterministic mock server", () => {
     });
 
     assert.equal(response.status, 400);
-    const body = await response.json();
+    const body: any = await response.json();
     assert.equal(body.title, "Validation failed");
     assert.equal(body.status, 400);
   });

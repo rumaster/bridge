@@ -1,6 +1,11 @@
-import { createCircuitBreaker } from "./circuit-breaker.js";
+import {
+  createCircuitBreaker,
+  type CircuitBreakerOptions,
+  type CircuitBreakerSnapshot,
+} from "./circuit-breaker.js";
 import { createResilientLlm } from "./llm-facade.js";
-import { createAiMetrics } from "./metrics.js";
+import { createAiMetrics, type AiMetrics } from "./metrics.js";
+import type { LlmProvider } from "./llm.js";
 
 /**
  * LLM provider selection by configuration (ТЗ §12.9).
@@ -19,7 +24,36 @@ import { createAiMetrics } from "./metrics.js";
  * data it may see — that boundary stays with the KB search and prompt (ТЗ §22.6).
  */
 
-export function createLlmProviderRegistry(providers = {}) {
+/** A concrete provider+model choice resolved from platform config (ТЗ §12.9). */
+export interface ProviderSelection {
+  provider?: string;
+  model?: string | null;
+}
+
+/** Platform LLM selection config: per-organization overrides plus a default. */
+export interface LlmSelectionConfig {
+  default?: ProviderSelection;
+  organizations?: Record<string, ProviderSelection>;
+}
+
+/** Named registry of LLM provider factories. */
+export interface LlmProviderRegistry {
+  has(name: string): boolean;
+  names(): string[];
+  create(name: string, options?: { model?: string | null }): LlmProvider;
+}
+
+/** Options accepted by {@link createLlmRouter}. */
+export interface LlmRouterOptions {
+  registry?: LlmProviderRegistry;
+  config?: LlmSelectionConfig;
+  metrics?: AiMetrics;
+  timeoutMs?: number;
+  breakerOptions?: CircuitBreakerOptions;
+  now?: () => number;
+}
+
+export function createLlmProviderRegistry(providers = {}): LlmProviderRegistry {
   const factories = new Map();
   for (const [name, factory] of Object.entries(providers)) {
     if (typeof factory !== "function") {
@@ -51,10 +85,13 @@ export function createLlmProviderRegistry(providers = {}) {
  * neither yields a known provider so a misconfiguration fails loudly at startup
  * rather than silently degrading every request.
  */
-export function resolveProviderSelection(config = {}, organizationId) {
-  const organizations = config.organizations ?? {};
+export function resolveProviderSelection(
+  config: LlmSelectionConfig = {},
+  organizationId?: string,
+) {
+  const organizations: Record<string, ProviderSelection> = config.organizations ?? {};
   const override = organizationId != null ? organizations[organizationId] : undefined;
-  const fallback = config.default ?? {};
+  const fallback: ProviderSelection = config.default ?? {};
 
   const provider = override?.provider ?? fallback.provider;
   if (typeof provider !== "string" || provider === "") {
@@ -76,7 +113,7 @@ export function createLlmRouter({
   timeoutMs,
   breakerOptions,
   now = () => Date.now(),
-} = {}) {
+}: LlmRouterOptions = {}) {
   if (!registry || typeof registry.create !== "function") {
     throw new TypeError("createLlmRouter requires a provider registry");
   }
@@ -117,8 +154,8 @@ export function createLlmRouter({
       return facadeFor(provider, model);
     },
 
-    breakerStates() {
-      const states = {};
+    breakerStates(): Record<string, CircuitBreakerSnapshot> {
+      const states: Record<string, CircuitBreakerSnapshot> = {};
       for (const [key, facade] of facades.entries()) {
         states[key] = facade.getBreakerState();
       }

@@ -75,7 +75,7 @@ describe("resilient LLM facade — pass-through", () => {
  */
 function hangingProvider(capability) {
   const timers = [];
-  const provider = stubProvider({
+  const provider: any = stubProvider({
     [capability]: () =>
       new Promise((resolve) => {
         timers.push(setTimeout(resolve, 60_000));

@@ -30,7 +30,7 @@ describe("deterministic AI mock", () => {
   it("returns a structured onboarding command that backend must validate before applying", () => {
     const ai = createDeterministicAiMock({ now: fixedNow });
 
-    const response = ai.createOnboardingCommand({
+    const response: any = ai.createOnboardingCommand({
       contract: "C4.OnboardingCommandRequest",
       version: "1.0.0",
       request_id: "req-onboarding-1",

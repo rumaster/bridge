@@ -5,9 +5,9 @@ import {
 } from "../../../packages/contracts/src/c4.js";
 
 import { assertOnboardingCommandRequest } from "./c4-dto.js";
-import { createDeterministicMockLlm } from "./llm.js";
+import { createDeterministicMockLlm, type LlmProvider } from "./llm.js";
 import { createResilientLlm } from "./llm-facade.js";
-import { createAiMetrics } from "./metrics.js";
+import { createAiMetrics, type AiMetrics, type AiMetricsSnapshot } from "./metrics.js";
 import {
   buildOnboardingPrompt,
   validateOnboardingDraft,
@@ -27,12 +27,26 @@ import {
  * unavailable the commander degrades to a safe `noop` command so onboarding UIs
  * stay responsive and the platform keeps working without AI (ТЗ §5.4).
  */
+/** Options accepted by {@link createOnboardingCommander}. */
+export interface OnboardingCommanderOptions {
+  llm?: LlmProvider;
+  resolveLlm?: (organizationId?: any) => LlmProvider;
+  now?: () => string;
+  metrics?: AiMetrics;
+}
+
+/** AI Onboarding commander surface (CP-5). */
+export interface OnboardingCommander {
+  createOnboardingCommand(payload: any): Promise<any>;
+  getMetrics(): AiMetricsSnapshot;
+}
+
 export function createOnboardingCommander({
   llm = createDeterministicMockLlm(),
   resolveLlm,
   now = () => new Date().toISOString(),
   metrics = createAiMetrics(),
-} = {}) {
+}: OnboardingCommanderOptions = {}): OnboardingCommander {
   // Single-provider path: wrap the given provider once so onboarding LLM calls
   // also get the facade's timeout + circuit breaker (ТЗ §11.2). A router
   // (`resolveLlm`) already hands back resilient facades, so it is used as-is.
@@ -155,7 +169,9 @@ function fallbackReasonFor(error) {
 }
 
 export class OnboardingCommandRejectedError extends Error {
-  constructor(errors) {
+  readonly errors: string[];
+
+  constructor(errors: string[]) {
     super(`AI onboarding command rejected: ${errors.join("; ")}`);
     this.name = "OnboardingCommandRejectedError";
     this.errors = errors;

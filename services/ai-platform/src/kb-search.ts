@@ -2,6 +2,7 @@ import {
   createKnowledgeSearchRequest,
   validateKnowledgeSearchResponse,
 } from "../../../packages/contracts/src/c3-kb.js";
+import type { LlmProvider } from "./llm.js";
 
 /**
  * Knowledge Base search (C3.kb) — SVC-AI reaches the KB ONLY through Backend
@@ -11,8 +12,20 @@ import {
  * no direct database access.
  */
 
+/** Knowledge Base search surface (C3.kb) consumed by the RAG assistant. */
+export interface KbSearch {
+  search(args: any): Promise<{ results: any }>;
+  ensureEmbeddings?(): Promise<void>;
+}
+
+/** Options accepted by {@link createInMemoryKbSearch}. */
+export interface InMemoryKbSearchOptions {
+  chunks?: any[];
+  llm?: LlmProvider;
+}
+
 export class KbSearchError extends Error {
-  constructor(message, { cause } = {}) {
+  constructor(message: string, { cause }: { cause?: unknown } = {}) {
     super(message);
     this.name = "KbSearchError";
     if (cause !== undefined) {
@@ -31,7 +44,7 @@ export function createBackendKbSearch({
   fetchImpl = globalThis.fetch,
   path = "/knowledge:search",
   timeoutMs = 5000,
-}) {
+}): KbSearch {
   if (typeof baseUrl !== "string" || baseUrl.trim() === "") {
     throw new TypeError("createBackendKbSearch requires baseUrl");
   }
@@ -98,7 +111,7 @@ export function createBackendKbSearch({
  * Used by service-level integration/e2e tests and as a local reference; it never
  * returns a chunk from another organization.
  */
-export function createInMemoryKbSearch({ chunks = [], llm } = {}) {
+export function createInMemoryKbSearch({ chunks = [], llm }: InMemoryKbSearchOptions = {}): KbSearch {
   const indexed = chunks.map((chunk) => ({
     organization_id: chunk.organization_id,
     document_id: chunk.document_id,

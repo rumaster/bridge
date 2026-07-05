@@ -17,8 +17,36 @@ export const BREAKER_STATES = Object.freeze({
   HALF_OPEN: "half_open",
 });
 
+/** The three states a {@link createCircuitBreaker} instance can report. */
+export type BreakerState = "closed" | "open" | "half_open";
+
+/** Immutable view of a breaker for `/health` and metrics gauges. */
+export interface CircuitBreakerSnapshot {
+  state: BreakerState;
+  consecutive_failures: number;
+}
+
+/** Circuit breaker guarding the resilient LLM facade (ТЗ §11.2). */
+export interface CircuitBreaker {
+  readonly state: BreakerState;
+  assertClosed(): void;
+  recordSuccess(): void;
+  recordFailure(): void;
+  snapshot(): CircuitBreakerSnapshot;
+}
+
+/** Tunables accepted by {@link createCircuitBreaker}. */
+export interface CircuitBreakerOptions {
+  failureThreshold?: number;
+  cooldownMs?: number;
+  now?: () => number;
+  onOpen?: () => void;
+}
+
 export class CircuitOpenError extends Error {
-  constructor(reason = "circuit_open") {
+  readonly reason: string;
+
+  constructor(reason: string = "circuit_open") {
     super(`LLM circuit breaker is open: ${reason}`);
     this.name = "CircuitOpenError";
     // Map to the C4 `fallback_reason` vocabulary: an open circuit is a form of
@@ -32,12 +60,12 @@ export function createCircuitBreaker({
   cooldownMs = 30_000,
   now = () => Date.now(),
   onOpen = () => {},
-} = {}) {
+}: CircuitBreakerOptions = {}): CircuitBreaker {
   if (!Number.isInteger(failureThreshold) || failureThreshold < 1) {
     throw new TypeError("failureThreshold must be a positive integer");
   }
 
-  let state = BREAKER_STATES.CLOSED;
+  let state: BreakerState = BREAKER_STATES.CLOSED;
   let consecutiveFailures = 0;
   let openedAt = 0;
 

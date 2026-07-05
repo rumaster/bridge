@@ -49,7 +49,7 @@ function listen(server) {
 }
 
 function close(server) {
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }
@@ -118,7 +118,7 @@ describe("hardening — circuit breaker via the server", () => {
     for (const query of ["возврат 1", "возврат 2", "возврат 3"]) {
       const response = await suggest(baseUrl, "org-1", query);
       assert.equal(response.status, 200);
-      const body = await response.json();
+      const body: any = await response.json();
       assert.equal(body.contract, "C4.AssistantSuggestResponse");
       assert.equal(body.degraded, true);
       assert.equal(body.suggestion.mode, "fallback");
@@ -133,7 +133,7 @@ describe("hardening — circuit breaker via the server", () => {
   });
 
   it("reports the open breaker on /health", async () => {
-    const health = await (await fetch(`${baseUrl}/health`)).json();
+    const health: any = await (await fetch(`${baseUrl}/health`)).json();
     assert.equal(health.status, "ok", "service stays live even with the LLM down");
     assert.equal(health.llm.breaker.state, "open");
   });
@@ -179,7 +179,7 @@ describe("hardening — provider selection by config", () => {
   });
 
   it("answers org-1 (premium) with real KB citations", async () => {
-    const body = await (await suggest(baseUrl, "org-1", "Как оформить возврат заказа?")).json();
+    const body: any = await (await suggest(baseUrl, "org-1", "Как оформить возврат заказа?")).json();
     assert.equal(body.degraded, false);
     assert.equal(body.source_status, "available");
     const ids = body.sources.map((source) => source.chunk_id);
@@ -188,7 +188,7 @@ describe("hardening — provider selection by config", () => {
   });
 
   it("answers a default-tier org (economy) too", async () => {
-    const body = await (await suggest(baseUrl, "org-1", "возврат")).json();
+    const body: any = await (await suggest(baseUrl, "org-1", "возврат")).json();
     assert.equal(body.contract, "C4.AssistantSuggestResponse");
     // org-2's private chunk must never leak into org-1's answer.
     const ids = body.sources.map((source) => source.chunk_id);
@@ -196,7 +196,7 @@ describe("hardening — provider selection by config", () => {
   });
 
   it("reports the platform default provider on /health", async () => {
-    const health = await (await fetch(`${baseUrl}/health`)).json();
+    const health: any = await (await fetch(`${baseUrl}/health`)).json();
     assert.equal(health.llm.name, "economy");
     assert.equal(health.llm.breaker.state, "closed");
   });
@@ -232,7 +232,7 @@ describe("hardening — CP-9 degradation without stopping communication", () => 
   });
 
   it("Assistant returns a guaranteed stub answer", async () => {
-    const body = await (await suggest(baseUrl, "org-1", "возврат заказа")).json();
+    const body: any = await (await suggest(baseUrl, "org-1", "возврат заказа")).json();
     assert.equal(body.degraded, true);
     assert.equal(body.suggestion.mode, "fallback");
     assert.equal(body.fallback_reason, "unavailable");
@@ -240,7 +240,7 @@ describe("hardening — CP-9 degradation without stopping communication", () => 
   });
 
   it("Onboarding degrades to a valid safe noop command", async () => {
-    const body = await (await onboard(baseUrl, "org-1", "Установи часовой пояс Europe/Moscow")).json();
+    const body: any = await (await onboard(baseUrl, "org-1", "Установи часовой пояс Europe/Moscow")).json();
     assert.equal(body.degraded, true);
     assert.equal(body.command.action, "noop");
     assert.equal(body.command.organization_id, "org-1");
@@ -248,7 +248,7 @@ describe("hardening — CP-9 degradation without stopping communication", () => 
   });
 
   it("stays live on /health and keeps serving /metrics", async () => {
-    const health = await (await fetch(`${baseUrl}/health`)).json();
+    const health: any = await (await fetch(`${baseUrl}/health`)).json();
     assert.equal(health.status, "ok");
     const metrics = await (await fetch(`${baseUrl}/metrics`)).text();
     assert.match(metrics, /ai_platform_assistant_suggest_degraded_total [1-9]/);

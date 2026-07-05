@@ -1,5 +1,5 @@
-import { createAiPlatformServer } from "./server.js";
-import { createRagAssistant } from "./rag-assistant.js";
+import { createAiPlatformServer, type AiPlatformServerOptions } from "./server.js";
+import { createRagAssistant, type RagAssistantOptions } from "./rag-assistant.js";
 import { createDeterministicMockLlm } from "./llm.js";
 import { createBackendKbSearch } from "./kb-search.js";
 import { createAiMetrics } from "./metrics.js";
@@ -35,7 +35,7 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
  * every LLM call is wrapped in the resilient facade (timeout + circuit breaker)
  * and quality/cost metrics land in a shared sink (ТЗ §11.2, §24.4).
  */
-function buildServerOptions() {
+function buildServerOptions(): AiPlatformServerOptions {
   const backendKbUrl = process.env.AI_BACKEND_KB_URL;
   if (!backendKbUrl) {
     return {};
@@ -45,7 +45,7 @@ function buildServerOptions() {
   const kbSearch = createBackendKbSearch({ baseUrl: backendKbUrl });
   const routerConfig = parseLlmConfig(process.env.AI_LLM_CONFIG);
 
-  const assistantOptions = { kbSearch, metrics };
+  const assistantOptions: RagAssistantOptions = { kbSearch, metrics };
   if (routerConfig) {
     const registry = createLlmProviderRegistry(buildProviderFactories());
     const router = createLlmRouter({ registry, config: routerConfig, metrics });

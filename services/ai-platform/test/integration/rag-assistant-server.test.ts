@@ -46,7 +46,7 @@ function listen(server) {
 }
 
 function close(server) {
-  return new Promise((resolve, reject) => {
+  return new Promise<void>((resolve, reject) => {
     server.close((error) => (error ? reject(error) : resolve()));
   });
 }
@@ -86,14 +86,14 @@ describe("RAG assistant server (mock LLM + in-memory KB)", () => {
 
   it("reports the rag mode on health", async () => {
     const response = await fetch(`${baseUrl}/health`);
-    const body = await response.json();
+    const body: any = await response.json();
     assert.equal(body.mode, "rag");
   });
 
   it("answers from the Knowledge Base with ranked source citations", async () => {
     const response = await suggest(baseUrl, "org-1", "Как оформить возврат заказа?");
     assert.equal(response.status, 200);
-    const body = await response.json();
+    const body: any = await response.json();
 
     assert.equal(body.contract, "C4.AssistantSuggestResponse");
     assert.equal(body.degraded, false);
@@ -108,14 +108,14 @@ describe("RAG assistant server (mock LLM + in-memory KB)", () => {
 
   it("never returns another organization's chunk (tenant isolation)", async () => {
     const response = await suggest(baseUrl, "org-1", "возврат заказа");
-    const body = await response.json();
+    const body: any = await response.json();
     const ids = body.sources.map((source) => source.chunk_id);
     assert.ok(!ids.includes("chunk-secret"));
   });
 
   it("returns a 'none' source when the organization has no matching KB", async () => {
     const response = await suggest(baseUrl, "org-3", "возврат заказа");
-    const body = await response.json();
+    const body: any = await response.json();
     assert.equal(body.source_status, "available");
     assert.equal(body.sources.length, 1);
     assert.equal(body.sources[0].source_type, "none");
@@ -161,7 +161,7 @@ describe("RAG assistant degradation (LLM unavailable)", () => {
   it("degrades to a valid fallback response instead of failing", async () => {
     const response = await suggest(baseUrl, "org-1", "Как оформить возврат заказа?");
     assert.equal(response.status, 200);
-    const body = await response.json();
+    const body: any = await response.json();
 
     assert.equal(body.contract, "C4.AssistantSuggestResponse");
     assert.equal(body.degraded, true);

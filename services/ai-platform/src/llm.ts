@@ -31,6 +31,39 @@ const MIN_TOKEN_LENGTH = 3;
 const SEED_SLOTS_PER_TOKEN = 4;
 
 /**
+ * Swappable LLM provider surface (embed / generate / interpretOnboarding) plus
+ * the descriptive metadata the registry and resilient facade read. Every member
+ * is optional so partial test doubles, the unavailable variant and the resilient
+ * wrapper all satisfy the same structural type.
+ */
+export interface LlmProvider {
+  name?: string;
+  model?: string | null;
+  pricing?: Record<string, number>;
+  dimensions?: number;
+  available?: boolean;
+  resilient?: boolean;
+  embed?(text?: any): Promise<any>;
+  generate?(args?: any): Promise<any>;
+  interpretOnboarding?(args?: any): Promise<any>;
+  getBreakerState?(): any;
+}
+
+/** Options accepted by {@link createDeterministicMockLlm}. */
+export interface DeterministicMockLlmOptions {
+  dimensions?: number;
+  name?: string;
+  model?: string | null;
+  pricing?: Record<string, number>;
+}
+
+/** Options accepted by {@link createUnavailableLlm}. */
+export interface UnavailableLlmOptions {
+  reason?: string;
+  dimensions?: number;
+}
+
+/**
  * Create the deterministic mock LLM provider. No randomness, no network — same
  * input always yields the same embedding and the same generated answer.
  *
@@ -45,7 +78,7 @@ export function createDeterministicMockLlm({
   name = "deterministic-mock",
   model = null,
   pricing,
-} = {}) {
+}: DeterministicMockLlmOptions = {}): LlmProvider {
   return {
     name,
     model,
@@ -74,7 +107,7 @@ export function createDeterministicMockLlm({
 export function createUnavailableLlm({
   reason = "unavailable",
   dimensions = LLM_EMBEDDING_DIMENSIONS,
-} = {}) {
+}: UnavailableLlmOptions = {}): LlmProvider {
   const fail = () => {
     throw new LlmUnavailableError(reason);
   };
@@ -96,7 +129,9 @@ export function createUnavailableLlm({
 }
 
 export class LlmUnavailableError extends Error {
-  constructor(reason = "unavailable") {
+  readonly reason: string;
+
+  constructor(reason: string = "unavailable") {
     super(`LLM provider is unavailable: ${reason}`);
     this.name = "LlmUnavailableError";
     this.reason = reason;

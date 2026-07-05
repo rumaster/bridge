@@ -1,5 +1,10 @@
-import { createCircuitBreaker, CircuitOpenError } from "./circuit-breaker.js";
-import { createAiMetrics } from "./metrics.js";
+import {
+  createCircuitBreaker,
+  CircuitOpenError,
+  type CircuitBreaker,
+} from "./circuit-breaker.js";
+import { createAiMetrics, type AiMetrics } from "./metrics.js";
+import type { LlmProvider } from "./llm.js";
 
 /**
  * Resilient LLM facade (ТЗ §11.2, §12.9, §24.4).
@@ -21,8 +26,20 @@ const CAPABILITIES = Object.freeze(["embed", "generate", "interpretOnboarding"])
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_MICROS_PER_1K_CHARS = 20;
 
+/** Options accepted by {@link createResilientLlm}. */
+export interface ResilientLlmOptions {
+  provider?: LlmProvider;
+  timeoutMs?: number;
+  metrics?: AiMetrics;
+  breaker?: CircuitBreaker;
+  now?: () => number;
+  costModel?: (capability: string, args: any[], result: any, provider: any) => number;
+}
+
 export class LlmTimeoutError extends Error {
-  constructor(timeoutMs) {
+  readonly reason: string;
+
+  constructor(timeoutMs: number) {
     super(`LLM call timed out after ${timeoutMs}ms`);
     this.name = "LlmTimeoutError";
     this.reason = "timeout";
@@ -36,7 +53,7 @@ export function createResilientLlm({
   breaker,
   now = () => Date.now(),
   costModel = defaultCostModel,
-} = {}) {
+}: ResilientLlmOptions = {}): LlmProvider {
   if (!provider || typeof provider !== "object") {
     throw new TypeError("createResilientLlm requires a provider");
   }
@@ -48,7 +65,7 @@ export function createResilientLlm({
       onOpen: () => metrics.inc("llm_circuit_open_total"),
     });
 
-  const facade = {
+  const facade: LlmProvider = {
     name: provider.name ?? "unknown",
     model: provider.model ?? null,
     dimensions: provider.dimensions,

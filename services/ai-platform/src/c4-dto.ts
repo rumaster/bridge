@@ -30,8 +30,16 @@ const MESSAGE_CONTEXT_FIELDS = new Set([
 
 const SENDER_TYPES = new Set(["client", "manager", "system", "ai"]);
 
+/** Единичное нарушение валидации DTO C4. */
+export interface C4ValidationIssue {
+  field: string;
+  message: string;
+}
+
 export class C4DtoValidationError extends Error {
-  constructor(errors) {
+  readonly errors: C4ValidationIssue[];
+
+  constructor(errors: C4ValidationIssue[]) {
     super(`C4 DTO validation failed: ${errors.map((error) => error.field).join(", ")}`);
     this.name = "C4DtoValidationError";
     this.errors = errors;

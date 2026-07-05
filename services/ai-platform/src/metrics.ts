@@ -56,12 +56,38 @@ const METRIC_TYPE = Object.freeze({
 
 const METRIC_PREFIX = "ai_platform_";
 
+/** Full set of SVC-AI counters/gauges exposed by {@link createAiMetrics}. */
+export interface AiMetricsSnapshot {
+  assistant_suggest_total: number;
+  assistant_suggest_degraded_total: number;
+  onboarding_command_total: number;
+  onboarding_command_degraded_total: number;
+  onboarding_command_rejected_total: number;
+  kb_search_total: number;
+  kb_search_failed_total: number;
+  llm_call_total: number;
+  llm_call_failed_total: number;
+  llm_timeout_total: number;
+  llm_short_circuit_total: number;
+  llm_circuit_open_total: number;
+  llm_cost_micros_total: number;
+  llm_latency_ms_sum: number;
+  llm_latency_ms_count: number;
+}
+
+/** Observability sink accumulating SVC-AI quality/cost signals (ТЗ §24.4). */
+export interface AiMetrics {
+  inc(name: string, amount?: number): void;
+  observeLatency(ms: number): void;
+  snapshot(): AiMetricsSnapshot;
+}
+
 /**
  * Create a fresh metrics collector. Every counter starts at zero so `snapshot()`
  * always exposes the full set of series, even before any traffic.
  */
-export function createAiMetrics() {
-  const state = {};
+export function createAiMetrics(): AiMetrics {
+  const state = {} as AiMetricsSnapshot;
   for (const key of COUNTER_KEYS) {
     state[key] = 0;
   }
