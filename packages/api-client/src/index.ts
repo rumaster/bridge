@@ -112,7 +112,7 @@ export function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "");
 }
 
-async function readResponseBody(response) {
+async function readResponseBody(response: Response): Promise<any> {
   if (response.status === 204) {
     return undefined;
   }
@@ -126,7 +126,7 @@ async function readResponseBody(response) {
   return text === "" ? undefined : text;
 }
 
-function buildHeaders(defaultHeaders, init) {
+function buildHeaders(defaultHeaders: HeaderBag | undefined, init: RequestInit) {
   const headers = new Headers();
   headers.set("Accept", "application/json");
 
@@ -140,17 +140,19 @@ function buildHeaders(defaultHeaders, init) {
   return headers;
 }
 
-function appendHeaders(target, source) {
+function appendHeaders(target: Headers, source: unknown) {
   if (source === undefined) {
     return;
   }
 
-  new Headers(source).forEach((value, key) => {
+  // Тип `HeadersInit` расходится между DOM и undici (значения записи, формы
+  // массивов); нормализуем на границе конструктора — рантайм принимает обе формы.
+  new Headers(source as any).forEach((value, key) => {
     target.set(key, value);
   });
 }
 
-function getErrorMessage(body) {
+function getErrorMessage(body: unknown) {
   if (isRecord(body) && typeof body.message === "string" && body.message.trim() !== "") {
     return body.message;
   }
@@ -174,6 +176,6 @@ function getDefaultOrigin() {
   return globalThis.location?.origin ?? "http://localhost";
 }
 
-function isRecord(value) {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
