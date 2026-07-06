@@ -1,19 +1,19 @@
 # syntax=docker/dockerfile:1
-# @bridge/fbp-engine — сервис без прикладных npm-зависимостей во время выполнения,
-# поэтому образ собирается без npm ci: копируются только исходники сервиса и
-# пакет packages/contracts, на который есть относительные импорты (../../../).
+# @bridge/fbp-engine. Контекст сборки — весь монорепозиторий: gRPC runtime
+# берётся из npm workspace-зависимостей сервиса, а packages/contracts нужны для
+# относительных импортов и proto-контракта C5.
 FROM node:20.20.2-alpine
 
 WORKDIR /repo
 
 # tsx выполняет TypeScript-исходники сервиса напрямую, без шага сборки.
-RUN npm install --no-save --no-package-lock tsx@^4.19.2
-COPY packages/contracts ./packages/contracts
-COPY services/fbp-engine ./services/fbp-engine
+COPY . .
+RUN npm ci
 WORKDIR /repo/services/fbp-engine
 
 ENV NODE_ENV=production
 EXPOSE 3095
+EXPOSE 3105
 
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=5 \
   CMD ["node", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 3095) + '/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
