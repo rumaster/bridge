@@ -403,6 +403,23 @@ export function createVpnTunnelEdgeClient({
       certificate: identity.certificate,
       nonce: clientNonce,
     });
+    if (serverHello && typeof serverHello.then === "function") {
+      throw new VpnTunnelError("async VPN tunnel server requires connectAsync()/ensureConnected()");
+    }
+    finishEstablish(clientNonce, serverHello);
+  }
+
+  async function establishAsync() {
+    const clientNonce = nonceFactory();
+    const serverHello = await server.handshake({
+      clientId,
+      certificate: identity.certificate,
+      nonce: clientNonce,
+    });
+    finishEstablish(clientNonce, serverHello);
+  }
+
+  function finishEstablish(clientNonce, serverHello) {
     // Проверяем серверный сертификат App (клиентская сторона mTLS).
     if (!serverHello?.certificate || !verifyPeer(serverHello.certificate, serverHello)) {
       metrics.handshake_failed_total += 1;
@@ -424,6 +441,17 @@ export function createVpnTunnelEdgeClient({
         throw new VpnTunnelChannelDownError("VPN tunnel channel is down");
       }
       establish();
+      metrics.connect_total += 1;
+      return { sessionId: session.sessionId, serverId: session.serverId };
+    },
+
+    /** Async-вариант connect() для реального TCP/TLS/WSS транспорта. */
+    async connectAsync() {
+      if (!link.isUp()) {
+        metrics.channel_down_total += 1;
+        throw new VpnTunnelChannelDownError("VPN tunnel channel is down");
+      }
+      await establishAsync();
       metrics.connect_total += 1;
       return { sessionId: session.sessionId, serverId: session.serverId };
     },
@@ -482,7 +510,7 @@ export function createVpnTunnelEdgeClient({
       while (attempts < maxAttempts) {
         if (link.isUp()) {
           try {
-            establish();
+            await establishAsync();
             metrics.reconnect_total += 1;
             return { reconnected: true, attempts: attempts + 1 };
           } catch (error) {

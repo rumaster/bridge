@@ -4,18 +4,15 @@
 # Поднимает только то, что относится к РФ-периметру:
 #   - postgres-rf — резидентный Postgres для буфера edge-сообщений;
 #   - migrate-rf — миграции только RF-схемы (edge_message_buffer);
-#   - edge-gateway — WebSocket-шлюз, принимающий соединения клиентов в РФ.
+#   - edge-gateway — WebSocket-шлюз/Edge Cluster, принимающий сообщения клиентов
+#     в РФ, фиксирующий их в RF-буфере и отправляющий в Application Cluster через
+#     VPN Tunnel Service.
 #
 # Не входит и намеренно не создаётся в этом файле:
-#   - отдельный сетевой демон VPN Tunnel Service как compose-сервис. Сам туннель
-#     Edge↔App уже реализован (services/edge-gateway/src/vpn-tunnel.ts: mTLS,
-#     AES-256-GCM, контроль соединения, авто-восстановление, backpressure; CP-7),
-#     как и весь RF-first-конвейер (шифр RF-буфера, секвенсор порядка, оркестратор
-#     Edge Cluster) — всё покрыто unit/integration/contract/e2e-тестами. Но
-#     привязка к реальным сокетам между отдельными серверами — задача последующей
-#     вехи, поэтому фиктивный сетевой сервис здесь не поднимается, чтобы не
-#     создавать ложное впечатление готового межсерверного канала; секреты
-#     туннеля и шифра RF-буфера описаны в .env.rf.example;
+#   - App-сторона VPN Tunnel Service: она запускается в Application Cluster через
+#     сервис edge-vpn-app из docker-compose.yml. RF edge-gateway подключается к
+#     ней по EDGE_VPN_APP_TCP_URL, а при отказе основного TCP/TLS-транспорта — по
+#     EDGE_VPN_APP_WSS_URL.
 #   - миграции Application Cluster: против postgres-rf выполняется только
 #     цель "rf" скрипта scripts/db-migrate.ts, без мультитенантной SaaS-схемы.
 #
@@ -64,8 +61,26 @@ services:
     environment:
       # В коде edge-gateway хост по умолчанию 127.0.0.1 — переопределяем на
       # 0.0.0.0, иначе сервис недоступен снаружи контейнера.
+      EDGE_GATEWAY_MODE: ${EDGE_GATEWAY_MODE:-edge}
       HOST: 0.0.0.0
       PORT: ${EDGE_GATEWAY_PORT:-3000}
+      DATABASE_URL: ${RF_DATABASE_URL:-postgres://bridge_edge:bridge_edge@postgres-rf:5432/bridge_edge}
+      EDGE_BUFFER_ENCRYPTION_KEY: ${EDGE_BUFFER_ENCRYPTION_KEY:?укажите EDGE_BUFFER_ENCRYPTION_KEY в .env.rf}
+      EDGE_VPN_SESSION_KEY: ${EDGE_VPN_SESSION_KEY:?укажите EDGE_VPN_SESSION_KEY в .env.rf}
+      EDGE_VPN_EDGE_ID: ${EDGE_VPN_EDGE_ID:-edge-rf}
+      EDGE_VPN_EDGE_CERT: ${EDGE_VPN_EDGE_CERT:?укажите EDGE_VPN_EDGE_CERT в .env.rf}
+      EDGE_VPN_TRUSTED_APP_CERTS: ${EDGE_VPN_TRUSTED_APP_CERTS:?укажите EDGE_VPN_TRUSTED_APP_CERTS в .env.rf}
+      EDGE_VPN_APP_TCP_URL: ${EDGE_VPN_APP_TCP_URL:?укажите EDGE_VPN_APP_TCP_URL в .env.rf}
+      EDGE_VPN_APP_WSS_URL: ${EDGE_VPN_APP_WSS_URL:-}
+      EDGE_VPN_TIMEOUT_MS: ${EDGE_VPN_TIMEOUT_MS:-5000}
+      EDGE_VPN_BACKOFF_MS: ${EDGE_VPN_BACKOFF_MS:-100,500,1000,2500,5000}
+      EDGE_BUFFER_TTL_MS: ${EDGE_BUFFER_TTL_MS:-3600000}
+      EDGE_VPN_APP_TCP_CLIENT_TLS_CA: ${EDGE_VPN_APP_TCP_CLIENT_TLS_CA:-}
+      EDGE_VPN_APP_TCP_CLIENT_TLS_KEY: ${EDGE_VPN_APP_TCP_CLIENT_TLS_KEY:-}
+      EDGE_VPN_APP_TCP_CLIENT_TLS_CERT: ${EDGE_VPN_APP_TCP_CLIENT_TLS_CERT:-}
+      EDGE_VPN_APP_WSS_CLIENT_TLS_CA: ${EDGE_VPN_APP_WSS_CLIENT_TLS_CA:-}
+      EDGE_VPN_APP_WSS_CLIENT_TLS_KEY: ${EDGE_VPN_APP_WSS_CLIENT_TLS_KEY:-}
+      EDGE_VPN_APP_WSS_CLIENT_TLS_CERT: ${EDGE_VPN_APP_WSS_CLIENT_TLS_CERT:-}
     ports:
       - "${EDGE_GATEWAY_PORT:-3000}:${EDGE_GATEWAY_PORT:-3000}"
     depends_on:

@@ -1,16 +1,16 @@
 # syntax=docker/dockerfile:1
-# @bridge/edge-gateway — сервис без прикладных npm-зависимостей во время
-# выполнения, поэтому образ собирается без npm ci: копируются только исходники
-# сервиса и пакет packages/contracts, на который есть относительные импорты
-# (../../../). Backend production-path проверяется отдельно через dist/main.js,
-# edge-gateway mock не копирует и не исполняет legacy backend-прототипы.
+# @bridge/edge-gateway — сервис с минимальными runtime-зависимостями: tsx для
+# запуска TypeScript-исходников и pg для production RF-буфера edge_message_buffer.
+# Копируются только исходники сервиса и пакет packages/contracts, на который есть
+# относительные импорты (../../../). Backend production-path проверяется отдельно
+# через dist/main.js, edge-gateway не копирует legacy backend-прототипы.
 # Используется отдельно в Edge-кластере РФ (docker-compose.rf.yml).
 FROM node:20.20.2-alpine
 
 WORKDIR /repo
 
 # tsx выполняет TypeScript-исходники сервиса напрямую, без шага сборки.
-RUN npm install --no-save --no-package-lock tsx@^4.19.2
+RUN npm install --no-save --no-package-lock tsx@^4.19.2 pg@^8.22.0
 COPY packages/contracts ./packages/contracts
 COPY services/edge-gateway ./services/edge-gateway
 WORKDIR /repo/services/edge-gateway
