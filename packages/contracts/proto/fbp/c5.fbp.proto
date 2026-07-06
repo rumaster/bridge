@@ -1,0 +1,27 @@
+syntax = "proto3";
+
+package bridge.fbp.v1;
+
+service FbpEngine {
+  rpc StartWorkflowInstance(StartWorkflowInstanceRequest) returns (JsonResponse);
+  rpc Health(HealthRequest) returns (JsonResponse);
+}
+
+message StartWorkflowInstanceRequest {
+  string contract = 1;
+  string version = 2;
+  string request_id = 3;
+  string organization_id = 4;
+  string workflow_id = 5;
+  string workflow_version_id = 6;
+  string actor_user_id = 7;
+  string input_json = 8;
+  string schema_json = 9;
+  string context_json = 10;
+}
+
+message HealthRequest {}
+
+message JsonResponse {
+  string json_payload = 1;
+}
