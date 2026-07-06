@@ -1,0 +1,32 @@
+syntax = "proto3";
+
+package bridge.ai.v1;
+
+service AiPlatform {
+  rpc SuggestAssistant(AssistantSuggestRequest) returns (JsonResponse);
+  rpc CreateOnboardingCommand(OnboardingCommandRequest) returns (JsonResponse);
+  rpc Health(HealthRequest) returns (JsonResponse);
+}
+
+message AssistantSuggestRequest {
+  string contract = 1;
+  string version = 2;
+  string request_id = 3;
+  string organization_id = 4;
+  string query = 5;
+}
+
+message OnboardingCommandRequest {
+  string contract = 1;
+  string version = 2;
+  string request_id = 3;
+  string organization_id = 4;
+  string actor_user_id = 5;
+  string prompt = 6;
+}
+
+message HealthRequest {}
+
+message JsonResponse {
+  string json_payload = 1;
+}

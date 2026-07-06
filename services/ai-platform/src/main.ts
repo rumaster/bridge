@@ -1,5 +1,7 @@
 import { createAiPlatformServer, type AiPlatformServerOptions } from "./server.js";
 import { createRagAssistant, type RagAssistantOptions } from "./rag-assistant.js";
+import { createDeterministicAiMock } from "./deterministic-ai.js";
+import { startAiPlatformGrpcServer } from "./grpc-server.js";
 import { createDeterministicMockLlm } from "./llm.js";
 import { createBackendKbSearch } from "./kb-search.js";
 import { createAiMetrics } from "./metrics.js";
@@ -10,18 +12,31 @@ import {
 
 const port = Number.parseInt(process.env.PORT ?? "3006", 10);
 const host = process.env.HOST ?? "0.0.0.0";
+const grpcPort = parseOptionalPort(process.env.AI_GRPC_PORT);
+const grpcHost = process.env.AI_GRPC_HOST ?? host;
 
-const server = createAiPlatformServer(buildServerOptions());
+const serverOptions = buildServerOptions();
+const server = createAiPlatformServer(serverOptions);
+const grpcHandle = grpcPort
+  ? await startAiPlatformGrpcServer({
+      ai: serverOptions.ai ?? createDeterministicAiMock(),
+      host: grpcHost,
+      port: grpcPort,
+    })
+  : null;
 
 server.listen(port, host, () => {
   console.log(`ai-platform listening on http://${host}:${port}`);
 });
 
+if (grpcHandle) {
+  console.log(`ai-platform gRPC listening on ${grpcHandle.address}`);
+}
+
 for (const signal of ["SIGINT", "SIGTERM"]) {
-  process.on(signal, () => {
-    server.close(() => {
-      process.exit(0);
-    });
+  process.on(signal, async () => {
+    await shutdown();
+    process.exit(0);
   });
 }
 
@@ -93,4 +108,32 @@ function parseLlmConfig(raw) {
     console.warn("Ignoring invalid AI_LLM_CONFIG (expected JSON)");
     return null;
   }
+}
+
+function parseOptionalPort(raw) {
+  if (typeof raw !== "string" || raw.trim() === "") {
+    return null;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+async function shutdown() {
+  await Promise.all([closeHttpServer(), closeGrpcServer()]);
+}
+
+function closeHttpServer() {
+  return new Promise((resolveClose) => {
+    server.close(() => resolveClose(undefined));
+  });
+}
+
+function closeGrpcServer() {
+  if (!grpcHandle) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolveClose) => {
+    grpcHandle.server.tryShutdown(() => resolveClose(undefined));
+  });
 }

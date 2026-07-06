@@ -2,68 +2,26 @@ import { Injectable } from "@nestjs/common";
 import { ApiProperty } from "@nestjs/swagger";
 
 import { AiDegradationGuard, toAiDegradationReason } from "./ai-degradation.guard";
-import type { AiDegradationReason } from "./ai-degradation.guard";
+import type {
+  AiAssistantFacadeRequest,
+  AiAssistantFacadeResponse,
+  AiFacadeDegradationReason,
+  AiOnboardingFacadeRequest,
+  AiOnboardingFacadeResponse,
+} from "./ai-integration.types";
+import type { AiUpstreamClient } from "./ai-integration.upstream";
 import type { FacadeResilienceOptions } from "../../common/resilience/resilience";
 
-export type FacadeMode = "mock";
-export type FacadeStatusValue = "degraded";
-export type AiFacadeDegradationReason = AiDegradationReason;
+export type {
+  AiAssistantFacadeRequest,
+  AiAssistantFacadeResponse,
+  AiFacadeDegradationReason,
+  AiOnboardingFacadeRequest,
+  AiOnboardingFacadeResponse,
+} from "./ai-integration.types";
 
-export interface AiAssistantFacadeRequest {
-  request_id: string;
-  organization_id: string;
-  query: string;
-}
-
-export interface AiAssistantFacadeResponse {
-  contract: "C4.AssistantSuggestResponse";
-  version: "1.0.0";
-  request_id: string;
-  organization_id: string;
-  degraded: boolean;
-  fallback_reason: AiFacadeDegradationReason | null;
-  suggestion: {
-    mode: "deterministic_mock" | "fallback";
-    text: string;
-    confidence: number;
-  };
-  source_status: "available" | "not_available_m0" | "unavailable";
-  sources: unknown[];
-  created_at: string;
-}
-
-export interface AiOnboardingFacadeRequest {
-  request_id: string;
-  organization_id: string;
-  prompt: string;
-}
-
-export interface AiOnboardingFacadeResponse {
-  contract: "C4.OnboardingCommandResponse";
-  version: "1.0.0";
-  request_id: string;
-  organization_id: string;
-  degraded: boolean;
-  fallback_reason: AiFacadeDegradationReason | null;
-  command: {
-    contract: "C4.AiOnboardingCommand";
-    version: "1.0.0";
-    command_id: string;
-    organization_id: string;
-    action: "noop";
-    params: Record<string, unknown>;
-    safety: {
-      apply_mode: "backend_validation_required";
-      requires_confirmation: false;
-      notes: string[];
-    };
-    source: {
-      prompt: string;
-      generated_by: "fallback";
-    };
-    created_at: string;
-  };
-}
+export type FacadeMode = "mock" | "grpc";
+export type FacadeStatusValue = "degraded" | "available";
 
 export interface AiFacadeCallOptions<TResponse> {
   call?: () => Promise<TResponse>;
@@ -80,10 +38,10 @@ export class FacadeStatusDto {
   @ApiProperty({ example: "SVC-AI" })
   serviceId!: string;
 
-  @ApiProperty({ enum: ["mock"], example: "mock" })
+  @ApiProperty({ enum: ["mock", "grpc"], example: "grpc" })
   mode!: FacadeMode;
 
-  @ApiProperty({ enum: ["degraded"], example: "degraded" })
+  @ApiProperty({ enum: ["degraded", "available"], example: "available" })
   status!: FacadeStatusValue;
 }
 
@@ -91,7 +49,10 @@ export class FacadeStatusDto {
 export class AiIntegrationFacade {
   private readonly degradationGuard: AiDegradationGuard;
 
-  constructor(guardOrOptions: AiDegradationGuard | FacadeResilienceOptions = {}) {
+  constructor(
+    guardOrOptions: AiDegradationGuard | FacadeResilienceOptions = {},
+    private readonly upstream: AiUpstreamClient | null = null,
+  ) {
     this.degradationGuard =
       guardOrOptions instanceof AiDegradationGuard
         ? guardOrOptions
@@ -100,10 +61,10 @@ export class AiIntegrationFacade {
 
   getStatus(): FacadeStatusDto {
     return {
-      mode: "mock",
+      mode: this.upstream ? "grpc" : "mock",
       name: "ai",
       serviceId: "SVC-AI",
-      status: "degraded",
+      status: this.upstream ? "available" : "degraded",
     };
   }
 
@@ -111,7 +72,9 @@ export class AiIntegrationFacade {
     request: AiAssistantFacadeRequest,
     options: AiFacadeCallOptions<AiAssistantFacadeResponse> = {},
   ): Promise<AiAssistantFacadeResponse> {
-    const result = await this.degradationGuard.execute(options.call, {
+    const call =
+      options.call ?? (this.upstream ? () => this.upstream!.suggestAssistant(request) : undefined);
+    const result = await this.degradationGuard.execute(call, {
       timeoutMs: options.timeoutMs,
     });
     if (result.ok) {
@@ -125,7 +88,10 @@ export class AiIntegrationFacade {
     request: AiOnboardingFacadeRequest,
     options: AiFacadeCallOptions<AiOnboardingFacadeResponse> = {},
   ): Promise<AiOnboardingFacadeResponse> {
-    const result = await this.degradationGuard.execute(options.call, {
+    const call =
+      options.call ??
+      (this.upstream ? () => this.upstream!.createOnboardingCommand(request) : undefined);
+    const result = await this.degradationGuard.execute(call, {
       timeoutMs: options.timeoutMs,
     });
     if (result.ok) {

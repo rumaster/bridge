@@ -417,6 +417,7 @@ async function assertDataPlatformSchema(client, { expectSeedData }) {
   );
   const channelColumnNames = channelColumns.rows.map((row) => row.column_name);
   assert.equal(channelColumnNames.includes("credentials_ref"), true);
+  assert.equal(channelColumnNames.includes("credentials_envelope"), true);
   assert.deepEqual(
     channelColumnNames.filter((columnName) =>
       /(^|_)(api_key|access_key|password|secret|token)(_|$)/.test(columnName),
@@ -930,6 +931,7 @@ async function insertM1TenantSlice(client, organizationId) {
         name,
         status,
         credentials_ref,
+        credentials_envelope,
         config,
         last_check_at,
         created_at,
@@ -943,6 +945,7 @@ async function insertM1TenantSlice(client, organizationId) {
         'connected',
         $4,
         $5::jsonb,
+        $6::jsonb,
         '2026-01-01T00:04:00.000Z',
         '2026-01-01T00:00:00.000Z',
         '2026-01-01T00:04:00.000Z'
@@ -953,6 +956,14 @@ async function insertM1TenantSlice(client, organizationId) {
       organizationId,
       `Telegram ${suffix.toUpperCase()}`,
       `secret://telegram/${organizationId}/main`,
+      JSON.stringify({
+        alg: "AES-256-GCM",
+        ciphertext: `encrypted-${suffix}`,
+        created_at: "2026-01-01T00:04:00.000Z",
+        iv: `iv-${suffix}`,
+        kid: "env:CHANNEL_SECRET_ENCRYPTION_KEY",
+        tag: `tag-${suffix}`,
+      }),
       JSON.stringify({ username: `bridge_${suffix}_bot` }),
     ],
   );
@@ -1429,10 +1440,17 @@ async function assertM2Invariants(client) {
   );
 
   const channel = await client.query(
-    "SELECT credentials_ref, config FROM channels WHERE id = $1",
+    "SELECT credentials_ref, credentials_envelope, config FROM channels WHERE id = $1",
     [fixture.channel],
   );
   assert.equal(channel.rows[0].credentials_ref, `secret://telegram/${ORG_A}/main`);
+  assert.equal(channel.rows[0].credentials_envelope.alg, "AES-256-GCM");
+  assert.equal(
+    Object.hasOwn(channel.rows[0].credentials_envelope, "ciphertext"),
+    true,
+  );
+  assert.equal(Object.hasOwn(channel.rows[0].credentials_envelope, "token"), false);
+  assert.equal(Object.hasOwn(channel.rows[0].credentials_envelope, "secret"), false);
   assert.equal(Object.hasOwn(channel.rows[0].config, "token"), false);
   assert.equal(Object.hasOwn(channel.rows[0].config, "secret"), false);
 
