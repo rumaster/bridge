@@ -742,7 +742,7 @@ export function deriveOnboardingCommand(
     },
     source: {
       prompt,
-      generated_by: "deterministic-mock-ai"
+      generated_by: "generated"
     },
     created_at: options.createdAt
   };

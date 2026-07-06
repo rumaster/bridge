@@ -15,7 +15,7 @@ describe("AiIntegrationFacade", () => {
       degraded: false,
       fallback_reason: null,
       suggestion: {
-        mode: "deterministic_mock",
+        mode: "generated",
         text: "mock response",
         confidence: 0.64,
       },
@@ -48,7 +48,7 @@ describe("AiIntegrationFacade", () => {
       degraded: false,
       fallback_reason: null,
       suggestion: {
-        mode: "deterministic_mock",
+        mode: "generated",
         text: "grpc response",
         confidence: 0.64,
       },

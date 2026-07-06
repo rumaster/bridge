@@ -40,7 +40,7 @@ describe("onboarding commander — sanctioned commands", () => {
     assert.equal(response.command.params.key, "organization.timezone");
     assert.equal(response.command.params.value, "Europe/Moscow");
     assert.equal(response.command.safety.apply_mode, "backend_validation_required");
-    assert.equal(response.command.source.generated_by, "deterministic-mock-ai");
+    assert.equal(response.command.source.generated_by, "generated");
     // The exact validation the Backend re-runs before applying (first barrier).
     assert.equal(validateAiOnboardingCommand(response.command).valid, true);
   });

@@ -82,7 +82,7 @@ export function createAiOnboardingCommand({
   params = {},
   prompt,
   now = () => new Date().toISOString(),
-  generatedBy = "deterministic-mock-ai",
+  generatedBy = "generated",
   requiresConfirmation = true,
   notes = [
     "Command is a description only; Backend must validate permissions and state before applying it.",

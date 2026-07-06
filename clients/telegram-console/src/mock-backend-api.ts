@@ -274,7 +274,7 @@ export function createMockTelegramConsoleBackendApi({
           degraded: false,
           fallback_reason: null,
           suggestion: {
-            mode: "deterministic_mock",
+            mode: "generated",
             text: createAiSuggestionText(request.query),
             confidence: 0.74,
           },

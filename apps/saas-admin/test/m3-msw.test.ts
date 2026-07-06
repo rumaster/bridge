@@ -107,7 +107,7 @@ describe("SaaS Administration MSW mocks — M3 AI Onboarding (C4)", () => {
       command: {
         action: "configuration.upsert",
         safety: { apply_mode: "backend_validation_required", requires_confirmation: true },
-        source: { generated_by: "deterministic-mock-ai" }
+        source: { generated_by: "generated" }
       }
     });
     expect(command.command.params).toMatchObject({

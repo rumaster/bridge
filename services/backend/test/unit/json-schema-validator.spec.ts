@@ -16,7 +16,7 @@ function validCommand(overrides: Record<string, unknown> = {}): Record<string, u
     },
     source: {
       prompt: "Set locale to ru-RU",
-      generated_by: "deterministic-mock-ai",
+      generated_by: "generated",
     },
     created_at: "2026-07-03T00:00:00.000Z",
     ...overrides,

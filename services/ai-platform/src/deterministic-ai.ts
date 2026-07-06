@@ -55,7 +55,7 @@ export function createDeterministicAiMock({ now = () => new Date().toISOString()
         degraded: false,
         fallback_reason: null,
         suggestion: {
-          mode: "deterministic_mock",
+          mode: "generated",
           text: fixture.text,
           confidence: fixture.confidence,
         },

@@ -22,7 +22,7 @@ describe("deterministic AI mock", () => {
 
     assert.deepEqual(first, second);
     assert.equal(first.contract, "C4.AssistantSuggestResponse");
-    assert.equal(first.suggestion.mode, "deterministic_mock");
+    assert.equal(first.suggestion.mode, "generated");
     assert.match(first.suggestion.text, /возврат/i);
     assert.equal(first.source_status, "not_available_m0");
   });

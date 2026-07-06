@@ -118,7 +118,7 @@ export const AI_ONBOARDING_COMMAND_SCHEMA: JsonSchema = {
         },
         generated_by: {
           type: "string",
-          enum: ["deterministic-mock-ai", "fallback"],
+          enum: ["generated", "fallback"],
         },
       },
     },

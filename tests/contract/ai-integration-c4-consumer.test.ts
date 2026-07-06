@@ -80,7 +80,7 @@ describe("CP-3 SVC-API/ai-integration C4 consumer contract", () => {
       requestId: "req-1",
       organizationId: "org-1",
       suggestion: {
-        mode: "deterministic_mock",
+        mode: "generated",
         text: "Ответ на основе базы знаний [1].",
         confidence: 0.8,
       },

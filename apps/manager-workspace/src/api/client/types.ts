@@ -137,7 +137,7 @@ export interface AssistantSuggestResponse {
   degraded: boolean;
   fallback_reason: "timeout" | "unavailable" | null;
   suggestion: {
-    mode: "deterministic_mock" | "fallback";
+    mode: "generated" | "fallback";
     text: string;
     confidence: number;
   };

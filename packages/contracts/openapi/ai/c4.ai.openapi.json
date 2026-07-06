@@ -3,7 +3,7 @@
   "info": {
     "title": "Bridge C4 AI Contract",
     "version": "1.0.0",
-    "description": "Frozen M0 contract for Backend API to call SVC-AI deterministic mock endpoints. Real LLM and RAG are out of scope for M0."
+    "description": "C4 contract for Backend API to call SVC-AI assistant and onboarding endpoints."
   },
   "x-contract-id": "C4",
   "x-owner": "SVC-AI",
@@ -27,7 +27,7 @@
         ],
         "operationId": "suggestAssistantReply",
         "summary": "Suggest assistant reply",
-        "description": "Returns an M0 deterministic assistant suggestion. The response contains either KB sources or an explicit source_status explaining why sources are absent.",
+        "description": "Returns an AI assistant suggestion. The response contains either KB sources or an explicit source_status explaining why sources are absent.",
         "requestBody": {
           "required": true,
           "content": {
@@ -40,7 +40,7 @@
         },
         "responses": {
           "200": {
-            "description": "Deterministic assistant suggestion or controlled fallback.",
+            "description": "Generated assistant suggestion or controlled fallback.",
             "content": {
               "application/json": {
                 "schema": {
@@ -62,7 +62,7 @@
         ],
         "operationId": "createOnboardingCommand",
         "summary": "Create onboarding structured command",
-        "description": "Converts an administrator natural-language request into an M0 structured command. SVC-AI never applies the command directly.",
+        "description": "Converts an administrator natural-language request into a structured command. SVC-AI never applies the command directly.",
         "requestBody": {
           "required": true,
           "content": {
@@ -270,7 +270,7 @@
           "mode": {
             "type": "string",
             "enum": [
-              "deterministic_mock",
+              "generated",
               "fallback"
             ]
           },

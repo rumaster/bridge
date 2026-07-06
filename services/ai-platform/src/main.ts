@@ -9,6 +9,11 @@ import {
   createLlmProviderRegistry,
   createLlmRouter,
 } from "./provider-registry.js";
+import {
+  buildLlmRuntime,
+  buildRealProviderFactories,
+  readTimeoutMs,
+} from "./providers/env.js";
 
 const port = Number.parseInt(process.env.PORT ?? "3006", 10);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -45,10 +50,11 @@ for (const signal of ["SIGINT", "SIGTERM"]) {
  * assistant (CP-3). Without it we keep the M0 deterministic mock so local runs
  * and the M0 contract smoke test behave identically.
  *
- * `AI_LLM_CONFIG` optionally selects the provider/model per organization/platform
- * (ТЗ §12.9); when unset a single deterministic mock provider is used. Either way
- * every LLM call is wrapped in the resilient facade (timeout + circuit breaker)
- * and quality/cost metrics land in a shared sink (ТЗ §11.2, §24.4).
+ * `AI_LLM_CONFIG` optionally selects a provider/model per organization/platform;
+ * the registry offers deterministic local providers plus real OpenAI/Azure
+ * factories when credentials are present. Without the JSON router, `LLM_PROVIDER`
+ * can select one real provider. When neither is configured, CI/local runs keep
+ * the deterministic provider behind the same public C4 `generated` attribution.
  */
 function buildServerOptions(): AiPlatformServerOptions {
   const backendKbUrl = process.env.AI_BACKEND_KB_URL;
@@ -63,20 +69,25 @@ function buildServerOptions(): AiPlatformServerOptions {
   const assistantOptions: RagAssistantOptions = { kbSearch, metrics };
   if (routerConfig) {
     const registry = createLlmProviderRegistry(buildProviderFactories());
-    const router = createLlmRouter({ registry, config: routerConfig, metrics });
+    const router = createLlmRouter({
+      registry,
+      config: routerConfig,
+      metrics,
+      timeoutMs: readTimeoutMs(process.env),
+    });
     assistantOptions.resolveLlm = (organizationId) => router.resolve(organizationId);
   } else {
-    assistantOptions.llm = createDeterministicMockLlm();
+    const runtime = buildLlmRuntime({ env: process.env, metrics });
+    assistantOptions.llm = runtime ? runtime.llm : createDeterministicMockLlm();
   }
 
   return { ai: createRagAssistant(assistantOptions), mode: "rag" };
 }
 
 /**
- * Named provider factories for the registry (ТЗ §12.9). All are deterministic
- * mocks today — swapping in a real OpenAI/YandexGPT/GigaChat provider means
- * registering another factory here without touching the pipeline. `pricing`
- * feeds the facade cost estimate so an "economy" model is measurably cheaper.
+ * Named provider factories for the registry (ТЗ §12.9). Deterministic local
+ * providers are always available; real OpenAI/Azure factories are added from env
+ * when credentials are present.
  */
 function buildProviderFactories() {
   return {
@@ -94,6 +105,7 @@ function buildProviderFactories() {
         model: model ?? "mock-premium",
         pricing: { default: 40 },
       }),
+    ...buildRealProviderFactories(process.env),
   };
 }
 

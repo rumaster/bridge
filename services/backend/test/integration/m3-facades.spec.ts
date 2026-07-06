@@ -44,7 +44,7 @@ function buildCommand(
       requires_confirmation: false,
       notes: [],
     },
-    source: { prompt: "настрой", generated_by: "deterministic-mock-ai" },
+    source: { prompt: "настрой", generated_by: "generated" },
     created_at: "2026-07-03T10:00:00.000Z",
   };
 }
