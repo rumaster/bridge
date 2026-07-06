@@ -190,8 +190,8 @@ adapter_capabilities(                       -- Capability Model (ТЗ §10.6), �
 нормализует inbound в C2 Ingress, принимает C2 Egress с обязательным
 `conversation_ref`, публикует C6 capabilities и проверен unit/integration-тестами
 `services/integration-platform/test/**`, contract-тестом
-`tests/contract/int-core-c2-c6.test.mjs` и production backend e2e
-`tests/e2e/backend-dist-communication-core.test.mjs`.
+`tests/contract/int-core-c2-c6.test.ts` и production backend e2e
+`tests/e2e/backend-dist-communication-core.test.ts`.
 
 ### 5.3 M2 — адаптеры Telegram/Email/SMS/VK/MAX/WhatsApp + наполнение Capability Model
 
@@ -215,9 +215,9 @@ adapter_capabilities(                       -- Capability Model (ТЗ §10.6), �
 **Статус реализации M2.** M2 Integration Platform завершён для CP-2: Telegram,
 Email, SMS, VK, MAX и WhatsApp адаптеры нормализуют inbound в C2 Ingress,
 публикуют C6 capabilities и проверены unit/integration тестами
-`services/integration-platform/test/unit/m2-channel-adapters.test.mjs`,
-`services/integration-platform/test/integration/m2-channel-adapters.integration.test.mjs`
-и per-adapter contract `tests/contract/int-core-m2-adapters.contract.test.mjs`.
+`services/integration-platform/test/unit/m2-channel-adapters.test.ts`,
+`services/integration-platform/test/integration/m2-channel-adapters.integration.test.ts`
+и per-adapter contract `tests/contract/int-core-m2-adapters.contract.test.ts`.
 C2+C6 зафиксированы как `stable_for_m3` в
 `packages/contracts/cp2-cp3-freeze.v1.json`.
 
@@ -256,18 +256,18 @@ C2+C6 зафиксированы как `stable_for_m3` в
 
 **Статус реализации M4.** M4-05 Integration Platform завершён для CP-6: модуль
 `services/integration-platform/src/delivery/` реализует классификацию ошибок и
-экспоненциальный бэкофф (`errors.mjs`, `backoff.mjs`), token-bucket rate limiting
-на канал с backpressure и изоляцией нагрузки (`rate-limiter.mjs`), идемпотентную
-доставку по сквозному `idempotency_key` (`delivery-engine.mjs` +
-`mock-external-channel.mjs`) и фиксацию попыток в `message_delivery_attempts`
-через Backend (`backend-delivery-client.mjs`, контракт `C2.DeliveryAttempt`).
+экспоненциальный бэкофф (`errors.ts`, `backoff.ts`), token-bucket rate limiting
+на канал с backpressure и изоляцией нагрузки (`rate-limiter.ts`), идемпотентную
+доставку по сквозному `idempotency_key` (`delivery-engine.ts` +
+`mock-external-channel.ts`) и фиксацию попыток в `message_delivery_attempts`
+через Backend (`backend-delivery-client.ts`, контракт `C2.DeliveryAttempt`).
 Движок подключён к серверу через `POST /internal/delivery/dispatch` и метрики
 `integration_platform_delivery_*`. Проверено unit
-`services/integration-platform/test/unit/m4-delivery.test.mjs`, integration
-`services/integration-platform/test/integration/m4-delivery.integration.test.mjs`
+`services/integration-platform/test/unit/m4-delivery.test.ts`, integration
+`services/integration-platform/test/integration/m4-delivery.integration.test.ts`
 (ретрай без дублей, rate limit, запись попыток), contract
-`tests/contract/int-delivery-attempts-cp6.test.mjs` и e2e
-`tests/e2e/broadcast-delivery-cp6.test.mjs` («Broadcast: доставка кампании» с
+`tests/contract/int-delivery-attempts-cp6.test.ts` и e2e
+`tests/e2e/broadcast-delivery-cp6.test.ts` («Broadcast: доставка кампании» с
 ретраями/лимитами). Реальные внешние API и деградация каналов — предмет M5.
 
 ### 5.6 M5 — отказоустойчивость всех каналов и деградация
@@ -289,17 +289,17 @@ C2+C6 зафиксированы как `stable_for_m3` в
 - **DoD.** § 9.4 + подтверждена деградация «канал недоступен → ядро работает».
 
 **Статус реализации M5.** M5-05 Integration Platform завершён для CP-9:
-`delivery-engine.mjs` оборачивает внешний вызов канала timeout/circuit
+`delivery-engine.ts` оборачивает внешний вызов канала timeout/circuit
 breaker/bulkhead по каждому `channel_type`, retryable failures не закрывают
-`idempotency_key` как окончательно обработанный, а production `main.mjs`
+`idempotency_key` как окончательно обработанный, а production `main.ts`
 подключает async dispatch: `POST /internal/delivery/dispatch` возвращает `202
 queued` после постановки в bounded queue, фоновая доставка повторяет
 недоставленное. Деградация наблюдаема через метрики
 `integration_platform_delivery_{queued,queue_retries,degraded,timeout,circuit_open,bulkhead_rejected}_total`.
-Проверено unit `services/integration-platform/test/unit/m5-delivery-resilience.test.mjs`,
+Проверено unit `services/integration-platform/test/unit/m5-delivery-resilience.test.ts`,
 integration
-`services/integration-platform/test/integration/m5-delivery-degradation.integration.test.mjs`
-и e2e `tests/e2e/integration-degradation-cp9.test.mjs`: зависший Telegram API не
+`services/integration-platform/test/integration/m5-delivery-degradation.integration.test.ts`
+и e2e `tests/e2e/integration-degradation-cp9.test.ts`: зависший Telegram API не
 блокирует ответ ядру, Email доставляется параллельно, Telegram фиксируется как
 failed и повторяется через очередь без обхода `idempotency_key`.
 

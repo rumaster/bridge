@@ -6,17 +6,17 @@
 
 ```sh
 npm test --workspace @bridge/mobile-api
-node --test packages/contracts/test/unit/mobile-contract.test.mjs tests/contract/mobile-api-contract.test.mjs
+node --import tsx --test packages/contracts/test/unit/mobile-contract.test.ts tests/contract/mobile-api-contract.test.ts
 ```
 
 ## Независимое версионирование
 
 - Текущая minor-версия MOBILE.v1: `1.1.0`.
 - Ранее опубликованная версия клиента: `1.0.0`.
-- `packages/contracts/src/mobile.mjs`, OpenAPI `x-supported-versions` и
+- `packages/contracts/src/mobile.ts`, OpenAPI `x-supported-versions` и
   `packages/contracts/mobile/consumer-contracts.v1.json` фиксируют поддержку обеих
   версий.
-- DTO-валидация `services/mobile-api/src/mobile-dto.mjs` принимает запросы
+- DTO-валидация `services/mobile-api/src/mobile-dto.ts` принимает запросы
   `1.0.0` и `1.1.0`, но отклоняет несовместимый major `2.0.0`.
 
 ## Производительность агрегированных вызовов

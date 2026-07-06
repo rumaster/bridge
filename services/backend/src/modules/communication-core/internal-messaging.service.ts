@@ -2,7 +2,7 @@
  * Внутренний messaging-путь production-сборки backend (issue #189, пункты 1–3).
  *
  * Реализует на исполняемом NestJS/TypeScript то, что раньше существовало только
- * в неисполняемых `.mjs`-прототипах (`communication-core-m1.mjs`):
+ * в неисполняемых прототипах (`communication-core-m1`):
  *   - приём входящих сообщений `POST /internal/ingress/messages`
  *     (конверт C2.IngressMessage от integration-platform);
  *   - передачу исходящих сообщений `POST /internal/egress/messages`

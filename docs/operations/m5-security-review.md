@@ -5,14 +5,14 @@
 Документ фиксирует регрессионный security review приёмки M5. Проверки не вводят
 новых контрактов и подтверждают инварианты §23 на существующих замороженных
 поверхностях. Ведущая улика — интеграционный тест SVC-DATA
-`tests/integration/data-platform.test.mjs` (реальный PostgreSQL через
+`tests/integration/data-platform.test.ts` (реальный PostgreSQL через
 Testcontainers), дополнённый регламентом
 `docs/operations/data-platform-backup-restore.md`.
 
 ## Команды
 
 ```sh
-npm run test:integration    # tests/integration/*.test.mjs (в т. ч. data-platform)
+npm run test:integration    # tests/integration/*.test.ts (в т. ч. data-platform)
 npm run test:contract       # контрактный набор без дрейфа
 npm run test:e2e            # полный e2e-набор §26.6
 ```
@@ -28,15 +28,15 @@ npm run test:e2e            # полный e2e-набор §26.6
   `app.current_organization_id = ORG_A` видны только строки `ORG_A`; строки
   `ORG_B` невидимы на SELECT и недоступны на UPDATE/DELETE.
 - KB-поиск (pgvector) изолирован по `organization_id`
-  (`tests/integration/ai-rag-kb.test.mjs`).
+  (`tests/integration/ai-rag-kb.test.ts`).
 
 ## 2. Валидация Transform Node (фаззинг структуры)
 
 - Backend — единственный санкционированный способ изменения данных из
   Workflow/AI; Transform Node валидируется на сохранении схемы, невалидные
   структуры отклоняются серверной валидацией.
-- Улики: `tests/contract/c4-onboarding-command-cp5.test.mjs`,
-  `services/backend/test/unit` (ai/fbp facades), `tests/e2e/workflow-fbp-m5-cp9.test.mjs`.
+- Улики: `tests/contract/c4-onboarding-command-cp5.test.ts`,
+  `services/backend/test/unit` (ai/fbp facades), `tests/e2e/workflow-fbp-m5-cp9.test.ts`.
 
 ## 3. Хранение и ротация секретов
 
@@ -68,7 +68,7 @@ npm run test:e2e            # полный e2e-набор §26.6
   выполняется в контуре SVC-IDN (`services/identity-platform`), аудит входов и
   ошибок аутентификации пишется append-only.
 - Улики: `docs/plan/services/02-identity-platform.md` (Статус M5),
-  `tests/integration/data-platform.test.mjs` (auth_sessions RLS).
+  `tests/integration/data-platform.test.ts` (auth_sessions RLS).
 
 ## Итог
 

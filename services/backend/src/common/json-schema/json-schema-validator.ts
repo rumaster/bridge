@@ -1,6 +1,6 @@
 /**
  * Minimal JSON Schema validator ported to TypeScript from the canonical ESM
- * implementation in `packages/contracts/src/c4.mjs` (`validateJsonSchema`). The
+ * implementation in `packages/contracts/src/c4.ts` (`validateJsonSchema`). The
  * backend is compiled to CommonJS and cannot statically import the ESM-only
  * `@bridge/contracts` package at runtime, so the validator lives here and a
  * drift-detection test (`json-schema-validator.spec.ts`) asserts the ported

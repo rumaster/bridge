@@ -236,7 +236,7 @@ Transform/tenant-spoofing правки через контракт SVC-FBP, а A
 показывает команду администратору и применяет её только через Backend API.
 Покрытие: `apps/saas-admin/test/m3-*.test.ts*`,
 `apps/saas-admin/test/e2e/saas-admin.m3.spec.ts` и общий e2e
-`tests/e2e/workflow-engine-cp4-cp5.test.mjs`. C3/C4/C5 стабилизированы в
+`tests/e2e/workflow-engine-cp4-cp5.test.ts`. C3/C4/C5 стабилизированы в
 `packages/contracts/cp4-cp5-freeze.v1.json`; следующий UI-scope M4 — Broadcast и
 настройки Notification.
 

@@ -539,15 +539,15 @@ tunnel) в сопряжении с C1, на CP-8 — C10 (Notification) и сх�
 `packages/contracts/cp6-cp7-freeze.v1.json` (C1/C2/C8/C9 как `stable_for_m5`) и
 `packages/contracts/cp8-freeze.v1.json` (C10 и `notification.created` как
 `stable_for_m5`); оба скреплены gate-тестом
-`tests/contract/m4-gate-freeze.test.mjs`. Проверки CP-6 покрывают e2e «Broadcast:
-доставка кампании» и contract BCAST↔CORE (`backend-dist-communication-core.test.mjs`,
-`broadcast-delivery-cp6.test.mjs`, `c8-broadcast-contract.test.mjs`,
-`int-delivery-attempts-cp6.test.mjs`). Проверки CP-7 покрывают e2e «Потеря
-соединения» и contract EDGE↔CORE (`mobile-connection-loss-cp7.test.mjs`,
-`edge-core-c9-c7.contract.test.mjs`).
+`tests/contract/m4-gate-freeze.test.ts`. Проверки CP-6 покрывают e2e «Broadcast:
+доставка кампании» и contract BCAST↔CORE (`backend-dist-communication-core.test.ts`,
+`broadcast-delivery-cp6.test.ts`, `c8-broadcast-contract.test.ts`,
+`int-delivery-attempts-cp6.test.ts`). Проверки CP-7 покрывают e2e «Потеря
+соединения» и contract EDGE↔CORE (`mobile-connection-loss-cp7.test.ts`,
+`edge-core-c9-c7.contract.test.ts`).
 Проверки CP-8 покрывают e2e «Notification в Web + Telegram» и contract
-«продюсеры↔NOTIF» и NOTIF↔MWS/TGC (`c10-notification-contract.test.mjs`,
-`manager-workspace-c10-consumer.test.mjs`, `telegram-console-cp8-consumer.test.mjs`).
+«продюсеры↔NOTIF» и NOTIF↔MWS/TGC (`c10-notification-contract.test.ts`,
+`manager-workspace-c10-consumer.test.ts`, `telegram-console-cp8-consumer.test.ts`).
 Сквозные инварианты gate: сквозной `idempotency_key = message_id` на всех
 переходах (клиент→Edge→буфер→Core→Adapter) без дублей; восстановление порядка по
 `(endpoint_id, sequence_number)` в рамках Endpoint; доставка кампаний и
@@ -577,7 +577,7 @@ backup/restore SVC-DATA и авто-синхронизацией буфера SV
 `packages/contracts/cp9-freeze.v1.json` помечает все контракты
 (C1/C2/C3.auth/C3.base/C4/C5/C6/C7 + `notification.created`/C8/C9/C10/MOBILE.v1)
 как `released_v1`; артефакт скреплён gate-тестом
-`tests/contract/m5-gate-freeze.test.mjs` и консолидирует все предыдущие freeze
+`tests/contract/m5-gate-freeze.test.ts` и консолидирует все предыдущие freeze
 CP-1…CP-8 и приёмку SVC-API (CP-9). Приёмочный отчёт §29 и результаты сведены в
 `docs/operations/m5-acceptance-gate.md` и `docs/operations/m5-security-review.md`.
 Дальнейшие ломающие изменения — только новой версией URL/semver и новым CP

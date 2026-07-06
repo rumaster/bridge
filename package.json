@@ -15,20 +15,20 @@
     "packages/*"
   ],
   "scripts": {
-    "lint": "npm run lint --workspaces --if-present && node --check scripts/ci-placeholder.mjs && node --check scripts/workspace-command.mjs && node --check scripts/db-backup-restore.mjs && node --check scripts/db-migrate.mjs && node --check scripts/db-seed.mjs && node --check db/seeds/000001_m0_seed.mjs && find tests -name '*.mjs' -print0 | xargs -0 -n1 node --check",
-    "test": "npm run test --workspaces --if-present && node --test tests/smoke/*.test.mjs",
+    "lint": "npm run lint --workspaces --if-present && tsc -p tsconfig.json",
+    "test": "npm run test --workspaces --if-present && node --import tsx --test tests/smoke/*.test.ts",
     "build": "npm run build --workspaces --if-present",
-    "smoke": "node --test tests/smoke/*.test.mjs",
+    "smoke": "node --import tsx --test tests/smoke/*.test.ts",
     "test:unit": "npm test",
-    "test:integration": "node --test tests/integration/*.test.mjs && npm run test:integration --workspace @bridge/integration-platform",
-    "test:contract": "node --test tests/contract/*.test.mjs",
-    "test:e2e": "node --test tests/e2e/*.test.mjs && npm run test:e2e --workspace @bridge/manager-workspace && npm run test:e2e --workspace @bridge/web-chat && npm run test:e2e --workspace @bridge/saas-admin",
-    "probe:edge:ws": "node experiments/edge-ws-load-probe.mjs",
-    "db:migrate:up": "node scripts/db-migrate.mjs up",
-    "db:migrate:down": "node scripts/db-migrate.mjs down",
-    "db:migrate:rf:up": "node scripts/db-migrate.mjs up rf",
-    "db:migrate:rf:down": "node scripts/db-migrate.mjs down rf",
-    "db:seed": "node scripts/db-seed.mjs",
+    "test:integration": "node --import tsx --test tests/integration/*.test.ts && npm run test:integration --workspace @bridge/integration-platform",
+    "test:contract": "node --import tsx --test tests/contract/*.test.ts",
+    "test:e2e": "node --import tsx --test tests/e2e/*.test.ts && npm run test:e2e --workspace @bridge/manager-workspace && npm run test:e2e --workspace @bridge/web-chat && npm run test:e2e --workspace @bridge/saas-admin",
+    "probe:edge:ws": "node --import tsx experiments/edge-ws-load-probe.ts",
+    "db:migrate:up": "node --import tsx scripts/db-migrate.ts up",
+    "db:migrate:down": "node --import tsx scripts/db-migrate.ts down",
+    "db:migrate:rf:up": "node --import tsx scripts/db-migrate.ts up rf",
+    "db:migrate:rf:down": "node --import tsx scripts/db-migrate.ts down rf",
+    "db:seed": "node --import tsx scripts/db-seed.ts",
     "ci": "npm run lint && npm test && npm run build"
   },
   "msw": {
@@ -37,9 +37,12 @@
     ]
   },
   "devDependencies": {
+    "@types/node": "^20.19.43",
     "node-pg-migrate": "^8.0.4",
     "pg": "^8.22.0",
-    "testcontainers": "^11.14.0"
+    "testcontainers": "^11.14.0",
+    "tsx": "^4.23.0",
+    "typescript": "^5.9.3"
   },
   "overrides": {
     "multer": "^2.2.0",

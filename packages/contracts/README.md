@@ -38,7 +38,7 @@
 
 - `cp1-freeze.v1.json` фиксирует gate M1 (CP-1) от 2026-07-03: C1, C2, C3 и C7
   имеют статус `stable_for_m2`.
-- `src/registry.mjs` экспортирует `CP1_CONTRACT_FREEZE`,
+- `src/registry.ts` экспортирует `CP1_CONTRACT_FREEZE`,
   `CP1_GATE_REQUIRED_CONTRACT_IDS` и `validateCp1ContractFreeze()` для
   машинной проверки freeze.
 - C3 на CP-1 агрегирует `openapi/backend-core/openapi.json`,
@@ -51,7 +51,7 @@
 
 - `cp2-cp3-freeze.v1.json` фиксирует gate M2 (CP-2 + CP-3) от 2026-07-03:
   C2, C6 и C4 имеют статус `stable_for_m3`.
-- `src/registry.mjs` экспортирует `CP2_CP3_CONTRACT_FREEZE`,
+- `src/registry.ts` экспортирует `CP2_CP3_CONTRACT_FREEZE`,
   `CP2_CP3_GATE_REQUIRED_CONTRACT_IDS` и `validateCp2Cp3ContractFreeze()` для
   машинной проверки freeze.
 - CP-2 закрыт e2e «Telegram: приём и ответ» и per-adapter contract INT↔CORE:
@@ -80,7 +80,7 @@
 - `json-schema/c2-ingress-message.schema.json` и
   `json-schema/c2-egress-delivery.schema.json` описывают M0-обёртки вокруг
   mock C1 сообщения.
-- `json-schema/c6-capability-descriptor.schema.json` и `src/c6.mjs`
+- `json-schema/c6-capability-descriptor.schema.json` и `src/c6.ts`
   фиксируют C6 v1. Обязательный набор возможностей: `text`, `image`, `file`,
   `voice`, `video`, `buttons`, `reactions`, `typing_indicator`,
   `read_receipt`, `delete`, `edit`.
@@ -92,7 +92,7 @@
 - `json-schema/c4-ai-onboarding-command.schema.json` описывает структурированную
   команду AI Onboarding. Команда является только описанием действия; применять
   ее может только Backend после валидации структуры, полномочий и состояния.
-- `src/c4.mjs` содержит M0-константы и легковесный валидатор JSON Schema для
+- `src/c4.ts` содержит M0-константы и легковесный валидатор JSON Schema для
   contract/unit smoke-тестов без дополнительных зависимостей.
 
 ## M0-12: C10 для Notification Platform
@@ -107,7 +107,7 @@
   `notification.created` для SVC-MWS/SVC-ADMIN.
 - `events/notification-trigger.schema.json` фиксирует M0-заготовку события
   producer -> SVC-NOTIF для CORE/BCAST/AI/FBP.
-- `src/c10.mjs` содержит константы, фабрики и легковесные валидаторы C10/C7.
+- `src/c10.ts` содержит константы, фабрики и легковесные валидаторы C10/C7.
 ## M0-13: C7/C9 для Edge & WebSocket Gateway
 
 - `openapi/edge/c7.websocket.openapi.json` фиксирует C7 `GET /ws` как WebSocket
@@ -123,7 +123,7 @@
 - `json-schema/c9-edge-tunnel-message.schema.json` фиксирует C9 v1 envelope с
   `sequence_number`, `idempotency_key`, `endpoint_id`, C1 `payload` и
   timestamps `received_at`, `buffered_at`, `forwarded_at`.
-- `src/c7.mjs` и `src/c9.mjs` содержат M0-константы и лёгкие валидаторы для unit
+- `src/c7.ts` и `src/c9.ts` содержат M0-константы и лёгкие валидаторы для unit
   и contract smoke-тестов.
 
 ## M5-14: MOBILE.v1 для Mobile API
@@ -137,7 +137,7 @@
   контрактов для mobile app ↔ SVC-MOB и потребления SVC-MOB контрактов
   C3.auth, C3.conversations/messages/clients, C7, C9 и C10.notifications; M5
   фиксирует тот же список поддерживаемых версий.
-- `src/mobile.mjs` содержит semver, base path, contract id и проверку формы
+- `src/mobile.ts` содержит semver, base path, contract id и проверку формы
   sync cursor `mob1.<base64url-json>`.
 
 ## CP-9: приемка SVC-API M5

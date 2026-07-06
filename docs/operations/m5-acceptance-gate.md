@@ -8,7 +8,7 @@ RPO/RTO подтверждены, документация §28 завершен
 
 Машинно-читаемый артефакт заморозки: `packages/contracts/cp9-freeze.v1.json`
 (все контракты как `released_v1`), скреплён gate-тестом
-`tests/contract/m5-gate-freeze.test.mjs`.
+`tests/contract/m5-gate-freeze.test.ts`.
 
 ## 1. Полный e2e-набор §26.6 (регрессия)
 
@@ -18,18 +18,18 @@ RPO/RTO подтверждены, документация §28 завершен
 |---|---|
 | Авторизация | `apps/saas-admin/test/e2e/saas-admin.auth.spec.ts` |
 | Работа менеджера | `apps/manager-workspace/test/e2e/manager-workspace.m1.spec.ts` |
-| Web Chat | `tests/e2e/backend-dist-communication-core.test.mjs` |
-| Telegram | `services/backend/test/integration/telegram-auth.spec.ts`, `tests/e2e/backend-dist-communication-core.test.mjs` |
-| AI Assistant из KB | `tests/e2e/ai-assistant-kb.test.mjs` |
-| Workflow вызывает Backend API | `tests/e2e/workflow-engine-cp4-cp5.test.mjs`, `tests/e2e/workflow-fbp-m5-cp9.test.mjs` |
-| AI Onboarding применяет конфиг | `tests/e2e/ai-onboarding-apply.test.mjs` |
-| Notification в Web + Telegram | `tests/e2e/notification-delivery-cp9.test.mjs`, `tests/e2e/telegram-console-cp8.test.mjs` |
-| Broadcast: доставка кампании | `tests/e2e/broadcast-delivery-cp6.test.mjs` |
-| Edge Cluster | `services/edge-gateway/test/unit/edge-cluster.test.mjs` |
-| Потеря соединения | `tests/integration/edge-message-buffer-store.test.mjs`, `tests/e2e/mobile-connection-loss-cp7.test.mjs` |
+| Web Chat | `tests/e2e/backend-dist-communication-core.test.ts` |
+| Telegram | `services/backend/test/integration/telegram-auth.spec.ts`, `tests/e2e/backend-dist-communication-core.test.ts` |
+| AI Assistant из KB | `tests/e2e/ai-assistant-kb.test.ts` |
+| Workflow вызывает Backend API | `tests/e2e/workflow-engine-cp4-cp5.test.ts`, `tests/e2e/workflow-fbp-m5-cp9.test.ts` |
+| AI Onboarding применяет конфиг | `tests/e2e/ai-onboarding-apply.test.ts` |
+| Notification в Web + Telegram | `tests/e2e/notification-delivery-cp9.test.ts`, `tests/e2e/telegram-console-cp8.test.ts` |
+| Broadcast: доставка кампании | `tests/e2e/broadcast-delivery-cp6.test.ts` |
+| Edge Cluster | `services/edge-gateway/test/unit/edge-cluster.test.ts` |
+| Потеря соединения | `tests/integration/edge-message-buffer-store.test.ts`, `tests/e2e/mobile-connection-loss-cp7.test.ts` |
 
-Дополнительно на приёмке зелёные: `tests/e2e/backend-dist-communication-core.test.mjs`,
-`tests/e2e/integration-degradation-cp9.test.mjs`.
+Дополнительно на приёмке зелёные: `tests/e2e/backend-dist-communication-core.test.ts`,
+`tests/e2e/integration-degradation-cp9.test.ts`.
 
 ## 2. Нагрузочные пробники и деградация (§25.2/§25.3/§25.11)
 
@@ -40,8 +40,8 @@ RPO/RTO подтверждены, документация §28 завершен
   ≤ 1000 ms, `ai_assistant_without_llm` ≤ 500 ms.
 - MOB: `docs/operations/mobile-api-m5-acceptance.md` — агрегированные BFF-вызовы в
   бюджете §25.2.
-- FBP: `experiments/m5-fbp-load-probe.mjs`.
-- EDGE(WS): `experiments/edge-ws-load-probe.mjs`, `npm run probe:edge:ws`.
+- FBP: `experiments/m5-fbp-load-probe.ts`.
+- EDGE(WS): `experiments/edge-ws-load-probe.ts`, `npm run probe:edge:ws`.
 
 Пробники дают повторяемую регрессию поверх замороженных контрактов и не являются
 заменой продакшн-SLA §25.11.
@@ -56,7 +56,7 @@ organization_id)` — при гонке конфликт всплывал по �
 на duplicate-путь для `messages` (без задвоения attachments/outbox).
 Контракты не затронуты (только стабилизация, §9.3). Регрессия закрыта
 production-проверками `services/backend/test/integration/internal-messaging.spec.ts`
-и `tests/e2e/backend-dist-communication-core.test.mjs`.
+и `tests/e2e/backend-dist-communication-core.test.ts`.
 
 ## 3. Security review (§23)
 
@@ -68,18 +68,18 @@ production-проверками `services/backend/test/integration/internal-mess
 ## 4. RPO/RTO и отказоустойчивость
 
 - SVC-DATA: пробное backup/restore в отдельную БД `bridge_restore`, обратимые
-  миграции up/down/up — `tests/integration/data-platform.test.mjs`,
+  миграции up/down/up — `tests/integration/data-platform.test.ts`,
   `docs/operations/data-platform-backup-restore.md`.
 - SVC-EDGE: авто-синхронизация буфера после восстановления канала, измерения
   `drain().recovery` (`rpo.capacity`, `rpo.ttl_ms`, `rto_ms`) —
-  `tests/integration/edge-message-buffer-store.test.mjs`.
+  `tests/integration/edge-message-buffer-store.test.ts`.
 
 ## 5. Полнота OpenAPI и версионирование (§11.14/§11.8, §19.6)
 
 - backend-core OpenAPI генерируется из кода и синхронизирован с реальными
   маршрутами; контрактный прогон без дрейфа —
   `services/backend/test/integration/m5-openapi-contract.spec.ts`,
-  `tests/contract/cp9-svc-api-acceptance.test.mjs`.
+  `tests/contract/cp9-svc-api-acceptance.test.ts`.
 - `/api/v1` — стабильный URL-контракт; ломающее изменение только через `/api/v2`.
 - Мобильный контракт версионируется независимо (`MOBILE.v1 = 1.1.0`), совместим
   по нисходящей с `1.0.0`.

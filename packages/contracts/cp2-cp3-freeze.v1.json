@@ -39,11 +39,11 @@
         "packages/contracts/json-schema/c2-egress-delivery.schema.json"
       ],
       "evidence": [
-        "tests/contract/int-core-m2-adapters.contract.test.mjs",
-        "tests/contract/int-core-c2-c6.test.mjs",
+        "tests/contract/int-core-m2-adapters.contract.test.ts",
+        "tests/contract/int-core-c2-c6.test.ts",
         "services/backend/test/integration/internal-messaging.spec.ts",
         "services/backend/test/unit/internal-messaging.dto.spec.ts",
-        "tests/e2e/backend-dist-communication-core.test.mjs"
+        "tests/e2e/backend-dist-communication-core.test.ts"
       ]
     },
     {
@@ -53,13 +53,13 @@
       "status": "stable_for_m3",
       "artifacts": [
         "packages/contracts/json-schema/c6-capability-descriptor.schema.json",
-        "packages/contracts/src/c6.mjs"
+        "packages/contracts/src/c6.ts"
       ],
       "evidence": [
-        "tests/contract/int-core-m2-adapters.contract.test.mjs",
-        "tests/contract/int-core-c2-c6.test.mjs",
-        "services/integration-platform/test/unit/m2-channel-adapters.test.mjs",
-        "services/integration-platform/test/integration/m2-channel-adapters.integration.test.mjs"
+        "tests/contract/int-core-m2-adapters.contract.test.ts",
+        "tests/contract/int-core-c2-c6.test.ts",
+        "services/integration-platform/test/unit/m2-channel-adapters.test.ts",
+        "services/integration-platform/test/integration/m2-channel-adapters.integration.test.ts"
       ]
     },
     {
@@ -71,19 +71,19 @@
         "packages/contracts/openapi/ai/c4.ai.openapi.json",
         "packages/contracts/json-schema/c4-ai-assistant-suggest-response.schema.json",
         "packages/contracts/json-schema/c4-ai-onboarding-command.schema.json",
-        "packages/contracts/src/c4.mjs",
+        "packages/contracts/src/c4.ts",
         "packages/contracts/consumer/ai-integration-c4.consumer.v1.json",
         "packages/contracts/consumer/manager-workspace-c4-c7.consumer.v1.json"
       ],
       "evidence": [
-        "tests/contract/c4-ai-contract.test.mjs",
-        "tests/contract/ai-integration-c4-consumer.test.mjs",
-        "tests/contract/manager-workspace-c4-c7-consumer.test.mjs",
-        "tests/e2e/ai-assistant-kb.test.mjs",
-        "tests/integration/ai-rag-kb.test.mjs",
+        "tests/contract/c4-ai-contract.test.ts",
+        "tests/contract/ai-integration-c4-consumer.test.ts",
+        "tests/contract/manager-workspace-c4-c7-consumer.test.ts",
+        "tests/e2e/ai-assistant-kb.test.ts",
+        "tests/integration/ai-rag-kb.test.ts",
         "services/backend/test/unit/ai-integration.facade.spec.ts",
-        "services/ai-platform/test/unit/rag-pipeline.test.mjs",
-        "services/ai-platform/test/integration/rag-assistant-server.test.mjs"
+        "services/ai-platform/test/unit/rag-pipeline.test.ts",
+        "services/ai-platform/test/integration/rag-assistant-server.test.ts"
       ]
     }
   ],

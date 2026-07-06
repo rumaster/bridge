@@ -210,9 +210,9 @@ end-to-end на реальном Postgres (testcontainers, реальный `App
 `dist/main.js`) — `test/integration/internal-messaging.spec.ts`. C2 Egress
 сохраняет `channel_type`/`conversation_ref`, чтобы Web Chat adapter доставлял
 ответ в ту же сессию CP-1. Прежние прототипные `.mjs`-наборы удалены; contract и
-e2e evidence теперь указывают на `tests/contract/int-core.c2.contract.test.mjs`,
+e2e evidence теперь указывают на `tests/contract/int-core.c2.contract.test.ts`,
 `services/backend/test/integration/internal-messaging.spec.ts` и
-`tests/e2e/backend-dist-communication-core.test.mjs`.
+`tests/e2e/backend-dist-communication-core.test.ts`.
 
 ### M2 — Identity resolution, порядок, realtime
 
@@ -236,8 +236,8 @@ resolution, endpoint-scoped `sequence_number`, gap detection, C7 публика�
 выбор канала по C6 capabilities покрыты
 `services/backend/test/unit/internal-messaging.dto.spec.ts`,
 `services/backend/test/integration/internal-messaging.spec.ts`,
-`tests/contract/int-core-m2-adapters.contract.test.mjs` и
-`tests/e2e/backend-dist-communication-core.test.mjs`. C2 зафиксирован как
+`tests/contract/int-core-m2-adapters.contract.test.ts` и
+`tests/e2e/backend-dist-communication-core.test.ts`. C2 зафиксирован как
 `stable_for_m3` в `packages/contracts/cp2-cp3-freeze.v1.json`.
 
 ### M3 — Доменные события для Workflow (outbox)
@@ -258,8 +258,8 @@ resolution, endpoint-scoped `sequence_number`, gap detection, C7 публика�
 создание/изменение агрегата. Детерминированный `event.id` и replay по
 `pending -> published` обеспечивают идемпотентную доставку в мок SVC-FBP.
 Покрытие: `services/backend/test/integration/m3-facades.spec.ts`,
-`tests/e2e/workflow-engine-cp4-cp5.test.mjs` и
-`tests/e2e/workflow-fbp-m5-cp9.test.mjs`. Для M3 gate outbox-инвариант зафиксирован в
+`tests/e2e/workflow-engine-cp4-cp5.test.ts` и
+`tests/e2e/workflow-fbp-m5-cp9.test.ts`. Для M3 gate outbox-инвариант зафиксирован в
 `packages/contracts/cp4-cp5-freeze.v1.json`: replay идемпотентен и не создаёт
 дублирующих запусков Workflow. Готовность M4: `outbox_events` остаётся
 стабильной основой для Broadcast, Edge и Notification producer-потоков.
@@ -306,11 +306,11 @@ messages` и доставляет строго через **C1/C2** ядра —
 дедуплицирует через единый ingress-путь. Покрытие:
 `services/backend/test/integration/internal-messaging.spec.ts`
 (Backend↔PostgreSQL: дедуп и порядок из буфера, связь `broadcast_messages`,
-журнал попыток), `services/edge-gateway/test/unit/buffered-gateway.test.mjs`,
-`tests/contract/c8-broadcast-contract.test.mjs`,
-`tests/contract/edge-core-c9-c7.contract.test.mjs`,
-`tests/e2e/backend-dist-communication-core.test.mjs` и
-`tests/e2e/broadcast-delivery-cp6.test.mjs`. Контракты CP-6/CP-7 (C8↔C1/C2 и
+журнал попыток), `services/edge-gateway/test/unit/buffered-gateway.test.ts`,
+`tests/contract/c8-broadcast-contract.test.ts`,
+`tests/contract/edge-core-c9-c7.contract.test.ts`,
+`tests/e2e/backend-dist-communication-core.test.ts` и
+`tests/e2e/broadcast-delivery-cp6.test.ts`. Контракты CP-6/CP-7 (C8↔C1/C2 и
 C9↔C1) зафиксированы в `packages/contracts/cp6-cp7-freeze.v1.json`.
 
 ### M5 — Нагрузка, деградация, отказы адаптеров
@@ -343,7 +343,7 @@ route/message-типы не менялись. Покрытие:
 `services/backend/test/unit/communication-core-m5.service.spec.ts`,
 `services/backend/test/integration/internal-messaging.spec.ts`,
 `services/backend/test/integration/m5-nfr.spec.ts` и
-`tests/e2e/backend-dist-communication-core.test.mjs`; порядок запуска и
+`tests/e2e/backend-dist-communication-core.test.ts`; порядок запуска и
 операционные заметки по пробникам — в
 `docs/operations/communication-core-m5-load-probes.md`.
 

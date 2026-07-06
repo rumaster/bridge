@@ -156,7 +156,7 @@ Data Platform **не отдаёт REST наружу** и не имеет соб�
 - **Цель.** Дать всем командам ядра рабочую БД и заморозить механизм миграций.
 - **Решение M0.** Механизм миграций зафиксирован как `node-pg-migrate`;
   SQL-миграции хранятся в `db/migrations`, сиды — в `db/seeds`, runner-скрипты —
-  в `scripts/db-migrate.mjs` и `scripts/db-seed.mjs`.
+  в `scripts/db-migrate.ts` и `scripts/db-seed.ts`.
 - **Задачи.**
   1. Выбрать и зафиксировать механизм миграций (§ 2); настроить `db/migrations`.
   2. Реализовать схему v1 (каркасные таблицы § 4.2/M0) и **RLS-каркас** по
@@ -192,7 +192,7 @@ Data Platform **не отдаёт REST наружу** и не имеет соб�
 **Статус реализации CP-1.** M1-схема Data Platform завершена для gate CP-1:
 миграции, сиды, RLS-изоляция двух арендаторов, уникальность/idempotency `messages.id`,
 порядок `(endpoint_id, sequence_number)`, append-only `audit_events` и
-`configuration_history` покрыты `tests/integration/data-platform.test.mjs`.
+`configuration_history` покрыты `tests/integration/data-platform.test.ts`.
 
 ### 5.3 M2 — pgvector, Knowledge Base, identity links
 
@@ -212,7 +212,7 @@ Data Platform **не отдаёт REST наружу** и не имеет соб�
 **Статус реализации M2.** M2-схема Data Platform завершена для gate CP-2/CP-3:
 миграция `db/migrations/20260703124000000_m2_schema.sql` добавляет KB/pgvector,
 `client_identity_links`, `channels` и `adapter_capabilities`; интеграционные
-проверки `tests/integration/data-platform.test.mjs`, `tests/integration/ai-rag-kb.test.mjs`
+проверки `tests/integration/data-platform.test.ts`, `tests/integration/ai-rag-kb.test.ts`
 и `services/backend/test/integration/internal-messaging.spec.ts` подтверждают tenant-isolated
 KB-поиск, связи identity и данные capabilities. Gate зафиксирован в
 `packages/contracts/cp2-cp3-freeze.v1.json`.
@@ -235,9 +235,9 @@ KB-поиск, связи identity и данные capabilities. Gate зафик
 `workflow_*` входят в обратимые миграции, RLS по `organization_id` изолирует
 версии, экземпляры, состояние и `workflow_execution_logs`, а `workflow_versions`
 фиксируют монотонный `version_no` и запрет перезаписи схемы. Проверки
-`tests/integration/data-platform.test.mjs` подтверждают `up/down`, version
+`tests/integration/data-platform.test.ts` подтверждают `up/down`, version
 pinning, неизменяемость версий и tenant-isolated журналы; сквозные M3-сценарии
-используют эти таблицы через `tests/e2e/workflow-engine-cp4-cp5.test.mjs`.
+используют эти таблицы через `tests/e2e/workflow-engine-cp4-cp5.test.ts`.
 Готовность M4: `workflow_*` стабильны, следующие схемы — `broadcast_*`,
 `notifications`, `outbox_events` и `edge_message_buffer`.
 
@@ -290,7 +290,7 @@ pinning, неизменяемость версий и tenant-isolated журна
 `app.anonymize_client_personal_data(...)` и индексы эксплуатационного контроля.
 Регламент PITR/backup/restore для основной БД и RF-контура вынесен в
 `docs/operations/data-platform-backup-restore.md`; интеграционный тест
-`tests/integration/data-platform.test.mjs` проверяет логический restore на чистую
+`tests/integration/data-platform.test.ts` проверяет логический restore на чистую
 БД, сохранение append-only аудита, целостность истории конфигурации после
 удаления и отсутствие исходных ПДн после обезличивания клиента.
 

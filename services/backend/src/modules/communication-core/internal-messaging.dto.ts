@@ -2,10 +2,10 @@
  * Контракты внутреннего messaging-пути (C2) для production-сборки backend.
  *
  * Нормализация ingress/egress-конвертов и построение C2.EgressDelivery
- * портированы из прототипа `communication-core-m1.mjs`
+ * портированы из прототипа `communication-core-m1`
  * (`normalizeC2IngressEnvelope`, `buildC2EgressDelivery`, `normalizeChannel`,
  * `normalizeMessageType`, `uuidFromText`) в исполняемый TypeScript, который
- * компилируется в `dist/main.js`. Ранее эта логика жила только в `.mjs`, не
+ * компилируется в `dist/main.js`. Ранее эта логика жила только в прототипе, не
  * попадала в prod и приводила к 404 на `POST /internal/ingress/messages`
  * (см. issue #189, пункты 1–3).
  */
@@ -23,7 +23,7 @@ export const C2_DELIVERY_ATTEMPT_CONTRACT = "C2.DeliveryAttempt";
 
 /**
  * Паттерн UUID контракта C1/C2 (версии 1–8, вариант 89ab) — совпадает с
- * `UUID_PATTERN` в `packages/contracts/message-model/index.mjs`.
+ * `UUID_PATTERN` в `packages/contracts/message-model/index.ts`.
  */
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -260,7 +260,7 @@ function normalizePositiveInteger(value: unknown, field: string): number {
 
 /**
  * Нормализует конверт C2.IngressMessage. Портирован из
- * `normalizeC2IngressEnvelope` (communication-core-m1.mjs).
+ * `normalizeC2IngressEnvelope` (communication-core-m1).
  */
 export function normalizeIngressEnvelope(
   payload: IngressEnvelope | CanonicalIngressMessage,
@@ -487,7 +487,7 @@ export function normalizeEgressRequest(payload: EgressRequestBody): NormalizedEg
 /**
  * Нормализует конверт C2.DeliveryAttempt, которым integration-platform
  * фиксирует ход доставки. Портирован из проверок
- * `backend-delivery-client.mjs` / `recordDeliveryAttemptAndTransition`.
+ * `backend-delivery-client.ts` / `recordDeliveryAttemptAndTransition`.
  */
 export function normalizeDeliveryAttempt(
   payload: DeliveryAttemptBody,
@@ -561,7 +561,7 @@ export interface C2EgressDelivery {
 
 /**
  * Строит конверт C2.EgressDelivery из сохранённого исходящего сообщения и его
- * endpoint-а. Портирован из `buildC2EgressDelivery` (communication-core-m1.mjs).
+ * endpoint-а. Портирован из `buildC2EgressDelivery` (communication-core-m1).
  */
 export function buildC2EgressDelivery(
   message: EgressMessageContext,

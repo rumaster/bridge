@@ -54,5 +54,5 @@ Backend context.
 npm run test --workspace @bridge/telegram-console
 npm run build --workspace @bridge/telegram-console
 npm run test:contract
-node --test tests/e2e/telegram-console-cp8.test.mjs
+node --test tests/e2e/telegram-console-cp8.test.ts
 ```

@@ -205,7 +205,7 @@ SVC-EDGE приходится на **M4**.
 `packages/contracts/events/c7-websocket-event.schema.json` и consumer contract
 SVC-MWS; дедупликация по `event_id`/`message.id` и gap detection по
 `sequence_number` проверяются `apps/manager-workspace/test/realtime-merge.test.ts`
-и `tests/contract/manager-workspace-c4-c7-consumer.test.mjs`.
+и `tests/contract/manager-workspace-c4-c7-consumer.test.ts`.
 
 ### M3 — без крупных задач
 
@@ -244,25 +244,25 @@ SVC-MWS; дедупликация по `event_id`/`message.id` и gap detection 
   перестановок в рамках Endpoint; RF-first соблюдён; C9 заморожен (мастер §9.4).
 
 **Статус реализации M4.** SVC-EDGE замкнут для gate CP-7. RF-first-конвейер Edge
-реализован модулями `services/edge-gateway/src`: `rf-payload-cipher.mjs`
-(AES-256-GCM для `payload_encrypted`), `edge-sequencer.mjs` (`sequence_number` по
-ключу партиционирования `endpoint_id`), `edge-message-buffer.mjs` (in-memory и
-Postgres-стор `edge_message_buffer` с `ttl` и дренажом), `vpn-tunnel.mjs` (VPN
+реализован модулями `services/edge-gateway/src`: `rf-payload-cipher.ts`
+(AES-256-GCM для `payload_encrypted`), `edge-sequencer.ts` (`sequence_number` по
+ключу партиционирования `endpoint_id`), `edge-message-buffer.ts` (in-memory и
+Postgres-стор `edge_message_buffer` с `ttl` и дренажом), `vpn-tunnel.ts` (VPN
 Tunnel Service: mTLS, шифрование канала AES-256-GCM, контроль соединения,
-авто-восстановление, backpressure) и `edge-cluster.mjs` (RF-first-оркестратор:
+авто-восстановление, backpressure) и `edge-cluster.ts` (RF-first-оркестратор:
 первичная фиксация в РФ → пересылка через туннель → авто-дренаж после разрыва).
 Приёмная сторона (восстановление порядка по `sequence_number` и дедуп по сквозному
 `idempotency_key`) — `createEdgeIntakeCoordinator` ядра (SVC-CORE), совместная зона
 CP-7. Клиенты РФ SVC-CHAT/SVC-MOB подключаются через Edge
-(`services/mobile-api/src/edge-connection.mjs`, переменная `EDGE_BASE_URL`). Тесты:
+(`services/mobile-api/src/edge-connection.ts`, переменная `EDGE_BASE_URL`). Тесты:
 unit (`services/edge-gateway/test/unit/*`: шифр, секвенсор, буфер, VPN-туннель,
-оркестратор; `services/mobile-api/test/unit/edge-connection.test.mjs`), integration
-(`services/edge-gateway/test/integration/mock-edge-gateway.test.mjs` —
-транспортный ack без backend-прототипа; `tests/integration/edge-message-buffer-store.test.mjs`
+оркестратор; `services/mobile-api/test/unit/edge-connection.test.ts`), integration
+(`services/edge-gateway/test/integration/mock-edge-gateway.test.ts` —
+транспортный ack без backend-прототипа; `tests/integration/edge-message-buffer-store.test.ts`
 — Postgres-стор RF-буфера; Backend↔WebSocket ТЗ §26.4), contract
-(`tests/contract/edge-core-c9-c7.contract.test.mjs` — EDGE↔CORE C9 с полезной
-нагрузкой C1) и e2e (`tests/e2e/backend-dist-communication-core.test.mjs` для
-production C9 intake, `tests/e2e/mobile-connection-loss-cp7.test.mjs` для
+(`tests/contract/edge-core-c9-c7.contract.test.ts` — EDGE↔CORE C9 с полезной
+нагрузкой C1) и e2e (`tests/e2e/backend-dist-communication-core.test.ts` для
+production C9 intake, `tests/e2e/mobile-connection-loss-cp7.test.ts` для
 клиентского сценария потери соединения).
 Секреты туннеля и шифра RF-буфера приходят из секрет-менеджера (`.env.rf.example`:
 `EDGE_VPN_SESSION_KEY`, `EDGE_BUFFER_ENCRYPTION_KEY`), а не из кода. Вне охвата M4 и
@@ -288,20 +288,20 @@ production C9 intake, `tests/e2e/mobile-connection-loss-cp7.test.mjs` для
 замороженного C9. RF-буфер получил предельную ёмкость, high-watermark и
 оповещения мониторинга о `edge_buffer_capacity_high_watermark`,
 `edge_buffer_capacity_exhausted` и `edge_buffer_ttl_expired`
-(`services/edge-gateway/src/edge-message-buffer.mjs`); при переполнении новая
+(`services/edge-gateway/src/edge-message-buffer.ts`); при переполнении новая
 запись не подтверждается и Edge сигнализирует backpressure на приём. Оркестратор
 Edge возвращает измерения восстановления в `drain().recovery`
 (`pending_before`, `pending_after`, `expired_skipped`, `rpo.capacity`,
 `rpo.ttl_ms`, `rto_ms`) и при новом входящем сообщении после восстановления
 канала автоматически синхронизирует накопленный backlog
-(`services/edge-gateway/src/edge-cluster.mjs`). Нагрузка WS покрыта
-детерминированным пробником mock C7 (`services/edge-gateway/src/ws-load-probe.mjs`)
+(`services/edge-gateway/src/edge-cluster.ts`). Нагрузка WS покрыта
+детерминированным пробником mock C7 (`services/edge-gateway/src/ws-load-probe.ts`)
 и CLI `npm run probe:edge:ws` (`EDGE_WS_PROBE_CONNECTIONS`,
 `EDGE_WS_PROBE_EVENTS`). Тесты: unit
-`services/edge-gateway/test/unit/edge-message-buffer.test.mjs`,
-`services/edge-gateway/test/unit/ws-load-probe.test.mjs`; integration
-`tests/integration/edge-message-buffer-store.test.mjs` и e2e
-`tests/e2e/mobile-connection-loss-cp7.test.mjs` (backlog доставляется после
+`services/edge-gateway/test/unit/edge-message-buffer.test.ts`,
+`services/edge-gateway/test/unit/ws-load-probe.test.ts`; integration
+`tests/integration/edge-message-buffer-store.test.ts` и e2e
+`tests/e2e/mobile-connection-loss-cp7.test.ts` (backlog доставляется после
 восстановления без потерь/дублей, порядок сохраняется внутри Endpoint).
 
 ---

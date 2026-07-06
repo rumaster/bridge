@@ -6,6 +6,7 @@ import { AuthModule } from "./common/auth/auth.module";
 import { DatabaseModule } from "./common/database/database.module";
 import { IdempotencyInterceptor } from "./common/idempotency/idempotency.interceptor";
 import { InMemoryIdempotencyStore } from "./common/idempotency/idempotency.store";
+import { RedisInfrastructureModule } from "./common/redis/redis.module";
 import { RequestIdMiddleware } from "./common/request-id.middleware";
 import { RequestLoggingInterceptor } from "./common/request-logging.interceptor";
 import { createValidationPipe } from "./common/validation.pipe";
@@ -29,6 +30,7 @@ import { WorkflowModule } from "./modules/workflow/workflow.module";
 @Module({
   imports: [
     DatabaseModule,
+    RedisInfrastructureModule,
     AuthModule,
     HealthModule,
     IntegrationGatewayModule,

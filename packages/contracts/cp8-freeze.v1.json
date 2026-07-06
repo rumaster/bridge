@@ -39,24 +39,24 @@
         { "contract": "C10.NotificationTriggerEvent", "event": "notification.triggered" }
       ],
       "artifacts": [
-        "packages/contracts/src/c10.mjs",
+        "packages/contracts/src/c10.ts",
         "packages/contracts/events/notification-trigger.schema.json",
         "packages/contracts/openapi/notifications/c10.notifications.openapi.json",
-        "services/notification-platform/src/server.mjs",
-        "services/notification-platform/src/notification-routing.mjs",
-        "services/notification-platform/src/channel-adapters.mjs",
-        "services/notification-platform/src/c10-dto.mjs"
+        "services/notification-platform/src/server.ts",
+        "services/notification-platform/src/notification-routing.ts",
+        "services/notification-platform/src/channel-adapters.ts",
+        "services/notification-platform/src/c10-dto.ts"
       ],
       "evidence": [
-        "tests/contract/c10-notification-contract.test.mjs",
-        "tests/contract/manager-workspace-c10-consumer.test.mjs",
-        "tests/contract/telegram-console-cp8-consumer.test.mjs",
-        "tests/e2e/notification-subscriptions-cp8.test.mjs",
-        "tests/e2e/telegram-console-cp8.test.mjs",
-        "tests/e2e/facades-cp6-cp8.test.mjs",
-        "services/notification-platform/test/unit/c10-dto.test.mjs",
-        "services/notification-platform/test/integration/notification-delivery.test.mjs",
-        "services/notification-platform/test/integration/notification-server.test.mjs"
+        "tests/contract/c10-notification-contract.test.ts",
+        "tests/contract/manager-workspace-c10-consumer.test.ts",
+        "tests/contract/telegram-console-cp8-consumer.test.ts",
+        "tests/e2e/notification-subscriptions-cp8.test.ts",
+        "tests/e2e/telegram-console-cp8.test.ts",
+        "tests/e2e/facades-cp6-cp8.test.ts",
+        "services/notification-platform/test/unit/c10-dto.test.ts",
+        "services/notification-platform/test/integration/notification-delivery.test.ts",
+        "services/notification-platform/test/integration/notification-server.test.ts"
       ]
     },
     {
@@ -68,13 +68,13 @@
         { "contract": "C7.NotificationCreatedEvent", "event": "notification.created" }
       ],
       "artifacts": [
-        "packages/contracts/src/c10.mjs",
+        "packages/contracts/src/c10.ts",
         "packages/contracts/events/notification-created.schema.json"
       ],
       "evidence": [
-        "tests/contract/c10-notification-contract.test.mjs",
-        "tests/contract/manager-workspace-c10-consumer.test.mjs",
-        "tests/e2e/notification-subscriptions-cp8.test.mjs"
+        "tests/contract/c10-notification-contract.test.ts",
+        "tests/contract/manager-workspace-c10-consumer.test.ts",
+        "tests/e2e/notification-subscriptions-cp8.test.ts"
       ]
     }
   ],

@@ -34,10 +34,10 @@
       "artifacts": [
         "packages/contracts/message-model/message.schema.json",
         "packages/contracts/message-model/status-machine.v1.json",
-        "packages/contracts/message-model/index.mjs"
+        "packages/contracts/message-model/index.ts"
       ],
       "evidence": [
-        "packages/contracts/message-model/message-model.test.mjs",
+        "packages/contracts/message-model/message-model.test.ts",
         "services/backend/test/unit/message-status.spec.ts",
         "services/backend/test/unit/internal-messaging.dto.spec.ts"
       ]
@@ -54,10 +54,10 @@
         "packages/contracts/json-schema/c2-egress-delivery.schema.json"
       ],
       "evidence": [
-        "tests/contract/int-core.c2.contract.test.mjs",
-        "tests/contract/int-core-c2-c6.test.mjs",
+        "tests/contract/int-core.c2.contract.test.ts",
+        "tests/contract/int-core-c2-c6.test.ts",
         "services/backend/test/integration/internal-messaging.spec.ts",
-        "tests/e2e/backend-dist-communication-core.test.mjs"
+        "tests/e2e/backend-dist-communication-core.test.ts"
       ]
     },
     {
@@ -72,8 +72,8 @@
         "packages/contracts/consumer/saas-admin-c3.consumer.v1.json"
       ],
       "evidence": [
-        "tests/contract/manager-workspace-c3-consumer.test.mjs",
-        "tests/contract/saas-admin-c3-consumer.test.mjs",
+        "tests/contract/manager-workspace-c3-consumer.test.ts",
+        "tests/contract/saas-admin-c3-consumer.test.ts",
         "services/backend/test/integration/m1-domain-api.spec.ts",
         "apps/saas-admin/test/e2e/saas-admin.auth.spec.ts",
         "apps/manager-workspace/test/e2e/manager-workspace.m1.spec.ts"
@@ -87,10 +87,10 @@
       "artifacts": [
         "packages/contracts/openapi/edge/c7.websocket.openapi.json",
         "packages/contracts/events/c7-websocket-event.schema.json",
-        "packages/contracts/src/c7.mjs"
+        "packages/contracts/src/c7.ts"
       ],
       "evidence": [
-        "packages/contracts/test/unit/c7-websocket-event-schema.test.mjs"
+        "packages/contracts/test/unit/c7-websocket-event-schema.test.ts"
       ]
     }
   ],

@@ -291,9 +291,9 @@ EDGE) и стабилизация; отдельного сквозного ре�
 подтверждён без изменений: SVC-MWS отображает `notification.created` в ленте и
 отмечает прочтение по замороженному C10. Контракты C10/`notification.created`
 зафиксированы `stable_for_m5` (`packages/contracts/cp8-freeze.v1.json`, скреплено
-`tests/contract/m4-gate-freeze.test.mjs`). Покрытие CP-8 web-части:
-`tests/contract/manager-workspace-c10-consumer.test.mjs`,
-`tests/e2e/notification-subscriptions-cp8.test.mjs`.
+`tests/contract/m4-gate-freeze.test.ts`). Покрытие CP-8 web-части:
+`tests/contract/manager-workspace-c10-consumer.test.ts`,
+`tests/e2e/notification-subscriptions-cp8.test.ts`.
 
 ### M5 — Приёмка, производительность, полировка
 
@@ -316,7 +316,7 @@ EDGE) и стабилизация; отдельного сквозного ре�
 (`apps/manager-workspace/test/e2e/manager-workspace.m1.spec.ts`), клиентские NFR
 §25.2 подтверждены. Потребляемые контракты (C3.base, C7, C10) финально заморожены
 как `released_v1` в `packages/contracts/cp9-freeze.v1.json` (скреплено
-`tests/contract/m5-gate-freeze.test.mjs`).
+`tests/contract/m5-gate-freeze.test.ts`).
 
 ---
 

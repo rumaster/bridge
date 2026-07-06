@@ -222,7 +222,7 @@ CRUD/proxy, tenant isolation, идемпотентный `POST /messages` и а�
 используется AI-пайплайном через Backend-only доступ к KB, consumer contract
 `packages/contracts/consumer/ai-integration-c4.consumer.v1.json` фиксирует
 ожидания API как потребителя C4 и поставщика `C3.kb`, а
-`tests/integration/ai-rag-kb.test.mjs` проверяет реальный pgvector/RLS-путь без
+`tests/integration/ai-rag-kb.test.ts` проверяет реальный pgvector/RLS-путь без
 утечки чужого `organization_id`. C4 зафиксирован как `stable_for_m3` в
 `packages/contracts/cp2-cp3-freeze.v1.json`; M3-фасады остаются следующим scope
 для полноценного circuit breaker/bulkhead.
@@ -259,11 +259,11 @@ JSON-схеме §12.6, проверяет права по **реальному 
 integration
 `test/integration/m3-facades.spec.ts` (Backend↔AI/FBP, применение изменения с
 проверкой прав и аудитом на реальном Postgres/RLS), contract
-`tests/contract/cp4-cp5-freeze.test.mjs` (C5 freeze на CP-4, C3+C4+C5
+`tests/contract/cp4-cp5-freeze.test.ts` (C5 freeze на CP-4, C3+C4+C5
 стабилизация на CP-5), e2e
-`tests/e2e/facades-cp4-cp5.test.mjs` («Workflow вызывает Backend API»,
+`tests/e2e/facades-cp4-cp5.test.ts` («Workflow вызывает Backend API»,
 «AI Onboarding применяет конфигурацию») и
-`tests/e2e/workflow-engine-cp4-cp5.test.mjs` («Admin правит Workflow»).
+`tests/e2e/workflow-engine-cp4-cp5.test.ts` («Admin правит Workflow»).
 C3/C4/C5 зафиксированы как `stable_for_m4` в
 `packages/contracts/cp4-cp5-freeze.v1.json`; пять новых операций опубликованы в
 `packages/contracts/openapi/backend-core/openapi.json`. Следующий scope M4:
@@ -285,10 +285,10 @@ Telegram Console.
 SVC-BCAST и SVC-NOTIF по замороженным контрактам, идемпотентное создание и
 деградация без блокировки ядра. Контракты C8/C10 стабилизированы `stable_for_m5`
 (`packages/contracts/cp6-cp7-freeze.v1.json`, `packages/contracts/cp8-freeze.v1.json`,
-скреплено `tests/contract/m4-gate-freeze.test.mjs`). Покрытие: e2e
-`tests/e2e/facades-cp6-cp8.test.mjs`, contract
-`tests/contract/c8-broadcast-contract.test.mjs`,
-`tests/contract/c10-notification-contract.test.mjs`.
+скреплено `tests/contract/m4-gate-freeze.test.ts`). Покрытие: e2e
+`tests/e2e/facades-cp6-cp8.test.ts`, contract
+`tests/contract/c8-broadcast-contract.test.ts`,
+`tests/contract/c10-notification-contract.test.ts`.
 
 ### M5 — Полнота OpenAPI и контроль версии API (M) — стабилизация
 
@@ -315,7 +315,7 @@ C3 (`x-contract-id`, `x-owner`, `x-stage`, `x-api-version`,
 (список диалогов ≤ 1 с, история ≤ 2 с, отправка ≤ 1 с, AI без внешнего LLM
 ≤ 500 мс). Приёмочный артефакт CP-9 опубликован как
 `packages/contracts/cp9-svc-api-acceptance.v1.json` и проверяется contract-тестом
-`tests/contract/cp9-svc-api-acceptance.test.mjs`.
+`tests/contract/cp9-svc-api-acceptance.test.ts`.
 
 ---
 

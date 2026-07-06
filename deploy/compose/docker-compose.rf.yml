@@ -8,7 +8,7 @@
 #
 # Не входит и намеренно не создаётся в этом файле:
 #   - отдельный сетевой демон VPN Tunnel Service как compose-сервис. Сам туннель
-#     Edge↔App уже реализован (services/edge-gateway/src/vpn-tunnel.mjs: mTLS,
+#     Edge↔App уже реализован (services/edge-gateway/src/vpn-tunnel.ts: mTLS,
 #     AES-256-GCM, контроль соединения, авто-восстановление, backpressure; CP-7),
 #     как и весь RF-first-конвейер (шифр RF-буфера, секвенсор порядка, оркестратор
 #     Edge Cluster) — всё покрыто unit/integration/contract/e2e-тестами. Но
@@ -17,7 +17,7 @@
 #     создавать ложное впечатление готового межсерверного канала; секреты
 #     туннеля и шифра RF-буфера описаны в .env.rf.example;
 #   - миграции Application Cluster: против postgres-rf выполняется только
-#     цель "rf" скрипта scripts/db-migrate.mjs, без мультитенантной SaaS-схемы.
+#     цель "rf" скрипта scripts/db-migrate.ts, без мультитенантной SaaS-схемы.
 #
 # Этот файл полностью независим от deploy/compose/docker-compose.yml
 # (Application Cluster) и запускается отдельно, на своём сервере:
@@ -54,7 +54,7 @@ services:
     depends_on:
       postgres-rf:
         condition: service_healthy
-    command: ["node", "scripts/db-migrate.mjs", "up", "rf"]
+    command: ["node", "--import", "tsx", "scripts/db-migrate.ts", "up", "rf"]
 
   edge-gateway:
     build:
