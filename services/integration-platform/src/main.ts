@@ -9,10 +9,12 @@ import { createWhatsAppAdapter } from "./adapters/whatsapp/whatsapp-adapter.js";
 import { createIntegrationPlatformServer } from "./server.js";
 import {
   createBackendDeliveryClient,
+  createAdapterDeliveryChannel,
   createBackoffPolicy,
   createChannelRateLimiter,
   createDeliveryEngine,
   createMockExternalChannel,
+  createRealChannelClientsFromEnv,
 } from "./delivery/index.js";
 
 const port = Number.parseInt(process.env.PORT ?? "3005", 10);
@@ -29,22 +31,42 @@ const deliveryQueueConcurrency = envInt("DELIVERY_QUEUE_CONCURRENCY", 4);
 const deliveryQueueMaxSize = envInt("DELIVERY_QUEUE_MAX_SIZE", 1024);
 const deliveryQueueMaxAttempts = envInt("DELIVERY_QUEUE_MAX_ATTEMPTS", 10);
 const deliveryQueueRetryDelayMs = envInt("DELIVERY_QUEUE_RETRY_DELAY_MS", 1000);
+const channelClients = createRealChannelClientsFromEnv();
 
 const adapter = createMockAdapter({ coreIngressUrl });
 const webChatAdapter = createWebChatAdapter({ coreIngressUrl });
 const adapters = {
-  telegram: createTelegramAdapter({ coreIngressUrl }),
-  email: createEmailAdapter({ coreIngressUrl }),
+  telegram: createTelegramAdapter({
+    channelClient: channelClients.telegram,
+    coreIngressUrl,
+  }),
+  email: createEmailAdapter({
+    channelClient: channelClients.email,
+    coreIngressUrl,
+  }),
   sms: createSmsAdapter({ coreIngressUrl }),
   vk: createVkAdapter({ coreIngressUrl }),
-  max: createMaxAdapter({ coreIngressUrl }),
+  max: createMaxAdapter({
+    channelClient: channelClients.max,
+    coreIngressUrl,
+  }),
   whatsapp: createWhatsAppAdapter({ coreIngressUrl }),
 };
-// Массовая доставка через адаптеры (CP-6, M4): rate limiting на канал, ретраи
-// с бэкоффом и идемпотентность. Фасад внешних каналов — мок (реальные внешние
-// API подключаются в M5), фиксация попыток — через Backend.
+const deliveryChannel = createAdapterDeliveryChannel({
+  adapters: Object.fromEntries(
+    Object.entries({
+      email: adapters.email,
+      max: adapters.max,
+      telegram: adapters.telegram,
+    }).filter(([channelType]) => channelClients[channelType]),
+  ),
+  fallbackChannel: createMockExternalChannel(),
+});
+// Массовая доставка через адаптеры: rate limiting на канал, ретраи с бэкоффом
+// и идемпотентность. Telegram/Email/MAX при наличии env уходят через реальные
+// клиенты, остальные каналы и локальный CI сохраняют mock fallback.
 const deliveryEngine = createDeliveryEngine({
-  channel: createMockExternalChannel(),
+  channel: deliveryChannel,
   backendClient: createBackendDeliveryClient({ baseUrl: backendBaseUrl }),
   rateLimiter: createChannelRateLimiter({
     limits: {

@@ -15,6 +15,10 @@ import { createBroadcastPlatformServer } from "../../services/broadcast-platform
 import { createEdgeGatewayServer } from "../../services/edge-gateway/src/server.js";
 import { createFbpEngineServer } from "../../services/fbp-engine/src/server.js";
 import { createIntegrationPlatformServer } from "../../services/integration-platform/src/server.js";
+import {
+  createDeliveryEngine,
+  createMockExternalChannel,
+} from "../../services/integration-platform/src/delivery/index.js";
 import { createMobileApiServer } from "../../services/mobile-api/src/server.js";
 import { createNotificationPlatformServer } from "../../services/notification-platform/src/server.js";
 
@@ -65,16 +69,25 @@ describe("M0 integration contract gate", () => {
   });
 
   it("starts the Integration Platform mock and accepts a valid C2 egress delivery", async () => {
-    await withServer(createIntegrationPlatformServer(), async (baseUrl) => {
+    const deliveryEngine = createDeliveryEngine({
+      backendClient: {
+        async recordAttempt() {
+          return { recorded: true };
+        },
+      },
+      channel: createMockExternalChannel(),
+    });
+
+    await withServer(createIntegrationPlatformServer({ deliveryEngine }), async (baseUrl) => {
       await assertHealth(baseUrl, "integration-platform");
 
-      const response = await fetchJson(`${baseUrl}/internal/egress/deliveries`, {
+      const response = await fetchJson(`${baseUrl}/internal/delivery/dispatch`, {
         method: "POST",
         headers: JSON_HEADERS,
         body: JSON.stringify({
           contract: "C2.EgressDelivery",
           version: "1.0.0",
-          idempotency_key: "delivery-1",
+          idempotency_key: "message-1",
           channel_id: "web-chat-channel",
           message: {
             message_id: "message-1",
@@ -93,7 +106,7 @@ describe("M0 integration contract gate", () => {
       });
 
       assert.equal(response.statusCode, 202);
-      assert.equal(response.body.accepted, true);
+      assert.equal(response.body.delivered, true);
       assert.equal(response.body.duplicate, false);
     });
   });

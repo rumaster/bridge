@@ -3,7 +3,7 @@
   "info": {
     "title": "Communication Core C2 Ingress/Egress",
     "version": "1.0.0",
-    "description": "Internal INT <-> CORE contract for adapter ingress, persisted routing, and egress handoff."
+    "description": "Internal INT <-> CORE contract for adapter ingress, persisted routing, and channel-aware delivery dispatch."
   },
   "paths": {
     "/internal/ingress/messages": {
@@ -45,28 +45,28 @@
         }
       }
     },
-    "/internal/egress/messages": {
+    "/internal/delivery/dispatch": {
       "post": {
-        "operationId": "handoffEgressMessage",
-        "summary": "Core -> Adapter egress handoff without real delivery.",
+        "operationId": "dispatchEgressDelivery",
+        "summary": "Core -> Integration Platform delivery dispatch with channel-aware adapters.",
         "tags": ["C2 Egress"],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/EgressHandoffRequest"
+                "$ref": "../json-schema/c2-egress-delivery.schema.json"
               }
             }
           }
         },
         "responses": {
           "202": {
-            "description": "Egress handoff recorded by the mock.",
+            "description": "Delivery dispatch accepted by the Integration Platform.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EgressHandoffResponse"
+                  "$ref": "#/components/schemas/DeliveryDispatchAcceptedResponse"
                 }
               }
             }
@@ -164,96 +164,50 @@
           }
         }
       },
-      "EgressHandoffRequest": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["message", "delivery_target"],
-        "properties": {
-          "message": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CanonicalMessage"
-              }
-            ],
-            "description": "Canonical C1 message with direction=outbound and status=routed."
-          },
-          "delivery_target": {
-            "type": "object",
-            "additionalProperties": false,
-            "required": ["adapter", "adapter_endpoint_id"],
-            "properties": {
-              "adapter": {
-                "type": "string"
-              },
-              "adapter_endpoint_id": {
-                "type": "string"
-              }
-            }
-          }
-        }
-      },
-      "EgressHandoffResponse": {
+      "DeliveryDispatchAcceptedResponse": {
         "type": "object",
         "additionalProperties": false,
         "required": [
           "accepted",
-          "mock_delivery",
-          "message_id",
+          "queued",
+          "delivered",
+          "duplicate",
+          "status",
           "idempotency_key",
-          "organization_id",
-          "endpoint_id",
-          "channel",
-          "sequence_number",
-          "adapter",
-          "adapter_endpoint_id",
-          "delivery_status",
-          "sent_at"
+          "message_id",
+          "adapter"
         ],
         "properties": {
           "accepted": {
-            "type": "boolean",
-            "const": true
+            "type": "boolean"
           },
-          "mock_delivery": {
-            "type": "boolean",
-            "const": true
+          "queued": {
+            "type": "boolean"
           },
-          "message_id": {
-            "type": "string",
-            "format": "uuid"
+          "delivered": {
+            "type": "boolean"
           },
-          "idempotency_key": {
-            "type": "string",
-            "format": "uuid"
+          "duplicate": {
+            "type": "boolean"
           },
-          "organization_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "endpoint_id": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "channel": {
+          "status": {
             "type": "string"
           },
-          "sequence_number": {
-            "type": "integer",
-            "minimum": 1
+          "idempotency_key": {
+            "type": "string"
+          },
+          "message_id": {
+            "type": "string"
           },
           "adapter": {
             "type": "string"
           },
-          "adapter_endpoint_id": {
-            "type": "string"
+          "external_message_id": {
+            "type": ["string", "null"]
           },
-          "delivery_status": {
-            "type": "string",
-            "const": "sent"
-          },
-          "sent_at": {
-            "type": "string",
-            "format": "date-time"
+          "attempts": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       },

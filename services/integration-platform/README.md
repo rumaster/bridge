@@ -1,14 +1,14 @@
 # Integration Platform M0-05
 
-Этап M0-05 фиксирует потребление C2, C6 Capability Descriptor и мок адаптера без
-реальных внешних каналов.
+Integration Platform принимает C2, отдаёт C6 Capability Descriptor и доставляет
+исходящие сообщения через единый dispatch путь.
 
 ## C2 consumption
 
 - Adapter публикует входящие сообщения в ядро через
   `POST /internal/ingress/messages`.
 - Adapter принимает исходящую доставку от ядра через
-  `POST /internal/egress/deliveries`.
+  `POST /internal/delivery/dispatch`.
 - M0-схемы лежат в `packages/contracts/json-schema/`, обзор endpoint-ов - в
   `packages/contracts/openapi/c2-internal-api.yaml`.
 
@@ -21,8 +21,8 @@
 - `GET /mock/capabilities` - C6 descriptor mock-канала.
 - `POST /mock/incoming/messages` - эмуляция входящего сообщения и публикация C2
   Ingress в mock/core.
-- `POST /internal/egress/deliveries` - приём C2 Egress и запись доставки в
-  channel stub.
+- `POST /internal/delivery/dispatch` - приём C2 Egress, доставка через
+  channel-aware engine и запись результата в adapter/channel stub.
 
 Mock adapter поддерживает весь C6 v1 набор возможностей: `text`, `image`, `file`,
 `voice`, `video`, `buttons`, `reactions`, `typing_indicator`, `read_receipt`,
@@ -47,9 +47,9 @@ Mock adapter поддерживает весь C6 v1 набор возможно
   доходит до внешнего канала; повтор с уже обработанным ключом отбрасывается без
   создания второго внешнего сообщения (двухуровневый dedup: движок + фасад).
 
-Внешний API канала на этом этапе — мок (`createMockExternalChannel`); реальные
-внешние сервисы подключаются через тот же фасад доставки (ТЗ §26.3, в CI внешние
-API не вызываются).
+Telegram, Email и MAX могут использовать реальные внешние клиенты через
+`TELEGRAM_BOT_TOKEN`, `EMAIL_DELIVERY_URL` и `MAX_DELIVERY_URL`; без этих env
+локальный запуск и CI остаются на mock fallback без вызова внешних API.
 
 Endpoint-ы и метрики:
 
@@ -83,7 +83,7 @@ Endpoint-ы и метрики:
   на повтор; retryable failures не помечаются как окончательно обработанные по
   `idempotency_key`.
 
-Параметры окружения: `DELIVERY_TIMEOUT_MS`,
+Параметры окружения: `BACKEND_BASE_URL`, `DELIVERY_TIMEOUT_MS`,
 `DELIVERY_CIRCUIT_FAILURE_THRESHOLD`, `DELIVERY_CIRCUIT_RESET_TIMEOUT_MS`,
 `DELIVERY_BULKHEAD_MAX_CONCURRENT`, `DELIVERY_BULKHEAD_MAX_QUEUE`,
 `DELIVERY_QUEUE_CONCURRENCY`, `DELIVERY_QUEUE_MAX_SIZE`,

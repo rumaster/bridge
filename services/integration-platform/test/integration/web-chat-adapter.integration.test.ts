@@ -3,6 +3,8 @@ import { createServer } from "node:http";
 import { after, before, describe, it } from "node:test";
 
 import { createWebChatAdapter } from "../../src/adapters/web-chat/web-chat-adapter.js";
+import { createAdapterDeliveryChannel } from "../../src/delivery/adapter-delivery-channel.js";
+import { createDeliveryEngine } from "../../src/delivery/delivery-engine.js";
 import { createIntegrationPlatformServer } from "../../src/server.js";
 
 const JSON_HEADERS = { "content-type": "application/json" };
@@ -62,7 +64,13 @@ describe("Web Chat adapter <-> mock core CP-1 slice", () => {
       coreIngressUrl: `${coreBaseUrl}/internal/ingress/messages`,
       now: () => "2026-07-03T09:00:00.000Z",
     });
-    integrationServer = createIntegrationPlatformServer({ webChatAdapter: adapter });
+    integrationServer = createIntegrationPlatformServer({
+      deliveryEngine: createDeliveryEngine({
+        backendClient: createNoopBackendClient(),
+        channel: createAdapterDeliveryChannel({ adapters: { web_chat: adapter } }),
+      }),
+      webChatAdapter: adapter,
+    });
     integrationBaseUrl = await listen(integrationServer);
   });
 
@@ -185,12 +193,12 @@ describe("Web Chat adapter <-> mock core CP-1 slice", () => {
       },
     };
 
-    const first = await fetch(`${integrationBaseUrl}/internal/egress/deliveries`, {
+    const first = await fetch(`${integrationBaseUrl}/internal/delivery/dispatch`, {
       method: "POST",
       headers: JSON_HEADERS,
       body: JSON.stringify(egressBody),
     });
-    const second = await fetch(`${integrationBaseUrl}/internal/egress/deliveries`, {
+    const second = await fetch(`${integrationBaseUrl}/internal/delivery/dispatch`, {
       method: "POST",
       headers: JSON_HEADERS,
       body: JSON.stringify(egressBody),
@@ -201,9 +209,9 @@ describe("Web Chat adapter <-> mock core CP-1 slice", () => {
 
     const firstBody: any = await first.json();
     const secondBody: any = await second.json();
-    assert.equal(firstBody.accepted, true);
+    assert.equal(firstBody.delivered, true);
     assert.equal(firstBody.duplicate, false);
-    assert.equal(secondBody.accepted, true);
+    assert.equal(secondBody.delivered, true);
     assert.equal(secondBody.duplicate, true);
 
     assert.deepEqual(adapter.getChannelDeliveries(), [
@@ -221,3 +229,11 @@ describe("Web Chat adapter <-> mock core CP-1 slice", () => {
     ]);
   });
 });
+
+function createNoopBackendClient() {
+  return {
+    async recordAttempt() {
+      return { recorded: true };
+    },
+  };
+}

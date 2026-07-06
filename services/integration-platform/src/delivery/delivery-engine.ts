@@ -1,5 +1,5 @@
 import { createBackoffPolicy } from "./backoff.js";
-import { classifyDeliveryError } from "./errors.js";
+import { ChannelDeliveryError, classifyDeliveryError } from "./errors.js";
 import { createChannelResilience } from "./resilience.js";
 
 /**
@@ -39,8 +39,14 @@ export function createDeliveryEngine({
   sleep = defaultSleep,
   maxBackpressureWaitMs = Number.POSITIVE_INFINITY,
 }: DeliveryEngineOptions = {}) {
-  if (!channel || typeof channel.deliver !== "function") {
-    throw new TypeError("channel with a deliver() method is required");
+  if (
+    !channel ||
+    (typeof channel.deliver !== "function" &&
+      typeof channel.acceptEgressDelivery !== "function")
+  ) {
+    throw new TypeError(
+      "channel with a deliver() or acceptEgressDelivery() method is required",
+    );
   }
   if (!backendClient || typeof backendClient.recordAttempt !== "function") {
     throw new TypeError("backendClient with a recordAttempt() method is required");
@@ -212,6 +218,8 @@ export function createDeliveryEngine({
           await recordAttempt(context, attempt, "delivered", null);
 
           const result = {
+            accepted: true,
+            queued: false,
             delivered: true,
             duplicate: Boolean(deliveryResult?.duplicate),
             attempts: attempt,
@@ -238,6 +246,8 @@ export function createDeliveryEngine({
           const isLastAttempt = attempt >= maxAttempts;
           if (!lastClassification.retryable || isLastAttempt) {
             const result = {
+              accepted: false,
+              queued: false,
               delivered: false,
               duplicate: false,
               attempts: attempt,
@@ -266,6 +276,8 @@ export function createDeliveryEngine({
       // Недостижимо: цикл всегда возвращает результат, но оставляем защиту.
       metrics.failed_total += 1;
       return {
+        accepted: false,
+        queued: false,
         delivered: false,
         duplicate: false,
         attempts: maxAttempts,
@@ -284,14 +296,19 @@ export function createDeliveryEngine({
 
   async function deliverToExternalChannel(context, egressDelivery) {
     const guard = getChannelResilience(context.adapter);
-    const result = await guard.execute(({ signal }) =>
-      channel.deliver({
+    const result = await guard.execute(({ signal }) => {
+      if (typeof channel.acceptEgressDelivery === "function") {
+        return deliverViaM2Adapter(channel, egressDelivery, signal);
+      }
+
+      return channel.deliver({
         idempotencyKey: context.idempotencyKey,
         channelType: context.channelType,
+        delivery: egressDelivery,
         message: egressDelivery.message,
         signal,
-      }),
-    );
+      });
+    });
 
     if (result.ok) {
       return result.value;
@@ -322,6 +339,29 @@ export function createDeliveryEngine({
       metrics.bulkhead_rejected_total += 1;
     }
   }
+}
+
+async function deliverViaM2Adapter(adapter, egressDelivery, signal) {
+  const result = await adapter.acceptEgressDelivery(egressDelivery, { signal });
+  if (!result?.accepted) {
+    throw new ChannelDeliveryError(
+      result?.errors?.join("; ") || "M2 channel adapter rejected delivery",
+      {
+        retryable: false,
+        category: "adapter_rejected",
+      },
+    );
+  }
+
+  return {
+    delivered: true,
+    duplicate: Boolean(result.duplicate),
+    external_message_id:
+      result.delivery?.external_message_id ??
+      result.external_message_id ??
+      result.delivery?.provider_response?.external_message_id ??
+      null,
+  };
 }
 
 function createAsyncDeliveryQueue({ queue, sleep }) {

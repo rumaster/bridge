@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import { after, before, describe, it } from "node:test";
 
 import { createMockAdapter } from "../../src/adapters/mock/mock-adapter.js";
+import { createDeliveryEngine } from "../../src/delivery/delivery-engine.js";
 import { createIntegrationPlatformServer } from "../../src/server.js";
 
 const JSON_HEADERS = { "content-type": "application/json" };
@@ -62,7 +63,13 @@ describe("mock adapter <-> mock core smoke", () => {
       coreIngressUrl: `${coreBaseUrl}/internal/ingress/messages`,
       now: () => "2026-07-02T16:30:00.000Z",
     });
-    integrationServer = createIntegrationPlatformServer({ adapter });
+    integrationServer = createIntegrationPlatformServer({
+      adapter,
+      deliveryEngine: createDeliveryEngine({
+        backendClient: createNoopBackendClient(),
+        channel: adapter,
+      }),
+    });
     integrationBaseUrl = await listen(integrationServer);
   });
 
@@ -116,7 +123,7 @@ describe("mock adapter <-> mock core smoke", () => {
   });
 
   it("accepts C2 Egress from core and stores delivery in the channel stub", async () => {
-    const response = await fetch(`${integrationBaseUrl}/internal/egress/deliveries`, {
+    const response = await fetch(`${integrationBaseUrl}/internal/delivery/dispatch`, {
       method: "POST",
       headers: JSON_HEADERS,
       body: JSON.stringify({
@@ -128,6 +135,7 @@ describe("mock adapter <-> mock core smoke", () => {
           message_id: "message-out-1",
           organization_id: "org-1",
           channel_id: "channel-mock",
+          channel_type: "mock",
           direction: "outbound",
           content: { type: "text", text: "hello channel" },
         },
@@ -136,8 +144,9 @@ describe("mock adapter <-> mock core smoke", () => {
 
     assert.equal(response.status, 202);
     const body: any = await response.json();
-    assert.equal(body.accepted, true);
-    assert.equal(body.delivery.channel_id, "channel-mock");
+    assert.equal(body.delivered, true);
+    assert.equal(body.adapter, "mock");
+    assert.equal(body.status, "delivered");
 
     assert.deepEqual(adapter.getChannelDeliveries(), [
       {
@@ -150,3 +159,11 @@ describe("mock adapter <-> mock core smoke", () => {
     ]);
   });
 });
+
+function createNoopBackendClient() {
+  return {
+    async recordAttempt() {
+      return { recorded: true };
+    },
+  };
+}

@@ -20,9 +20,8 @@
 - `message-model/status-machine.v1.json` - минимальный автомат статусов:
   `received -> routed -> sent`, с терминальными `delivered` и `failed`.
 - `openapi/communication-core-c2.openapi.json` - C2 Ingress
-  `POST /internal/ingress/messages` и Egress
-  `POST /internal/egress/messages` для mock handoff Core -> Adapter без реальной
-  доставки.
+  `POST /internal/ingress/messages` и Egress dispatch
+  `POST /internal/delivery/dispatch` для channel-aware доставки через SVC-INT.
 
 ## M1-03: C3.auth для Identity Platform
 
@@ -74,9 +73,9 @@
 
 ## M0-05: C2/C6 для Integration Platform
 
-- `openapi/c2-internal-api.yaml` фиксирует mock C2: Adapter вызывает Core
-  через `POST /internal/ingress/messages`, Core вызывает Adapter через
-  `POST /internal/egress/deliveries`.
+- `openapi/c2-internal-api.yaml` фиксирует C2: Adapter вызывает Core через
+  `POST /internal/ingress/messages`, Core вызывает SVC-INT delivery engine через
+  `POST /internal/delivery/dispatch`.
 - `json-schema/c2-ingress-message.schema.json` и
   `json-schema/c2-egress-delivery.schema.json` описывают M0-обёртки вокруг
   mock C1 сообщения.

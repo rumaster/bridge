@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { createTelegramAdapter } from "../../src/adapters/telegram/telegram-adapter.js";
 import { createBackoffPolicy } from "../../src/delivery/backoff.js";
 import { createDeliveryEngine } from "../../src/delivery/delivery-engine.js";
 
@@ -135,5 +136,44 @@ describe("M5 delivery resilience — timeout, circuit breaker и bulkhead", () =
     const firstResult = await firstTelegram;
     assert.equal(firstResult.delivered, true);
     assert.equal(engine.getMetrics().bulkhead_rejected_total, 1);
+  });
+
+  it("dispatch доставляет через M2-адаптер и передаёт во внешний канал форматированный payload", async () => {
+    const backend = recordingBackendClient();
+    const forwarded = [];
+    const telegramAdapter = createTelegramAdapter({
+      coreIngressUrl: "http://core.local/internal/ingress/messages",
+      channelClient: {
+        async deliver(delivery) {
+          forwarded.push(delivery);
+          return {
+            external_message_id: "telegram-message-42",
+          };
+        },
+      },
+      now: () => "2026-07-06T12:00:00.000Z",
+    });
+    const engine = createDeliveryEngine({
+      channel: telegramAdapter,
+      backendClient: backend,
+      backoff: createBackoffPolicy({ maxAttempts: 1 }),
+    });
+
+    const result = await engine.deliver(
+      egressDelivery({
+        messageId: "aaaaaaaa-0000-0000-0000-000000005006",
+        channelType: "telegram",
+      }),
+    );
+
+    assert.equal(result.delivered, true);
+    assert.equal(result.external_message_id, "telegram-message-42");
+    assert.equal(forwarded.length, 1);
+    assert.deepEqual(forwarded[0].external_payload, {
+      idempotency_key: "aaaaaaaa-0000-0000-0000-000000005006",
+      chat_id: "conv-telegram",
+      method: "sendMessage",
+      text: "hello",
+    });
   });
 });

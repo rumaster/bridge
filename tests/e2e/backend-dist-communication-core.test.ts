@@ -64,7 +64,7 @@ test(
       await seedFixtures(databaseUrl);
 
       egressServer = createHttpServer(async (request, response) => {
-        if (request.method !== "POST" || request.url !== "/internal/egress/deliveries") {
+        if (request.method !== "POST" || request.url !== "/internal/delivery/dispatch") {
           response.statusCode = 404;
           response.end();
           return;
@@ -87,7 +87,7 @@ test(
           ...process.env,
           AUTH_HASH_SECRET,
           DATABASE_URL: databaseUrl,
-          INTEGRATION_EGRESS_URL: `${egressBaseUrl}/internal/egress/deliveries`,
+          INTEGRATION_EGRESS_URL: `${egressBaseUrl}/internal/delivery/dispatch`,
           PORT: String(port),
           TELEGRAM_LOGIN_RATE_LIMIT_WINDOW_SECONDS: "60",
           TELEGRAM_LOGIN_START_RATE_LIMIT: "2",

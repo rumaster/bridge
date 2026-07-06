@@ -1,11 +1,11 @@
 openapi: 3.1.0
 info:
-  title: C2 Ingress/Egress M0 Mock
+  title: C2 Ingress/Egress Dispatch
   version: 1.0.0
   description: >
-    M0 mock contract between Integration Platform adapters and Communication
-    Core. SVC-CORE owns C2; SVC-INT consumes it through these frozen endpoints
-    until the full C1/C2 contract is expanded in later milestones.
+    Internal contract between Integration Platform adapters and Communication
+    Core. SVC-CORE owns C2; SVC-INT consumes ingress and the channel-aware
+    delivery dispatch endpoint.
 paths:
   /internal/ingress/messages:
     post:
@@ -20,10 +20,10 @@ paths:
       responses:
         "202":
           description: Message accepted by the core ingress mock.
-  /internal/egress/deliveries:
+  /internal/delivery/dispatch:
     post:
-      summary: Communication Core sends an outbound delivery request to Adapter.
-      operationId: acceptEgressDelivery
+      summary: Communication Core sends an outbound delivery request to channel-aware dispatch.
+      operationId: dispatchEgressDelivery
       requestBody:
         required: true
         content:
@@ -32,4 +32,4 @@ paths:
               $ref: ../json-schema/c2-egress-delivery.schema.json
       responses:
         "202":
-          description: Delivery accepted by the adapter channel stub.
+          description: Delivery accepted by the Integration Platform dispatch path.
