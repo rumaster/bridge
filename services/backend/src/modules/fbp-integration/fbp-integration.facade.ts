@@ -6,6 +6,7 @@ import type {
   ResilienceRejectionReason,
 } from "../../common/resilience/resilience";
 import type { FacadeStatusDto } from "../ai-integration/ai-integration.facade";
+import type { FbpUpstreamClient } from "./fbp-integration.upstream";
 
 export type FbpFacadeDegradationReason = "timeout" | "unavailable";
 
@@ -26,7 +27,7 @@ export interface FbpStartWorkflowFacadeResponse {
   workflow_id: string;
   workflow_version_id: string;
   instance_id: string;
-  status: "started" | "completed" | "failed" | "degraded";
+  status: "started" | "running" | "waiting" | "completed" | "failed" | "cancelled" | "degraded";
   degraded: boolean;
   fallback_reason: FbpFacadeDegradationReason | null;
   state: Record<string, unknown>;
@@ -47,7 +48,10 @@ const DEFAULT_FBP_TIMEOUT_MS = 250;
 export class FbpIntegrationFacade {
   private readonly resilience: FacadeResilience;
 
-  constructor(options: FacadeResilienceOptions = {}) {
+  constructor(
+    options: FacadeResilienceOptions = {},
+    private readonly upstream: FbpUpstreamClient | null = null,
+  ) {
     this.resilience = new FacadeResilience({
       defaultTimeoutMs: DEFAULT_FBP_TIMEOUT_MS,
       ...options,
@@ -56,10 +60,10 @@ export class FbpIntegrationFacade {
 
   getStatus(): FacadeStatusDto {
     return {
-      mode: "mock",
+      mode: this.upstream ? "grpc" : "mock",
       name: "fbp",
       serviceId: "SVC-FBP",
-      status: "degraded",
+      status: this.upstream ? "available" : "degraded",
     };
   }
 
@@ -67,7 +71,10 @@ export class FbpIntegrationFacade {
     request: FbpStartWorkflowFacadeRequest,
     options: FbpFacadeCallOptions<FbpStartWorkflowFacadeResponse> = {},
   ): Promise<FbpStartWorkflowFacadeResponse> {
-    const result = await this.resilience.execute(options.call, {
+    const call =
+      options.call ??
+      (this.upstream ? () => this.upstream!.startWorkflowInstance(request) : undefined);
+    const result = await this.resilience.execute(call, {
       timeoutMs: options.timeoutMs,
     });
     if (result.ok) {

@@ -29,7 +29,7 @@ export interface BackendApiClient {
 
 /** Опции HTTP-клиента Backend API. */
 export interface HttpBackendApiClientOptions {
-  baseUrl?: string;
+  baseUrl: string;
   fetchImpl?: typeof globalThis.fetch;
   defaultTimeoutMs?: number;
 }
@@ -42,7 +42,10 @@ export function createHttpBackendApiClient({
   baseUrl,
   fetchImpl = globalThis.fetch,
   defaultTimeoutMs = 250,
-}: HttpBackendApiClientOptions = {}) {
+}: HttpBackendApiClientOptions) {
+  if (typeof baseUrl !== "string" || baseUrl.trim() === "") {
+    throw new TypeError("createHttpBackendApiClient требует непустой baseUrl.");
+  }
   if (typeof fetchImpl !== "function") {
     throw new TypeError("createHttpBackendApiClient требует доступный fetch.");
   }

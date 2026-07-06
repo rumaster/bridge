@@ -97,6 +97,7 @@ services:
       CHANNEL_SECRET_KEY_ID: ${CHANNEL_SECRET_KEY_ID:-env:CHANNEL_SECRET_ENCRYPTION_KEY}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       AI_GRPC_TARGET: ${AI_GRPC_TARGET:-ai-platform:3106}
+      FBP_GRPC_TARGET: ${FBP_GRPC_TARGET:-fbp-engine:3105}
       # URL, по которому backend пересылает исходящие сообщения (C2.EgressDelivery)
       # в integration-platform. Пусто — статус фиксируется только в БД (см. .env.example).
       INTEGRATION_EGRESS_URL: ${INTEGRATION_EGRESS_URL:-http://integration-platform:3005/internal/egress/deliveries}
@@ -187,8 +188,11 @@ services:
     restart: unless-stopped
     environment:
       PORT: ${FBP_ENGINE_PORT:-3095}
+      FBP_GRPC_PORT: ${FBP_GRPC_PORT:-3105}
+      FBP_BACKEND_API_URL: ${FBP_BACKEND_API_URL:-http://backend:3000}
     ports:
       - "${FBP_ENGINE_PORT:-3095}:${FBP_ENGINE_PORT:-3095}"
+      - "${FBP_GRPC_PORT:-3105}:${FBP_GRPC_PORT:-3105}"
     depends_on:
       backend:
         condition: service_started
