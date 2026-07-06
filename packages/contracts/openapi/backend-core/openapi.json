@@ -1997,16 +1997,18 @@
           "mode": {
             "type": "string",
             "enum": [
-              "mock"
+              "mock",
+              "grpc"
             ],
-            "example": "mock"
+            "example": "grpc"
           },
           "status": {
             "type": "string",
             "enum": [
-              "degraded"
+              "degraded",
+              "available"
             ],
-            "example": "degraded"
+            "example": "available"
           }
         },
         "required": [

@@ -39,6 +39,20 @@ services:
       timeout: 3s
       retries: 10
 
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - bridge-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   migrate:
     build:
       context: ../..
@@ -79,6 +93,10 @@ services:
       # код генерируется, но не отправляется (см. .env.example).
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-https://api.telegram.org}
+      CHANNEL_SECRET_ENCRYPTION_KEY: ${CHANNEL_SECRET_ENCRYPTION_KEY:?укажите CHANNEL_SECRET_ENCRYPTION_KEY в .env, см. .env.example}
+      CHANNEL_SECRET_KEY_ID: ${CHANNEL_SECRET_KEY_ID:-env:CHANNEL_SECRET_ENCRYPTION_KEY}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      AI_GRPC_TARGET: ${AI_GRPC_TARGET:-ai-platform:3106}
       # URL, по которому backend пересылает исходящие сообщения (C2.EgressDelivery)
       # в integration-platform. Пусто — статус фиксируется только в БД (см. .env.example).
       INTEGRATION_EGRESS_URL: ${INTEGRATION_EGRESS_URL:-http://integration-platform:3005/internal/egress/deliveries}
@@ -87,6 +105,8 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
 
   ai-platform:
     build:
@@ -95,9 +115,11 @@ services:
     restart: unless-stopped
     environment:
       PORT: ${AI_PLATFORM_PORT:-3006}
+      AI_GRPC_PORT: ${AI_GRPC_PORT:-3106}
       AI_BACKEND_KB_URL: ${AI_BACKEND_KB_URL:-http://backend:3000}
     ports:
       - "${AI_PLATFORM_PORT:-3006}:${AI_PLATFORM_PORT:-3006}"
+      - "${AI_GRPC_PORT:-3106}:${AI_GRPC_PORT:-3106}"
     depends_on:
       backend:
         condition: service_started
@@ -216,3 +238,4 @@ services:
 
 volumes:
   bridge-postgres-data:
+  bridge-redis-data:
