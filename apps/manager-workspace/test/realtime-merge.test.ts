@@ -148,6 +148,19 @@ describe("Manager Workspace C7 realtime merge", () => {
     expect(mergeMessagesById([baseMessage], [refetchedMessage])).toEqual([refetchedMessage]);
   });
 
+  it("keeps a realtime terminal status when a stale catch-up snapshot arrives", () => {
+    const deliveredMessage = {
+      ...baseMessage,
+      status: "delivered" as const
+    };
+    const staleSnapshotMessage = {
+      ...baseMessage,
+      status: "sent" as const
+    };
+
+    expect(mergeMessagesById([deliveredMessage], [staleSnapshotMessage])[0]?.status).toBe("delivered");
+  });
+
   it("prepends and deduplicates realtime notification.created events by notification.id", () => {
     const existing: NotificationItem[] = [
       {

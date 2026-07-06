@@ -97,10 +97,11 @@ services:
       CHANNEL_SECRET_KEY_ID: ${CHANNEL_SECRET_KEY_ID:-env:CHANNEL_SECRET_ENCRYPTION_KEY}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       AI_GRPC_TARGET: ${AI_GRPC_TARGET:-ai-platform:3106}
+      INTEGRATION_GATEWAY_URL: ${INTEGRATION_GATEWAY_URL:-http://integration-platform:3005}
       FBP_GRPC_TARGET: ${FBP_GRPC_TARGET:-fbp-engine:3105}
       # URL, по которому backend пересылает исходящие сообщения (C2.EgressDelivery)
       # в integration-platform. Пусто — статус фиксируется только в БД (см. .env.example).
-      INTEGRATION_EGRESS_URL: ${INTEGRATION_EGRESS_URL:-http://integration-platform:3005/internal/egress/deliveries}
+      INTEGRATION_EGRESS_URL: ${INTEGRATION_EGRESS_URL:-http://integration-platform:3005/internal/delivery/dispatch}
     ports:
       - "${BACKEND_PORT:-3000}:${BACKEND_PORT:-3000}"
     depends_on:
@@ -133,6 +134,14 @@ services:
     environment:
       PORT: ${INTEGRATION_PLATFORM_PORT:-3005}
       CORE_INGRESS_URL: ${CORE_INGRESS_URL:-http://backend:3000/internal/ingress/messages}
+      BACKEND_BASE_URL: ${BACKEND_BASE_URL:-http://backend:3000}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-https://api.telegram.org}
+      EMAIL_DELIVERY_URL: ${EMAIL_DELIVERY_URL:-}
+      EMAIL_DELIVERY_TOKEN: ${EMAIL_DELIVERY_TOKEN:-}
+      MAX_DELIVERY_URL: ${MAX_DELIVERY_URL:-}
+      MAX_ACCESS_TOKEN: ${MAX_ACCESS_TOKEN:-}
+      MAX_BOT_TOKEN: ${MAX_BOT_TOKEN:-}
     ports:
       - "${INTEGRATION_PLATFORM_PORT:-3005}:${INTEGRATION_PLATFORM_PORT:-3005}"
     depends_on:

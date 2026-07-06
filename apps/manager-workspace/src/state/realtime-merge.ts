@@ -27,9 +27,12 @@ export function mergeMessagesById(currentMessages: Message[], nextMessages: Mess
   const messagesById = new Map(currentMessages.map((message) => [message.id, message]));
 
   for (const message of nextMessages) {
+    const currentMessage = messagesById.get(message.id);
+
     messagesById.set(message.id, {
-      ...messagesById.get(message.id),
-      ...message
+      ...currentMessage,
+      ...message,
+      status: mergeMessageStatus(currentMessage?.status, message.status)
     });
   }
 
@@ -193,6 +196,22 @@ export function markNotificationReadById(
 
 function compareMessagesByCreatedAt(left: Message, right: Message) {
   return left.createdAt.localeCompare(right.createdAt);
+}
+
+const messageStatusRank: Record<Message["status"], number> = {
+  received: 0,
+  routed: 1,
+  sent: 2,
+  delivered: 3,
+  failed: 3
+};
+
+function mergeMessageStatus(currentStatus: Message["status"] | undefined, nextStatus: Message["status"]) {
+  if (!currentStatus) {
+    return nextStatus;
+  }
+
+  return messageStatusRank[nextStatus] >= messageStatusRank[currentStatus] ? nextStatus : currentStatus;
 }
 
 function compareConversationsByLastMessageAt(left: Conversation, right: Conversation) {

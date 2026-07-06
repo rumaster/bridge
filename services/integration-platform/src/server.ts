@@ -1,7 +1,6 @@
 import { createServer } from "node:http";
 
 import { createMockAdapter } from "./adapters/mock/mock-adapter.js";
-import { isWebChatEgressDelivery } from "./adapters/web-chat/web-chat-adapter.js";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 
@@ -104,17 +103,6 @@ export function createIntegrationPlatformServer({
         return;
       }
 
-      if (request.method === "POST" && url.pathname === "/internal/egress/deliveries") {
-        const payload = await readJson(request);
-        const egressAdapter = resolveEgressAdapter(payload, channelAdapters, {
-          adapter,
-          webChatAdapter,
-        });
-        const result = await egressAdapter.acceptEgressDelivery(payload);
-        sendJson(response, result.accepted ? 202 : 400, result);
-        return;
-      }
-
       if (request.method === "POST" && url.pathname === "/internal/delivery/dispatch") {
         if (!deliveryEngine) {
           sendJson(response, 503, {
@@ -212,19 +200,6 @@ function findChannelRoute(pathname, channelAdapters) {
   }
 
   return null;
-}
-
-function resolveEgressAdapter(payload, channelAdapters, { adapter, webChatAdapter }) {
-  const channelType = payload?.message?.channel_type ?? payload?.message?.channel;
-  if (typeof channelType === "string" && channelAdapters.has(channelType)) {
-    return channelAdapters.get(channelType);
-  }
-
-  if (webChatAdapter && isWebChatEgressDelivery(payload)) {
-    return webChatAdapter;
-  }
-
-  return adapter;
 }
 
 async function readJson(request) {

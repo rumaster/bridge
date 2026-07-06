@@ -8,6 +8,8 @@ import { createSmsAdapter } from "../../src/adapters/sms/sms-adapter.js";
 import { createTelegramAdapter } from "../../src/adapters/telegram/telegram-adapter.js";
 import { createVkAdapter } from "../../src/adapters/vk/vk-adapter.js";
 import { createWhatsAppAdapter } from "../../src/adapters/whatsapp/whatsapp-adapter.js";
+import { createAdapterDeliveryChannel } from "../../src/delivery/adapter-delivery-channel.js";
+import { createDeliveryEngine } from "../../src/delivery/delivery-engine.js";
 import { createIntegrationPlatformServer } from "../../src/server.js";
 
 const JSON_HEADERS = { "content-type": "application/json" };
@@ -76,7 +78,13 @@ describe("M2 channel adapters <-> mock core slice", () => {
       max: createMaxAdapter(adapterOptions),
       whatsapp: createWhatsAppAdapter(adapterOptions),
     };
-    integrationServer = createIntegrationPlatformServer({ adapters });
+    integrationServer = createIntegrationPlatformServer({
+      adapters,
+      deliveryEngine: createDeliveryEngine({
+        backendClient: createNoopBackendClient(),
+        channel: createAdapterDeliveryChannel({ adapters }),
+      }),
+    });
     integrationBaseUrl = await listen(integrationServer);
   });
 
@@ -138,12 +146,12 @@ describe("M2 channel adapters <-> mock core slice", () => {
       },
     };
 
-    const first = await fetch(`${integrationBaseUrl}/internal/egress/deliveries`, {
+    const first = await fetch(`${integrationBaseUrl}/internal/delivery/dispatch`, {
       method: "POST",
       headers: JSON_HEADERS,
       body: JSON.stringify(egressBody),
     });
-    const second = await fetch(`${integrationBaseUrl}/internal/egress/deliveries`, {
+    const second = await fetch(`${integrationBaseUrl}/internal/delivery/dispatch`, {
       method: "POST",
       headers: JSON_HEADERS,
       body: JSON.stringify(egressBody),
@@ -154,12 +162,20 @@ describe("M2 channel adapters <-> mock core slice", () => {
 
     const firstBody: any = await first.json();
     const secondBody: any = await second.json();
-    assert.equal(firstBody.accepted, true);
+    assert.equal(firstBody.delivered, true);
     assert.equal(firstBody.duplicate, false);
-    assert.equal(secondBody.accepted, true);
+    assert.equal(secondBody.delivered, true);
     assert.equal(secondBody.duplicate, true);
 
     assert.equal(adapters.telegram.getChannelDeliveries().length, 1);
     assert.equal(adapters.email.getChannelDeliveries().length, 0);
   });
 });
+
+function createNoopBackendClient() {
+  return {
+    async recordAttempt() {
+      return { recorded: true };
+    },
+  };
+}

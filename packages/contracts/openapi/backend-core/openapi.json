@@ -1998,7 +1998,8 @@
             "type": "string",
             "enum": [
               "mock",
-              "grpc"
+              "grpc",
+              "http"
             ],
             "example": "grpc"
           },

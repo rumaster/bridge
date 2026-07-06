@@ -97,7 +97,7 @@ export function createM2ChannelAdapter({
       };
     },
 
-    async acceptEgressDelivery(delivery) {
+    async acceptEgressDelivery(delivery, options = {}) {
       let channelDelivery;
       try {
         channelDelivery = normalizeM2OutgoingDelivery({ spec, delivery });
@@ -127,16 +127,27 @@ export function createM2ChannelAdapter({
         accepted_at: now(),
       };
 
+      let providerResponse;
       if (typeof externalClient.deliver === "function") {
-        await externalClient.deliver(acceptedDelivery);
+        providerResponse = await externalClient.deliver(acceptedDelivery, options);
       }
-      channelDeliveries.push(acceptedDelivery);
+      const deliveredRecord = {
+        ...acceptedDelivery,
+        ...(normalizeExternalMessageId(providerResponse)
+          ? { external_message_id: normalizeExternalMessageId(providerResponse) }
+          : {}),
+        ...(providerResponse !== undefined ? { provider_response: providerResponse } : {}),
+      };
+      channelDeliveries.push(deliveredRecord);
       metrics.egress_accepted_total += 1;
 
       return {
         accepted: true,
         duplicate: false,
-        delivery: structuredClone(acceptedDelivery),
+        ...(deliveredRecord.external_message_id
+          ? { external_message_id: deliveredRecord.external_message_id }
+          : {}),
+        delivery: structuredClone(deliveredRecord),
       };
     },
   };
@@ -342,6 +353,25 @@ function createNoopChannelClient() {
   return {
     async deliver() {},
   };
+}
+
+function normalizeExternalMessageId(providerResponse) {
+  if (typeof providerResponse?.external_message_id === "string") {
+    return providerResponse.external_message_id;
+  }
+  if (typeof providerResponse?.message_id === "string") {
+    return providerResponse.message_id;
+  }
+  if (Number.isFinite(providerResponse?.message_id)) {
+    return String(providerResponse.message_id);
+  }
+  if (typeof providerResponse?.id === "string") {
+    return providerResponse.id;
+  }
+  if (Number.isFinite(providerResponse?.id)) {
+    return String(providerResponse.id);
+  }
+  return undefined;
 }
 
 function createCapability(spec, capability) {

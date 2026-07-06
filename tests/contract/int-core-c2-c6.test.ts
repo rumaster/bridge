@@ -16,15 +16,16 @@ function readJson(path) {
   return JSON.parse(readFileSync(join(root, path), "utf8"));
 }
 
-describe("INT <-> CORE M0 contracts", () => {
-  it("freezes the C2 ingress and egress endpoint names", () => {
+describe("INT <-> CORE C2/C6 contracts", () => {
+  it("freezes the C2 ingress and delivery dispatch endpoint names", () => {
     const openApi = readFileSync(
       join(root, "packages/contracts/openapi/c2-internal-api.yaml"),
       "utf8",
     );
 
     assert.match(openApi, /\/internal\/ingress\/messages:/);
-    assert.match(openApi, /\/internal\/egress\/deliveries:/);
+    assert.match(openApi, /\/internal\/delivery\/dispatch:/);
+    assert.doesNotMatch(openApi, /\/internal\/egress\/deliveries:/);
     assert.match(openApi, /c2-ingress-message\.schema\.json/);
     assert.match(openApi, /c2-egress-delivery\.schema\.json/);
   });

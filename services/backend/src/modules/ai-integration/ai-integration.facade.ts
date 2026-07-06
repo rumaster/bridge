@@ -20,7 +20,7 @@ export type {
   AiOnboardingFacadeResponse,
 } from "./ai-integration.types";
 
-export type FacadeMode = "mock" | "grpc";
+export type FacadeMode = "mock" | "grpc" | "http";
 export type FacadeStatusValue = "degraded" | "available";
 
 export interface AiFacadeCallOptions<TResponse> {
@@ -38,7 +38,7 @@ export class FacadeStatusDto {
   @ApiProperty({ example: "SVC-AI" })
   serviceId!: string;
 
-  @ApiProperty({ enum: ["mock", "grpc"], example: "grpc" })
+  @ApiProperty({ enum: ["mock", "grpc", "http"], example: "grpc" })
   mode!: FacadeMode;
 
   @ApiProperty({ enum: ["degraded", "available"], example: "available" })
