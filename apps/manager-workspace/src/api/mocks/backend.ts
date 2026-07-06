@@ -163,7 +163,7 @@ export function createMockManagerWorkspaceBackend(): MockManagerWorkspaceBackend
         degraded: false,
         fallback_reason: null,
         suggestion: {
-          mode: "deterministic_mock",
+          mode: "generated",
           text:
             "Поблагодарите клиента за ожидание, уточните номер заказа и сообщите, что статус доставки проверяется по базе знаний.",
           confidence: 0.72

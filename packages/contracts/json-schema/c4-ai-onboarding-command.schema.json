@@ -84,7 +84,7 @@
         "generated_by": {
           "type": "string",
           "enum": [
-            "deterministic-mock-ai",
+            "generated",
             "fallback"
           ]
         }

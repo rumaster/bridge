@@ -26,7 +26,7 @@ describe("Stage 1 DR-01 Backend to SVC-AI gRPC foundation", () => {
       assert.equal(response.organization_id, "org-stage-1");
       assert.equal(response.degraded, false);
       assert.equal(response.fallback_reason, null);
-      assert.equal(response.suggestion.mode, "deterministic_mock");
+      assert.equal(response.suggestion.mode, "generated");
       assert.match(response.suggestion.text, /возврат/i);
 
       const health = await client.getHealth();

@@ -111,7 +111,7 @@ export function createRagAssistant({
       requestId: request.request_id,
       organizationId: request.organization_id,
       suggestion: {
-        mode: "deterministic_mock",
+        mode: "generated",
         text: generated.text,
         confidence: clampConfidence(generated.confidence),
       },

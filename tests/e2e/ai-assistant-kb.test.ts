@@ -149,7 +149,7 @@ describe("E2E — AI Assistant из базы знаний (CP-3)", () => {
 
     assert.equal(answer.contract, "C4.AssistantSuggestResponse");
     assert.equal(answer.degraded, false);
-    assert.equal(answer.suggestion.mode, "deterministic_mock");
+    assert.equal(answer.suggestion.mode, "generated");
     assert.equal(answer.source_status, "available");
 
     const ids = answer.sources.map((source) => source.chunk_id);

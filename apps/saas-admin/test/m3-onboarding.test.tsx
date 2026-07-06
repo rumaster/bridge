@@ -50,7 +50,7 @@ describe("SaaS Administration M3 AI Onboarding (C4)", () => {
 
     const commandCard = await screen.findByRole("region", { name: "Подготовленная команда" });
     expect(within(commandCard).getByText("Изменение конфигурации")).toBeInTheDocument();
-    expect(within(commandCard).getByText(/Детерминированный mock-AI/)).toBeInTheDocument();
+    expect(within(commandCard).getByText("AI")).toBeInTheDocument();
     expect(within(commandCard).getByText(/"monthlyMessageLimit": 50000/)).toBeInTheDocument();
 
     // Изменения применяются только после подтверждения администратором; проверяет Backend.

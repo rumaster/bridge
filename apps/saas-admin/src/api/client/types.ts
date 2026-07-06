@@ -340,7 +340,7 @@ export interface OnboardingCommand {
   };
   source: {
     prompt: string;
-    generated_by: "deterministic-mock-ai" | "fallback";
+    generated_by: "generated" | "fallback";
   };
   created_at: ISODateTime;
 }

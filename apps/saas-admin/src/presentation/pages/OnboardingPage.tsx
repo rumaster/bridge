@@ -505,7 +505,7 @@ function applyModeLabel(mode: OnboardingCommand["safety"]["apply_mode"]) {
 }
 
 function generatedByLabel(generatedBy: OnboardingCommand["source"]["generated_by"]) {
-  return generatedBy === "deterministic-mock-ai" ? "Детерминированный mock-AI" : "Резервный сценарий";
+  return generatedBy === "generated" ? "AI" : "Резервный сценарий";
 }
 
 function getProblemMessage(error: unknown, fallback: string) {

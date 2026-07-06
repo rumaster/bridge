@@ -97,7 +97,7 @@ describe("RAG assistant server (mock LLM + in-memory KB)", () => {
 
     assert.equal(body.contract, "C4.AssistantSuggestResponse");
     assert.equal(body.degraded, false);
-    assert.equal(body.suggestion.mode, "deterministic_mock");
+    assert.equal(body.suggestion.mode, "generated");
     assert.equal(body.source_status, "available");
 
     const sourceIds = body.sources.map((source) => source.chunk_id);

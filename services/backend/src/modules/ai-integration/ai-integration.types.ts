@@ -14,7 +14,7 @@ export interface AiAssistantFacadeResponse {
   degraded: boolean;
   fallback_reason: AiFacadeDegradationReason | null;
   suggestion: {
-    mode: "deterministic_mock" | "fallback";
+    mode: "generated" | "fallback";
     text: string;
     confidence: number;
   };

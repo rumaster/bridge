@@ -30,4 +30,27 @@ describe("API <-> AI M0 C4 contract", () => {
       "../../json-schema/c4-ai-onboarding-command.schema.json",
     );
   });
+
+  it("publishes Stage 4 generated/fallback C4 attribution enums", () => {
+    const openApi = readJson("packages/contracts/openapi/ai/c4.ai.openapi.json");
+    const assistantSchema = readJson(
+      "packages/contracts/json-schema/c4-ai-assistant-suggest-response.schema.json",
+    );
+    const onboardingSchema = readJson(
+      "packages/contracts/json-schema/c4-ai-onboarding-command.schema.json",
+    );
+
+    assert.deepEqual(
+      assistantSchema.properties.suggestion.properties.mode.enum,
+      ["generated", "fallback"],
+    );
+    assert.deepEqual(
+      openApi.components.schemas.AssistantSuggestion.properties.mode.enum,
+      ["generated", "fallback"],
+    );
+    assert.deepEqual(
+      onboardingSchema.properties.source.properties.generated_by.enum,
+      ["generated", "fallback"],
+    );
+  });
 });

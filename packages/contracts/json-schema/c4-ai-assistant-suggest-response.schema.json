@@ -58,7 +58,7 @@
         "mode": {
           "type": "string",
           "enum": [
-            "deterministic_mock",
+            "generated",
             "fallback"
           ]
         },
