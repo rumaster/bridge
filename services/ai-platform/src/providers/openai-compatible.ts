@@ -123,6 +123,16 @@ export function createOpenAiCompatibleLlm({
         "Если запрос не соответствует операции — верни noop.",
         "Верни строго один JSON-объект по схеме:",
         '{"action": string, "params": object, "requiresConfirmation": boolean, "notes": string[]}.',
+        "Форма params строго зависит от action, Backend отклонит любую другую форму:",
+        '- "configuration.upsert": {"key": "<имя поля>", "value": {"<то же имя поля>": <новое значение>}}.',
+        "  Допустимые имена полей (camelCase, ровно так): defaultLanguage, aiAssistantEnabled,",
+        "  workflowAutomationEnabled, monthlyMessageLimit, notificationEmail, retentionDays.",
+        '  Пример для лимита сообщений: {"key": "monthlyMessageLimit", "value": {"monthlyMessageLimit": 50000}}.',
+        '- "organization.update_profile": {"display_name": "<новое название организации>"}.',
+        '- "channel.connect": {"channel_type": "<тип канала>", "display_name": "<название>"}.',
+        '- "user.invite": {"role": "<роль>", "delivery": "manual"}.',
+        '- "noop": {"reason": "<почему запрос не сопоставлен с операцией>"}.',
+        "Никогда не придумывай собственные имена полей params — используй только перечисленные выше.",
       ].join(" ");
       const content = await chatCompletion({
         system,

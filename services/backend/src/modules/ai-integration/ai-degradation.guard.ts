@@ -7,7 +7,7 @@ import type {
   ResilienceRejectionReason,
 } from "../../common/resilience/resilience";
 
-const DEFAULT_AI_TIMEOUT_MS = 250;
+const DEFAULT_AI_TIMEOUT_MS = 25000;
 
 export type AiDegradationReason = "timeout" | "unavailable";
 export const AI_DEGRADATION_OPTIONS = Symbol("AI_DEGRADATION_OPTIONS");
