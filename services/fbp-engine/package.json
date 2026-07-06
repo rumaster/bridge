@@ -10,5 +10,9 @@
     "test:integration": "node --import tsx --test test/integration/*.test.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node --import tsx src/main.ts"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "^1.14.4",
+    "@grpc/proto-loader": "^0.8.1"
   }
 }
