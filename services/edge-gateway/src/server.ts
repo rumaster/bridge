@@ -23,6 +23,8 @@ export interface CreateEdgeGatewayServerOptions {
   core?: any;
   tunnel?: any;
   wsChannel?: any;
+  edgeCluster?: any;
+  mode?: string;
   now?: () => string;
 }
 
@@ -30,6 +32,8 @@ export function createEdgeGatewayServer({
   core,
   tunnel = createMockEdgeTunnel({ core }),
   wsChannel = createMockWebSocketChannel(),
+  edgeCluster,
+  mode = "m0-mock",
   now = () => new Date().toISOString(),
 }: CreateEdgeGatewayServerOptions = {}) {
   const edgeTunnel = tunnel;
@@ -45,7 +49,7 @@ export function createEdgeGatewayServer({
         sendJson(response, 200, {
           status: "ok",
           service: "edge-gateway",
-          mode: "m0-mock",
+          mode,
           contracts: ["C7", "C9"],
         });
         return;
@@ -55,7 +59,11 @@ export function createEdgeGatewayServer({
         sendText(
           response,
           200,
-          renderMetrics(edgeTunnel.getMetrics(), webSocketChannel.getMetrics()),
+          renderMetrics(
+            edgeTunnel.getMetrics(),
+            webSocketChannel.getMetrics(),
+            edgeCluster?.getMetrics?.(),
+          ),
         );
         return;
       }
@@ -76,6 +84,17 @@ export function createEdgeGatewayServer({
         const payload = await readJson(request);
         const ack = edgeTunnel.forward(payload);
         sendJson(response, 202, ack);
+        return;
+      }
+
+      if (
+        edgeCluster &&
+        request.method === "POST" &&
+        (path === "/internal/edge/messages" || path === "/internal/edge/ingress/messages")
+      ) {
+        const payload = await readJson(request);
+        const result = await edgeCluster.ingest(payload);
+        sendJson(response, 202, result);
         return;
       }
 
@@ -271,7 +290,7 @@ function problem(status, title, detail, errors) {
   };
 }
 
-function renderMetrics(tunnelMetrics, wsMetrics) {
+function renderMetrics(tunnelMetrics, wsMetrics, edgeMetrics = null) {
   const lines = [
     "# HELP edge_gateway_mock_tunnel_forwarded_total C9 tunnel messages forwarded by the Edge mock.",
     "# TYPE edge_gateway_mock_tunnel_forwarded_total counter",
@@ -289,6 +308,20 @@ function renderMetrics(tunnelMetrics, wsMetrics) {
     "# TYPE edge_gateway_mock_ws_event_published_total counter",
     `edge_gateway_mock_ws_event_published_total ${wsMetrics.event_published_total}`,
   ];
+
+  if (edgeMetrics) {
+    lines.push(
+      "# HELP edge_gateway_edge_ingested_total RF Edge messages accepted by production EdgeCluster.",
+      "# TYPE edge_gateway_edge_ingested_total counter",
+      `edge_gateway_edge_ingested_total ${edgeMetrics.ingested_total ?? 0}`,
+      "# HELP edge_gateway_edge_fixed_in_rf_total RF-first buffer writes completed before forwarding.",
+      "# TYPE edge_gateway_edge_fixed_in_rf_total counter",
+      `edge_gateway_edge_fixed_in_rf_total ${edgeMetrics.fixed_in_rf_total ?? 0}`,
+      "# HELP edge_gateway_edge_forwarded_total RF Edge messages forwarded through VPN Tunnel.",
+      "# TYPE edge_gateway_edge_forwarded_total counter",
+      `edge_gateway_edge_forwarded_total ${edgeMetrics.forwarded_total ?? 0}`,
+    );
+  }
 
   return `${lines.join("\n")}\n`;
 }

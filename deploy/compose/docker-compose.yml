@@ -203,6 +203,39 @@ services:
       backend:
         condition: service_started
 
+  edge-vpn-app:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/edge-gateway/Dockerfile
+    restart: unless-stopped
+    environment:
+      EDGE_GATEWAY_MODE: app-vpn
+      HOST: 0.0.0.0
+      PORT: ${EDGE_VPN_APP_WSS_PORT:-3050}
+      EDGE_VPN_APP_TCP_HOST: 0.0.0.0
+      EDGE_VPN_APP_TCP_PORT: ${EDGE_VPN_APP_TCP_PORT:-3049}
+      EDGE_VPN_APP_WSS_HOST: 0.0.0.0
+      EDGE_VPN_APP_WSS_PORT: ${EDGE_VPN_APP_WSS_PORT:-3050}
+      EDGE_VPN_APP_WSS_PATH: ${EDGE_VPN_APP_WSS_PATH:-/vpn}
+      EDGE_VPN_BACKEND_C9_URL: ${EDGE_VPN_BACKEND_C9_URL:-http://backend:3000/internal/edge/tunnel/messages}
+      EDGE_VPN_SESSION_KEY: ${EDGE_VPN_SESSION_KEY:?укажите EDGE_VPN_SESSION_KEY в .env, он должен совпадать с .env.rf}
+      EDGE_VPN_APP_ID: ${EDGE_VPN_APP_ID:-app-core}
+      EDGE_VPN_APP_CERT: ${EDGE_VPN_APP_CERT:?укажите EDGE_VPN_APP_CERT в .env}
+      EDGE_VPN_TRUSTED_EDGE_CERTS: ${EDGE_VPN_TRUSTED_EDGE_CERTS:?укажите EDGE_VPN_TRUSTED_EDGE_CERTS в .env}
+      EDGE_VPN_APP_CAPACITY: ${EDGE_VPN_APP_CAPACITY:-1024}
+      EDGE_VPN_APP_TCP_TLS_KEY: ${EDGE_VPN_APP_TCP_TLS_KEY:-}
+      EDGE_VPN_APP_TCP_TLS_CERT: ${EDGE_VPN_APP_TCP_TLS_CERT:-}
+      EDGE_VPN_APP_TCP_TLS_CA: ${EDGE_VPN_APP_TCP_TLS_CA:-}
+      EDGE_VPN_APP_WSS_TLS_KEY: ${EDGE_VPN_APP_WSS_TLS_KEY:-}
+      EDGE_VPN_APP_WSS_TLS_CERT: ${EDGE_VPN_APP_WSS_TLS_CERT:-}
+      EDGE_VPN_APP_WSS_TLS_CA: ${EDGE_VPN_APP_WSS_TLS_CA:-}
+    ports:
+      - "${EDGE_VPN_APP_TCP_PORT:-3049}:${EDGE_VPN_APP_TCP_PORT:-3049}"
+      - "${EDGE_VPN_APP_WSS_PORT:-3050}:${EDGE_VPN_APP_WSS_PORT:-3050}"
+    depends_on:
+      backend:
+        condition: service_started
+
   fbp-engine:
     build:
       context: ../..
