@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 
 import { Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 
+import { FacadeResilience, type FacadeResilienceOptions } from "../../common/resilience/resilience";
 import type { FacadeStatusDto } from "../ai-integration/ai-integration.facade";
+import type { IntegrationGatewayUpstreamClient } from "./integration-gateway.upstream";
 
 export const INTEGRATION_GATEWAY_CLOCK = Symbol("INTEGRATION_GATEWAY_CLOCK");
 
@@ -77,6 +79,12 @@ export interface CapabilityDescriptorFacade {
   };
   capabilities: Record<CapabilityName, { supported: boolean; notes?: string }>;
   generated_at: string;
+}
+
+export interface IntegrationGatewayFacadeOptions {
+  clock?: () => string;
+  resilience?: FacadeResilience | FacadeResilienceOptions;
+  upstream?: IntegrationGatewayUpstreamClient | null;
 }
 
 const C6_CAPABILITIES: CapabilityName[] = [
@@ -191,19 +199,38 @@ const CHANNEL_CAPABILITY_PROFILES: Record<
 @Injectable()
 export class IntegrationGatewayFacade {
   private readonly channels = new Map<string, ChannelFacade>();
+  private readonly clock: () => string;
+  private readonly resilience: FacadeResilience;
+  private readonly upstream: IntegrationGatewayUpstreamClient | null;
 
   constructor(
     @Optional()
     @Inject(INTEGRATION_GATEWAY_CLOCK)
-    private readonly clock: () => string = () => new Date().toISOString(),
-  ) {}
+    optionsOrClock: (() => string) | IntegrationGatewayFacadeOptions = {},
+    upstream: IntegrationGatewayUpstreamClient | null = null,
+  ) {
+    const options =
+      typeof optionsOrClock === "function"
+        ? { clock: optionsOrClock, upstream }
+        : optionsOrClock;
+
+    this.clock = options.clock ?? (() => new Date().toISOString());
+    this.upstream = options.upstream ?? null;
+    this.resilience =
+      options.resilience instanceof FacadeResilience
+        ? options.resilience
+        : new FacadeResilience({
+            defaultTimeoutMs: 1_000,
+            ...(options.resilience ?? {}),
+          });
+  }
 
   getStatus(): FacadeStatusDto {
     return {
-      mode: "mock",
+      mode: this.upstream ? "http" : "mock",
       name: "integration",
       serviceId: "SVC-INT",
-      status: "degraded",
+      status: this.upstream ? "available" : "degraded",
     };
   }
 
@@ -240,8 +267,18 @@ export class IntegrationGatewayFacade {
     return { ...channel };
   }
 
-  getChannelCapabilities(channelId: string, organizationId?: string): CapabilityDescriptorFacade {
-    const channel = this.getChannel(channelId, organizationId);
+  async getChannelCapabilities(
+    channelId: string,
+    organizationId?: string,
+  ): Promise<CapabilityDescriptorFacade> {
+    const channel = this.findChannel(channelId, organizationId);
+    if (this.upstream) {
+      return this.getUpstreamChannelCapabilities(channelId, organizationId, channel ?? undefined);
+    }
+
+    if (!channel) {
+      throwChannelNotFound();
+    }
 
     return createChannelCapabilityDescriptor({
       channelType: channel.channel_type,
@@ -250,13 +287,27 @@ export class IntegrationGatewayFacade {
     });
   }
 
-  testChannel(channelId: string, organizationId?: string): {
-    accepted: true;
-    channel_id: string;
-    status: ChannelStatus;
-    checked_at: string;
-  } {
+  testChannel(
+    channelId: string,
+    organizationId?: string,
+  ):
+    | {
+        accepted: true;
+        channel_id: string;
+        status: ChannelStatus;
+        checked_at: string;
+      }
+    | Promise<{
+        accepted: true;
+        channel_id: string;
+        status: ChannelStatus;
+        checked_at: string;
+      }> {
     const channel = this.getChannel(channelId, organizationId);
+    if (this.upstream) {
+      return this.testUpstreamChannel(channel);
+    }
+
     const checkedAt = this.clock();
     const updatedChannel = {
       ...channel,
@@ -276,17 +327,117 @@ export class IntegrationGatewayFacade {
   }
 
   private getChannel(channelId: string, organizationId?: string): ChannelFacade {
-    const channel = this.channels.get(channelId);
-    if (!channel || (organizationId && channel.organization_id !== organizationId)) {
-      throw new NotFoundException({
-        code: "CHANNEL_NOT_FOUND",
-        description: "Channel was not found.",
-        humanMessage: "Канал не найден.",
-      });
+    const channel = this.findChannel(channelId, organizationId);
+    if (!channel) {
+      throwChannelNotFound();
     }
 
     return channel;
   }
+
+  private findChannel(channelId: string, organizationId?: string): ChannelFacade | null {
+    const channel = this.channels.get(channelId);
+    if (!channel || (organizationId && channel.organization_id !== organizationId)) {
+      return null;
+    }
+
+    return channel;
+  }
+
+  private async getUpstreamChannelCapabilities(
+    channelId: string,
+    organizationId: string | undefined,
+    channel?: ChannelFacade,
+  ): Promise<CapabilityDescriptorFacade> {
+    const result = await this.resilience.execute(() =>
+      this.upstream!.getChannelCapabilities(channelId, organizationId, channel?.channel_type),
+    );
+    if (result.ok) {
+      return normalizeCapabilityDescriptor(result.value, {
+        channelId,
+        fallbackGeneratedAt: this.clock(),
+      });
+    }
+
+    if (channel) {
+      return createChannelCapabilityDescriptor({
+        channelType: channel.channel_type,
+        channelId: channel.id,
+        generatedAt: this.clock(),
+      });
+    }
+
+    throwChannelNotFound();
+  }
+
+  private async testUpstreamChannel(channel: ChannelFacade): Promise<{
+    accepted: true;
+    channel_id: string;
+    status: ChannelStatus;
+    checked_at: string;
+  }> {
+    const result = await this.resilience.execute(async () => {
+      if (this.upstream?.testChannel) {
+        return this.upstream.testChannel(channel);
+      }
+      await this.upstream!.getChannelCapabilities(
+        channel.id,
+        channel.organization_id,
+        channel.channel_type,
+      );
+      return { status: "connected" as const, checked_at: this.clock() };
+    });
+    const checkedAt =
+      result.ok && typeof result.value.checked_at === "string"
+        ? result.value.checked_at
+        : this.clock();
+    const status = result.ok ? result.value.status : ("error" as const);
+    const updatedChannel = {
+      ...channel,
+      last_check_at: checkedAt,
+      status,
+      updated_at: checkedAt,
+    };
+
+    this.channels.set(channel.id, updatedChannel);
+
+    return {
+      accepted: true,
+      channel_id: channel.id,
+      checked_at: checkedAt,
+      status,
+    };
+  }
+}
+
+function normalizeCapabilityDescriptor(
+  descriptor: Record<string, unknown>,
+  {
+    channelId,
+    fallbackGeneratedAt,
+  }: { channelId: string; fallbackGeneratedAt: string },
+): CapabilityDescriptorFacade {
+  return {
+    adapter: descriptor.adapter as CapabilityDescriptorFacade["adapter"],
+    capabilities: descriptor.capabilities as CapabilityDescriptorFacade["capabilities"],
+    channel_id:
+      typeof descriptor.channel_id === "string" ? descriptor.channel_id : channelId,
+    channel_type: descriptor.channel_type as ChannelType,
+    contract: "C6.CapabilityDescriptor",
+    generated_at:
+      typeof descriptor.generated_at === "string"
+        ? descriptor.generated_at
+        : fallbackGeneratedAt,
+    version: "1.0.0",
+  };
+}
+
+function throwChannelNotFound(): never {
+  throw new NotFoundException({
+    code: "CHANNEL_NOT_FOUND",
+    description: "Channel was not found.",
+    humanMessage: "Канал не найден.",
+  });
 }
 
 function createChannelCapabilityDescriptor({

@@ -3,7 +3,57 @@ import { IntegrationGatewayFacade } from "../../src/modules/integration-gateway/
 const fixedNow = () => "2026-07-03T09:00:00.000Z";
 
 describe("IntegrationGatewayFacade", () => {
-  it("connects a Web Chat channel using credentials_ref and publishes C6 capabilities", () => {
+  it("берёт C6 capabilities из upstream SVC-INT, а не из локальной Map", async () => {
+    const upstream = {
+      async getChannelCapabilities(channelId: string, organizationId?: string) {
+        expect(channelId).toBe("telegram-live");
+        expect(organizationId).toBe("org-1");
+        return {
+          contract: "C6.CapabilityDescriptor",
+          version: "1.0.0",
+          channel_type: "telegram",
+          channel_id: channelId,
+          adapter: {
+            name: "telegram-adapter",
+            version: "0.0.0",
+          },
+          capabilities: {
+            text: { supported: true },
+            image: { supported: true },
+            file: { supported: true },
+            voice: { supported: true },
+            video: { supported: true },
+            buttons: { supported: true, constraints: { format: "inline_keyboard" } },
+            reactions: { supported: false },
+            typing_indicator: { supported: true },
+            read_receipt: { supported: false },
+            delete: { supported: true },
+            edit: { supported: true },
+          },
+          generated_at: fixedNow(),
+        };
+      },
+    };
+    const facade = new (IntegrationGatewayFacade as any)({
+      clock: fixedNow,
+      upstream,
+    });
+
+    await expect(facade.getChannelCapabilities("telegram-live", "org-1")).resolves.toMatchObject({
+      channel_id: "telegram-live",
+      channel_type: "telegram",
+      adapter: { name: "telegram-adapter" },
+      capabilities: {
+        buttons: { supported: true, constraints: { format: "inline_keyboard" } },
+      },
+    });
+    expect(facade.getStatus()).toMatchObject({
+      mode: "http",
+      status: "available",
+    });
+  });
+
+  it("connects a Web Chat channel using credentials_ref and publishes C6 capabilities", async () => {
     const facade = new IntegrationGatewayFacade(fixedNow);
 
     const channel = facade.connectChannel({
@@ -27,7 +77,7 @@ describe("IntegrationGatewayFacade", () => {
     });
     expect(channel).not.toHaveProperty("token");
 
-    const capabilities = facade.getChannelCapabilities(channel.id);
+    const capabilities = await facade.getChannelCapabilities(channel.id);
     expect(capabilities.channel_id).toBe(channel.id);
     expect(capabilities.capabilities.text.supported).toBe(true);
     expect(capabilities.capabilities.image.supported).toBe(true);
@@ -46,7 +96,7 @@ describe("IntegrationGatewayFacade", () => {
     ["whatsapp", "whatsapp-adapter", "secret://whatsapp/org-1/main", false, true],
   ] as const)(
     "connects %s using credentials_ref and returns channel-specific C6",
-    (channelType, adapterName, credentialsRef, typingIndicator, readReceipt) => {
+    async (channelType, adapterName, credentialsRef, typingIndicator, readReceipt) => {
       const facade = new IntegrationGatewayFacade(fixedNow);
 
       const channel = facade.connectChannel({
@@ -67,7 +117,7 @@ describe("IntegrationGatewayFacade", () => {
       });
       expect(channel).not.toHaveProperty("token");
 
-      const capabilities = facade.getChannelCapabilities(channel.id, "org-1");
+      const capabilities = await facade.getChannelCapabilities(channel.id, "org-1");
       expect(capabilities.channel_type).toBe(channelType);
       expect(capabilities.channel_id).toBe(channel.id);
       expect(capabilities.adapter.name).toBe(adapterName);
