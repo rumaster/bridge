@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
 import {
+  FBP_NODE_TYPE_DEFINITIONS,
   FBP_BACKEND_API_METHODS,
   FBP_INPUT_SOURCE_KINDS,
   FBP_NODE_TYPES,
+  arePortTypesCompatible,
   TRANSFORM_ALLOWED_OPERATIONS,
   TRANSFORM_FUNCTION_OPERATIONS,
   TRANSFORM_STRUCTURAL_OPERATIONS,
@@ -27,6 +29,36 @@ describe("Контракт C5: каталог нейтральных узлов 
     assert.deepEqual([...listNodeTypes()].sort(), [...FBP_NODE_TYPES].sort());
   });
 
+  it("каталог узлов содержит типизированные порты и остаётся источником FBP_NODE_TYPES", () => {
+    assert.deepEqual(
+      FBP_NODE_TYPE_DEFINITIONS.map((definition) => definition.type),
+      [...FBP_NODE_TYPES],
+    );
+
+    for (const definition of FBP_NODE_TYPE_DEFINITIONS) {
+      assert.ok(definition.label.length > 0, `${definition.type}.label`);
+      assert.ok(Array.isArray(definition.ports) && definition.ports.length > 0, `${definition.type}.ports`);
+      for (const port of definition.ports) {
+        assert.ok(port.id.length > 0, `${definition.type}.ports[].id`);
+        assert.ok(["input", "output"].includes(port.direction), `${definition.type}.${port.id}.direction`);
+        assert.ok(port.type.length > 0, `${definition.type}.${port.id}.type`);
+      }
+    }
+
+    const branch = FBP_NODE_TYPE_DEFINITIONS.find((definition) => definition.type === "branch");
+    assert.deepEqual(
+      branch?.ports.filter((port) => port.direction === "output").map((port) => port.id).sort(),
+      ["false", "true"],
+    );
+  });
+
+  it("проверяет совместимость типов портов по общему правилу C5", () => {
+    assert.equal(arePortTypesCompatible("exec", "exec"), true);
+    assert.equal(arePortTypesCompatible("exec", "object"), false);
+    assert.equal(arePortTypesCompatible("object", "any"), true);
+    assert.equal(arePortTypesCompatible("string", "number"), false);
+  });
+
   it("каждый тип каталога разрешается в определение с validate() и execute()", () => {
     for (const type of FBP_NODE_TYPES) {
       const definition = getNodeDefinition(type);
@@ -38,12 +70,13 @@ describe("Контракт C5: каталог нейтральных узлов 
   });
 
   it("каталог не содержит доменных узлов исходного fbp-engine (нейтральность §13.13-п.1)", () => {
+    const nodeTypes = new Set<string>(FBP_NODE_TYPES);
     assert.equal(FBP_NODE_TYPES.length, 6);
     assert.ok(FBP_NODE_TYPES.includes("backend-api"));
     assert.ok(FBP_NODE_TYPES.includes("transform"));
     // Никаких прямых доменных/БД-узлов: единственная запись данных — через backend-api.
     for (const forbidden of ["sql", "db", "http", "shell", "exec", "email", "crm"]) {
-      assert.ok(!FBP_NODE_TYPES.includes(forbidden), `узел ${forbidden} недопустим`);
+      assert.ok(!nodeTypes.has(forbidden), `узел ${forbidden} недопустим`);
     }
   });
 

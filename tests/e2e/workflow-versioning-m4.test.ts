@@ -46,8 +46,8 @@ function approvalSchema(marker) {
       },
     ],
     connections: [
-      { from: "prepare", to: "await_approval" },
-      { from: "await_approval", to: "create" },
+      { from: "prepare", fromPort: "out", to: "await_approval", toPort: "in" },
+      { from: "await_approval", fromPort: "out", to: "create", toPort: "in" },
     ],
   };
 }

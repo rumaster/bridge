@@ -8,9 +8,9 @@ describe("Модель графа: маршрутизация переходов
     entry: "a",
     nodes: [{ id: "a" }, { id: "b" }, { id: "c" }],
     connections: [
-      { from: "a", to: "b" },
-      { from: "b", port: "true", to: "c" },
-      { from: "b", port: "false", to: "a" },
+      { from: "a", fromPort: "out", to: "b", toPort: "in" },
+      { from: "b", fromPort: "true", to: "c", toPort: "in" },
+      { from: "b", fromPort: "false", to: "a", toPort: "in" },
     ],
   };
 
@@ -42,8 +42,8 @@ describe("Модель графа: обнаружение циклов (DAG-ин
     const cycle = findCycle({
       nodes: [{ id: "a" }, { id: "b" }, { id: "c" }],
       connections: [
-        { from: "a", to: "b" },
-        { from: "b", to: "c" },
+        { from: "a", fromPort: "out", to: "b", toPort: "in" },
+        { from: "b", fromPort: "out", to: "c", toPort: "in" },
       ],
     });
     assert.equal(cycle, null);
@@ -53,9 +53,9 @@ describe("Модель графа: обнаружение циклов (DAG-ин
     const cycle = findCycle({
       nodes: [{ id: "a" }, { id: "b" }, { id: "c" }],
       connections: [
-        { from: "a", to: "b" },
-        { from: "b", to: "c" },
-        { from: "c", to: "a" },
+        { from: "a", fromPort: "out", to: "b", toPort: "in" },
+        { from: "b", fromPort: "out", to: "c", toPort: "in" },
+        { from: "c", fromPort: "out", to: "a", toPort: "in" },
       ],
     });
     assert.ok(Array.isArray(cycle));
@@ -65,7 +65,7 @@ describe("Модель графа: обнаружение циклов (DAG-ин
   it("находит петлю на себя", () => {
     const cycle = findCycle({
       nodes: [{ id: "a" }],
-      connections: [{ from: "a", to: "a" }],
+      connections: [{ from: "a", fromPort: "out", to: "a", toPort: "in" }],
     });
     assert.ok(Array.isArray(cycle));
     assert.ok(cycle.includes("a"));

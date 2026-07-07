@@ -1,3 +1,5 @@
+import type { FbpNodeType } from "@bridge/contracts/c5-workflow";
+
 export type ISODateTime = string;
 
 export type AdminRole = "platform_operator" | "administrator" | "manager";
@@ -212,14 +214,7 @@ export interface DeleteKnowledgeDocumentResponse {
 // проверку выполняет Backend/FBP.
 export type WorkflowStatus = "draft" | "active" | "archived";
 
-export type WorkflowNodeType =
-  | "backend_api_call"
-  | "llm_call"
-  | "kb_search"
-  | "branch"
-  | "transform"
-  | "wait_event"
-  | "sub_schema";
+export type WorkflowNodeType = FbpNodeType;
 
 export interface WorkflowNodePosition {
   x: number;
@@ -237,7 +232,9 @@ export interface WorkflowNode {
 export interface WorkflowConnection {
   id: string;
   from: string;
+  fromPort: string;
   to: string;
+  toPort: string;
   label?: string;
 }
 

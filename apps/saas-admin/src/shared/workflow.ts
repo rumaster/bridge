@@ -1,3 +1,11 @@
+import {
+  FBP_NODE_TYPE_DEFINITIONS,
+  FBP_NODE_TYPES,
+  arePortTypesCompatible,
+  getFbpNodePortDefinition
+} from "@bridge/contracts/c5-workflow";
+import type { FbpNodeTypeDefinition } from "@bridge/contracts/c5-workflow";
+
 import type {
   WorkflowConnection,
   WorkflowInstanceStatus,
@@ -13,71 +21,14 @@ import type {
  * узел вызова Backend API (ТЗ §13.5) — остальные узлы не мутируют состояние.
  * Это UX-ограничение: авторитетную проверку безопасности выполняет Backend/FBP.
  */
-export const SAFE_WORKFLOW_NODE_TYPES: WorkflowNodeType[] = [
-  "wait_event",
-  "kb_search",
-  "llm_call",
-  "branch",
-  "transform",
-  "backend_api_call",
-  "sub_schema"
-];
+export const SAFE_WORKFLOW_NODE_TYPES: WorkflowNodeType[] = [...FBP_NODE_TYPES];
 
 export const WORKFLOW_BODY_GRAPH_CONFIG_KEY = "bodyGraph";
 
-interface WorkflowNodeTypeMeta {
-  label: string;
-  description: string;
-  /** Основное поле конфигурации, редактируемое в панели свойств. */
-  primaryField: { key: string; label: string; placeholder: string };
-  /** Может ли узел изменять данные (только вызов Backend API — ТЗ §13.5). */
-  mutatesData: boolean;
-}
-
-const WORKFLOW_NODE_TYPE_META: Record<WorkflowNodeType, WorkflowNodeTypeMeta> = {
-  wait_event: {
-    label: "Ожидание события",
-    description: "Приостанавливает исполнение до наступления внешнего события.",
-    primaryField: { key: "event", label: "Ожидаемое событие", placeholder: "channel.message_received" },
-    mutatesData: false
-  },
-  kb_search: {
-    label: "Поиск в Knowledge Base",
-    description: "Ищет релевантные фрагменты в базе знаний организации.",
-    primaryField: { key: "query", label: "Поисковый запрос", placeholder: "{{message.text}}" },
-    mutatesData: false
-  },
-  llm_call: {
-    label: "Вызов LLM",
-    description: "Запрашивает ответ у языковой модели через SVC-AI.",
-    primaryField: { key: "prompt", label: "Промпт для LLM", placeholder: "Сформулируй ответ клиенту" },
-    mutatesData: false
-  },
-  branch: {
-    label: "Ветвление",
-    description: "Выбирает следующий узел по условию.",
-    primaryField: { key: "condition", label: "Условие ветвления", placeholder: "{{kb.found}} == true" },
-    mutatesData: false
-  },
-  transform: {
-    label: "Transform Node",
-    description: "Преобразует данные в изолированной песочнице (без доступа к БД).",
-    primaryField: { key: "expression", label: "Выражение трансформации", placeholder: "payload.text.trim()" },
-    mutatesData: false
-  },
-  backend_api_call: {
-    label: "Вызов Backend API",
-    description: "Единственный узел, изменяющий данные — только через Backend API (ТЗ §13.5).",
-    primaryField: { key: "endpoint", label: "Backend API endpoint", placeholder: "POST /api/v1/tickets" },
-    mutatesData: true
-  },
-  sub_schema: {
-    label: "Субсхема",
-    description: "Вкладывает повторно используемый подграф с собственным bodyGraph.",
-    primaryField: { key: "schema_id", label: "Идентификатор субсхемы", placeholder: "support.reply-body" },
-    mutatesData: false
-  }
-};
+const WORKFLOW_NODE_TYPE_META = {} as Record<WorkflowNodeType, FbpNodeTypeDefinition>;
+FBP_NODE_TYPE_DEFINITIONS.forEach((definition) => {
+  WORKFLOW_NODE_TYPE_META[definition.type as WorkflowNodeType] = definition;
+});
 
 export function workflowNodeTypeLabel(type: WorkflowNodeType): string {
   return WORKFLOW_NODE_TYPE_META[type].label;
@@ -114,10 +65,6 @@ export function createWorkflowNode(
   const primary = WORKFLOW_NODE_TYPE_META[type].primaryField;
   const config: Record<string, unknown> = { [primary.key]: "" };
 
-  if (type === "sub_schema") {
-    config[WORKFLOW_BODY_GRAPH_CONFIG_KEY] = createWorkflowBodyGraph(id);
-  }
-
   return {
     id,
     type,
@@ -146,7 +93,7 @@ export function createWorkflowBodyGraph(ownerNodeId: string): WorkflowSchema {
 }
 
 export function workflowNodeSupportsBodyGraph(type: WorkflowNodeType): boolean {
-  return type === "sub_schema" || type === "branch" || type === "transform";
+  return type === "branch" || type === "transform";
 }
 
 export function isWorkflowSchema(value: unknown): value is WorkflowSchema {
@@ -160,12 +107,16 @@ export function isWorkflowSchema(value: unknown): value is WorkflowSchema {
 export function createWorkflowConnection(
   from: string,
   to: string,
-  existingConnections: WorkflowConnection[]
+  existingConnections: WorkflowConnection[],
+  fromPort = "out",
+  toPort = "in"
 ): WorkflowConnection {
   return {
     id: nextUniqueId("conn", existingConnections.map((connection) => connection.id)),
     from,
-    to
+    fromPort,
+    to,
+    toPort
   };
 }
 
@@ -216,6 +167,7 @@ export function validateWorkflowSchema(schema: WorkflowSchema): WorkflowSchemaVa
   }
 
   const nodeIds = new Set(nodes.map((node) => node.id));
+  const nodesById = new Map(nodes.map((node) => [node.id, node]));
   for (const connection of connections) {
     if (connection.from === connection.to) {
       errors.push("Узел не может ссылаться сам на себя.");
@@ -223,6 +175,26 @@ export function validateWorkflowSchema(schema: WorkflowSchema): WorkflowSchemaVa
 
     if (!nodeIds.has(connection.from) || !nodeIds.has(connection.to)) {
       errors.push("Связь ссылается на несуществующий узел.");
+      continue;
+    }
+
+    if (!connection.fromPort?.trim() || !connection.toPort?.trim()) {
+      errors.push("Связь должна указывать fromPort и toPort.");
+      continue;
+    }
+
+    const fromNode = nodesById.get(connection.from);
+    const toNode = nodesById.get(connection.to);
+    const fromPort = fromNode ? getFbpNodePortDefinition(fromNode.type, "output", connection.fromPort) : null;
+    const toPort = toNode ? getFbpNodePortDefinition(toNode.type, "input", connection.toPort) : null;
+
+    if (!fromPort || !toPort) {
+      errors.push("Связь ссылается на несуществующий порт.");
+      continue;
+    }
+
+    if (!arePortTypesCompatible(fromPort.type, toPort.type)) {
+      errors.push("Типы портов связи несовместимы.");
     }
   }
 

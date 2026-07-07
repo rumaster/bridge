@@ -89,7 +89,7 @@ describe("Интеграция Backend↔FBP: узел Backend API через м
           config: { method: "POST", path: "/api/v1/records", body: { op: "get", object: { op: "input" }, path: ["payload"] } },
         },
       ],
-      connections: [{ from: "prepare", to: "create" }],
+      connections: [{ from: "prepare", fromPort: "out", to: "create", toPort: "in" }],
     };
 
     const result = await engine.runWorkflow({
@@ -157,7 +157,7 @@ describe("Интеграция Backend↔FBP: узел Backend API через м
         { id: "wait", type: "wait-event", config: { event_type: "payment.confirmed" } },
         { id: "after", type: "transform", config: { expression: { op: "lit", value: "done" } } },
       ],
-      connections: [{ from: "wait", to: "after" }],
+      connections: [{ from: "wait", fromPort: "out", to: "after", toPort: "in" }],
     };
 
     const result: any = await engine.runWorkflow({ schema, context: context(ORG_A, "user-a"), input: { order: 1 } });

@@ -20,7 +20,7 @@ function validSchema(): any {
         config: { method: "POST", path: "/api/v1/records", body: { op: "input" } },
       },
     ],
-    connections: [{ from: "start", to: "call" }],
+    connections: [{ from: "start", fromPort: "out", to: "call", toPort: "in" }],
   };
 }
 
@@ -85,7 +85,7 @@ describe("Валидация схемы Workflow на этапе сохране�
 
   it("требует ациклический граф (DAG)", () => {
     const schema = validSchema();
-    schema.connections.push({ from: "call", to: "start" });
+    schema.connections.push({ from: "call", fromPort: "out", to: "start", toPort: "in" });
     const result = validateWorkflowSchema(schema);
     assert.equal(result.valid, false);
     assert.ok(pathsOf(result).includes("$.connections"));
@@ -101,10 +101,27 @@ describe("Валидация схемы Workflow на этапе сохране�
 
   it("отвергает соединение в несуществующий узел", () => {
     const schema = validSchema();
-    schema.connections.push({ from: "call", to: "ghost" });
+    schema.connections.push({ from: "call", fromPort: "out", to: "ghost", toPort: "in" });
     const result = validateWorkflowSchema(schema);
     assert.equal(result.valid, false);
     assert.ok(pathsOf(result).some((path) => path.endsWith(".to")));
+  });
+
+  it("требует явные fromPort/toPort в соединениях", () => {
+    const schema = validSchema();
+    schema.connections = [{ from: "start", to: "call" }];
+    const result = validateWorkflowSchema(schema);
+    assert.equal(result.valid, false);
+    assert.ok(pathsOf(result).includes("$.connections[0].fromPort"));
+    assert.ok(pathsOf(result).includes("$.connections[0].toPort"));
+  });
+
+  it("отвергает соединение с несуществующим портом", () => {
+    const schema = validSchema();
+    schema.connections[0].fromPort = "missing";
+    const result = validateWorkflowSchema(schema);
+    assert.equal(result.valid, false);
+    assert.ok(pathsOf(result).includes("$.connections[0].fromPort"));
   });
 
   it("отвергает ссылку входа на несуществующий узел", () => {

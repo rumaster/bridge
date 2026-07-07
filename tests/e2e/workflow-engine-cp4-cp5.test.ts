@@ -74,8 +74,8 @@ describe("CP-4: Workflow вызывает Backend API (старт → узел �
         },
       ],
       connections: [
-        { from: "prepare", to: "create" },
-        { from: "create", to: "check" },
+        { from: "prepare", fromPort: "out", to: "create", toPort: "in" },
+        { from: "create", fromPort: "out", to: "check", toPort: "in" },
       ],
     };
 
@@ -179,7 +179,7 @@ describe("CP-5: Admin правит Workflow (валидация + сохране
           config: { method: "POST", path: `/api/v1/${pathSuffix}`, body: { op: "input" } },
         },
       ],
-      connections: [{ from: "start", to: "call" }],
+      connections: [{ from: "start", fromPort: "out", to: "call", toPort: "in" }],
     };
   }
 
@@ -220,7 +220,7 @@ describe("CP-5: Admin правит Workflow (валидация + сохране
 
     // Правка, вводящая цикл (нарушение DAG).
     const withCycle = baseSchema();
-    withCycle.connections.push({ from: "call", to: "start" });
+    withCycle.connections.push({ from: "call", fromPort: "out", to: "start", toPort: "in" });
     const rejectedCycle = store.save("wf-admin", withCycle);
     assert.equal(rejectedCycle.saved, false);
 

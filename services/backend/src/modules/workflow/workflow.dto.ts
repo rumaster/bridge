@@ -5,13 +5,12 @@ export const WORKFLOW_STATUSES = ["draft", "active", "archived"] as const;
 export type WorkflowStatus = (typeof WORKFLOW_STATUSES)[number];
 
 export const WORKFLOW_NODE_TYPES = [
-  "backend_api_call",
-  "llm_call",
-  "kb_search",
+  "backend-api",
+  "llm",
+  "knowledge-base-search",
   "branch",
   "transform",
-  "wait_event",
-  "sub_schema",
+  "wait-event",
 ] as const;
 export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number];
 
