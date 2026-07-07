@@ -24,6 +24,7 @@ interface NavItem {
 }
 
 const administratorRoles: AdminRole[] = ["administrator"];
+const platformOperatorRoles: AdminRole[] = ["platform_operator"];
 
 const navItems: NavItem[] = [
   { to: "/overview", label: "Обзор", icon: LayoutDashboard },
@@ -31,7 +32,7 @@ const navItems: NavItem[] = [
   { to: "/users", label: "Пользователи", icon: Users, roles: administratorRoles },
   { to: "/channels", label: "Каналы", icon: Cable, roles: administratorRoles },
   { to: "/knowledge", label: "Knowledge Base", icon: BookOpen, roles: administratorRoles },
-  { to: "/workflow", label: "Workflow", icon: Workflow, roles: administratorRoles },
+  { to: "/workflow", label: "Workflow", icon: Workflow, roles: platformOperatorRoles },
   { to: "/onboarding", label: "AI Onboarding", icon: Sparkles, roles: administratorRoles },
   { to: "/broadcast", label: "Broadcast", icon: RadioTower, roles: administratorRoles },
   { to: "/notifications", label: "Уведомления", icon: Bell, roles: administratorRoles }

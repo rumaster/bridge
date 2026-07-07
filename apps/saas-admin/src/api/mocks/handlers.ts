@@ -24,6 +24,7 @@ import {
   mockNotificationSettings,
   mockOrganization,
   mockSession,
+  createMockSession,
   mockWorkflowInstanceLogs,
   mockWorkflowInstances,
   mockWorkflowVersions,
@@ -140,7 +141,7 @@ export const handlers = [
       return validationProblem(errors, "Request payload does not match C3.auth DTO.");
     }
 
-    currentSession = { ...mockSession };
+    currentSession = createSessionForTelegramUsername(body.telegramUsername);
     return HttpResponse.json(currentSession);
   }),
 
@@ -796,6 +797,15 @@ export function resetMockBackendState() {
   nextOnboardingNumber = 1;
   nextConfigurationVersion = 2;
   nextBroadcastNumber = 1;
+}
+
+function createSessionForTelegramUsername(telegramUsername: string | undefined) {
+  const normalized = telegramUsername?.replace(/^@/, "").toLowerCase();
+  if (normalized === "operator_demo") {
+    return createMockSession(["platform_operator"]);
+  }
+
+  return { ...mockSession };
 }
 
 function validateWorkflowVersionPayload(schema: WorkflowSchema | undefined) {

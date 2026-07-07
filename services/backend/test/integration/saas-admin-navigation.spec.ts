@@ -89,8 +89,9 @@ function createNavigationDatabaseStub(): Pick<PgDatabase, "withTenant"> {
                   role_bindings: [
                     { role: "administrator", organizationId: ORG_ID },
                     { role: "manager", organizationId: ORG_ID },
+                    { role: "platform_operator", organizationId: ORG_ID },
                   ],
-                  roles: ["administrator", "manager"],
+                  roles: ["administrator", "manager", "platform_operator"],
                   telegram_username: "admin_demo",
                   user_id: ADMIN_ID,
                   user_status: "active",

@@ -31,7 +31,7 @@ import { WorkflowService } from "./workflow.service";
 
 @ApiTags("workflows")
 @UseGuards(SessionAuthGuard, RolesGuard)
-@Roles("administrator")
+@Roles("platform_operator")
 @Controller("workflows")
 export class WorkflowController {
   constructor(private readonly workflows: WorkflowService) {}

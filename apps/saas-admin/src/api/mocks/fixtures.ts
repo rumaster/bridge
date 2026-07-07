@@ -306,6 +306,27 @@ export const mockWorkflowVersions: WorkflowVersion[] = [
           type: "llm_call",
           label: "Черновик ответа",
           config: { prompt: "Ответь клиенту на основе найденных материалов" },
+          position: { x: 700, y: 40 }
+        },
+        {
+          id: "node-sub_schema-1",
+          type: "sub_schema",
+          label: "Собрать тело ответа",
+          config: {
+            schema_id: "support.reply-body",
+            bodyGraph: {
+              nodes: [
+                {
+                  id: "node-sub_schema-1-body-transform",
+                  type: "transform",
+                  label: "Нормализовать контекст",
+                  config: { expression: "payload" },
+                  position: { x: 40, y: 40 }
+                }
+              ],
+              connections: []
+            }
+          },
           position: { x: 480, y: 40 }
         },
         {
@@ -313,13 +334,14 @@ export const mockWorkflowVersions: WorkflowVersion[] = [
           type: "backend_api_call",
           label: "Создать тикет",
           config: { endpoint: "POST /api/v1/tickets" },
-          position: { x: 480, y: 190 }
+          position: { x: 700, y: 190 }
         }
       ],
       connections: [
         { id: "conn-1", from: "node-wait_event-1", to: "node-kb_search-1" },
-        { id: "conn-2", from: "node-kb_search-1", to: "node-llm_call-1" },
-        { id: "conn-3", from: "node-llm_call-1", to: "node-backend_api_call-1" }
+        { id: "conn-2", from: "node-kb_search-1", to: "node-sub_schema-1" },
+        { id: "conn-3", from: "node-sub_schema-1", to: "node-llm_call-1" },
+        { id: "conn-4", from: "node-llm_call-1", to: "node-backend_api_call-1" }
       ]
     }
   },
@@ -456,11 +478,34 @@ export function cloneWorkflowSchema(schema: WorkflowSchema): WorkflowSchema {
   return {
     nodes: schema.nodes.map((node) => ({
       ...node,
-      config: { ...node.config },
+      config: cloneWorkflowNodeConfig(node.config),
       position: { ...node.position }
     })),
     connections: schema.connections.map((connection) => ({ ...connection }))
   };
+}
+
+function cloneWorkflowNodeConfig(config: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(config).map(([key, value]) => [key, cloneWorkflowConfigValue(value)])
+  );
+}
+
+function cloneWorkflowConfigValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(cloneWorkflowConfigValue);
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([key, nested]) => [
+        key,
+        cloneWorkflowConfigValue(nested)
+      ])
+    );
+  }
+
+  return value;
 }
 
 export function cloneWorkflowVersion(version: WorkflowVersion): WorkflowVersion {

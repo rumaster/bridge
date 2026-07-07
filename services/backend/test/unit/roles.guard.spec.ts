@@ -44,10 +44,22 @@ describe("RolesGuard", () => {
     ).toBe(true);
   });
 
+  it("allows Platform Operator for platform workflow actions", () => {
+    expect(
+      guard.canActivate(contextFor(["platform_operator"], { roles: ["platform_operator"] })),
+    ).toBe(true);
+  });
+
   it("rejects Manager for administrative actions", () => {
     expect(() => guard.canActivate(contextFor(["administrator"], { roles: ["manager"] }))).toThrow(
       ForbiddenException,
     );
+  });
+
+  it("does not grant platform workflow actions to Administrator without Platform Operator", () => {
+    expect(() =>
+      guard.canActivate(contextFor(["platform_operator"], { roles: ["administrator"] })),
+    ).toThrow(ForbiddenException);
   });
 
   it("does not grant tenant actions to Platform Operator without a tenant role", () => {

@@ -4,6 +4,7 @@ import type { WorkflowNode, WorkflowNodeType, WorkflowSchema } from "../src/api/
 import {
   SAFE_WORKFLOW_NODE_TYPES,
   createWorkflowConnection,
+  createWorkflowBodyGraph,
   createWorkflowNode,
   isSafeWorkflowNodeType,
   validateWorkflowSchema,
@@ -22,14 +23,15 @@ function node(overrides: Partial<WorkflowNode> & { id: string }): WorkflowNode {
 }
 
 describe("safe workflow node set (ТЗ §13.13)", () => {
-  it("ограничивает палитру ровно шестью безопасными типами", () => {
+  it("ограничивает палитру безопасными типами с поддержкой sub_schema", () => {
     expect(SAFE_WORKFLOW_NODE_TYPES).toEqual([
       "wait_event",
       "kb_search",
       "llm_call",
       "branch",
       "transform",
-      "backend_api_call"
+      "backend_api_call",
+      "sub_schema"
     ]);
   });
 
@@ -40,6 +42,7 @@ describe("safe workflow node set (ТЗ §13.13)", () => {
 
   it("распознаёт безопасные типы и отвергает произвольные", () => {
     expect(isSafeWorkflowNodeType("transform")).toBe(true);
+    expect(isSafeWorkflowNodeType("sub_schema")).toBe(true);
     expect(isSafeWorkflowNodeType("db_write")).toBe(false);
   });
 });
@@ -53,6 +56,17 @@ describe("createWorkflowNode / createWorkflowConnection", () => {
     expect(created.type).toBe("kb_search");
     expect(created.config).toEqual({ [primary.key]: "" });
     expect(created.label.trim().length).toBeGreaterThan(0);
+  });
+
+  it("создаёт sub_schema с bodyGraph для вложенного редактирования", () => {
+    const created = createWorkflowNode("sub_schema", []);
+
+    expect(created.config).toMatchObject({
+      schema_id: "",
+      bodyGraph: expect.objectContaining({
+        nodes: expect.arrayContaining([expect.objectContaining({ type: "transform" })])
+      })
+    });
   });
 
   it("гарантирует уникальность id при совпадении префикса", () => {
@@ -69,6 +83,18 @@ describe("createWorkflowNode / createWorkflowConnection", () => {
     expect(first).toEqual({ id: "conn-1", from: "a", to: "b" });
     expect(second.id).toBe("conn-2");
   });
+
+  it("создаёт пустой bodyGraph с детерминированным узлом Transform", () => {
+    const bodyGraph = createWorkflowBodyGraph("node-sub_schema-1");
+
+    expect(bodyGraph.nodes).toEqual([
+      expect.objectContaining({
+        id: "node-sub_schema-1-body-transform",
+        type: "transform"
+      })
+    ]);
+    expect(bodyGraph.connections).toEqual([]);
+  });
 });
 
 describe("validateWorkflowSchema", () => {
@@ -83,6 +109,23 @@ describe("validateWorkflowSchema", () => {
   it("принимает корректную схему из безопасных узлов", () => {
     const result = validateWorkflowSchema(valid);
     expect(result).toEqual({ valid: true, errors: [] });
+  });
+
+  it("проверяет bodyGraph внутри узла sub_schema", () => {
+    const result = validateWorkflowSchema({
+      nodes: [
+        node({
+          id: "sub",
+          type: "sub_schema",
+          label: "Субсхема",
+          config: { bodyGraph: { nodes: [], connections: [] } }
+        })
+      ],
+      connections: []
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain("bodyGraph узла «Субсхема»: Схема должна содержать хотя бы один узел.");
   });
 
   it("требует хотя бы один узел", () => {

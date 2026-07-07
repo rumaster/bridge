@@ -217,7 +217,8 @@ export type WorkflowNodeType =
   | "kb_search"
   | "branch"
   | "transform"
-  | "wait_event";
+  | "wait_event"
+  | "sub_schema";
 
 export interface WorkflowNodePosition {
   x: number;

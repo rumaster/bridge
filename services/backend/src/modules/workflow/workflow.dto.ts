@@ -11,6 +11,7 @@ export const WORKFLOW_NODE_TYPES = [
   "branch",
   "transform",
   "wait_event",
+  "sub_schema",
 ] as const;
 export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number];
 

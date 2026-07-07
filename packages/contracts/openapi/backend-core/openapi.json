@@ -4367,7 +4367,8 @@
               "kb_search",
               "branch",
               "transform",
-              "wait_event"
+              "wait_event",
+              "sub_schema"
             ]
           },
           "event": {

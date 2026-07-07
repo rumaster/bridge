@@ -6,6 +6,7 @@ import { RouterProvider } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 
 import { createMockSaasAdminServices } from "../src/api/mocks/client";
+import { createMockSession } from "../src/api/mocks/fixtures";
 import { createSaasAdminRouter } from "../src/routing/router";
 import type { SaasAdminServiceOverrides } from "../src/state/admin";
 
@@ -54,11 +55,21 @@ function renderRoute(path: string, services: SaasAdminServiceOverrides = createM
   return render(<RouterProvider router={router} />);
 }
 
+function createServicesForPath(path: string): SaasAdminServiceOverrides {
+  if (path === "/workflow") {
+    return createMockSaasAdminServices({
+      session: createMockSession(["platform_operator"])
+    });
+  }
+
+  return createMockSaasAdminServices();
+}
+
 describe("SaaS Administration M5 acceptance and accessibility", () => {
   it.each(KEY_SCREENS)(
     "экран $path приёмки соблюдает лендмарки, единственный H1 и skip-link",
     async ({ heading, path }) => {
-      renderRoute(path);
+      renderRoute(path, createServicesForPath(path));
 
       const pageHeading = await screen.findByRole("heading", { level: 1, name: heading });
       expect(pageHeading).toBeInTheDocument();
@@ -84,7 +95,7 @@ describe("SaaS Administration M5 acceptance and accessibility", () => {
     }
   );
 
-  it("основная навигация озвучивает все административные разделы", async () => {
+  it("основная навигация администратора не показывает Workflow без роли platform_operator", async () => {
     renderRoute("/overview");
     await screen.findByRole("heading", { level: 1, name: "Административная панель" });
 
@@ -99,18 +110,34 @@ describe("SaaS Administration M5 acceptance and accessibility", () => {
       "Пользователи",
       "Каналы",
       "Knowledge Base",
-      "Workflow",
       "AI Onboarding",
       "Broadcast",
       "Уведомления"
     ]);
   });
 
+  it("основная навигация оператора платформы показывает Workflow", async () => {
+    renderRoute(
+      "/workflow",
+      createMockSaasAdminServices({
+        session: createMockSession(["platform_operator"])
+      })
+    );
+    await screen.findByRole("heading", { level: 1, name: "Workflow" });
+
+    const nav = screen.getByRole("navigation", { name: "Администрирование организации" });
+    const linkNames = within(nav)
+      .getAllByRole("link")
+      .map((link) => link.textContent?.trim());
+
+    expect(linkNames).toEqual(["Обзор", "Workflow"]);
+  });
+
   it("фиксирует информационную архитектуру ключевых экранов (визуальная регрессия структуры)", async () => {
     const architecture: Record<string, { level: number; name: string }[]> = {};
 
     for (const { heading, path } of KEY_SCREENS) {
-      const view = renderRoute(path);
+      const view = renderRoute(path, createServicesForPath(path));
       await screen.findByRole("heading", { level: 1, name: heading });
       for (const readyHeading of SCREEN_READY_HEADINGS[path] ?? []) {
         await screen.findByRole("heading", { name: readyHeading });
