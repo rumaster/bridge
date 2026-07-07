@@ -1,11 +1,23 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Clock3, PlugZap, Plus } from "lucide-react";
+import {
+  AlertTriangle,
+  Bot,
+  CheckCircle2,
+  Clock3,
+  Mail,
+  MessageCircle,
+  PlugZap,
+  Plus,
+  Send
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 import type {
   C7Event,
   Channel,
   ChannelCapabilityDescriptor,
   ChannelStatus,
+  ConnectableChannelType,
   ProblemDetails
 } from "../../api/client/types";
 import { useC7RealtimeClient, useSaasAdminApi } from "../../state/admin";
@@ -13,18 +25,79 @@ import { hasAnyRole, useAuth } from "../../state/auth";
 import { Badge, Button, Panel, TextInput } from "../../shared/ui-kit";
 
 interface ChannelFormState {
+  channelType: ConnectableChannelType;
   name: string;
   credentialsRef: string;
-  widgetOrigin: string;
+  configValue: string;
 }
 
 type ChannelFieldErrors = Partial<Record<keyof ChannelFormState, string>>;
 
 const emptyChannelForm: ChannelFormState = {
+  channelType: "web_chat",
   name: "",
   credentialsRef: "",
-  widgetOrigin: ""
+  configValue: ""
 };
+
+interface ChannelConnector {
+  type: ConnectableChannelType;
+  label: string;
+  heading: string;
+  icon: LucideIcon;
+  credentialsPlaceholder: string;
+  configKey: string;
+  configLabel: string;
+  configPlaceholder: string;
+  configKind: "url" | "email" | "text";
+}
+
+const channelConnectors = [
+  {
+    type: "web_chat",
+    label: "Web Chat",
+    heading: "Подключение Web Chat",
+    icon: MessageCircle,
+    credentialsPlaceholder: "secret://web-chat/org-demo/main",
+    configKey: "widget_origin",
+    configLabel: "Widget origin",
+    configPlaceholder: "https://example.test",
+    configKind: "url"
+  },
+  {
+    type: "telegram",
+    label: "Telegram",
+    heading: "Подключение Telegram",
+    icon: Send,
+    credentialsPlaceholder: "secret://telegram/org-demo/support-bot",
+    configKey: "bot_username",
+    configLabel: "Bot username",
+    configPlaceholder: "bridge_support_bot",
+    configKind: "text"
+  },
+  {
+    type: "max",
+    label: "MAX",
+    heading: "Подключение MAX",
+    icon: Bot,
+    credentialsPlaceholder: "secret://max/org-demo/support-bot",
+    configKey: "endpoint",
+    configLabel: "Endpoint",
+    configPlaceholder: "max-support-bot",
+    configKind: "text"
+  },
+  {
+    type: "email",
+    label: "Email",
+    heading: "Подключение Email",
+    icon: Mail,
+    credentialsPlaceholder: "secret://email/org-demo/support",
+    configKey: "from_email",
+    configLabel: "From email",
+    configPlaceholder: "support@example.test",
+    configKind: "email"
+  }
+] as const satisfies readonly ChannelConnector[];
 
 export default function ChannelsPage() {
   const { session } = useAuth();
@@ -103,6 +176,7 @@ export default function ChannelsPage() {
     const connected = channels.filter((channel) => channel.status === "connected").length;
     return { connected, total: channels.length };
   }, [channels]);
+  const selectedConnector = getChannelConnector(form.channelType);
 
   function updateField<TKey extends keyof ChannelFormState>(
     field: TKey,
@@ -110,6 +184,12 @@ export default function ChannelsPage() {
   ) {
     setForm((current) => ({ ...current, [field]: value }));
     setFieldErrors((current) => ({ ...current, [field]: undefined }));
+    setSuccess(null);
+  }
+
+  function updateChannelType(channelType: ConnectableChannelType) {
+    setForm((current) => ({ ...current, channelType, configValue: "" }));
+    setFieldErrors((current) => ({ ...current, channelType: undefined, configValue: undefined }));
     setSuccess(null);
   }
 
@@ -133,19 +213,20 @@ export default function ChannelsPage() {
     setFieldErrors({});
 
     try {
+      const connector = getChannelConnector(form.channelType);
       const response = await api.channels.createChannel({
         organization_id: session.organization.id,
-        channel_type: "web_chat",
+        channel_type: connector.type,
         name: form.name.trim(),
         ...(form.credentialsRef.trim() ? { credentials_ref: form.credentialsRef.trim() } : {}),
-        config: form.widgetOrigin.trim() ? { widget_origin: form.widgetOrigin.trim() } : {}
+        config: buildChannelConfig(connector, form.configValue)
       });
       const descriptor = await api.channels.getCapabilities(response.channel.id);
 
       setChannels((current) => [...current, response.channel]);
       setCapabilities((current) => ({ ...current, [response.channel.id]: descriptor }));
       setForm(emptyChannelForm);
-      setSuccess("Канал подключен через credentials_ref");
+      setSuccess(`${connector.label} подключен через credentials_ref`);
     } catch (error) {
       const problem = getProblemDetails(error);
       setFieldErrors(toChannelFieldErrors(problem));
@@ -229,7 +310,7 @@ export default function ChannelsPage() {
           <Panel as="form" className="m2-form" onSubmit={(event) => void handleCreateChannel(event)}>
             <div className="panel-heading-row">
               <div>
-                <h2>Подключение Web Chat</h2>
+                <h2>{selectedConnector.heading}</h2>
                 <p>Секреты не вводятся как значения; хранится только ссылка credentials_ref.</p>
               </div>
               <Button disabled={saving} type="submit">
@@ -238,6 +319,33 @@ export default function ChannelsPage() {
               </Button>
             </div>
             <div className="form-grid">
+              <fieldset className="channel-type-selector">
+                <legend>Тип канала</legend>
+                <div className="channel-type-options">
+                  {channelConnectors.map((connector) => {
+                    const Icon = connector.icon;
+
+                    return (
+                      <label className="channel-type-option" key={connector.type}>
+                        <input
+                          checked={form.channelType === connector.type}
+                          name="channel-type"
+                          onChange={() => updateChannelType(connector.type)}
+                          type="radio"
+                          value={connector.type}
+                        />
+                        <span>
+                          <Icon aria-hidden="true" size={16} />
+                          <span>{connector.label}</span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+                {fieldErrors.channelType ? (
+                  <span className="field-error">{fieldErrors.channelType}</span>
+                ) : null}
+              </fieldset>
               <TextInput
                 error={fieldErrors.name}
                 id="channel-name"
@@ -250,16 +358,16 @@ export default function ChannelsPage() {
                 id="channel-credentials-ref"
                 label="credentials_ref"
                 onChange={(event) => updateField("credentialsRef", event.currentTarget.value)}
-                placeholder="secret://web-chat/org-demo/main"
+                placeholder={selectedConnector.credentialsPlaceholder}
                 value={form.credentialsRef}
               />
               <TextInput
-                error={fieldErrors.widgetOrigin}
-                id="channel-widget-origin"
-                label="Widget origin"
-                onChange={(event) => updateField("widgetOrigin", event.currentTarget.value)}
-                placeholder="https://example.test"
-                value={form.widgetOrigin}
+                error={fieldErrors.configValue}
+                id={`channel-config-${selectedConnector.configKey}`}
+                label={selectedConnector.configLabel}
+                onChange={(event) => updateField("configValue", event.currentTarget.value)}
+                placeholder={selectedConnector.configPlaceholder}
+                value={form.configValue}
               />
             </div>
           </Panel>
@@ -409,6 +517,7 @@ function prependChannelError(channel: Channel, error: NonNullable<ChannelStatusE
 
 function validateChannelForm(form: ChannelFormState): ChannelFieldErrors {
   const errors: ChannelFieldErrors = {};
+  const connector = getChannelConnector(form.channelType);
 
   if (!form.name.trim()) {
     errors.name = "Название канала обязательно.";
@@ -418,11 +527,30 @@ function validateChannelForm(form: ChannelFormState): ChannelFieldErrors {
     errors.credentialsRef = "credentials_ref должен быть ссылкой secret://.";
   }
 
-  if (form.widgetOrigin.trim() && !/^https?:\/\//.test(form.widgetOrigin.trim())) {
-    errors.widgetOrigin = "Widget origin должен быть URL.";
+  const configValue = form.configValue.trim();
+  if (configValue && connector.configKind === "url" && !/^https?:\/\//.test(configValue)) {
+    errors.configValue = `${connector.configLabel} должен быть URL.`;
+  }
+
+  if (
+    configValue &&
+    connector.configKind === "email" &&
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(configValue)
+  ) {
+    errors.configValue = `${connector.configLabel} должен быть email.`;
   }
 
   return errors;
+}
+
+function getChannelConnector(type: ConnectableChannelType) {
+  return channelConnectors.find((connector) => connector.type === type) ?? channelConnectors[0];
+}
+
+function buildChannelConfig(connector: ChannelConnector, configValue: string) {
+  const value = configValue.trim();
+
+  return value ? { [connector.configKey]: value } : {};
 }
 
 function getStatusLabel(status: ChannelStatus) {
@@ -452,7 +580,18 @@ function getChannelIcon(status: ChannelStatus) {
 }
 
 function getChannelTypeLabel(type: Channel["channel_type"]) {
-  return type === "web_chat" ? "Web Chat" : type;
+  switch (type) {
+    case "web_chat":
+      return "Web Chat";
+    case "telegram":
+      return "Telegram";
+    case "max":
+      return "MAX";
+    case "email":
+      return "Email";
+    default:
+      return type;
+  }
 }
 
 function getRealtimeStatusLabel(status: string) {
@@ -483,7 +622,11 @@ function toChannelFieldErrors(problem: ProblemDetails | null): ChannelFieldError
     }
 
     if (error.field === "config") {
-      errors.widgetOrigin = error.message;
+      errors.configValue = error.message;
+    }
+
+    if (error.field === "channel_type") {
+      errors.channelType = error.message;
     }
   }
 

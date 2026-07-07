@@ -189,7 +189,7 @@ export function createMockSaasAdminApiClient(
 
         const createdAt = "2026-07-03T10:20:00.000Z";
         const channel: Channel = {
-          id: `channel-web-chat-created-${nextChannelNumber++}`,
+          id: `channel-${request.channel_type.replace("_", "-")}-created-${nextChannelNumber++}`,
           organization_id: request.organization_id,
           channel_type: request.channel_type,
           name: request.name.trim(),
