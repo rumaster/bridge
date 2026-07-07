@@ -1971,6 +1971,216 @@
           "backend-api"
         ]
       }
+    },
+    "/api/v1/web-chat/sessions": {
+      "post": {
+        "operationId": "WebChatController_createOrResumeSession_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateOrResumeWebChatSessionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebChatSessionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create or resume anonymous Web Chat session",
+        "tags": [
+          "web-chat"
+        ]
+      }
+    },
+    "/api/v1/web-chat/conversations/{id}/messages": {
+      "get": {
+        "operationId": "WebChatController_listMessages_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "organization_id",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "22345678-1234-4234-8234-123456789abc",
+              "type": "string"
+            }
+          },
+          {
+            "name": "visitor_session_id",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "example": "web-chat-visitor-123",
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20,
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Object"
+                }
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "maxLength": 512,
+              "type": "string"
+            }
+          },
+          {
+            "name": "after_sequence_number",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageListResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "List messages visible to a Web Chat visitor session",
+        "tags": [
+          "web-chat"
+        ]
+      }
+    },
+    "/api/v1/web-chat/messages": {
+      "post": {
+        "operationId": "WebChatController_sendMessage_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SendWebChatMessageDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessageResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Send an inbound Web Chat visitor message",
+        "tags": [
+          "web-chat"
+        ]
+      }
+    },
+    "/api/v1/web-chat/email-code": {
+      "post": {
+        "operationId": "WebChatController_startEmailCode_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartWebChatEmailCodeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebChatEmailCodeStartResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Start optional Web Chat email verification by code",
+        "tags": [
+          "web-chat"
+        ]
+      }
+    },
+    "/api/v1/web-chat/email-code:verify": {
+      "post": {
+        "operationId": "WebChatController_verifyEmailCode_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyWebChatEmailCodeDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebChatSessionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Verify optional Web Chat email code",
+        "tags": [
+          "web-chat"
+        ]
+      }
     }
   },
   "info": {
@@ -4320,6 +4530,173 @@
           "node_id",
           "context",
           "command"
+        ]
+      },
+      "CreateOrResumeWebChatSessionDto": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "example": "22345678-1234-4234-8234-123456789abc"
+          },
+          "visitor_session_id": {
+            "type": "string",
+            "example": "web-chat-visitor-123"
+          },
+          "conversation_id": {
+            "type": "string",
+            "example": "32345678-1234-4234-8234-123456789abc"
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "WebChatSessionResponseDto": {
+        "type": "object",
+        "properties": {
+          "visitorSessionId": {
+            "type": "string",
+            "example": "web-chat-visitor-123"
+          },
+          "organizationId": {
+            "type": "string",
+            "example": "22345678-1234-4234-8234-123456789abc"
+          },
+          "conversationId": {
+            "type": "string",
+            "example": "32345678-1234-4234-8234-123456789abc"
+          },
+          "endpointId": {
+            "type": "string",
+            "example": "42345678-1234-4234-8234-123456789abc"
+          },
+          "verifiedEmail": {
+            "type": "string",
+            "example": "client@example.com"
+          }
+        },
+        "required": [
+          "visitorSessionId",
+          "organizationId",
+          "conversationId",
+          "endpointId"
+        ]
+      },
+      "SendWebChatMessageDto": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "example": "22345678-1234-4234-8234-123456789abc"
+          },
+          "conversation_id": {
+            "type": "string",
+            "example": "32345678-1234-4234-8234-123456789abc"
+          },
+          "endpoint_id": {
+            "type": "string",
+            "example": "42345678-1234-4234-8234-123456789abc"
+          },
+          "idempotency_key": {
+            "type": "string",
+            "example": "52345678-1234-4234-8234-123456789abc"
+          },
+          "visitor_session_id": {
+            "type": "string",
+            "example": "web-chat-visitor-123"
+          },
+          "body": {
+            "type": "object",
+            "example": {
+              "type": "text",
+              "text": "Здравствуйте"
+            }
+          }
+        },
+        "required": [
+          "organization_id",
+          "conversation_id",
+          "endpoint_id",
+          "idempotency_key",
+          "visitor_session_id",
+          "body"
+        ]
+      },
+      "StartWebChatEmailCodeDto": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "example": "22345678-1234-4234-8234-123456789abc"
+          },
+          "visitor_session_id": {
+            "type": "string",
+            "example": "web-chat-visitor-123"
+          },
+          "email": {
+            "type": "string",
+            "example": "client@example.com"
+          }
+        },
+        "required": [
+          "organization_id",
+          "visitor_session_id",
+          "email"
+        ]
+      },
+      "WebChatEmailCodeStartResponseDto": {
+        "type": "object",
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "example": true
+          },
+          "requestId": {
+            "type": "string",
+            "example": "62345678-1234-4234-8234-123456789abc"
+          },
+          "expiresAt": {
+            "type": "string",
+            "example": "2026-07-07T08:05:00.000Z"
+          },
+          "debugCode": {
+            "type": "string",
+            "description": "Only returned outside production or when WEB_CHAT_EMAIL_CODE_DEBUG_RESPONSE=1.",
+            "example": "123456"
+          }
+        },
+        "required": [
+          "accepted",
+          "requestId",
+          "expiresAt"
+        ]
+      },
+      "VerifyWebChatEmailCodeDto": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "example": "22345678-1234-4234-8234-123456789abc"
+          },
+          "visitor_session_id": {
+            "type": "string",
+            "example": "web-chat-visitor-123"
+          },
+          "email": {
+            "type": "string",
+            "example": "client@example.com"
+          },
+          "code": {
+            "type": "string",
+            "example": "123456"
+          }
+        },
+        "required": [
+          "organization_id",
+          "visitor_session_id",
+          "email",
+          "code"
         ]
       },
       "AttachmentDto": {

@@ -6,13 +6,24 @@ import {
 } from "../src/platform/edgeConnection";
 
 describe("Bridge Web Chat Edge connection (CP-7)", () => {
-  it("без edgeBaseUrl подключение идёт напрямую, без C9-заголовков", () => {
+  it("по умолчанию маршрутизирует Web Chat через Edge на той же origin-базе", () => {
     const connection = resolveEdgeConnection({
       apiBaseUrl: "https://app.bridge/api/v1",
     });
 
-    expect(connection.viaEdge).toBe(false);
+    expect(connection.viaEdge).toBe(true);
     expect(connection.apiBaseUrl).toBe("https://app.bridge/api/v1");
+    expect(connection.realtimeUrl).toBe("wss://app.bridge/api/v1/ws");
+    expect(connection.headers[EDGE_TUNNEL_HEADER]).toBe(EDGE_TUNNEL_HEADER_VALUE);
+  });
+
+  it("явный direct mode оставлен только для dev/test-обвязок", () => {
+    const connection = resolveEdgeConnection({
+      apiBaseUrl: "https://app.bridge/api/v1",
+      requireEdge: false,
+    });
+
+    expect(connection.viaEdge).toBe(false);
     expect(connection.headers).toEqual({});
   });
 

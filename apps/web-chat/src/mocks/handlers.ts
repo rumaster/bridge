@@ -77,7 +77,7 @@ export const webChatMockHandlers = [
     return HttpResponse.json(session, { status: 201 });
   }),
 
-  http.get("*/api/v1/conversations/:conversationId/messages", ({ params, request }) => {
+  http.get("*/api/v1/web-chat/conversations/:conversationId/messages", ({ params, request }) => {
     const conversationId = String(params.conversationId);
     const url = new URL(request.url);
     const page = paginateMessages(
@@ -101,7 +101,7 @@ export const webChatMockHandlers = [
     });
   }),
 
-  http.post("*/api/v1/messages", async ({ request }) => {
+  http.post("*/api/v1/web-chat/messages", async ({ request }) => {
     if (edgeOutage) {
       // Канал до Edge оборван: отправка не доходит, реплика остаётся в буфере.
       return HttpResponse.error();

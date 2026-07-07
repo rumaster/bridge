@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 
 import { AuditModule } from "../audit/audit.module";
+import { C7RealtimeEventPublisher } from "./c7-realtime-event.publisher";
 import { ConversationController, MessageController } from "./communication-core.controller";
 import {
   AdapterFailureCoordinator,
@@ -15,6 +16,7 @@ import { InternalMessagingService } from "./internal-messaging.service";
   controllers: [ConversationController, MessageController, InternalMessagingController],
   exports: [
     AdapterFailureCoordinator,
+    C7RealtimeEventPublisher,
     CommunicationCoreLoadProbeService,
     CommunicationCoreProxyService,
     EdgeIntakeCoordinatorService,
@@ -23,6 +25,7 @@ import { InternalMessagingService } from "./internal-messaging.service";
   imports: [AuditModule],
   providers: [
     AdapterFailureCoordinator,
+    C7RealtimeEventPublisher,
     CommunicationCoreLoadProbeService,
     CommunicationCoreProxyService,
     EdgeIntakeCoordinatorService,

@@ -131,6 +131,8 @@ export type WebChatMountOptions = {
    * прозрачно идут через Edge; контракты не меняются.
    */
   edgeBaseUrl?: string;
+  /** Отключает обязательный Edge только в dev/test-обвязках. */
+  requireEdge?: boolean;
   /** Хранилище буфера исходящих (по умолчанию sessionStorage вкладки). */
   outboundQueueStorage?: Pick<Storage, "getItem" | "setItem" | "removeItem"> | null;
 };

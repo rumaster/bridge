@@ -7,6 +7,7 @@ import type { Queryable } from "../../common/database/database.service";
 import { isUuidV4 } from "../../common/request-context";
 import { AuditService } from "../audit/audit.service";
 import { mapClientEndpoint, mapClientIdentityLink } from "../client/client.dto";
+import { C7RealtimeEventPublisher } from "./c7-realtime-event.publisher";
 import type {
   AddClientEndpointDto,
   ClientEndpointResponseDto,
@@ -49,6 +50,7 @@ export class CommunicationCoreProxyService {
   constructor(
     private readonly database: PgDatabase,
     private readonly audit: AuditService,
+    private readonly realtime: C7RealtimeEventPublisher,
   ) {}
 
   async listConversations(
@@ -158,7 +160,7 @@ export class CommunicationCoreProxyService {
     payload: CreateMessageDto,
     context: CoreMutationContext,
   ): Promise<MessageResponseDto> {
-    return this.database.withTenant(organizationId, async (client) => {
+    const message = await this.database.withTenant(organizationId, async (client) => {
       await this.requireConversation(client, organizationId, payload.conversationId);
       const endpoint = await this.requireEndpoint(client, organizationId, payload.endpointId);
       await this.lockEndpointPartition(client, organizationId, payload.endpointId);
@@ -238,6 +240,8 @@ export class CommunicationCoreProxyService {
 
       return mapMessage(result.rows[0]);
     });
+    await this.realtime.publishMessageCreated(message);
+    return message;
   }
 
   async addClientEndpoint(

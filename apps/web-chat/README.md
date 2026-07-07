@@ -94,7 +94,7 @@ Chat как первый канал будущего CP-1: вертикальн�
 ## Commands
 
 - `npm run dev --workspace @bridge/web-chat` — локальный стенд с MSW в dev mode.
-  Параметр `?edge=1` включает прохождение через Edge Cluster (CP-7).
+  Web Chat по умолчанию проходит через Edge Cluster (CP-7).
 - `npm test --workspace @bridge/web-chat` — unit/integration тесты (Vitest).
 - `npm run test:e2e --workspace @bridge/web-chat` — e2e-сценарий CP-7 (Playwright).
 - `npm run build --workspace @bridge/web-chat` — сборка widget bundle и проверка

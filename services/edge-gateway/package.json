@@ -10,6 +10,7 @@
     "start": "node --import tsx src/main.ts"
   },
   "dependencies": {
-    "pg": "^8.22.0"
+    "pg": "^8.22.0",
+    "redis": "^6.1.0"
   }
 }

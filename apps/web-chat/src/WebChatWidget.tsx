@@ -42,6 +42,7 @@ export function WebChatWidget({
   historyPageSize = 20,
   organizationId = DEFAULT_ORGANIZATION_ID,
   outboundQueueStorage,
+  requireEdge,
   realtimeEnabled = true,
   realtimeReconnectDelayMs,
   realtimeUrl,
@@ -49,8 +50,8 @@ export function WebChatWidget({
   webSocketFactory,
 }: WebChatMountOptions) {
   const edge = useMemo(
-    () => resolveEdgeConnection({ apiBaseUrl, realtimeUrl, edgeBaseUrl }),
-    [apiBaseUrl, edgeBaseUrl, realtimeUrl],
+    () => resolveEdgeConnection({ apiBaseUrl, realtimeUrl, edgeBaseUrl, requireEdge }),
+    [apiBaseUrl, edgeBaseUrl, realtimeUrl, requireEdge],
   );
   const client = useMemo(
     () =>
@@ -105,6 +106,8 @@ export function WebChatWidget({
           initializedSession.conversationId,
           {
             limit: historyPageSize,
+            organizationId: initializedSession.organizationId,
+            visitorSessionId: initializedSession.visitorSessionId,
           },
         );
         if (isActive) {
@@ -145,6 +148,8 @@ export function WebChatWidget({
       const page = await client.getMessages(activeSession.conversationId, {
         cursor: historyCursor,
         limit: historyPageSize,
+        organizationId: activeSession.organizationId,
+        visitorSessionId: activeSession.visitorSessionId,
       });
       mergeMessages(page.messages);
       setHistoryCursor(page.nextCursor);
@@ -168,6 +173,8 @@ export function WebChatWidget({
         const page = await client.getMessages(activeSession.conversationId, {
           afterSequenceNumber,
           limit: historyPageSize,
+          organizationId: activeSession.organizationId,
+          visitorSessionId: activeSession.visitorSessionId,
         });
         mergeMessages(page.messages);
         setError(null);

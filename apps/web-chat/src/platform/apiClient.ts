@@ -33,6 +33,8 @@ export type GetMessagesOptions = {
   afterSequenceNumber?: number;
   cursor?: string | null;
   limit?: number;
+  organizationId?: string;
+  visitorSessionId?: string;
 };
 
 export type WebChatApiClient = {
@@ -88,9 +90,15 @@ export function createWebChatApiClient(
       if (typeof getMessagesOptions.afterSequenceNumber === "number") {
         query.set("after_sequence_number", String(getMessagesOptions.afterSequenceNumber));
       }
+      if (getMessagesOptions.organizationId) {
+        query.set("organization_id", getMessagesOptions.organizationId);
+      }
+      if (getMessagesOptions.visitorSessionId) {
+        query.set("visitor_session_id", getMessagesOptions.visitorSessionId);
+      }
 
       const response = await requestJson<unknown>(
-        `/conversations/${encodeURIComponent(conversationId)}/messages${
+        `/web-chat/conversations/${encodeURIComponent(conversationId)}/messages${
           query.size > 0 ? `?${query.toString()}` : ""
         }`,
       );
@@ -99,7 +107,7 @@ export function createWebChatApiClient(
     },
 
     async sendMessage(input) {
-      const response = await requestJson<unknown>("/messages", {
+      const response = await requestJson<unknown>("/web-chat/messages", {
         method: "POST",
         body: JSON.stringify({
           channel: "web_chat",
