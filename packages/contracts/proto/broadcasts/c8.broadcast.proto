@@ -1,0 +1,57 @@
+syntax = "proto3";
+
+package bridge.broadcast.v1;
+
+service BroadcastPlatform {
+  rpc ListBroadcasts(ListBroadcastsRequest) returns (JsonResponse);
+  rpc CreateBroadcast(CreateBroadcastRequest) returns (JsonResponse);
+  rpc StartBroadcast(StartBroadcastRequest) returns (JsonResponse);
+  rpc GetBroadcastStats(BroadcastStatsRequest) returns (JsonResponse);
+  rpc Health(HealthRequest) returns (JsonResponse);
+}
+
+message ListBroadcastsRequest {
+  string contract = 1;
+  string version = 2;
+  string request_id = 3;
+  string organization_id = 4;
+}
+
+message CreateBroadcastRequest {
+  string contract = 1;
+  string version = 2;
+  string request_id = 3;
+  string organization_id = 4;
+  string created_by = 5;
+  string name = 6;
+  string template_json = 7;
+  string filter_json = 8;
+  string schedule_json = 9;
+  string rate_limit_json = 10;
+}
+
+message StartBroadcastRequest {
+  string contract = 1;
+  string version = 2;
+  string request_id = 3;
+  string organization_id = 4;
+  string broadcast_id = 5;
+  string started_by = 6;
+  string mode = 7;
+  string scheduled_for = 8;
+  string idempotency_key = 9;
+}
+
+message BroadcastStatsRequest {
+  string contract = 1;
+  string version = 2;
+  string request_id = 3;
+  string organization_id = 4;
+  string broadcast_id = 5;
+}
+
+message HealthRequest {}
+
+message JsonResponse {
+  string json_payload = 1;
+}
