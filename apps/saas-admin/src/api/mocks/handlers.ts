@@ -62,6 +62,7 @@ import type {
 import { validateWorkflowSchema } from "../../shared/workflow";
 
 const API_PREFIX = "*/api/v1";
+const CONNECTABLE_CHANNEL_TYPES = new Set(["web_chat", "telegram", "max", "email"]);
 
 let currentSession: AdminSession | null = null;
 let currentOrganization: Organization = { ...mockOrganization };
@@ -230,10 +231,11 @@ export const handlers = [
     }
 
     const createdAt = "2026-07-03T10:20:00.000Z";
+    const channelType = body.channel_type ?? "web_chat";
     const channel: Channel = {
-      id: `channel-web-chat-created-${nextChannelNumber++}`,
+      id: `channel-${channelType.replace("_", "-")}-created-${nextChannelNumber++}`,
       organization_id: body.organization_id ?? mockOrganization.id,
-      channel_type: "web_chat",
+      channel_type: channelType,
       name: body.name?.trim() ?? "",
       status: "connected",
       ...(body.credentials_ref?.trim() ? { credentials_ref: body.credentials_ref.trim() } : {}),
@@ -871,8 +873,8 @@ function validateConnectChannel(input: Partial<ConnectChannelRequest>) {
     errors.push({ field: "organization_id", message: "organization_id is required" });
   }
 
-  if (input.channel_type !== "web_chat") {
-    errors.push({ field: "channel_type", message: "Для M2 поддержан только web_chat." });
+  if (!input.channel_type || !CONNECTABLE_CHANNEL_TYPES.has(input.channel_type)) {
+    errors.push({ field: "channel_type", message: "Поддержаны web_chat, telegram, max и email." });
   }
 
   if (!input.name || input.name.trim().length < 2) {

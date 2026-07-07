@@ -93,6 +93,7 @@ export interface UpdateOrganizationConfigurationRequest {
 
 export type ChannelStatus = "connected" | "error" | "disabled";
 export type ChannelType = "web_chat" | "telegram" | "max" | "vk" | "whatsapp" | "email" | "sms";
+export type ConnectableChannelType = Extract<ChannelType, "web_chat" | "telegram" | "max" | "email">;
 export type ChannelCapabilityName =
   | "text"
   | "image"
@@ -129,7 +130,7 @@ export interface Channel {
 
 export interface ConnectChannelRequest {
   organization_id: string;
-  channel_type: "web_chat";
+  channel_type: ConnectableChannelType;
   name: string;
   credentials_ref?: string;
   config?: Record<string, unknown>;

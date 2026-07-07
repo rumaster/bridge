@@ -89,6 +89,61 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
     );
   });
 
+  it.each([
+    {
+      channelLabel: "Telegram",
+      channelType: "telegram",
+      config: { bot_username: "bridge_support_bot" },
+      configLabel: "Bot username",
+      configValue: "bridge_support_bot",
+      credentialsRef: "secret://telegram/org-demo/support-bot",
+      name: "Telegram Sales"
+    },
+    {
+      channelLabel: "MAX",
+      channelType: "max",
+      config: { endpoint: "max-support-bot" },
+      configLabel: "Endpoint",
+      configValue: "max-support-bot",
+      credentialsRef: "secret://max/org-demo/support-bot",
+      name: "MAX Support"
+    },
+    {
+      channelLabel: "Email",
+      channelType: "email",
+      config: { from_email: "support@example.test" },
+      configLabel: "From email",
+      configValue: "support@example.test",
+      credentialsRef: "secret://email/org-demo/support",
+      name: "Email Support"
+    }
+  ] as const)(
+    "connects $channelLabel from the channels page",
+    async ({ channelLabel, channelType, config, configLabel, configValue, credentialsRef, name }) => {
+      const api = createMockSaasAdminApiClient();
+      const createChannel = vi.spyOn(api.channels, "createChannel");
+      const { user } = renderRoute("/channels", { api, realtime: createMockC7RealtimeClient([]) });
+
+      await screen.findByRole("heading", { name: "Каналы связи" });
+      await user.click(screen.getByRole("radio", { name: channelLabel }));
+      await user.type(screen.getByLabelText("Название канала"), name);
+      await user.type(screen.getByLabelText("credentials_ref"), credentialsRef);
+      await user.type(screen.getByLabelText(configLabel), configValue);
+      await user.click(screen.getByRole("button", { name: "Подключить канал" }));
+
+      expect(await screen.findByRole("article", { name: new RegExp(name) })).toBeInTheDocument();
+      expect(createChannel).toHaveBeenCalledWith(
+        expect.objectContaining({
+          organization_id: mockSession.organization.id,
+          channel_type: channelType,
+          name,
+          credentials_ref: credentialsRef,
+          config
+        })
+      );
+    }
+  );
+
   it("uploads, updates, reindexes and deletes Knowledge Base documents", async () => {
     const api = createMockSaasAdminApiClient();
     const createDocument = vi.spyOn(api.knowledge, "createDocument");
