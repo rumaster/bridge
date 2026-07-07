@@ -25,6 +25,7 @@ import { NotificationFacadeModule } from "./modules/notification-facade/notifica
 import { OrganizationModule } from "./modules/organization/organization.module";
 import { TelegramAuthModule } from "./modules/identity/telegram-auth.module";
 import { UserModule } from "./modules/user/user.module";
+import { WebChatModule } from "./modules/web-chat/web-chat.module";
 import { WorkflowModule } from "./modules/workflow/workflow.module";
 
 @Module({
@@ -48,6 +49,7 @@ import { WorkflowModule } from "./modules/workflow/workflow.module";
     NotificationFacadeModule,
     WorkflowModule,
     BackendApiModule,
+    WebChatModule,
   ],
   providers: [
     InMemoryIdempotencyStore,

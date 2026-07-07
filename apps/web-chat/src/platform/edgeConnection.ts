@@ -3,8 +3,8 @@ import { resolveRealtimeUrl } from "./realtimeClient";
 /**
  * Прозрачное подключение клиентов РФ через Edge Cluster (CP-7, ТЗ §18.7, §7.6, §5.2).
  *
- * Виджет — потребитель соединения: если задан `edgeBaseUrl`, и REST, и WebSocket
- * идут через Edge, но контракты (C1/C7) и семантика сообщений не меняются —
+ * Виджет — потребитель соединения: по умолчанию REST и WebSocket идут через
+ * Edge, но контракты (C1/C7) и семантика сообщений не меняются —
  * подключение прозрачно. Серверный буфер Edge и C9-туннель держит SVC-EDGE; со
  * стороны виджета мы лишь маршрутизируем трафик и помечаем его C9-заголовком,
  * чтобы Edge мог сопоставить туннель (владелец контракта — SVC-EDGE).
@@ -17,6 +17,7 @@ export type EdgeConnectionInput = {
   apiBaseUrl?: string;
   realtimeUrl?: string;
   edgeBaseUrl?: string;
+  requireEdge?: boolean;
 };
 
 export type EdgeConnection = {
@@ -34,8 +35,10 @@ export function resolveEdgeConnection({
   apiBaseUrl,
   realtimeUrl,
   edgeBaseUrl,
+  requireEdge = true,
 }: EdgeConnectionInput): EdgeConnection {
-  const normalizedEdgeBaseUrl = edgeBaseUrl?.trim();
+  const normalizedEdgeBaseUrl =
+    edgeBaseUrl?.trim() || (requireEdge ? apiBaseUrl?.trim() || "/api/v1" : undefined);
 
   if (!normalizedEdgeBaseUrl) {
     return {

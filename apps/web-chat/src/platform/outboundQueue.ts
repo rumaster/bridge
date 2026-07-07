@@ -271,7 +271,7 @@ function normalizeStoredItem(value: unknown): OutboundQueueItem | null {
   }
 
   return {
-    idempotencyKey,
+    idempotencyKey: isUuidV4(idempotencyKey) ? idempotencyKey : createIdempotencyKey(),
     conversationId,
     endpointId,
     organizationId,
@@ -291,7 +291,18 @@ function createIdempotencyKey(): string {
     return cryptoApi.randomUUID();
   }
 
-  return `web-chat-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return "10000000-0000-4000-8000-000000000000".replace(/[018]/g, (value) =>
+    (
+      Number(value) ^
+      ((Math.random() * 16) >> (Number(value) / 4))
+    ).toString(16),
+  );
+}
+
+function isUuidV4(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value,
+  );
 }
 
 function getString(value: unknown): string | undefined {

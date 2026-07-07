@@ -73,7 +73,7 @@ describe("Bridge Web Chat API client M1", () => {
     });
 
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.input).toBe("http://localhost/api/v1/messages");
+    expect(calls[0]?.input).toBe("http://localhost/api/v1/web-chat/messages");
     expect(new Headers(calls[0]?.init?.headers).get("idempotency-key")).toBe(
       "12345678-1234-4234-8234-123456789abc",
     );
@@ -135,7 +135,7 @@ describe("Bridge Web Chat API client M1", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.input).toBe(
-      "http://localhost/api/v1/conversations/32345678-1234-4234-8234-123456789abc/messages?limit=25&cursor=after%3A10&after_sequence_number=10",
+      "http://localhost/api/v1/web-chat/conversations/32345678-1234-4234-8234-123456789abc/messages?limit=25&cursor=after%3A10&after_sequence_number=10",
     );
     expect(page.nextCursor).toBe("before:12");
     expect(page.hasMore).toBe(true);

@@ -51,9 +51,9 @@ describe("Bridge Web Chat — устойчивость через Edge (CP-7)", 
       sockets[0]?.open();
     });
 
-    // Разрыв канала до Edge: POST /messages начинает падать.
+    // Разрыв канала до Edge: POST /web-chat/messages начинает падать.
     server.use(
-      http.post("*/api/v1/messages", () => HttpResponse.error()),
+      http.post("*/api/v1/web-chat/messages", () => HttpResponse.error()),
     );
 
     await user.type(await screen.findByLabelText("Сообщение"), "Реплика в офлайне");
@@ -111,7 +111,7 @@ describe("Bridge Web Chat — устойчивость через Edge (CP-7)", 
     });
 
     server.use(
-      http.post("*/api/v1/messages", () => HttpResponse.error()),
+      http.post("*/api/v1/web-chat/messages", () => HttpResponse.error()),
     );
 
     await user.type(input, "Первое сообщение");

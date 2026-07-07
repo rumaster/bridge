@@ -6,7 +6,7 @@ import { expect, test } from "@playwright/test";
 test("CP-7 «Потеря соединения»: буфер и автопереотправка через Edge", async ({
   page,
 }) => {
-  await page.goto("/?edge=1");
+  await page.goto("/");
 
   const input = page.getByLabel("Сообщение");
   await expect(input).toBeVisible();

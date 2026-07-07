@@ -30,9 +30,9 @@ describe("Bridge Web Chat MSW mocks", () => {
     });
   });
 
-  it("стартует REST mock для C3.messages/C1", async () => {
+  it("стартует REST mock для public Web Chat history API", async () => {
     const response = await fetch(
-      `http://localhost/api/v1/conversations/${DEFAULT_CONVERSATION_ID}/messages`,
+      `http://localhost/api/v1/web-chat/conversations/${DEFAULT_CONVERSATION_ID}/messages`,
     );
 
     expect(response.ok).toBe(true);
@@ -54,7 +54,7 @@ describe("Bridge Web Chat MSW mocks", () => {
     ]);
 
     const latestResponse = await fetch(
-      `http://localhost/api/v1/conversations/${DEFAULT_CONVERSATION_ID}/messages?limit=2`,
+      `http://localhost/api/v1/web-chat/conversations/${DEFAULT_CONVERSATION_ID}/messages?limit=2`,
     );
     const latestPage = await latestResponse.json();
 
@@ -65,7 +65,7 @@ describe("Bridge Web Chat MSW mocks", () => {
     expect(latestPage.page.nextCursor).toBe("before:2");
 
     const previousResponse = await fetch(
-      `http://localhost/api/v1/conversations/${DEFAULT_CONVERSATION_ID}/messages?limit=2&cursor=before%3A2`,
+      `http://localhost/api/v1/web-chat/conversations/${DEFAULT_CONVERSATION_ID}/messages?limit=2&cursor=before%3A2`,
     );
     const previousPage = await previousResponse.json();
 
@@ -75,8 +75,8 @@ describe("Bridge Web Chat MSW mocks", () => {
     expect(previousPage.page.nextCursor).toBe(null);
   });
 
-  it("возвращает C1-подобное сообщение после POST /messages", async () => {
-    const response = await fetch("http://localhost/api/v1/messages", {
+  it("возвращает C1-подобное сообщение после POST /web-chat/messages", async () => {
+    const response = await fetch("http://localhost/api/v1/web-chat/messages", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -115,14 +115,14 @@ describe("Bridge Web Chat MSW mocks", () => {
       },
     };
 
-    await fetch("http://localhost/api/v1/messages", {
+    await fetch("http://localhost/api/v1/web-chat/messages", {
       method: "POST",
       headers: {
         "content-type": "application/json",
       },
       body: JSON.stringify(body),
     });
-    const repeatedResponse = await fetch("http://localhost/api/v1/messages", {
+    const repeatedResponse = await fetch("http://localhost/api/v1/web-chat/messages", {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -130,7 +130,7 @@ describe("Bridge Web Chat MSW mocks", () => {
       body: JSON.stringify(body),
     });
     const historyResponse = await fetch(
-      `http://localhost/api/v1/conversations/${DEFAULT_CONVERSATION_ID}/messages`,
+      `http://localhost/api/v1/web-chat/conversations/${DEFAULT_CONVERSATION_ID}/messages`,
     );
     const history = await historyResponse.json();
 

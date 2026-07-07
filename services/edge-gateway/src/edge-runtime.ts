@@ -1,5 +1,8 @@
+import { createC7RedisStreamBridge } from "./c7-redis-stream-bridge.js";
 import { createEdgeCluster } from "./edge-cluster.js";
 import { createPostgresEdgeMessageBufferStore } from "./edge-message-buffer.js";
+import { createMockWebSocketChannel } from "./mock-ws-channel.js";
+import { createRedisStreamClient } from "./redis-stream-client.js";
 import { createRfPayloadCipher, resolveRfPayloadKey } from "./rf-payload-cipher.js";
 import { createEdgeGatewayServer } from "./server.js";
 import {
@@ -28,9 +31,11 @@ export interface EdgeGatewayRuntime {
 
 export interface CreateEdgeGatewayRuntimeOptions {
   bufferStore?: any;
+  c7StreamClient?: any;
   tunnel?: any;
   now?: () => string;
   fetchImpl?: typeof fetch;
+  wsChannel?: any;
 }
 
 export function resolveEdgeGatewayMode(env: Record<string, string | undefined> = process.env) {
@@ -93,17 +98,34 @@ export async function createEdgeGatewayRuntimeFromEnv(
     bufferTtlMs: numberEnv(env.EDGE_BUFFER_TTL_MS, undefined),
     region: env.EDGE_REGION ?? "RF",
   });
+  const wsChannel = options.wsChannel ?? createMockWebSocketChannel();
+  const c7StreamClient = await createC7StreamClientFromEnv(env, options.c7StreamClient);
+  const c7StreamBridge = c7StreamClient
+    ? createC7RedisStreamBridge({
+        stream: env.C7_REALTIME_STREAM?.trim() || undefined,
+        group: env.C7_REALTIME_GROUP?.trim() || undefined,
+        consumer: env.C7_REALTIME_CONSUMER?.trim() || undefined,
+        pollMs: numberEnv(env.C7_REALTIME_POLL_MS, 1_000),
+        streamClient: c7StreamClient,
+        wsChannel,
+      })
+    : null;
+  c7StreamBridge?.start();
 
   return {
     mode,
     server: createEdgeGatewayServer({
       mode: "production-edge",
       edgeCluster: cluster,
+      wsChannel,
       now: options.now,
     }),
     cluster,
     tunnel,
-    close: buffer.close,
+    close: async () => {
+      await c7StreamBridge?.stop();
+      await buffer.close();
+    },
   };
 }
 
@@ -243,6 +265,22 @@ async function createPostgresBufferStore(databaseUrl: string) {
       await pool.end();
     },
   };
+}
+
+async function createC7StreamClientFromEnv(
+  env: Record<string, string | undefined>,
+  injectedClient?: any,
+) {
+  if (injectedClient) {
+    return injectedClient;
+  }
+
+  const redisUrl = env.REDIS_URL?.trim();
+  if (!redisUrl) {
+    return null;
+  }
+
+  return createRedisStreamClient(redisUrl);
 }
 
 async function loadPg() {

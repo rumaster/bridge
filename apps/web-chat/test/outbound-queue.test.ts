@@ -135,6 +135,37 @@ describe("Bridge Web Chat outbound queue (CP-7)", () => {
     expect(loadOutboundQueue(storage, storageKey)).toHaveLength(0);
   });
 
+  it("заменяет legacy idempotency_key из storage на UUID v4 для public backend", () => {
+    const storage = createMemoryStorage();
+    const storageKey = `${DEFAULT_OUTBOUND_QUEUE_STORAGE_PREFIX}.${CONVERSATION_ID}`;
+    storage.setItem(
+      storageKey,
+      JSON.stringify([
+        {
+          idempotencyKey: "web-chat-legacy-key",
+          conversationId: CONVERSATION_ID,
+          endpointId: "endpoint-1",
+          organizationId: "org-1",
+          visitorSessionId: "visitor-1",
+          text: "Legacy",
+          createdAt: "2026-07-07T08:00:00.000Z",
+          attempts: 1,
+        },
+      ]),
+    );
+
+    const restored = loadOutboundQueue(storage, storageKey);
+
+    expect(restored).toHaveLength(1);
+    expect(restored[0].idempotencyKey).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    expect(restored[0]).toMatchObject({
+      text: "Legacy",
+      attempts: 1,
+    });
+  });
+
   it("не запускает конкурентный flush (защита от двойной отправки)", async () => {
     const queue = createOutboundQueue({
       conversationId: CONVERSATION_ID,
