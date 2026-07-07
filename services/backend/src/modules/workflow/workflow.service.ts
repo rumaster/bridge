@@ -21,6 +21,10 @@ import {
   mapWorkflowLog,
   mapWorkflowVersion,
 } from "./workflow.dto";
+import {
+  createWorkflowSchemaValidationException,
+  validateWorkflowSchema,
+} from "./workflow-schema.validator";
 
 @Injectable()
 export class WorkflowService {
@@ -70,6 +74,11 @@ export class WorkflowService {
   ): Promise<WorkflowVersionResponseDto> {
     return this.database.withTenant(organizationId, async (client) => {
       await this.requireWorkflow(client, organizationId, workflowId);
+      const validation = validateWorkflowSchema(payload.schema);
+      if (!validation.valid) {
+        throw createWorkflowSchemaValidationException(validation.errors);
+      }
+
       const versionNoResult = await client.query<{ version_no: number | string }>(
         `
           SELECT COALESCE(MAX(version_no), 0) + 1 AS version_no
