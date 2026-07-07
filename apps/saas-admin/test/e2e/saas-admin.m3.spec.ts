@@ -1,29 +1,33 @@
 import { expect, test } from "@playwright/test";
 
-async function loginAsAdmin(page: import("@playwright/test").Page, targetPath: string) {
+async function loginAsUser(
+  page: import("@playwright/test").Page,
+  targetPath: string,
+  telegramUsername: string
+) {
   await page.addInitScript(() => {
     window.localStorage.clear();
   });
 
   await page.goto(targetPath);
-  await page.getByLabel("Telegram-имя").fill("@admin_demo");
+  await page.getByLabel("Telegram-имя").fill(telegramUsername);
   await page.getByRole("button", { name: "Отправить код" }).click();
   await page.getByLabel("Одноразовый код").fill("000000");
   await page.getByRole("button", { name: "Войти" }).click();
 }
 
-test("Admin правит Workflow: безопасная палитра, новая версия и переключение состояния", async ({
+test("Оператор платформы правит Workflow: безопасная палитра, новая версия и переключение состояния", async ({
   page
 }) => {
-  await loginAsAdmin(page, "/workflow");
+  await loginAsUser(page, "/workflow", "@operator_demo");
 
   await expect(page.getByRole("heading", { name: "Workflow", level: 1 })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Открыть Workflow Автоответчик обращений" })
   ).toBeVisible();
 
-  // Палитра ограничена безопасным набором узлов (ТЗ §13.13).
-  await expect(page.getByRole("button", { name: /^Добавить узел:/ })).toHaveCount(6);
+  // Палитра ограничена безопасным набором узлов (ТЗ §13.13), включая sub_schema.
+  await expect(page.getByRole("button", { name: /^Добавить узел:/ })).toHaveCount(7);
 
   // Узел вызова Backend API помечен как изменяющий данные (ТЗ §13.5).
   await page.getByRole("button", { name: "Узел Создать тикет" }).click();
@@ -54,7 +58,7 @@ test("Admin правит Workflow: безопасная палитра, нова
 });
 
 test("AI Onboarding применяет конфиг: команда, подтверждение и обновление UI", async ({ page }) => {
-  await loginAsAdmin(page, "/onboarding");
+  await loginAsUser(page, "/onboarding", "@admin_demo");
 
   await expect(page.getByRole("heading", { name: "AI Onboarding", level: 1 })).toBeVisible();
 
