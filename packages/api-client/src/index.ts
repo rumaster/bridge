@@ -1,5 +1,7 @@
 export const DEFAULT_API_BASE_URL = "/api/v1";
 
+export * from "./generated/openapi.js";
+
 /** Global `fetch`-совместимая функция, которую можно подменить в тестах. */
 export type Fetcher = typeof fetch;
 

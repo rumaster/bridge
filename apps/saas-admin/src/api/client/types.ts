@@ -583,6 +583,7 @@ export interface NotificationSettingsResponse {
 export type C7Event =
   | {
       type: "channel.status_changed";
+      eventId?: string;
       sequenceNumber: number;
       payload: {
         channelId: string;
@@ -593,6 +594,7 @@ export type C7Event =
     }
   | {
       type: "broadcast.state_changed";
+      eventId?: string;
       sequenceNumber: number;
       payload: {
         broadcastId: string;
@@ -602,6 +604,7 @@ export type C7Event =
     }
   | {
       type: "notification.created";
+      eventId?: string;
       sequenceNumber: number;
       payload: {
         notification: Notification;

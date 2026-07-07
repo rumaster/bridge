@@ -7,12 +7,18 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./generated/openapi": {
+      "types": "./src/generated/openapi.ts",
+      "default": "./src/generated/openapi.ts"
     }
   },
   "types": "./src/index.ts",
   "scripts": {
-    "lint": "tsc -p tsconfig.json",
+    "generate": "node --import tsx scripts/generate-openapi-client.ts",
+    "generate:check": "node --import tsx scripts/generate-openapi-client.ts --check",
+    "lint": "npm run generate:check && tsc -p tsconfig.json",
     "test": "node --import tsx --test test/*.test.ts",
-    "build": "tsc -p tsconfig.json"
+    "build": "npm run generate:check && tsc -p tsconfig.json"
   }
 }

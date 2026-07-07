@@ -2,9 +2,19 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
 const backendInternalUrl = process.env.BACKEND_INTERNAL_URL ?? "http://localhost:3000";
+const backendProxy = {
+  "/api": {
+    target: backendInternalUrl,
+    changeOrigin: true,
+    ws: true
+  }
+};
 
 export default defineConfig({
   plugins: [react()],
+  server: {
+    proxy: backendProxy
+  },
   build: {
     // Ограничение размера сборки (ТЗ §21.7): стабильные vendor-чанки
     // выделяются отдельно от кода приложения для лучшего кэширования.
@@ -30,12 +40,7 @@ export default defineConfig({
     }
   },
   preview: {
-    proxy: {
-      "/api": {
-        target: backendInternalUrl,
-        changeOrigin: true
-      }
-    }
+    proxy: backendProxy
   },
   test: {
     css: true,
