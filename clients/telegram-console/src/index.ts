@@ -1,7 +1,13 @@
 export { createAccountLinkingDraft, normalizeTelegramUser } from "./account-linking.js";
+export {
+  TelegramConsoleBackendApiError,
+  createTelegramConsoleBackendApiClient,
+} from "./backend-api-client.js";
 export { createTelegramConsoleRouter } from "./handler-router.js";
+export { createTelegramLongPollingRunner } from "./long-polling-runner.js";
 export { createMockTelegramConsoleBackendApi, MockBackendApiError } from "./mock-backend-api.js";
 export { createMockTelegramApiAdapter } from "./mock-telegram-api.js";
+export { TelegramBotApiError, createTelegramBotApiAdapter } from "./telegram-bot-api.js";
 export {
   QUICK_REPLIES,
   createDialogKeyboard,

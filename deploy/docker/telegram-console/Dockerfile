@@ -1,7 +1,6 @@
 # syntax=docker/dockerfile:1
-# @bridge/telegram-console — консольный клиент без прикладных npm-зависимостей во
-# время выполнения (одноразовый скрипт, не поднимает сервер). Запускается по
-# требованию через профиль "tools" в docker-compose.
+# @bridge/telegram-console — процесс Telegram Bot API long polling без отдельного
+# HTTP-сервера. Запускается по требованию через профиль "tools" в docker-compose.
 FROM node:20.20.2-alpine
 
 WORKDIR /repo

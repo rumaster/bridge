@@ -17,11 +17,17 @@ UI для менеджера поверх опубликованных Backend/C
   стабильному `idempotency_key`, восстановление активного диалога из Backend,
   проверка владельца Telegram-аккаунта и отзыв локального доступа при окончании
   server session.
+- Этап 8 mock-to-production закрыт: `src/main.ts` по умолчанию запускает
+  production long polling (`getUpdates`), использует реальный Telegram Bot API и
+  Backend REST `/api/v1`; mock-demo включается только через
+  `TELEGRAM_CONSOLE_MODE=mock`.
 
 ## Что есть сейчас
 
 - `/start` — запускает Telegram login (`POST /auth/login/telegram/start`) и
-  подтверждает его (`POST /auth/login/telegram/verify`) в CP-8 mock Backend API.
+  в production ждёт код отдельным сообщением перед
+  `POST /auth/login/telegram/verify`; в mock/demo может подтверждать код
+  автоматически.
 - `/dialogs` — читает активные диалоги через `GET /conversations` и карточки
   клиентов через `GET /clients/{clientId}`.
 - `dialog.open:*` — открывает C3 conversation history через
@@ -37,8 +43,28 @@ UI для менеджера поверх опубликованных Backend/C
 - При временных ошибках Backend операции повторяются с backoff; `POST /messages`
   всегда использует тот же `idempotency_key`, поэтому повтор после lost ACK не
   создаёт дубль.
-- Активный диалог сохраняется в Backend state и восстанавливается после потери
-  локального состояния Telegram Console.
+- Активный диалог сохраняется в локальном состоянии Telegram Console; mock Backend
+  по-прежнему покрывает сценарий восстановления для CP-8/M5 регрессии.
+- Production adapter вызывает Backend с `Authorization: Bearer <session>`,
+  `x-organization-id`, `x-actor-user-id` и `idempotency-key` для
+  `POST /messages`, преобразуя локальную snake_case-модель роутера в опубликованные
+  DTO Backend.
+
+## Запуск
+
+Production long polling:
+
+```bash
+TELEGRAM_BOT_TOKEN=123456:secret \
+TELEGRAM_CONSOLE_BACKEND_API_BASE_URL=http://localhost:3000/api/v1 \
+npm start --workspace @bridge/telegram-console
+```
+
+Mock-demo без внешних вызовов:
+
+```bash
+TELEGRAM_CONSOLE_MODE=mock npm start --workspace @bridge/telegram-console
+```
 
 ## Деградация
 
@@ -54,5 +80,6 @@ Backend context.
 npm run test --workspace @bridge/telegram-console
 npm run build --workspace @bridge/telegram-console
 npm run test:contract
-node --test tests/e2e/telegram-console-cp8.test.ts
+node --import tsx --test clients/telegram-console/test/unit/production-adapters.test.ts
+node --import tsx --test tests/e2e/telegram-console-cp8.test.ts
 ```

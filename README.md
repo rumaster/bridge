@@ -49,8 +49,11 @@ docker compose --env-file .env -f deploy/compose/docker-compose.yml up --build
 docker compose --env-file .env -f deploy/compose/docker-compose.yml --profile seed up seed
 ```
 
-Консольный клиент `telegram-console` — одноразовый скрипт, поднимается по
-требованию через профиль `tools`:
+Консольный клиент `telegram-console` поднимается по требованию через профиль
+`tools`. В обычном режиме это production-процесс SVC-TGC: читает обновления
+Telegram Bot API через `getUpdates`, вызывает Backend REST `/api/v1` и отправляет
+ответы через реальный Bot API. Для детерминированного demo без внешних вызовов
+задайте `TELEGRAM_CONSOLE_MODE=mock`.
 
 ```bash
 docker compose --env-file .env -f deploy/compose/docker-compose.yml --profile tools run --rm telegram-console
