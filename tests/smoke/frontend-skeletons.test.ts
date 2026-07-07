@@ -76,4 +76,26 @@ describe("M0 frontend skeleton gate", () => {
       }
     }
   });
+
+  it("documents Stage 9 frontend mock flags and dev proxy wiring", () => {
+    const envExample = readText(".env.example");
+    const webChatMain = readText("apps/web-chat/src/main.tsx");
+
+    assert.match(envExample, /VITE_WEB_CHAT_MOCKS=false/);
+    assert.match(envExample, /VITE_SAAS_ADMIN_MOCKS=false/);
+    assert.match(envExample, /VITE_MWS_MOCKS=false/);
+    assert.match(webChatMain, /import\.meta\.env\.DEV && import\.meta\.env\.VITE_WEB_CHAT_MOCKS === "true"/);
+    assert.match(readText("apps/web-chat/playwright.config.ts"), /VITE_WEB_CHAT_MOCKS=true/);
+
+    for (const configPath of [
+      "apps/web-chat/vite.config.ts",
+      "apps/saas-admin/vite.config.ts",
+      "apps/manager-workspace/vite.config.ts",
+    ]) {
+      const viteConfig = readText(configPath);
+      assert.match(viteConfig, /server:\s*{/);
+      assert.match(viteConfig, /proxy:\s*(?:backendProxy|{)/);
+      assert.match(viteConfig, /BACKEND_INTERNAL_URL/);
+    }
+  });
 });

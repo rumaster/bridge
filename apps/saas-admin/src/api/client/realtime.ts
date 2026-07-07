@@ -22,6 +22,15 @@ export interface C7RealtimeClient {
   collectInitialEvents: () => Promise<C7Event[]>;
 }
 
+export interface BrowserC7RealtimeClientOptions {
+  path?: string;
+  reconnectDelayMs?: number;
+  WebSocketCtor?: typeof WebSocket;
+}
+
+const DEFAULT_WS_PATH = "/api/v1/ws";
+const DEFAULT_RECONNECT_DELAY_MS = 250;
+
 export function createMockC7RealtimeClient(events: C7Event[] = mockC7Events): C7RealtimeClient {
   return {
     connect(onEvent, onStatus) {
@@ -50,32 +59,106 @@ export function createMockC7RealtimeClient(events: C7Event[] = mockC7Events): C7
   };
 }
 
-export function createBrowserC7RealtimeClient(path = "/api/v1/ws"): C7RealtimeClient {
+export function createBrowserC7RealtimeClient(
+  options: string | BrowserC7RealtimeClientOptions = {},
+): C7RealtimeClient {
+  const resolvedOptions = typeof options === "string" ? { path: options } : options;
+  const path = resolvedOptions.path ?? DEFAULT_WS_PATH;
+  const reconnectDelayMs = resolvedOptions.reconnectDelayMs ?? DEFAULT_RECONNECT_DELAY_MS;
+
   return {
     connect(onEvent, onStatus) {
-      if (typeof WebSocket === "undefined") {
+      const WebSocketCtor = resolvedOptions.WebSocketCtor ?? globalThis.WebSocket;
+
+      if (!WebSocketCtor) {
         onStatus?.("offline");
         return {
           close() {}
         };
       }
 
-      const url = toWebSocketUrl(path);
-      const socket = new WebSocket(url);
+      let closed = false;
+      let reconnectTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+      let socket: WebSocket | null = null;
+      let lastEventId: string | null = null;
+      let lastSequenceNumber = 0;
+      const observedEventIds = new Set<string>();
 
-      socket.addEventListener("open", () => onStatus?.("connected"));
-      socket.addEventListener("close", () => onStatus?.("offline"));
-      socket.addEventListener("error", () => onStatus?.("reconnecting"));
-      socket.addEventListener("message", (message) => {
-        const event = parseC7Envelope(message.data);
-        if (event) {
-          onEvent(event);
+      function openSocket() {
+        if (closed) {
+          return;
         }
-      });
+
+        onStatus?.("reconnecting");
+        const nextSocket = new WebSocketCtor(
+          toWebSocketUrl(path, {
+            afterSequenceNumber: lastSequenceNumber,
+            lastEventId
+          })
+        );
+        socket = nextSocket;
+
+        nextSocket.addEventListener("open", () => onStatus?.("connected"));
+        nextSocket.addEventListener("close", () => {
+          if (socket === nextSocket) {
+            socket = null;
+          }
+          scheduleReconnect();
+        });
+        nextSocket.addEventListener("error", () => {
+          onStatus?.("reconnecting");
+          nextSocket.close();
+        });
+        nextSocket.addEventListener("message", (message) => {
+          const event = parseC7Envelope(message.data);
+          if (!event) {
+            return;
+          }
+
+          if (event.eventId) {
+            if (observedEventIds.has(event.eventId)) {
+              return;
+            }
+            observedEventIds.add(event.eventId);
+            lastEventId = event.eventId;
+          }
+
+          lastSequenceNumber = Math.max(lastSequenceNumber, event.sequenceNumber);
+          onEvent(event);
+        });
+      }
+
+      function scheduleReconnect() {
+        if (closed) {
+          onStatus?.("offline");
+          return;
+        }
+
+        if (reconnectTimer) {
+          return;
+        }
+
+        onStatus?.("reconnecting");
+        reconnectTimer = globalThis.setTimeout(() => {
+          reconnectTimer = null;
+          openSocket();
+        }, Math.max(0, reconnectDelayMs));
+      }
+
+      openSocket();
 
       return {
         close() {
-          socket.close();
+          closed = true;
+          if (reconnectTimer) {
+            globalThis.clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+          }
+
+          const currentSocket = socket;
+          socket = null;
+          currentSocket?.close();
+          onStatus?.("offline");
         }
       };
     },
@@ -85,15 +168,46 @@ export function createBrowserC7RealtimeClient(path = "/api/v1/ws"): C7RealtimeCl
   };
 }
 
-function toWebSocketUrl(path: string) {
+function toWebSocketUrl(
+  path: string,
+  {
+    afterSequenceNumber,
+    lastEventId
+  }: {
+    afterSequenceNumber: number;
+    lastEventId: string | null;
+  }
+) {
   if (/^wss?:\/\//.test(path)) {
-    return path;
+    const url = new URL(path);
+    applyResumeCursor(url, { afterSequenceNumber, lastEventId });
+    return url.toString();
   }
 
   const origin = globalThis.location?.origin ?? "http://localhost";
   const url = new URL(path, origin);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  applyResumeCursor(url, { afterSequenceNumber, lastEventId });
   return url.toString();
+}
+
+function applyResumeCursor(
+  url: URL,
+  {
+    afterSequenceNumber,
+    lastEventId
+  }: {
+    afterSequenceNumber: number;
+    lastEventId: string | null;
+  }
+) {
+  if (lastEventId) {
+    url.searchParams.set("last_event_id", lastEventId);
+  }
+
+  if (afterSequenceNumber > 0) {
+    url.searchParams.set("after_sequence_number", String(afterSequenceNumber));
+  }
 }
 
 function parseC7Envelope(data: unknown): C7Event | null {
@@ -104,6 +218,7 @@ function parseC7Envelope(data: unknown): C7Event | null {
   try {
     const envelope = JSON.parse(data) as {
       event?: string;
+      event_id?: string;
       sequence_number?: number;
       payload?: {
         channel_id?: string;
@@ -119,6 +234,7 @@ function parseC7Envelope(data: unknown): C7Event | null {
       };
     };
 
+    const eventId = typeof envelope.event_id === "string" ? envelope.event_id : undefined;
     const payload = envelope.payload;
     const sequenceNumber = envelope.sequence_number ?? 0;
     if (!payload) {
@@ -133,6 +249,7 @@ function parseC7Envelope(data: unknown): C7Event | null {
 
       return {
         type: "channel.status_changed",
+        eventId,
         sequenceNumber,
         payload: {
           channelId,
@@ -151,6 +268,7 @@ function parseC7Envelope(data: unknown): C7Event | null {
 
       return {
         type: "broadcast.state_changed",
+        eventId,
         sequenceNumber,
         payload: {
           broadcastId,
@@ -167,6 +285,7 @@ function parseC7Envelope(data: unknown): C7Event | null {
 
       return {
         type: "notification.created",
+        eventId,
         sequenceNumber,
         payload: {
           notification: payload.notification
