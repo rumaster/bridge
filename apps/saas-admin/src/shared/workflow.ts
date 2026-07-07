@@ -19,8 +19,11 @@ export const SAFE_WORKFLOW_NODE_TYPES: WorkflowNodeType[] = [
   "llm_call",
   "branch",
   "transform",
-  "backend_api_call"
+  "backend_api_call",
+  "sub_schema"
 ];
+
+export const WORKFLOW_BODY_GRAPH_CONFIG_KEY = "bodyGraph";
 
 interface WorkflowNodeTypeMeta {
   label: string;
@@ -67,6 +70,12 @@ const WORKFLOW_NODE_TYPE_META: Record<WorkflowNodeType, WorkflowNodeTypeMeta> = 
     description: "Единственный узел, изменяющий данные — только через Backend API (ТЗ §13.5).",
     primaryField: { key: "endpoint", label: "Backend API endpoint", placeholder: "POST /api/v1/tickets" },
     mutatesData: true
+  },
+  sub_schema: {
+    label: "Субсхема",
+    description: "Вкладывает повторно используемый подграф с собственным bodyGraph.",
+    primaryField: { key: "schema_id", label: "Идентификатор субсхемы", placeholder: "support.reply-body" },
+    mutatesData: false
   }
 };
 
@@ -95,21 +104,57 @@ export function isSafeWorkflowNodeType(type: string): type is WorkflowNodeType {
  * Создаёт узел безопасного типа с уникальным id и авторасстановкой на холсте.
  * Детерминированно (без Math.random) — id вычисляется из уже существующих узлов.
  */
-export function createWorkflowNode(type: WorkflowNodeType, existingNodes: WorkflowNode[]): WorkflowNode {
+export function createWorkflowNode(
+  type: WorkflowNodeType,
+  existingNodes: WorkflowNode[],
+  position?: WorkflowNode["position"]
+): WorkflowNode {
   const id = nextUniqueId(`node-${type}`, existingNodes.map((node) => node.id));
   const index = existingNodes.length;
   const primary = WORKFLOW_NODE_TYPE_META[type].primaryField;
+  const config: Record<string, unknown> = { [primary.key]: "" };
+
+  if (type === "sub_schema") {
+    config[WORKFLOW_BODY_GRAPH_CONFIG_KEY] = createWorkflowBodyGraph(id);
+  }
 
   return {
     id,
     type,
     label: WORKFLOW_NODE_TYPE_META[type].label,
-    config: { [primary.key]: "" },
-    position: {
+    config,
+    position: position ?? {
       x: 40 + (index % 3) * 220,
       y: 40 + Math.floor(index / 3) * 150
     }
   };
+}
+
+export function createWorkflowBodyGraph(ownerNodeId: string): WorkflowSchema {
+  return {
+    nodes: [
+      {
+        id: `${ownerNodeId}-body-transform`,
+        type: "transform",
+        label: "Подготовить контекст",
+        config: { expression: "payload" },
+        position: { x: 40, y: 40 }
+      }
+    ],
+    connections: []
+  };
+}
+
+export function workflowNodeSupportsBodyGraph(type: WorkflowNodeType): boolean {
+  return type === "sub_schema" || type === "branch" || type === "transform";
+}
+
+export function isWorkflowSchema(value: unknown): value is WorkflowSchema {
+  if (!isRecord(value)) {
+    return false;
+  }
+
+  return Array.isArray(value.nodes) && Array.isArray(value.connections);
 }
 
 export function createWorkflowConnection(
@@ -155,6 +200,18 @@ export function validateWorkflowSchema(schema: WorkflowSchema): WorkflowSchemaVa
 
     if (!node.label.trim()) {
       errors.push(`У узла «${node.id}» должна быть заполнена метка.`);
+    }
+
+    const bodyGraph = node.config[WORKFLOW_BODY_GRAPH_CONFIG_KEY];
+    if (bodyGraph !== undefined) {
+      if (!isWorkflowSchema(bodyGraph)) {
+        errors.push(`bodyGraph узла «${node.label || node.id}» должен быть схемой Workflow.`);
+      } else {
+        const bodyGraphValidation = validateWorkflowSchema(bodyGraph);
+        for (const error of bodyGraphValidation.errors) {
+          errors.push(`bodyGraph узла «${node.label || node.id}»: ${error}`);
+        }
+      }
     }
   }
 
@@ -249,4 +306,8 @@ function nextUniqueId(prefix: string, existing: string[]): string {
 
 function dedupe(values: string[]): string[] {
   return [...new Set(values)];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

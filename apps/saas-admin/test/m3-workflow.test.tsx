@@ -1,10 +1,11 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { RouterProvider } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { createMockC7RealtimeClient } from "../src/api/client/realtime";
 import { createMockSaasAdminApiClient } from "../src/api/mocks/client";
+import { createMockSession } from "../src/api/mocks/fixtures";
 import { createSaasAdminRouter } from "../src/routing/router";
 import type { SaasAdminServiceOverrides } from "../src/state/admin";
 
@@ -16,9 +17,54 @@ function renderRoute(path: string, services: SaasAdminServiceOverrides) {
   };
 }
 
+function createWorkflowOperatorApi() {
+  return createMockSaasAdminApiClient({
+    session: createMockSession(["platform_operator"])
+  });
+}
+
+function createDataTransfer(): DataTransfer {
+  const data = new Map<string, string>();
+  return {
+    dropEffect: "copy",
+    effectAllowed: "all",
+    files: [] as unknown as FileList,
+    items: [] as unknown as DataTransferItemList,
+    types: [],
+    clearData: vi.fn(),
+    getData: vi.fn((type: string) => data.get(type) ?? ""),
+    setData: vi.fn((type: string, value: string) => {
+      data.set(type, value);
+    }),
+    setDragImage: vi.fn()
+  } as unknown as DataTransfer;
+}
+
 describe("SaaS Administration M3 Workflow editor (C5)", () => {
-  it("показывает безопасную палитру, редактирует узел и сохраняет схему новой версией", async () => {
+  it("открывает вкладку и схемы для роли platform_operator", async () => {
+    const api = createWorkflowOperatorApi();
+    renderRoute("/workflow", { api, realtime: createMockC7RealtimeClient([]) });
+
+    expect(
+      await screen.findByRole("button", { name: "Открыть Workflow Автоответчик обращений" })
+    ).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Workflow" })).toBeInTheDocument();
+  });
+
+  it("скрывает функционал редактора для администратора без роли platform_operator", async () => {
     const api = createMockSaasAdminApiClient();
+    renderRoute("/workflow", { api, realtime: createMockC7RealtimeClient([]) });
+
+    expect(
+      await screen.findByText("Раздел Workflow доступен только оператору платформы.")
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Открыть Workflow Автоответчик обращений" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("показывает безопасную палитру, редактирует узел и сохраняет схему новой версией", async () => {
+    const api = createWorkflowOperatorApi();
     const createVersion = vi.spyOn(api.workflows, "createVersion");
     const { user } = renderRoute("/workflow", { api, realtime: createMockC7RealtimeClient([]) });
 
@@ -27,9 +73,9 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
       await screen.findByRole("button", { name: "Открыть Workflow Автоответчик обращений" })
     ).toBeInTheDocument();
 
-    // Палитра ограничена безопасным набором узлов (ТЗ §13.13) — ровно 6 типов.
+    // Палитра ограничена безопасным набором узлов (ТЗ §13.13) и включает sub-schema.
     const paletteButtons = await screen.findAllByRole("button", { name: /^Добавить узел:/ });
-    expect(paletteButtons).toHaveLength(6);
+    expect(paletteButtons).toHaveLength(7);
 
     // Узел вызова Backend API помечен как изменяющий данные (ТЗ §13.5).
     await user.click(screen.getByRole("button", { name: "Узел Создать тикет" }));
@@ -64,8 +110,84 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
     ).toBeInTheDocument();
   });
 
+  it("добавляет узел перетаскиванием на canvas и поддерживает bodyGraph, черновик, публикацию, откат и тестовый запуск", async () => {
+    const api = createWorkflowOperatorApi();
+    const createVersion = vi.spyOn(api.workflows, "createVersion");
+    const updateWorkflow = vi.spyOn(api.workflows, "updateWorkflow");
+    const { user } = renderRoute("/workflow", { api, realtime: createMockC7RealtimeClient([]) });
+
+    await screen.findByRole("button", { name: "Открыть Workflow Автоответчик обращений" });
+
+    const source = await screen.findByRole("button", { name: "Добавить узел: Субсхема" });
+    const canvas = screen.getByRole("group", { name: "Схема узлов и связей" });
+    const dataTransfer = createDataTransfer();
+    fireEvent.dragStart(source, { dataTransfer });
+    fireEvent.dragOver(canvas, { clientX: 360, clientY: 220, dataTransfer });
+    fireEvent.drop(canvas, { clientX: 360, clientY: 220, dataTransfer });
+
+    await user.click(await screen.findByRole("button", { name: "Узел Субсхема" }));
+    await user.click(screen.getByRole("button", { name: "Открыть bodyGraph" }));
+    expect(await screen.findByText("Корневая схема / Субсхема")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Добавить узел: Transform Node" }));
+    const fromSelect = screen.getByLabelText("Из узла");
+    const toSelect = screen.getByLabelText("В узел");
+    await user.selectOptions(
+      fromSelect,
+      within(fromSelect).getByRole("option", { name: "Подготовить контекст" })
+    );
+    await user.selectOptions(
+      toSelect,
+      within(toSelect).getByRole("option", { name: "Transform Node" })
+    );
+    await user.click(screen.getByRole("button", { name: "Добавить связь" }));
+    await user.click(screen.getByRole("button", { name: "Вернуться к родительской схеме" }));
+    await user.click(screen.getByRole("button", { name: "Сохранить черновик" }));
+    expect(await screen.findByText("Черновик сохранён локально.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Тестовый запуск" }));
+    const runLog = await screen.findByRole("region", { name: "Лог тестового запуска" });
+    expect(within(runLog).getByText("workflow.test.completed")).toBeInTheDocument();
+    expect(within(runLog).getAllByText("bodyGraph.completed").length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole("button", { name: "Опубликовать черновик" }));
+    await waitFor(() => {
+      expect(createVersion).toHaveBeenCalledWith(
+        "wf-support-autoresponder",
+        expect.objectContaining({
+          activate: true,
+          schema: expect.objectContaining({
+            nodes: expect.arrayContaining([
+              expect.objectContaining({
+                type: "sub_schema",
+                config: expect.objectContaining({
+                  bodyGraph: expect.objectContaining({
+                    nodes: expect.arrayContaining([
+                      expect.objectContaining({ type: "transform" })
+                    ])
+                  })
+                })
+              })
+            ])
+          })
+        })
+      );
+    });
+
+    await user.selectOptions(screen.getByLabelText("Редактируемая версия"), "wfv-support-1");
+    await user.click(screen.getByRole("button", { name: "Откатить к выбранной версии" }));
+
+    await waitFor(() => {
+      expect(updateWorkflow).toHaveBeenCalledWith("wf-support-autoresponder", {
+        default_version_id: "wfv-support-1",
+        status: "active"
+      });
+    });
+    expect(await screen.findByText("Откат выполнен: активна версия v1.")).toBeInTheDocument();
+  });
+
   it("включает/отключает Workflow и переключает активную версию по умолчанию", async () => {
-    const api = createMockSaasAdminApiClient();
+    const api = createWorkflowOperatorApi();
     const updateWorkflow = vi.spyOn(api.workflows, "updateWorkflow");
     const { user } = renderRoute("/workflow", { api, realtime: createMockC7RealtimeClient([]) });
 
@@ -94,7 +216,7 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
   });
 
   it("открывает диагностику инстанса из истории исполнения", async () => {
-    const api = createMockSaasAdminApiClient();
+    const api = createWorkflowOperatorApi();
     const getInstance = vi.spyOn(api.workflows, "getInstance");
     const { user } = renderRoute("/workflow", { api, realtime: createMockC7RealtimeClient([]) });
 

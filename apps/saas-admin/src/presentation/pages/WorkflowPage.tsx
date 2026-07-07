@@ -1,14 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
+import type { DragEvent } from "react";
 import {
+  ArrowLeft,
+  Boxes,
   Database,
+  FlaskConical,
   History,
   Link2,
   Play,
   Plus,
   Power,
+  RotateCcw,
   Save,
   ShieldCheck,
   Trash2,
+  UploadCloud,
   Workflow as WorkflowIcon
 } from "lucide-react";
 
@@ -25,9 +31,13 @@ import { useSaasAdminApi } from "../../state/admin";
 import { hasAnyRole, useAuth } from "../../state/auth";
 import {
   SAFE_WORKFLOW_NODE_TYPES,
+  WORKFLOW_BODY_GRAPH_CONFIG_KEY,
   createWorkflowConnection,
+  createWorkflowBodyGraph,
   createWorkflowNode,
+  isWorkflowSchema,
   validateWorkflowSchema,
+  workflowNodeSupportsBodyGraph,
   workflowInstanceStatusLabel,
   workflowInstanceStatusTone,
   workflowNodeMutatesData,
@@ -42,7 +52,7 @@ import { Badge, Button, CheckboxInput, Panel, TextInput } from "../../shared/ui-
 export default function WorkflowPage() {
   const { session } = useAuth();
   const api = useSaasAdminApi();
-  const canEdit = hasAnyRole(session, ["administrator"]);
+  const canEdit = hasAnyRole(session, ["platform_operator"]);
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
   const [versions, setVersions] = useState<WorkflowVersion[]>([]);
@@ -192,6 +202,10 @@ export default function WorkflowPage() {
     );
   }
 
+  function handleWorkflowUpdated(updated: Workflow) {
+    setWorkflows((current) => replaceWorkflow(current, updated));
+  }
+
   return (
     <section className="page-section">
       <div className="page-heading">
@@ -206,7 +220,7 @@ export default function WorkflowPage() {
       {!canEdit ? (
         <Panel className="empty-state">
           <Badge tone="warning">Роль</Badge>
-          <h2>Раздел скрыт для текущей роли</h2>
+          <h2>Раздел Workflow доступен только оператору платформы.</h2>
         </Panel>
       ) : null}
 
@@ -248,6 +262,7 @@ export default function WorkflowPage() {
                   <WorkflowSchemaEditor
                     key={selectedWorkflow.id}
                     onVersionCreated={handleVersionCreated}
+                    onWorkflowUpdated={handleWorkflowUpdated}
                     versions={versions}
                     workflow={selectedWorkflow}
                   />
@@ -375,30 +390,63 @@ function WorkflowVersionBar({
 
 interface WorkflowSchemaEditorProps {
   onVersionCreated: (version: WorkflowVersion, activated: boolean) => void;
+  onWorkflowUpdated: (workflow: Workflow) => void;
   versions: WorkflowVersion[];
   workflow: Workflow;
 }
 
-function WorkflowSchemaEditor({ onVersionCreated, versions, workflow }: WorkflowSchemaEditorProps) {
+type WorkflowTestScope = "schema" | "bodyGraph" | "subSchemas";
+
+interface WorkflowTestLogEntry {
+  id: string;
+  event: string;
+  message: string;
+}
+
+interface WorkflowTestRun {
+  logs: WorkflowTestLogEntry[];
+  scope: WorkflowTestScope;
+}
+
+function WorkflowSchemaEditor({
+  onVersionCreated,
+  onWorkflowUpdated,
+  versions,
+  workflow
+}: WorkflowSchemaEditorProps) {
   const api = useSaasAdminApi();
   const defaultVersion = useMemo(
     () => versions.find((version) => version.id === workflow.default_version_id) ?? versions[0],
     [versions, workflow.default_version_id]
   );
   const [baseVersionId, setBaseVersionId] = useState(defaultVersion.id);
-  const [draftSchema, setDraftSchema] = useState<WorkflowSchema>(() =>
+  const [rootDraftSchema, setRootDraftSchema] = useState<WorkflowSchema>(() =>
     cloneDraftSchema(defaultVersion.schema)
   );
+  const [bodyPath, setBodyPath] = useState<string[]>([]);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(
     () => defaultVersion.schema.nodes[0]?.id ?? null
   );
   const [connectionFrom, setConnectionFrom] = useState("");
   const [connectionTo, setConnectionTo] = useState("");
   const [activateOnSave, setActivateOnSave] = useState(false);
+  const [hasDraft, setHasDraft] = useState(false);
+  const [draftSaved, setDraftSaved] = useState(false);
+  const [testScope, setTestScope] = useState<WorkflowTestScope>("schema");
+  const [testRun, setTestRun] = useState<WorkflowTestRun | null>(null);
   const [saving, setSaving] = useState(false);
   const [editorAlert, setEditorAlert] = useState<string | null>(null);
+  const [editorNotice, setEditorNotice] = useState<string | null>(null);
 
-  const validation = useMemo(() => validateWorkflowSchema(draftSchema), [draftSchema]);
+  const draftSchema = useMemo(
+    () => getSchemaAtPath(rootDraftSchema, bodyPath),
+    [bodyPath, rootDraftSchema]
+  );
+  const bodyPathLabels = useMemo(
+    () => getBodyPathLabels(rootDraftSchema, bodyPath),
+    [bodyPath, rootDraftSchema]
+  );
+  const validation = useMemo(() => validateWorkflowSchema(rootDraftSchema), [rootDraftSchema]);
   const selectedNode = useMemo(
     () => draftSchema.nodes.find((node) => node.id === selectedNodeId) ?? null,
     [draftSchema.nodes, selectedNodeId]
@@ -410,31 +458,42 @@ function WorkflowSchemaEditor({ onVersionCreated, versions, workflow }: Workflow
       return;
     }
     setBaseVersionId(versionId);
-    setDraftSchema(cloneDraftSchema(base.schema));
+    setRootDraftSchema(cloneDraftSchema(base.schema));
+    setBodyPath([]);
     setSelectedNodeId(base.schema.nodes[0]?.id ?? null);
     setConnectionFrom("");
     setConnectionTo("");
+    setHasDraft(false);
+    setDraftSaved(false);
+    setTestRun(null);
     setEditorAlert(null);
+    setEditorNotice(null);
   }
 
-  function handleAddNode(type: WorkflowNodeType) {
-    setDraftSchema((current) => {
-      const node = createWorkflowNode(type, current.nodes);
-      setSelectedNodeId(node.id);
-      return { ...current, nodes: [...current.nodes, node] };
-    });
+  function updateActiveSchema(updater: (schema: WorkflowSchema) => WorkflowSchema) {
+    setRootDraftSchema((current) => updateSchemaAtPath(current, bodyPath, updater));
+    setHasDraft(true);
+    setDraftSaved(false);
+    setTestRun(null);
     setEditorAlert(null);
+    setEditorNotice(null);
+  }
+
+  function handleAddNode(type: WorkflowNodeType, position?: WorkflowNode["position"]) {
+    const node = createWorkflowNode(type, draftSchema.nodes, position);
+    updateActiveSchema((current) => ({ ...current, nodes: [...current.nodes, node] }));
+    setSelectedNodeId(node.id);
   }
 
   function handleUpdateNodeLabel(nodeId: string, label: string) {
-    setDraftSchema((current) => ({
+    updateActiveSchema((current) => ({
       ...current,
       nodes: current.nodes.map((node) => (node.id === nodeId ? { ...node, label } : node))
     }));
   }
 
   function handleUpdateNodeConfig(nodeId: string, key: string, value: string) {
-    setDraftSchema((current) => ({
+    updateActiveSchema((current) => ({
       ...current,
       nodes: current.nodes.map((node) =>
         node.id === nodeId ? { ...node, config: { ...node.config, [key]: value } } : node
@@ -443,7 +502,7 @@ function WorkflowSchemaEditor({ onVersionCreated, versions, workflow }: Workflow
   }
 
   function handleDeleteNode(nodeId: string) {
-    setDraftSchema((current) => ({
+    updateActiveSchema((current) => ({
       nodes: current.nodes.filter((node) => node.id !== nodeId),
       connections: current.connections.filter(
         (connection) => connection.from !== nodeId && connection.to !== nodeId
@@ -456,7 +515,7 @@ function WorkflowSchemaEditor({ onVersionCreated, versions, workflow }: Workflow
     if (!connectionFrom || !connectionTo || connectionFrom === connectionTo) {
       return;
     }
-    setDraftSchema((current) => ({
+    updateActiveSchema((current) => ({
       ...current,
       connections: [
         ...current.connections,
@@ -468,13 +527,66 @@ function WorkflowSchemaEditor({ onVersionCreated, versions, workflow }: Workflow
   }
 
   function handleDeleteConnection(connectionId: string) {
-    setDraftSchema((current) => ({
+    updateActiveSchema((current) => ({
       ...current,
       connections: current.connections.filter((connection) => connection.id !== connectionId)
     }));
   }
 
-  async function handleSave() {
+  function handleMoveNode(nodeId: string, position: WorkflowNode["position"]) {
+    updateActiveSchema((current) => ({
+      ...current,
+      nodes: current.nodes.map((node) => (node.id === nodeId ? { ...node, position } : node))
+    }));
+  }
+
+  function handleOpenBodyGraph() {
+    if (!selectedNode || !workflowNodeSupportsBodyGraph(selectedNode.type)) {
+      return;
+    }
+
+    const bodyGraph = getNodeBodyGraph(selectedNode);
+    updateActiveSchema((current) => ({
+      ...current,
+      nodes: current.nodes.map((node) =>
+        node.id === selectedNode.id
+          ? {
+              ...node,
+              config: {
+                ...node.config,
+                [WORKFLOW_BODY_GRAPH_CONFIG_KEY]: bodyGraph
+              }
+            }
+          : node
+      )
+    }));
+    setBodyPath((current) => [...current, selectedNode.id]);
+    setSelectedNodeId(bodyGraph.nodes[0]?.id ?? null);
+    setConnectionFrom("");
+    setConnectionTo("");
+  }
+
+  function handleExitBodyGraph() {
+    const parentNodeId = bodyPath.at(-1) ?? null;
+    setBodyPath((current) => current.slice(0, -1));
+    setSelectedNodeId(parentNodeId);
+    setConnectionFrom("");
+    setConnectionTo("");
+  }
+
+  function handleSaveDraft() {
+    if (!validation.valid) {
+      setEditorAlert("Исправьте ошибки схемы перед сохранением черновика.");
+      return;
+    }
+
+    setHasDraft(true);
+    setDraftSaved(true);
+    setEditorAlert(null);
+    setEditorNotice("Черновик сохранён локально.");
+  }
+
+  async function handleSave(activate = activateOnSave, notice?: string) {
     if (!validation.valid) {
       setEditorAlert("Исправьте ошибки схемы перед сохранением.");
       return;
@@ -485,18 +597,63 @@ function WorkflowSchemaEditor({ onVersionCreated, versions, workflow }: Workflow
 
     try {
       const version = await api.workflows.createVersion(workflow.id, {
-        schema: draftSchema,
-        activate: activateOnSave
+        schema: rootDraftSchema,
+        activate
       });
-      onVersionCreated(version, activateOnSave);
+      onVersionCreated(version, activate);
       setBaseVersionId(version.id);
-      setDraftSchema(cloneDraftSchema(version.schema));
+      setRootDraftSchema(cloneDraftSchema(version.schema));
+      setBodyPath([]);
+      setSelectedNodeId(version.schema.nodes[0]?.id ?? null);
+      setHasDraft(false);
+      setDraftSaved(false);
       setActivateOnSave(false);
+      setEditorNotice(notice ?? null);
     } catch (error) {
       setEditorAlert(getProblemMessage(error, "Не удалось сохранить новую версию."));
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handlePublishDraft() {
+    await handleSave(true, "Черновик опубликован как активная версия.");
+  }
+
+  async function handleRollbackToBase() {
+    const base = versions.find((version) => version.id === baseVersionId);
+    if (!base) {
+      return;
+    }
+
+    setSaving(true);
+    setEditorAlert(null);
+    setEditorNotice(null);
+
+    try {
+      const updated = await api.workflows.updateWorkflow(workflow.id, {
+        default_version_id: base.id,
+        status: "active"
+      });
+      onWorkflowUpdated(updated);
+      setRootDraftSchema(cloneDraftSchema(base.schema));
+      setBodyPath([]);
+      setSelectedNodeId(base.schema.nodes[0]?.id ?? null);
+      setHasDraft(false);
+      setDraftSaved(false);
+      setTestRun(null);
+      setEditorNotice(`Откат выполнен: активна версия v${base.version_no}.`);
+    } catch (error) {
+      setEditorAlert(getProblemMessage(error, "Не удалось выполнить откат версии."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleRunTest() {
+    setTestRun(simulateWorkflowTest(rootDraftSchema, testScope));
+    setEditorAlert(null);
+    setEditorNotice("Тестовый запуск завершён.");
   }
 
   return (
@@ -532,6 +689,24 @@ function WorkflowSchemaEditor({ onVersionCreated, versions, workflow }: Workflow
         </div>
       ) : null}
 
+      {editorNotice ? <div className="form-success">{editorNotice}</div> : null}
+
+      <div className="workflow-editor-toolbar">
+        <div className="workflow-breadcrumb" aria-label="Текущий граф">
+          <Boxes aria-hidden="true" size={16} />
+          <span>{["Корневая схема", ...bodyPathLabels].join(" / ")}</span>
+          <Badge tone={hasDraft ? "warning" : "success"}>
+            {hasDraft ? (draftSaved ? "Черновик сохранён" : "Есть черновик") : "Опубликовано"}
+          </Badge>
+        </div>
+        {bodyPath.length > 0 ? (
+          <Button onClick={handleExitBodyGraph} type="button" variant="secondary">
+            <ArrowLeft aria-hidden="true" size={16} />
+            Вернуться к родительской схеме
+          </Button>
+        ) : null}
+      </div>
+
       <div className="workflow-editor-grid">
         <div className="workflow-palette" aria-label="Палитра узлов">
           <h3>Палитра узлов</h3>
@@ -539,7 +714,12 @@ function WorkflowSchemaEditor({ onVersionCreated, versions, workflow }: Workflow
             <button
               aria-label={`Добавить узел: ${workflowNodeTypeLabel(type)}`}
               className={`workflow-palette-item ${workflowNodeMutatesData(type) ? "mutating" : ""}`}
+              draggable
               key={type}
+              onDragStart={(event) => {
+                event.dataTransfer.effectAllowed = "copy";
+                event.dataTransfer.setData(NODE_DND_MIME, type);
+              }}
               onClick={() => handleAddNode(type)}
               type="button"
             >
@@ -558,7 +738,10 @@ function WorkflowSchemaEditor({ onVersionCreated, versions, workflow }: Workflow
 
         <WorkflowCanvas
           connections={draftSchema.connections}
+          key={bodyPath.join("/") || baseVersionId}
           nodes={draftSchema.nodes}
+          onDropNode={handleAddNode}
+          onMoveNode={handleMoveNode}
           onSelectNode={setSelectedNodeId}
           selectedNodeId={selectedNodeId}
         />
@@ -566,6 +749,7 @@ function WorkflowSchemaEditor({ onVersionCreated, versions, workflow }: Workflow
         <WorkflowNodeProperties
           node={selectedNode}
           onDeleteNode={handleDeleteNode}
+          onOpenBodyGraph={handleOpenBodyGraph}
           onUpdateConfig={handleUpdateNodeConfig}
           onUpdateLabel={handleUpdateNodeLabel}
         />
@@ -610,10 +794,71 @@ function WorkflowSchemaEditor({ onVersionCreated, versions, workflow }: Workflow
           <Save aria-hidden="true" size={16} />
           Сохранить как новую версию
         </Button>
+        <Button
+          disabled={saving || !validation.valid}
+          onClick={handleSaveDraft}
+          type="button"
+          variant="secondary"
+        >
+          <Save aria-hidden="true" size={16} />
+          Сохранить черновик
+        </Button>
+        <Button
+          disabled={saving || !validation.valid}
+          onClick={() => void handlePublishDraft()}
+          type="button"
+        >
+          <UploadCloud aria-hidden="true" size={16} />
+          Опубликовать черновик
+        </Button>
+        <Button
+          disabled={saving}
+          onClick={() => void handleRollbackToBase()}
+          type="button"
+          variant="ghost"
+        >
+          <RotateCcw aria-hidden="true" size={16} />
+          Откатить к выбранной версии
+        </Button>
       </div>
       <p className="muted workflow-save-hint">
         Сохранение создаёт неизменяемую версию и не влияет на выполняющиеся инстансы (ТЗ §13.10).
       </p>
+
+      <div className="workflow-test-controls">
+        <label className="workflow-select">
+          <span>Область тестового запуска</span>
+          <select
+            onChange={(event) => setTestScope(event.currentTarget.value as WorkflowTestScope)}
+            value={testScope}
+          >
+            <option value="schema">Схема</option>
+            <option value="bodyGraph">Текущая bodyGraph</option>
+            <option value="subSchemas">Субсхемы</option>
+          </select>
+        </label>
+        <Button disabled={!validation.valid} onClick={handleRunTest} type="button" variant="secondary">
+          <FlaskConical aria-hidden="true" size={16} />
+          Тестовый запуск
+        </Button>
+      </div>
+
+      {testRun ? (
+        <div className="workflow-test-log" role="region" aria-label="Лог тестового запуска">
+          <div className="workflow-test-log-heading">
+            <Badge tone="success">{workflowTestScopeLabel(testRun.scope)}</Badge>
+            <span className="muted">Детерминированный dry-run без мутаций данных.</span>
+          </div>
+          <ol className="workflow-log">
+            {testRun.logs.map((entry) => (
+              <li key={entry.id}>
+                <span className="workflow-log-event">{entry.event}</span>
+                <span className="workflow-log-message">{entry.message}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
     </Panel>
   );
 }
@@ -621,20 +866,69 @@ function WorkflowSchemaEditor({ onVersionCreated, versions, workflow }: Workflow
 interface WorkflowCanvasProps {
   connections: WorkflowSchema["connections"];
   nodes: WorkflowNode[];
+  onDropNode: (type: WorkflowNodeType, position: WorkflowNode["position"]) => void;
+  onMoveNode: (nodeId: string, position: WorkflowNode["position"]) => void;
   onSelectNode: (nodeId: string) => void;
   selectedNodeId: string | null;
 }
 
+const NODE_DND_MIME = "application/x-bridge-workflow-node";
+const NODE_MOVE_DND_MIME = "application/x-bridge-workflow-node-id";
 const NODE_WIDTH = 176;
 const NODE_HEIGHT = 68;
 
-function WorkflowCanvas({ connections, nodes, onSelectNode, selectedNodeId }: WorkflowCanvasProps) {
+function WorkflowCanvas({
+  connections,
+  nodes,
+  onDropNode,
+  onMoveNode,
+  onSelectNode,
+  selectedNodeId
+}: WorkflowCanvasProps) {
   const width = Math.max(480, ...nodes.map((node) => node.position.x + NODE_WIDTH + 40));
   const height = Math.max(280, ...nodes.map((node) => node.position.y + NODE_HEIGHT + 40));
   const nodeById = new Map(nodes.map((node) => [node.id, node] as const));
 
+  function handleDragOver(event: DragEvent<HTMLDivElement>) {
+    if (
+      event.dataTransfer.types.includes(NODE_DND_MIME) ||
+      event.dataTransfer.types.includes(NODE_MOVE_DND_MIME)
+    ) {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = event.dataTransfer.types.includes(NODE_MOVE_DND_MIME)
+        ? "move"
+        : "copy";
+    }
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    const type = event.dataTransfer.getData(NODE_DND_MIME) as WorkflowNodeType;
+    const nodeId = event.dataTransfer.getData(NODE_MOVE_DND_MIME);
+    if (!type && !nodeId) {
+      return;
+    }
+
+    event.preventDefault();
+    const position = workflowDropPosition(event);
+    if (nodeId) {
+      onMoveNode(nodeId, position);
+      onSelectNode(nodeId);
+      return;
+    }
+
+    if (SAFE_WORKFLOW_NODE_TYPES.includes(type)) {
+      onDropNode(type, position);
+    }
+  }
+
   return (
-    <div className="workflow-canvas" aria-label="Схема узлов и связей" role="group">
+    <div
+      className="workflow-canvas"
+      aria-label="Схема узлов и связей"
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      role="group"
+    >
       <div className="workflow-canvas-surface" style={{ width, height }}>
         <svg aria-hidden="true" className="workflow-canvas-edges" height={height} width={width}>
           <defs>
@@ -674,7 +968,12 @@ function WorkflowCanvas({ connections, nodes, onSelectNode, selectedNodeId }: Wo
             className={`workflow-node ${node.id === selectedNodeId ? "selected" : ""} ${
               workflowNodeMutatesData(node.type) ? "mutating" : ""
             }`}
+            draggable
             key={node.id}
+            onDragStart={(event) => {
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData(NODE_MOVE_DND_MIME, node.id);
+            }}
             onClick={() => onSelectNode(node.id)}
             style={{ left: node.position.x, top: node.position.y, width: NODE_WIDTH }}
             type="button"
@@ -694,9 +993,27 @@ function WorkflowCanvas({ connections, nodes, onSelectNode, selectedNodeId }: Wo
   );
 }
 
+function workflowDropPosition(event: DragEvent<HTMLDivElement>): WorkflowNode["position"] {
+  const rect = event.currentTarget.getBoundingClientRect();
+  const clientX = Number.isFinite(event.clientX) ? event.clientX : rect.left + 180;
+  const clientY = Number.isFinite(event.clientY) ? event.clientY : rect.top + 140;
+  const scrollLeft = Number.isFinite(event.currentTarget.scrollLeft)
+    ? event.currentTarget.scrollLeft
+    : 0;
+  const scrollTop = Number.isFinite(event.currentTarget.scrollTop)
+    ? event.currentTarget.scrollTop
+    : 0;
+
+  return {
+    x: Math.max(20, Math.round(clientX - rect.left + scrollLeft - NODE_WIDTH / 2)),
+    y: Math.max(20, Math.round(clientY - rect.top + scrollTop - NODE_HEIGHT / 2))
+  };
+}
+
 interface WorkflowNodePropertiesProps {
   node: WorkflowNode | null;
   onDeleteNode: (nodeId: string) => void;
+  onOpenBodyGraph: () => void;
   onUpdateConfig: (nodeId: string, key: string, value: string) => void;
   onUpdateLabel: (nodeId: string, label: string) => void;
 }
@@ -704,6 +1021,7 @@ interface WorkflowNodePropertiesProps {
 function WorkflowNodeProperties({
   node,
   onDeleteNode,
+  onOpenBodyGraph,
   onUpdateConfig,
   onUpdateLabel
 }: WorkflowNodePropertiesProps) {
@@ -741,6 +1059,12 @@ function WorkflowNodeProperties({
         placeholder={primary.placeholder}
         value={nodePrimaryValue(node, primary.key)}
       />
+      {workflowNodeSupportsBodyGraph(node.type) ? (
+        <Button onClick={onOpenBodyGraph} type="button" variant="secondary">
+          <Boxes aria-hidden="true" size={16} />
+          Открыть bodyGraph
+        </Button>
+      ) : null}
       <Button onClick={() => onDeleteNode(node.id)} type="button" variant="ghost">
         <Trash2 aria-hidden="true" size={16} />
         Удалить узел
@@ -955,11 +1279,193 @@ function cloneDraftSchema(schema: WorkflowSchema): WorkflowSchema {
   return {
     nodes: schema.nodes.map((node) => ({
       ...node,
-      config: { ...node.config },
+      config: cloneNodeConfig(node.config),
       position: { ...node.position }
     })),
     connections: schema.connections.map((connection) => ({ ...connection }))
   };
+}
+
+function cloneNodeConfig(config: WorkflowNode["config"]): WorkflowNode["config"] {
+  const cloned: WorkflowNode["config"] = { ...config };
+  const bodyGraph = config[WORKFLOW_BODY_GRAPH_CONFIG_KEY];
+  if (isWorkflowSchema(bodyGraph)) {
+    cloned[WORKFLOW_BODY_GRAPH_CONFIG_KEY] = cloneDraftSchema(bodyGraph);
+  }
+  return cloned;
+}
+
+function getNodeBodyGraph(node: WorkflowNode): WorkflowSchema {
+  const bodyGraph = node.config[WORKFLOW_BODY_GRAPH_CONFIG_KEY];
+  return isWorkflowSchema(bodyGraph) ? cloneDraftSchema(bodyGraph) : createWorkflowBodyGraph(node.id);
+}
+
+function getSchemaAtPath(root: WorkflowSchema, path: string[]): WorkflowSchema {
+  let current = root;
+
+  for (const nodeId of path) {
+    const node = current.nodes.find((candidate) => candidate.id === nodeId);
+    if (!node) {
+      return root;
+    }
+
+    const bodyGraph = node.config[WORKFLOW_BODY_GRAPH_CONFIG_KEY];
+    if (!isWorkflowSchema(bodyGraph)) {
+      return root;
+    }
+
+    current = bodyGraph;
+  }
+
+  return current;
+}
+
+function updateSchemaAtPath(
+  root: WorkflowSchema,
+  path: string[],
+  updater: (schema: WorkflowSchema) => WorkflowSchema
+): WorkflowSchema {
+  if (path.length === 0) {
+    return updater(root);
+  }
+
+  const [nodeId, ...rest] = path;
+  return {
+    ...root,
+    nodes: root.nodes.map((node) => {
+      if (node.id !== nodeId) {
+        return node;
+      }
+
+      const nextBodyGraph = updateSchemaAtPath(getNodeBodyGraph(node), rest, updater);
+      return {
+        ...node,
+        config: {
+          ...node.config,
+          [WORKFLOW_BODY_GRAPH_CONFIG_KEY]: nextBodyGraph
+        }
+      };
+    })
+  };
+}
+
+function getBodyPathLabels(root: WorkflowSchema, path: string[]): string[] {
+  const labels: string[] = [];
+  let current = root;
+
+  for (const nodeId of path) {
+    const node = current.nodes.find((candidate) => candidate.id === nodeId);
+    if (!node) {
+      return labels;
+    }
+
+    labels.push(node.label || node.id);
+    const bodyGraph = node.config[WORKFLOW_BODY_GRAPH_CONFIG_KEY];
+    if (!isWorkflowSchema(bodyGraph)) {
+      return labels;
+    }
+
+    current = bodyGraph;
+  }
+
+  return labels;
+}
+
+function simulateWorkflowTest(schema: WorkflowSchema, scope: WorkflowTestScope): WorkflowTestRun {
+  const logs: WorkflowTestLogEntry[] = [];
+  const targetSchemas =
+    scope === "subSchemas"
+      ? collectSubSchemaGraphs(schema)
+      : scope === "bodyGraph"
+        ? collectBodyGraphs(schema)
+        : [{ label: "Корневая схема", schema }];
+  const runSchemas = targetSchemas.length > 0 ? targetSchemas : [{ label: "Корневая схема", schema }];
+
+  runSchemas.forEach((item, schemaIndex) => {
+    logs.push({
+      id: `scope-${schemaIndex}`,
+      event: "workflow.test.scope",
+      message: `${item.label}: ${item.schema.nodes.length} узл.`
+    });
+    appendSchemaRunLogs(item.schema, logs, item.label);
+  });
+
+  logs.push({
+    id: "workflow-test-completed",
+    event: "workflow.test.completed",
+    message: `Тестовый запуск завершён: ${logs.length} событий.`
+  });
+
+  return { logs, scope };
+}
+
+function appendSchemaRunLogs(
+  schema: WorkflowSchema,
+  logs: WorkflowTestLogEntry[],
+  prefix: string
+) {
+  schema.nodes.forEach((node) => {
+    logs.push({
+      id: `${prefix}-${node.id}-completed`,
+      event: "node.completed",
+      message: `${prefix}: узел «${node.label}» (${workflowNodeTypeLabel(node.type)}) выполнен.`
+    });
+
+    const bodyGraph = node.config[WORKFLOW_BODY_GRAPH_CONFIG_KEY];
+    if (isWorkflowSchema(bodyGraph)) {
+      logs.push({
+        id: `${prefix}-${node.id}-bodyGraph`,
+        event: "bodyGraph.completed",
+        message: `bodyGraph узла «${node.label}» выполнен: ${bodyGraph.nodes.length} узл.`
+      });
+      appendSchemaRunLogs(bodyGraph, logs, `${prefix} / ${node.label}`);
+    }
+  });
+}
+
+function collectBodyGraphs(schema: WorkflowSchema): Array<{ label: string; schema: WorkflowSchema }> {
+  const bodyGraphs: Array<{ label: string; schema: WorkflowSchema }> = [];
+
+  schema.nodes.forEach((node) => {
+    const bodyGraph = node.config[WORKFLOW_BODY_GRAPH_CONFIG_KEY];
+    if (!isWorkflowSchema(bodyGraph)) {
+      return;
+    }
+
+    bodyGraphs.push({ label: `bodyGraph: ${node.label}`, schema: bodyGraph });
+    bodyGraphs.push(...collectBodyGraphs(bodyGraph));
+  });
+
+  return bodyGraphs;
+}
+
+function collectSubSchemaGraphs(
+  schema: WorkflowSchema
+): Array<{ label: string; schema: WorkflowSchema }> {
+  const subSchemas: Array<{ label: string; schema: WorkflowSchema }> = [];
+
+  schema.nodes.forEach((node) => {
+    const bodyGraph = node.config[WORKFLOW_BODY_GRAPH_CONFIG_KEY];
+    if (node.type === "sub_schema" && isWorkflowSchema(bodyGraph)) {
+      subSchemas.push({ label: `Субсхема: ${node.label}`, schema: bodyGraph });
+    }
+    if (isWorkflowSchema(bodyGraph)) {
+      subSchemas.push(...collectSubSchemaGraphs(bodyGraph));
+    }
+  });
+
+  return subSchemas;
+}
+
+function workflowTestScopeLabel(scope: WorkflowTestScope): string {
+  switch (scope) {
+    case "schema":
+      return "Схема";
+    case "bodyGraph":
+      return "bodyGraph";
+    case "subSchemas":
+      return "Субсхемы";
+  }
 }
 
 function nodePrimaryValue(node: WorkflowNode, key: string): string {
