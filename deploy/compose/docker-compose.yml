@@ -99,6 +99,8 @@ services:
       AI_GRPC_TARGET: ${AI_GRPC_TARGET:-ai-platform:3106}
       INTEGRATION_GATEWAY_URL: ${INTEGRATION_GATEWAY_URL:-http://integration-platform:3005}
       FBP_GRPC_TARGET: ${FBP_GRPC_TARGET:-fbp-engine:3105}
+      BROADCAST_GRPC_TARGET: ${BROADCAST_GRPC_TARGET:-broadcast-platform:3108}
+      NOTIFICATION_GRPC_TARGET: ${NOTIFICATION_GRPC_TARGET:-notification-platform:3110}
       # URL, по которому backend пересылает исходящие сообщения (C2.EgressDelivery)
       # в integration-platform. Пусто — статус фиксируется только в БД (см. .env.example).
       INTEGRATION_EGRESS_URL: ${INTEGRATION_EGRESS_URL:-http://integration-platform:3005/internal/delivery/dispatch}
@@ -168,8 +170,10 @@ services:
     restart: unless-stopped
     environment:
       PORT: ${BROADCAST_PLATFORM_PORT:-3008}
+      BROADCAST_GRPC_PORT: ${BROADCAST_GRPC_PORT:-3108}
     ports:
       - "${BROADCAST_PLATFORM_PORT:-3008}:${BROADCAST_PLATFORM_PORT:-3008}"
+      - "${BROADCAST_GRPC_PORT:-3108}:${BROADCAST_GRPC_PORT:-3108}"
     depends_on:
       backend:
         condition: service_started
@@ -181,11 +185,18 @@ services:
     restart: unless-stopped
     environment:
       PORT: ${NOTIFICATION_PLATFORM_PORT:-3010}
+      NOTIFICATION_GRPC_PORT: ${NOTIFICATION_GRPC_PORT:-3110}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      NOTIFICATION_TRIGGER_STREAM: ${NOTIFICATION_TRIGGER_STREAM:-bridge:notifications:trigger}
+      NOTIFICATION_TRIGGER_GROUP: ${NOTIFICATION_TRIGGER_GROUP:-svc-notif}
     ports:
       - "${NOTIFICATION_PLATFORM_PORT:-3010}:${NOTIFICATION_PLATFORM_PORT:-3010}"
+      - "${NOTIFICATION_GRPC_PORT:-3110}:${NOTIFICATION_GRPC_PORT:-3110}"
     depends_on:
       backend:
         condition: service_started
+      redis:
+        condition: service_healthy
 
   mobile-api:
     build:

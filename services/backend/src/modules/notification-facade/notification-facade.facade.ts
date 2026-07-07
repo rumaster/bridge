@@ -6,6 +6,7 @@ import type {
   ResilienceRejectionReason,
 } from "../../common/resilience/resilience";
 import type { FacadeStatusDto } from "../ai-integration/ai-integration.facade";
+import type { NotificationUpstreamClient } from "./notification-facade.upstream";
 
 export type NotificationFacadeDegradationReason = "timeout" | "unavailable";
 export type NotificationCategory = "info" | "warning" | "error" | "critical" | "admin";
@@ -112,7 +113,10 @@ const DEFAULT_NOTIFICATION_TIMEOUT_MS = 250;
 export class NotificationFacade {
   private readonly resilience: FacadeResilience;
 
-  constructor(options: FacadeResilienceOptions = {}) {
+  constructor(
+    options: FacadeResilienceOptions = {},
+    private readonly upstream: NotificationUpstreamClient | null = null,
+  ) {
     this.resilience = new FacadeResilience({
       defaultTimeoutMs: DEFAULT_NOTIFICATION_TIMEOUT_MS,
       retry: {
@@ -126,10 +130,10 @@ export class NotificationFacade {
 
   getStatus(): FacadeStatusDto {
     return {
-      mode: "mock",
+      mode: this.upstream ? "grpc" : "mock",
       name: "notification",
       serviceId: "SVC-NOTIF",
-      status: "degraded",
+      status: this.upstream ? "available" : "degraded",
     };
   }
 
@@ -137,7 +141,10 @@ export class NotificationFacade {
     request: NotificationListFacadeRequest,
     options: NotificationFacadeCallOptions<NotificationListFacadeResponse> = {},
   ): Promise<NotificationListFacadeResponse> {
-    const result = await this.resilience.execute(options.call, {
+    const call =
+      options.call ??
+      (this.upstream ? () => this.upstream!.listNotifications(request) : undefined);
+    const result = await this.resilience.execute(call, {
       timeoutMs: options.timeoutMs,
     });
     if (result.ok) {
@@ -151,7 +158,10 @@ export class NotificationFacade {
     request: NotificationReadFacadeRequest,
     options: NotificationFacadeCallOptions<NotificationReadFacadeResponse> = {},
   ): Promise<NotificationReadFacadeResponse> {
-    const result = await this.resilience.execute(options.call, {
+    const call =
+      options.call ??
+      (this.upstream ? () => this.upstream!.markNotificationRead(request) : undefined);
+    const result = await this.resilience.execute(call, {
       timeoutMs: options.timeoutMs,
     });
     if (result.ok) {
@@ -165,7 +175,10 @@ export class NotificationFacade {
     request: NotificationSettingsFacadeRequest,
     options: NotificationFacadeCallOptions<NotificationSettingsFacadeResponse> = {},
   ): Promise<NotificationSettingsFacadeResponse> {
-    const result = await this.resilience.execute(options.call, {
+    const call =
+      options.call ??
+      (this.upstream ? () => this.upstream!.getNotificationSettings(request) : undefined);
+    const result = await this.resilience.execute(call, {
       timeoutMs: options.timeoutMs,
     });
     if (result.ok) {
@@ -179,7 +192,10 @@ export class NotificationFacade {
     request: NotificationSettingsUpdateFacadeRequest,
     options: NotificationFacadeCallOptions<NotificationSettingsFacadeResponse> = {},
   ): Promise<NotificationSettingsFacadeResponse> {
-    const result = await this.resilience.execute(options.call, {
+    const call =
+      options.call ??
+      (this.upstream ? () => this.upstream!.updateNotificationSettings(request) : undefined);
+    const result = await this.resilience.execute(call, {
       timeoutMs: options.timeoutMs,
     });
     if (result.ok) {

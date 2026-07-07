@@ -6,6 +6,7 @@ import type {
   ResilienceRejectionReason,
 } from "../../common/resilience/resilience";
 import type { FacadeStatusDto } from "../ai-integration/ai-integration.facade";
+import type { BroadcastUpstreamClient } from "./broadcast-facade.upstream";
 
 export type BroadcastFacadeDegradationReason = "timeout" | "unavailable";
 export type BroadcastStatus = "draft" | "scheduled" | "running" | "done" | "failed";
@@ -131,7 +132,10 @@ const DEFAULT_BROADCAST_TIMEOUT_MS = 250;
 export class BroadcastFacade {
   private readonly resilience: FacadeResilience;
 
-  constructor(options: FacadeResilienceOptions = {}) {
+  constructor(
+    options: FacadeResilienceOptions = {},
+    private readonly upstream: BroadcastUpstreamClient | null = null,
+  ) {
     this.resilience = new FacadeResilience({
       defaultTimeoutMs: DEFAULT_BROADCAST_TIMEOUT_MS,
       retry: {
@@ -145,10 +149,10 @@ export class BroadcastFacade {
 
   getStatus(): FacadeStatusDto {
     return {
-      mode: "mock",
+      mode: this.upstream ? "grpc" : "mock",
       name: "broadcast",
       serviceId: "SVC-BCAST",
-      status: "degraded",
+      status: this.upstream ? "available" : "degraded",
     };
   }
 
@@ -156,7 +160,9 @@ export class BroadcastFacade {
     request: BroadcastListFacadeRequest,
     options: BroadcastFacadeCallOptions<BroadcastListFacadeResponse> = {},
   ): Promise<BroadcastListFacadeResponse> {
-    const result = await this.resilience.execute(options.call, {
+    const call =
+      options.call ?? (this.upstream ? () => this.upstream!.listBroadcasts(request) : undefined);
+    const result = await this.resilience.execute(call, {
       timeoutMs: options.timeoutMs,
     });
     if (result.ok) {
@@ -170,7 +176,9 @@ export class BroadcastFacade {
     request: BroadcastCreateFacadeRequest,
     options: BroadcastFacadeCallOptions<BroadcastCreateFacadeResponse> = {},
   ): Promise<BroadcastCreateFacadeResponse> {
-    const result = await this.resilience.execute(options.call, {
+    const call =
+      options.call ?? (this.upstream ? () => this.upstream!.createBroadcast(request) : undefined);
+    const result = await this.resilience.execute(call, {
       timeoutMs: options.timeoutMs,
     });
     if (result.ok) {
@@ -184,7 +192,9 @@ export class BroadcastFacade {
     request: BroadcastStartFacadeRequest,
     options: BroadcastFacadeCallOptions<BroadcastStartFacadeResponse> = {},
   ): Promise<BroadcastStartFacadeResponse> {
-    const result = await this.resilience.execute(options.call, {
+    const call =
+      options.call ?? (this.upstream ? () => this.upstream!.startBroadcast(request) : undefined);
+    const result = await this.resilience.execute(call, {
       timeoutMs: options.timeoutMs,
     });
     if (result.ok) {
@@ -198,7 +208,10 @@ export class BroadcastFacade {
     request: BroadcastStatsFacadeRequest,
     options: BroadcastFacadeCallOptions<BroadcastStatsFacadeResponse> = {},
   ): Promise<BroadcastStatsFacadeResponse> {
-    const result = await this.resilience.execute(options.call, {
+    const call =
+      options.call ??
+      (this.upstream ? () => this.upstream!.getBroadcastStats(request) : undefined);
+    const result = await this.resilience.execute(call, {
       timeoutMs: options.timeoutMs,
     });
     if (result.ok) {
