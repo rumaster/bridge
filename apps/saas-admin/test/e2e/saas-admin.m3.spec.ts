@@ -27,7 +27,7 @@ test("Оператор платформы правит Workflow: безопас�
   ).toBeVisible();
 
   // Палитра ограничена каноническим набором узлов C5 (ТЗ §13.13).
-  await expect(page.getByRole("button", { name: /^Добавить узел:/ })).toHaveCount(7);
+  await expect(page.getByRole("button", { name: /^Добавить узел:/ })).toHaveCount(6);
 
   // Узел вызова Backend API помечен как изменяющий данные (ТЗ §13.5).
   await page.getByRole("button", { name: "Узел Создать тикет" }).click();
