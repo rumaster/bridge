@@ -1,16 +1,14 @@
 # syntax=docker/dockerfile:1
-# @bridge/broadcast-platform — сервис без прикладных npm-зависимостей во время
-# выполнения, поэтому образ собирается без npm ci: копируются только исходники
-# сервиса и пакет packages/contracts, на который есть относительные импорты
-# (../../../).
+# @bridge/broadcast-platform. Контекст сборки — весь монорепозиторий: gRPC
+# runtime берётся из npm workspace-зависимостей сервиса, а packages/contracts
+# нужны для относительных импортов и proto-контракта C8.
 FROM node:20.20.2-alpine
 
 WORKDIR /repo
 
 # tsx выполняет TypeScript-исходники сервиса напрямую, без шага сборки.
-RUN npm install --no-save --no-package-lock tsx@^4.19.2
-COPY packages/contracts ./packages/contracts
-COPY services/broadcast-platform ./services/broadcast-platform
+COPY . .
+RUN npm ci
 WORKDIR /repo/services/broadcast-platform
 
 ENV NODE_ENV=production
