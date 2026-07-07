@@ -7,6 +7,10 @@ export const TELEGRAM_CONSOLE_SCOPE = Object.freeze({
   blocks_cp1: false,
   implemented_now: Object.freeze([
     "mock-telegram-api-adapter",
+    "production-backend-rest-client",
+    "production-telegram-bot-api-adapter",
+    "telegram-getupdates-long-polling",
+    "telegram-login-pending-code-verification",
     "command-and-button-routing",
     "c3-auth-account-linking",
     "c10-telegram-notifications",

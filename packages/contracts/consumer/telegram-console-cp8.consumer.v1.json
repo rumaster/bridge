@@ -2,6 +2,22 @@
   "x-contract-id": "CP8.telegram-console.consumer",
   "x-consumer": "SVC-TGC",
   "x-stage": "M5",
+  "x-mock-to-production-stage": "Этап 8",
+  "production_transport": {
+    "telegram": {
+      "mode": "getUpdates",
+      "api": "Telegram Bot API",
+      "methods": ["getUpdates", "sendMessage", "answerCallbackQuery"]
+    },
+    "backend": {
+      "basePath": "/api/v1",
+      "protocol": "REST",
+      "auth": "Authorization: Bearer <session>",
+      "tenantHeader": "x-organization-id",
+      "actorHeader": "x-actor-user-id",
+      "messageIdempotencyHeader": "idempotency-key"
+    }
+  },
   "upstream_contracts": ["C3.auth", "C3", "C4", "C10"],
   "m5_hardening": {
     "telegram_delivery": {
@@ -91,7 +107,15 @@
       "method": "POST",
       "path": "/messages",
       "request": {
-        "required": ["idempotency_key", "organization_id", "conversation_id", "sender_type", "type", "content.text"]
+        "required": ["idempotency_key", "organization_id", "conversation_id", "sender_type", "type", "content.text"],
+        "http_mapping": {
+          "idempotency_key": "header:idempotency-key",
+          "organization_id": "header:x-organization-id",
+          "sender_type": "body:senderType",
+          "conversation_id": "body:conversationId",
+          "endpoint_id": "body:endpointId",
+          "content": "body:content"
+        }
       },
       "response": {
         "required": ["id", "organization_id", "conversation_id", "endpoint_id", "channel", "direction", "sender_type", "sequence_number", "type", "content", "status", "created_at", "idempotency_key"]

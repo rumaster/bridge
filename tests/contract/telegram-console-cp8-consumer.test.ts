@@ -34,6 +34,10 @@ describe("SVC-TGC CP-8 Telegram Console consumer contract", () => {
     assert.equal(contract["x-contract-id"], "CP8.telegram-console.consumer");
     assert.equal(contract["x-consumer"], "SVC-TGC");
     assert.equal(contract["x-stage"], "M5");
+    assert.equal(contract["x-mock-to-production-stage"], "Этап 8");
+    assert.equal(contract.production_transport.telegram.mode, "getUpdates");
+    assert.equal(contract.production_transport.backend.protocol, "REST");
+    assert.equal(contract.production_transport.backend.messageIdempotencyHeader, "idempotency-key");
     assert.deepEqual(contract.upstream_contracts, ["C3.auth", "C3", "C4", "C10"]);
     assert.deepEqual(contract.out_of_scope.deferred_to_m5, []);
     assert.equal(contract.m5_hardening.telegram_delivery.queue, true);
@@ -94,6 +98,10 @@ describe("SVC-TGC CP-8 Telegram Console consumer contract", () => {
       "type",
       "content.text",
     ]);
+    assert.equal(createMessage.request.http_mapping.idempotency_key, "header:idempotency-key");
+    assert.equal(createMessage.request.http_mapping.organization_id, "header:x-organization-id");
+    assert.equal(createMessage.request.http_mapping.conversation_id, "body:conversationId");
+    assert.equal(createMessage.request.http_mapping.endpoint_id, "body:endpointId");
     assert.equal(createMessage.idempotency.keyField, "idempotency_key");
     assert.equal(createMessage.idempotency.repeatReturnsSameMessage, true);
   });

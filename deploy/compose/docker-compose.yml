@@ -302,6 +302,13 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/telegram-console/Dockerfile
+    environment:
+      TELEGRAM_CONSOLE_MODE: ${TELEGRAM_CONSOLE_MODE:-polling}
+      TELEGRAM_CONSOLE_BACKEND_API_BASE_URL: ${TELEGRAM_CONSOLE_BACKEND_API_BASE_URL:-http://backend:3000/api/v1}
+      TELEGRAM_CONSOLE_BOT_TOKEN: ${TELEGRAM_CONSOLE_BOT_TOKEN:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-https://api.telegram.org}
+      MANAGER_WORKSPACE_PUBLIC_URL: ${MANAGER_WORKSPACE_PUBLIC_URL:-http://localhost:8082}
     depends_on:
       backend:
         condition: service_started
