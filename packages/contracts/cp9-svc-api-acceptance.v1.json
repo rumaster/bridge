@@ -31,8 +31,8 @@
       "base_path": "/api/v1",
       "openapi": {
         "artifact": "packages/contracts/openapi/backend-core/openapi.json",
-        "generated_operation_count": 69,
-        "generated_path_count": 57,
+        "generated_operation_count": 70,
+        "generated_path_count": 58,
         "metadata": {
           "x-contract-id": "C3",
           "x-owner": "SVC-API",
@@ -49,6 +49,7 @@
         { "method": "post", "path": "/api/v1/fbp/workflows/{workflowId}:start" },
         { "method": "post", "path": "/api/v1/ai/onboarding:apply" },
         { "method": "post", "path": "/api/v1/workflows/backend-api-node:invoke" },
+        { "method": "get", "path": "/api/v1/workflow-subschemas" },
         { "method": "post", "path": "/api/v1/broadcasts" },
         { "method": "get", "path": "/api/v1/notifications" },
         { "method": "post", "path": "/api/v1/web-chat/sessions" },
@@ -87,6 +88,7 @@
         "services/backend/src/modules/backend-api/backend-api.controller.ts",
         "services/backend/src/modules/knowledge-base/knowledge-base.controller.ts",
         "services/backend/src/modules/workflow/workflow.controller.ts",
+        "services/backend/src/modules/workflow/workflow-subschema.controller.ts",
         "services/backend/src/modules/web-chat/web-chat.controller.ts"
       ],
       "evidence": [
