@@ -1808,6 +1808,136 @@
         ]
       }
     },
+    "/api/v1/workflows/{workflowId}/draft": {
+      "get": {
+        "operationId": "WorkflowController_getDraft_v1",
+        "parameters": [
+          {
+            "name": "workflowId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDraftResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read persisted Workflow draft schema",
+        "tags": [
+          "workflows"
+        ]
+      },
+      "patch": {
+        "operationId": "WorkflowController_saveDraft_v1",
+        "parameters": [
+          {
+            "name": "workflowId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveWorkflowDraftDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDraftResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Persist Workflow draft schema",
+        "tags": [
+          "workflows"
+        ]
+      },
+      "delete": {
+        "operationId": "WorkflowController_resetDraft_v1",
+        "parameters": [
+          {
+            "name": "workflowId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDraftResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Reset Workflow draft to the latest published schema",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
+    "/api/v1/workflows/{workflowId}/draft:promote": {
+      "post": {
+        "operationId": "WorkflowController_promoteDraft_v1",
+        "parameters": [
+          {
+            "name": "workflowId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowVersionResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Promote Workflow draft to a new active immutable version",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
     "/api/v1/workflows/{workflowId}": {
       "patch": {
         "operationId": "WorkflowController_updateWorkflow_v1",
@@ -4284,6 +4414,50 @@
           "schema",
           "created_by",
           "created_at"
+        ]
+      },
+      "WorkflowDraftResponseDto": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000101"
+          },
+          "workflow_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000801"
+          },
+          "has_draft": {
+            "type": "boolean",
+            "example": true
+          },
+          "schema": {
+            "type": "object",
+            "nullable": true
+          },
+          "draft_updated_at": {
+            "type": "string",
+            "example": "2026-07-04T10:04:00.000Z",
+            "nullable": true
+          }
+        },
+        "required": [
+          "organization_id",
+          "workflow_id",
+          "has_draft",
+          "schema",
+          "draft_updated_at"
+        ]
+      },
+      "SaveWorkflowDraftDto": {
+        "type": "object",
+        "properties": {
+          "schema": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "schema"
         ]
       },
       "CreateWorkflowVersionDto": {

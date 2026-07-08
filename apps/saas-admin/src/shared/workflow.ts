@@ -1,6 +1,7 @@
 import {
   FBP_NODE_TYPE_DEFINITIONS,
   FBP_NODE_TYPES,
+  WORKFLOW_SCHEMA_VERSION,
   arePortTypesCompatible,
   getFbpNodePortDefinition
 } from "@bridge/contracts/c5-workflow";
@@ -78,10 +79,13 @@ export function createWorkflowNode(
 }
 
 export function createWorkflowBodyGraph(ownerNodeId: string): WorkflowSchema {
+  const entryNodeId = `${ownerNodeId}-body-transform`;
   return {
+    schema_version: WORKFLOW_SCHEMA_VERSION,
+    entry: entryNodeId,
     nodes: [
       {
-        id: `${ownerNodeId}-body-transform`,
+        id: entryNodeId,
         type: "transform",
         label: "Подготовить контекст",
         config: { expression: "payload" },

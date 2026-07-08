@@ -26,6 +26,7 @@ import type {
   OrganizationConfiguration,
   ReindexKnowledgeDocumentResponse,
   SaasAdminApiClient,
+  SaveWorkflowDraftRequest,
   StartBroadcastRequest,
   StartBroadcastResponse,
   TelegramLoginStartRequest,
@@ -37,6 +38,7 @@ import type {
   UpdateOrganizationRequest,
   UpdateWorkflowRequest,
   Workflow,
+  WorkflowDraft,
   WorkflowInstance,
   WorkflowInstanceDetail,
   WorkflowSubschema,
@@ -140,6 +142,22 @@ export function createSaasAdminApiClient(options: SaasAdminApiClientOptions = {}
       listVersions: (workflowId: string) =>
         requestJson<WorkflowVersion[]>(`/workflows/${workflowId}/versions`),
       listSubschemas: () => requestJson<WorkflowSubschema[]>("/workflow-subschemas"),
+      getDraft: (workflowId: string) =>
+        requestJson<WorkflowDraft>(`/workflows/${workflowId}/draft`),
+      saveDraft: (workflowId: string, request: SaveWorkflowDraftRequest) =>
+        requestJson<WorkflowDraft>(`/workflows/${workflowId}/draft`, {
+          method: "PATCH",
+          body: JSON.stringify(request)
+        }),
+      promoteDraft: (workflowId: string) =>
+        requestJson<WorkflowVersion>(`/workflows/${workflowId}/draft:promote`, {
+          method: "POST",
+          body: JSON.stringify({})
+        }),
+      resetDraft: (workflowId: string) =>
+        requestJson<WorkflowDraft>(`/workflows/${workflowId}/draft`, {
+          method: "DELETE"
+        }),
       createVersion: (workflowId: string, request: CreateWorkflowVersionRequest) =>
         requestJson<WorkflowVersion>(`/workflows/${workflowId}/versions`, {
           method: "POST",

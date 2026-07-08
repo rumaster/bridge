@@ -191,7 +191,7 @@ export function createWorkflowSchemaValidationException(
 ): BadRequestException {
   return new BadRequestException({
     code: "WORKFLOW_SCHEMA_INVALID",
-    description: "Workflow schema failed validation before version creation.",
+    description: "Workflow schema failed validation before persistence.",
     errors,
     humanMessage: "Схема Workflow не прошла валидацию.",
   });

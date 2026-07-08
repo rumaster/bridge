@@ -20,6 +20,7 @@ import type {
   Organization,
   OrganizationConfiguration,
   Workflow,
+  WorkflowDraft,
   WorkflowInstance,
   WorkflowInstanceDetail,
   WorkflowInstanceLogEntry,
@@ -487,6 +488,7 @@ export function cloneWorkflow(workflow: Workflow): Workflow {
 
 export function cloneWorkflowSchema(schema: WorkflowSchema): WorkflowSchema {
   return {
+    ...schema,
     nodes: schema.nodes.map((node) => ({
       ...node,
       config: cloneWorkflowNodeConfig(node.config),
@@ -525,6 +527,13 @@ export function cloneWorkflowVersion(version: WorkflowVersion): WorkflowVersion 
 
 export function cloneWorkflowSubschema(subschema: WorkflowSubschema): WorkflowSubschema {
   return { ...subschema, schema: cloneWorkflowSchema(subschema.schema) };
+}
+
+export function cloneWorkflowDraft(draft: WorkflowDraft): WorkflowDraft {
+  return {
+    ...draft,
+    schema: draft.schema ? cloneWorkflowSchema(draft.schema) : null
+  };
 }
 
 export function cloneWorkflowInstance(instance: WorkflowInstance): WorkflowInstance {

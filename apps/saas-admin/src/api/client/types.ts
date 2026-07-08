@@ -239,6 +239,8 @@ export interface WorkflowConnection {
 }
 
 export interface WorkflowSchema {
+  schema_version?: string;
+  entry?: string;
   nodes: WorkflowNode[];
   connections: WorkflowConnection[];
 }
@@ -274,6 +276,14 @@ export interface WorkflowSubschema {
   status: "draft" | "active";
   created_at: ISODateTime;
   updated_at: ISODateTime;
+}
+
+export interface WorkflowDraft {
+  organization_id: string;
+  workflow_id: string;
+  has_draft: boolean;
+  schema: WorkflowSchema | null;
+  draft_updated_at: ISODateTime | null;
 }
 
 export type WorkflowInstanceStatus =
@@ -323,6 +333,10 @@ export interface CreateWorkflowVersionRequest {
   /** Сразу сделать новую версию активной (default). По умолчанию — нет: сохранение
    * версии не влияет на выполняющиеся инстансы (ТЗ §13.10). */
   activate?: boolean;
+}
+
+export interface SaveWorkflowDraftRequest {
+  schema: WorkflowSchema;
 }
 
 // ── AI Onboarding (C4, SVC-AI) ────────────────────────────────────────────
@@ -671,6 +685,13 @@ export interface SaasAdminApiClient {
     listWorkflows: () => Promise<Workflow[]>;
     listVersions: (workflowId: string) => Promise<WorkflowVersion[]>;
     listSubschemas: () => Promise<WorkflowSubschema[]>;
+    getDraft: (workflowId: string) => Promise<WorkflowDraft>;
+    saveDraft: (
+      workflowId: string,
+      request: SaveWorkflowDraftRequest
+    ) => Promise<WorkflowDraft>;
+    promoteDraft: (workflowId: string) => Promise<WorkflowVersion>;
+    resetDraft: (workflowId: string) => Promise<WorkflowDraft>;
     createVersion: (
       workflowId: string,
       request: CreateWorkflowVersionRequest

@@ -48,8 +48,8 @@ export const generatedOpenApiDocuments = [
     "openapi": "3.0.0",
     "title": "Bridge Backend Core API",
     "version": "1.0.0",
-    "pathCount": 56,
-    "operationCount": 66
+    "pathCount": 58,
+    "operationCount": 70
   },
   {
     "artifact": "packages/contracts/openapi/broadcasts/c8.broadcasts.openapi.json",
@@ -859,6 +859,50 @@ export const generatedOpenApiOperations = [
     "path": "/api/v1/workflows/{workflowId}",
     "operationId": "WorkflowController_updateWorkflow_v1",
     "summary": "Update Workflow status/default version",
+    "tags": [
+      "workflows"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "delete",
+    "path": "/api/v1/workflows/{workflowId}/draft",
+    "operationId": "WorkflowController_resetDraft_v1",
+    "summary": "Reset Workflow draft to the latest published schema",
+    "tags": [
+      "workflows"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "get",
+    "path": "/api/v1/workflows/{workflowId}/draft",
+    "operationId": "WorkflowController_getDraft_v1",
+    "summary": "Read persisted Workflow draft schema",
+    "tags": [
+      "workflows"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "patch",
+    "path": "/api/v1/workflows/{workflowId}/draft",
+    "operationId": "WorkflowController_saveDraft_v1",
+    "summary": "Persist Workflow draft schema",
+    "tags": [
+      "workflows"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "post",
+    "path": "/api/v1/workflows/{workflowId}/draft:promote",
+    "operationId": "WorkflowController_promoteDraft_v1",
+    "summary": "Promote Workflow draft to a new active immutable version",
     "tags": [
       "workflows"
     ]

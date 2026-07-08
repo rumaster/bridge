@@ -16,6 +16,7 @@ import type {
   Organization,
   OrganizationConfiguration,
   SaasAdminApiClient,
+  SaveWorkflowDraftRequest,
   StartBroadcastRequest,
   TelegramLoginStartRequest,
   TelegramLoginVerifyRequest,
@@ -25,12 +26,14 @@ import type {
   UpdateOrganizationRequest,
   UpdateWorkflowRequest,
   Workflow,
+  WorkflowDraft,
   WorkflowInstance,
   WorkflowSubschema,
   WorkflowVersion
 } from "../client/types";
 import { createMockC7RealtimeClient } from "../client/realtime";
 import type { C7RealtimeClient } from "../client/realtime";
+import { validateWorkflowSchema } from "../../shared/workflow";
 import {
   applyOnboardingCommand,
   cloneBroadcast,
@@ -40,6 +43,7 @@ import {
   cloneNotification,
   cloneNotificationSettings,
   cloneWorkflow,
+  cloneWorkflowDraft,
   cloneWorkflowInstance,
   cloneWorkflowInstanceDetail,
   cloneWorkflowSchema,
@@ -82,6 +86,7 @@ export function createMockSaasAdminApiClient(
   let currentWorkflows: Workflow[] = mockWorkflows.map(cloneWorkflow);
   let currentVersions: WorkflowVersion[] = mockWorkflowVersions.map(cloneWorkflowVersion);
   let currentSubschemas: WorkflowSubschema[] = mockWorkflowSubschemas.map(cloneWorkflowSubschema);
+  let currentWorkflowDrafts: Record<string, WorkflowDraft> = {};
   let currentInstances: WorkflowInstance[] = mockWorkflowInstances.map(cloneWorkflowInstance);
   let currentBroadcasts: BroadcastCampaign[] = mockBroadcasts.map(cloneBroadcast);
   let currentBroadcastStats: Record<string, BroadcastStats> = cloneMockBroadcastStats();
@@ -332,6 +337,71 @@ export function createMockSaasAdminApiClient(
       },
       async listSubschemas() {
         return currentSubschemas.map(cloneWorkflowSubschema);
+      },
+      async getDraft(workflowId: string) {
+        const workflow = requireWorkflow(currentWorkflows, workflowId);
+        return cloneWorkflowDraft(
+          currentWorkflowDrafts[workflowId] ?? emptyWorkflowDraft(workflow)
+        );
+      },
+      async saveDraft(workflowId: string, request: SaveWorkflowDraftRequest) {
+        const workflow = requireWorkflow(currentWorkflows, workflowId);
+        validateWorkflowDraftRequest(request);
+
+        const draft: WorkflowDraft = {
+          organization_id: workflow.organization_id,
+          workflow_id: workflow.id,
+          has_draft: true,
+          schema: cloneWorkflowSchema(request.schema),
+          draft_updated_at: "2026-07-03T11:14:00.000Z"
+        };
+        currentWorkflowDrafts = {
+          ...currentWorkflowDrafts,
+          [workflowId]: draft
+        };
+
+        return cloneWorkflowDraft(draft);
+      },
+      async promoteDraft(workflowId: string) {
+        const workflow = requireWorkflow(currentWorkflows, workflowId);
+        const draft = currentWorkflowDrafts[workflowId];
+        if (!draft?.schema) {
+          throw new Error("Workflow draft not found");
+        }
+
+        const versionNo =
+          currentVersions
+            .filter((version) => version.workflow_id === workflowId)
+            .reduce((max, version) => Math.max(max, version.version_no), 0) + 1;
+        const version: WorkflowVersion = {
+          id: `wfv-created-${nextVersionNumber++}`,
+          organization_id: workflow.organization_id,
+          workflow_id: workflowId,
+          version_no: versionNo,
+          schema: cloneWorkflowSchema(draft.schema),
+          created_by: initialSession.user.displayName,
+          created_at: "2026-07-03T11:15:00.000Z"
+        };
+
+        currentVersions = [...currentVersions, version];
+        currentWorkflows = currentWorkflows.map((item) =>
+          item.id === workflowId
+            ? {
+                ...item,
+                status: "active",
+                default_version_id: version.id,
+                updated_at: "2026-07-03T11:15:00.000Z"
+              }
+            : item
+        );
+        delete currentWorkflowDrafts[workflowId];
+
+        return cloneWorkflowVersion(version);
+      },
+      async resetDraft(workflowId: string) {
+        const workflow = requireWorkflow(currentWorkflows, workflowId);
+        delete currentWorkflowDrafts[workflowId];
+        return cloneWorkflowDraft(emptyWorkflowDraft(workflow));
       },
       async createVersion(workflowId: string, request: CreateWorkflowVersionRequest) {
         const workflow = requireWorkflow(currentWorkflows, workflowId);
@@ -683,6 +753,23 @@ function requireWorkflow(workflows: Workflow[], workflowId: string): Workflow {
   }
 
   return workflow;
+}
+
+function emptyWorkflowDraft(workflow: Workflow): WorkflowDraft {
+  return {
+    organization_id: workflow.organization_id,
+    workflow_id: workflow.id,
+    has_draft: false,
+    schema: null,
+    draft_updated_at: null
+  };
+}
+
+function validateWorkflowDraftRequest(request: SaveWorkflowDraftRequest): void {
+  const validation = validateWorkflowSchema(request.schema);
+  if (!validation.valid) {
+    throw new Error("Workflow draft schema is invalid");
+  }
 }
 
 export function createMockSaasAdminServices(options: CreateMockSaasAdminServicesOptions = {}) {

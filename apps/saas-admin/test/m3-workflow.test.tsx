@@ -138,10 +138,11 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
     });
   });
 
-  it("добавляет узел перетаскиванием на canvas и поддерживает bodyGraph, черновик, публикацию, откат и тестовый запуск", async () => {
+  it("добавляет узел перетаскиванием на canvas и поддерживает bodyGraph, черновик, публикацию, сброс и тестовый запуск", async () => {
     const api = createWorkflowOperatorApi();
-    const createVersion = vi.spyOn(api.workflows, "createVersion");
-    const updateWorkflow = vi.spyOn(api.workflows, "updateWorkflow");
+    const saveDraft = vi.spyOn(api.workflows, "saveDraft");
+    const promoteDraft = vi.spyOn(api.workflows, "promoteDraft");
+    const resetDraft = vi.spyOn(api.workflows, "resetDraft");
     const { user } = renderRoute("/workflow", { api, realtime: createMockC7RealtimeClient([]) });
 
     await screen.findByRole("button", { name: "Открыть Workflow Автоответчик обращений" });
@@ -171,19 +172,11 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
     await user.click(screen.getByRole("button", { name: "Добавить связь" }));
     await user.click(screen.getByRole("button", { name: "Вернуться к родительской схеме" }));
     await user.click(screen.getByRole("button", { name: "Сохранить черновик" }));
-    expect(await screen.findByText("Черновик сохранён локально.")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Тестовый запуск" }));
-    const runLog = await screen.findByRole("region", { name: "Лог тестового запуска" });
-    expect(within(runLog).getByText("workflow.test.completed")).toBeInTheDocument();
-    expect(within(runLog).getAllByText("bodyGraph.completed").length).toBeGreaterThan(0);
-
-    await user.click(screen.getByRole("button", { name: "Опубликовать черновик" }));
+    expect(await screen.findByText("Черновик сохранён.")).toBeInTheDocument();
     await waitFor(() => {
-      expect(createVersion).toHaveBeenCalledWith(
+      expect(saveDraft).toHaveBeenCalledWith(
         "wf-support-autoresponder",
         expect.objectContaining({
-          activate: true,
           schema: expect.objectContaining({
             nodes: expect.arrayContaining([
               expect.objectContaining({
@@ -202,16 +195,47 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
       );
     });
 
-    await user.selectOptions(screen.getByLabelText("Редактируемая версия"), "wfv-support-1");
-    await user.click(screen.getByRole("button", { name: "Откатить к выбранной версии" }));
+    await user.click(screen.getByRole("button", { name: "Тестовый запуск" }));
+    const runLog = await screen.findByRole("region", { name: "Лог тестового запуска" });
+    expect(within(runLog).getByText("workflow.test.completed")).toBeInTheDocument();
+    expect(within(runLog).getAllByText("bodyGraph.completed").length).toBeGreaterThan(0);
 
+    await user.click(screen.getByRole("button", { name: "Сбросить черновик" }));
     await waitFor(() => {
-      expect(updateWorkflow).toHaveBeenCalledWith("wf-support-autoresponder", {
-        default_version_id: "wfv-support-1",
-        status: "active"
-      });
+      expect(resetDraft).toHaveBeenCalledWith("wf-support-autoresponder");
     });
-    expect(await screen.findByText("Откат выполнен: активна версия v1.")).toBeInTheDocument();
+    expect(await screen.findByText("Черновик сброшен к активной версии v2.")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Добавить узел: Ветвление" }));
+    await user.click(screen.getByRole("button", { name: "Опубликовать черновик" }));
+    await waitFor(() => {
+      expect(promoteDraft).toHaveBeenCalledWith("wf-support-autoresponder");
+    });
+    expect(await screen.findByText("Черновик опубликован как активная версия.")).toBeInTheDocument();
+  });
+
+  it("загружает сохранённый черновик после remount страницы", async () => {
+    const api = createWorkflowOperatorApi();
+    const firstRender = renderRoute("/workflow", {
+      api,
+      realtime: createMockC7RealtimeClient([])
+    });
+
+    await screen.findByRole("button", { name: "Открыть Workflow Автоответчик обращений" });
+    await firstRender.user.click(
+      await screen.findByRole("button", { name: "Добавить узел: Ветвление" }),
+    );
+    const labelInput = await screen.findByLabelText("Метка узла");
+    await firstRender.user.clear(labelInput);
+    await firstRender.user.type(labelInput, "Проверка SLA");
+    await firstRender.user.click(screen.getByRole("button", { name: "Сохранить черновик" }));
+    expect(await screen.findByText("Черновик сохранён.")).toBeInTheDocument();
+
+    firstRender.unmount();
+
+    renderRoute("/workflow", { api, realtime: createMockC7RealtimeClient([]) });
+    expect(await screen.findByRole("button", { name: "Узел Проверка SLA" })).toBeInTheDocument();
+    expect(await screen.findByText("Черновик сохранён")).toBeInTheDocument();
   });
 
   it("включает/отключает Workflow и переключает активную версию по умолчанию", async () => {

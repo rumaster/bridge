@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 
-import { BadRequestException } from "@nestjs/common";
 import { Pool } from "pg";
 import type { PoolClient } from "pg";
 import { GenericContainer, Wait } from "testcontainers";
@@ -22,6 +22,10 @@ const DB = {
 };
 const ORG_ID = "41000000-0000-4000-8000-000000000101";
 const WORKFLOW_ID = "41000000-0000-4000-8000-000000000401";
+const DRAFT_WORKFLOW_ID = "41000000-0000-4000-8000-000000000402";
+const DRAFT_VERSION_ID = "41000000-0000-4000-8000-000000000412";
+const PROMOTE_WORKFLOW_ID = "41000000-0000-4000-8000-000000000403";
+const PROMOTE_VERSION_ID = "41000000-0000-4000-8000-000000000413";
 
 describe("WorkflowService createVersion validation", () => {
   let container: StartedTestContainer;
@@ -202,17 +206,147 @@ describe("WorkflowService createVersion validation", () => {
 
     await expect(readDefaultVersionId(databaseUrl)).resolves.toBe(version.id);
   });
+
+  it("rejects an invalid draft before writing it to workflows", async () => {
+    await expect(
+      service.saveDraft(ORG_ID, DRAFT_WORKFLOW_ID, {
+        schema: {
+          entry: "start",
+          nodes: [{ id: "start", type: "sql-exec", config: {} }],
+          schema_version: "1.0.0",
+        },
+      }),
+    ).rejects.toMatchObject({
+      name: "BadRequestException",
+      response: expect.objectContaining({
+        code: "WORKFLOW_SCHEMA_INVALID",
+        errors: expect.arrayContaining([
+          expect.objectContaining({
+            path: "$.nodes[0].type",
+          }),
+        ]),
+      }),
+    });
+
+    await expect(readWorkflowDraft(databaseUrl, DRAFT_WORKFLOW_ID)).resolves.toEqual({
+      draft_schema: null,
+      draft_updated_at: null,
+    });
+  });
+
+  it("rejects a draft with missing active sub_schema before writing it to workflows", async () => {
+    await expect(
+      service.saveDraft(ORG_ID, DRAFT_WORKFLOW_ID, {
+        schema: validWorkflowSchema("draft-missing-sub-schema", "missing-subschema"),
+      }),
+    ).rejects.toMatchObject({
+      name: "BadRequestException",
+      response: expect.objectContaining({
+        code: "WORKFLOW_SCHEMA_INVALID",
+        errors: expect.arrayContaining([
+          expect.objectContaining({
+            path: "$.nodes[].config.subSchemaSlug",
+          }),
+        ]),
+      }),
+    });
+
+    await expect(readWorkflowDraft(databaseUrl, DRAFT_WORKFLOW_ID)).resolves.toEqual({
+      draft_schema: null,
+      draft_updated_at: null,
+    });
+  });
+
+  it("persists and resets a valid draft without creating an immutable version", async () => {
+    const schema = validWorkflowSchema("draft-node");
+
+    const saved = await service.saveDraft(ORG_ID, DRAFT_WORKFLOW_ID, { schema });
+    expect(saved).toMatchObject({
+      has_draft: true,
+      organization_id: ORG_ID,
+      schema,
+      workflow_id: DRAFT_WORKFLOW_ID,
+    });
+    expect(saved.draft_updated_at).toEqual(expect.any(String));
+
+    await expect(service.getDraft(ORG_ID, DRAFT_WORKFLOW_ID)).resolves.toMatchObject({
+      has_draft: true,
+      schema,
+      workflow_id: DRAFT_WORKFLOW_ID,
+    });
+    await expect(countWorkflowVersions(databaseUrl, DRAFT_WORKFLOW_ID)).resolves.toBe(1);
+
+    const reset = await service.resetDraft(ORG_ID, DRAFT_WORKFLOW_ID);
+    expect(reset).toMatchObject({
+      has_draft: false,
+      schema: null,
+      workflow_id: DRAFT_WORKFLOW_ID,
+    });
+    await expect(readWorkflowDraft(databaseUrl, DRAFT_WORKFLOW_ID)).resolves.toEqual({
+      draft_schema: null,
+      draft_updated_at: null,
+    });
+    await expect(countWorkflowVersions(databaseUrl, DRAFT_WORKFLOW_ID)).resolves.toBe(1);
+  });
+
+  it("rejects draft promotion when a referenced sub_schema is no longer active", async () => {
+    const schema = validWorkflowSchema("inactive-sub-schema-draft", "draft-only-context");
+
+    await insertWorkflowSubschema(databaseUrl, "draft-only-context", "active");
+    await service.saveDraft(ORG_ID, PROMOTE_WORKFLOW_ID, { schema });
+    await updateWorkflowSubschemaStatus(databaseUrl, "draft-only-context", "draft");
+
+    await expect(service.promoteDraft(ORG_ID, PROMOTE_WORKFLOW_ID, undefined)).rejects.toMatchObject({
+      name: "BadRequestException",
+      response: expect.objectContaining({
+        code: "WORKFLOW_SCHEMA_INVALID",
+        errors: expect.arrayContaining([
+          expect.objectContaining({
+            path: "$.nodes[].config.subSchemaSlug",
+          }),
+        ]),
+      }),
+    });
+    await expect(countWorkflowVersions(databaseUrl, PROMOTE_WORKFLOW_ID)).resolves.toBe(1);
+    await expect(readWorkflowDraft(databaseUrl, PROMOTE_WORKFLOW_ID)).resolves.toMatchObject({
+      draft_schema: schema,
+      draft_updated_at: expect.any(String),
+    });
+  });
+
+  it("promotes a draft into a new active immutable version and clears the draft", async () => {
+    const schema = validWorkflowSchema("published-draft-node");
+
+    await service.saveDraft(ORG_ID, PROMOTE_WORKFLOW_ID, { schema });
+    const version = await service.promoteDraft(ORG_ID, PROMOTE_WORKFLOW_ID, undefined);
+
+    expect(version).toMatchObject({
+      organization_id: ORG_ID,
+      schema,
+      version_no: 2,
+      workflow_id: PROMOTE_WORKFLOW_ID,
+    });
+    await expect(readDefaultVersionId(databaseUrl, PROMOTE_WORKFLOW_ID)).resolves.toBe(version.id);
+    await expect(readWorkflowDraft(databaseUrl, PROMOTE_WORKFLOW_ID)).resolves.toEqual({
+      draft_schema: null,
+      draft_updated_at: null,
+    });
+    await expect(countWorkflowVersions(databaseUrl, PROMOTE_WORKFLOW_ID)).resolves.toBe(2);
+  });
 });
 
-function validWorkflowSchema(): Record<string, unknown> {
+function validWorkflowSchema(
+  nodeId = "start",
+  subSchemaSlug = "support-common-context",
+): Record<string, unknown> {
   return {
-    entry: "shared",
+    entry: nodeId,
     nodes: [
       {
         config: {
-          subSchemaSlug: "support-common-context",
+          subSchemaSlug,
         },
-        id: "shared",
+        id: nodeId,
         type: "sub_schema",
       },
     ],
@@ -279,28 +413,151 @@ async function seedWorkflow(databaseUrl: string): Promise<void> {
         }),
       ],
     );
+    await insertSeededWorkflowWithVersion(
+      client,
+      DRAFT_WORKFLOW_ID,
+      DRAFT_VERSION_ID,
+      "Workflow draft fixture",
+    );
+    await insertSeededWorkflowWithVersion(
+      client,
+      PROMOTE_WORKFLOW_ID,
+      PROMOTE_VERSION_ID,
+      "Workflow promote fixture",
+    );
   });
 }
 
-async function countWorkflowVersions(databaseUrl: string): Promise<number> {
+async function insertSeededWorkflowWithVersion(
+  client: PoolClient,
+  workflowId: string,
+  versionId: string,
+  name: string,
+): Promise<void> {
+  await client.query(
+    `
+      INSERT INTO workflows (id, organization_id, name, status)
+      VALUES ($1, $2, $3, 'active')
+    `,
+    [workflowId, ORG_ID, name],
+  );
+  await client.query(
+    `
+      INSERT INTO workflow_versions (id, organization_id, workflow_id, version_no, schema)
+      VALUES ($1, $2, $3, 1, $4::jsonb)
+    `,
+    [versionId, ORG_ID, workflowId, JSON.stringify(validWorkflowSchema("seed-start"))],
+  );
+  await client.query(
+    `
+      UPDATE workflows
+      SET default_version_id = $3
+      WHERE organization_id = $1 AND id = $2
+    `,
+    [ORG_ID, workflowId, versionId],
+  );
+}
+
+async function insertWorkflowSubschema(
+  databaseUrl: string,
+  slug: string,
+  status: "active" | "draft",
+): Promise<void> {
+  await withClient(databaseUrl, async (client) => {
+    await client.query("SELECT set_config('app.is_platform_operator', 'true', false)");
+    await client.query(
+      `
+        INSERT INTO workflow_subschemas (id, organization_id, slug, name, schema, status)
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+      `,
+      [
+        randomUUID(),
+        ORG_ID,
+        slug,
+        `Workflow subschema ${slug}`,
+        JSON.stringify({
+          connections: [],
+          entry: "start",
+          nodes: [
+            {
+              config: { expression: { op: "input" } },
+              id: "start",
+              type: "transform",
+            },
+          ],
+          schema_version: "1.0.0",
+        }),
+        status,
+      ],
+    );
+  });
+}
+
+async function updateWorkflowSubschemaStatus(
+  databaseUrl: string,
+  slug: string,
+  status: "active" | "draft",
+): Promise<void> {
+  await withClient(databaseUrl, async (client) => {
+    await client.query("SELECT set_config('app.is_platform_operator', 'true', false)");
+    await client.query(
+      `
+        UPDATE workflow_subschemas
+        SET status = $3,
+            updated_at = now()
+        WHERE organization_id = $1 AND slug = $2
+      `,
+      [ORG_ID, slug, status],
+    );
+  });
+}
+
+async function countWorkflowVersions(
+  databaseUrl: string,
+  workflowId = WORKFLOW_ID,
+): Promise<number> {
   return withClient(databaseUrl, async (client) => {
     await client.query("SELECT set_config('app.is_platform_operator', 'true', false)");
     const result = await client.query<{ count: string }>(
       "SELECT COUNT(*)::text AS count FROM workflow_versions WHERE workflow_id = $1",
-      [WORKFLOW_ID],
+      [workflowId],
     );
     return Number(result.rows[0]?.count ?? 0);
   });
 }
 
-async function readDefaultVersionId(databaseUrl: string): Promise<null | string> {
+async function readDefaultVersionId(
+  databaseUrl: string,
+  workflowId = WORKFLOW_ID,
+): Promise<null | string> {
   return withClient(databaseUrl, async (client) => {
     await client.query("SELECT set_config('app.is_platform_operator', 'true', false)");
     const result = await client.query<{ default_version_id: null | string }>(
       "SELECT default_version_id FROM workflows WHERE id = $1",
-      [WORKFLOW_ID],
+      [workflowId],
     );
     return result.rows[0]?.default_version_id ?? null;
+  });
+}
+
+async function readWorkflowDraft(
+  databaseUrl: string,
+  workflowId: string,
+): Promise<{ draft_schema: null | Record<string, unknown>; draft_updated_at: null | string }> {
+  return withClient(databaseUrl, async (client) => {
+    await client.query("SELECT set_config('app.is_platform_operator', 'true', false)");
+    const result = await client.query<{
+      draft_schema: null | Record<string, unknown>;
+      draft_updated_at: Date | null;
+    }>(
+      "SELECT draft_schema, draft_updated_at FROM workflows WHERE id = $1",
+      [workflowId],
+    );
+    const row = result.rows[0];
+    return {
+      draft_schema: row?.draft_schema ?? null,
+      draft_updated_at: row?.draft_updated_at?.toISOString() ?? null,
+    };
   });
 }
 
