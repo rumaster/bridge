@@ -4,6 +4,7 @@ import {
   SEEDED_ADMIN_ROLE_BINDING_SEED,
   SEEDED_ADMIN_USER_SEED,
 } from "../../packages/testing/src/db/m0-seed-data.js";
+import { SEEDED_WORKFLOW_DEFINITIONS } from "./workflow-definitions/stage2-workflows.js";
 
 export async function seed(client) {
   await client.query("BEGIN");
@@ -115,9 +116,84 @@ export async function seed(client) {
       ],
     );
 
+    await seedWorkflowDefinitions(client);
+
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
+  }
+}
+
+async function seedWorkflowDefinitions(client) {
+  for (const workflow of SEEDED_WORKFLOW_DEFINITIONS) {
+    await client.query(
+      `
+        INSERT INTO workflows (
+          id,
+          organization_id,
+          name,
+          status,
+          created_at,
+          updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5::timestamptz, $6::timestamptz)
+        ON CONFLICT (id) DO UPDATE SET
+          name = EXCLUDED.name,
+          status = EXCLUDED.status,
+          updated_at = EXCLUDED.updated_at
+        WHERE workflows.organization_id = EXCLUDED.organization_id
+      `,
+      [
+        workflow.id,
+        workflow.organization_id,
+        workflow.name,
+        workflow.status,
+        workflow.created_at,
+        workflow.updated_at,
+      ],
+    );
+
+    for (const version of workflow.versions) {
+      await client.query(
+        `
+          INSERT INTO workflow_versions (
+            id,
+            organization_id,
+            workflow_id,
+            version_no,
+            schema,
+            created_by,
+            created_at
+          )
+          VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::timestamptz)
+          ON CONFLICT DO NOTHING
+        `,
+        [
+          version.id,
+          workflow.organization_id,
+          workflow.id,
+          version.version_no,
+          JSON.stringify(version.schema),
+          version.created_by,
+          version.created_at,
+        ],
+      );
+    }
+
+    await client.query(
+      `
+        UPDATE workflows
+        SET default_version_id = $3,
+            updated_at = $4::timestamptz
+        WHERE id = $1 AND organization_id = $2
+      `,
+      [
+        workflow.id,
+        workflow.organization_id,
+        workflow.default_version_id,
+        workflow.updated_at,
+      ],
+    );
   }
 }
