@@ -29,6 +29,7 @@ describe("safe workflow node set (ТЗ §13.13)", () => {
       "knowledge-base-search",
       "branch",
       "transform",
+      "sub_schema",
       "wait-event"
     ]);
   });
@@ -70,6 +71,14 @@ describe("createWorkflowNode / createWorkflowConnection", () => {
     expect(first).toEqual({ id: "conn-1", from: "a", fromPort: "out", to: "b", toPort: "in" });
     expect(second.id).toBe("conn-2");
   });
+
+  it("создаёт sub_schema как ссылку без embedded bodyGraph", () => {
+    const created = createWorkflowNode("sub_schema", []);
+
+    expect(created.id).toBe("node-sub_schema-1");
+    expect(created.config).toEqual({ subSchemaSlug: "" });
+    expect(created.config.bodyGraph).toBeUndefined();
+  });
 });
 
 describe("validateWorkflowSchema", () => {
@@ -101,6 +110,26 @@ describe("validateWorkflowSchema", () => {
 
     expect(result.valid).toBe(false);
     expect(result.errors).toContain("bodyGraph узла «Трансформация»: Схема должна содержать хотя бы один узел.");
+  });
+
+  it("отвергает embedded bodyGraph у sub_schema", () => {
+    const result = validateWorkflowSchema({
+      nodes: [
+        node({
+          id: "sub",
+          type: "sub_schema",
+          label: "Переиспользуемая схема",
+          config: {
+            subSchemaSlug: "support-common-context",
+            bodyGraph: { nodes: [], connections: [] }
+          }
+        })
+      ],
+      connections: []
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain("Узел «Переиспользуемая схема» хранит только ссылку на субсхему без bodyGraph.");
   });
 
   it("требует хотя бы один узел", () => {

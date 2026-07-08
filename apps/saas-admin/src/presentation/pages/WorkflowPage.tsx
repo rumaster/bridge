@@ -25,6 +25,7 @@ import type {
   WorkflowNode,
   WorkflowNodeType,
   WorkflowSchema,
+  WorkflowSubschema,
   WorkflowVersion
 } from "../../api/client/types";
 import { useSaasAdminApi } from "../../state/admin";
@@ -56,6 +57,7 @@ export default function WorkflowPage() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(null);
   const [versions, setVersions] = useState<WorkflowVersion[]>([]);
+  const [subschemas, setSubschemas] = useState<WorkflowSubschema[]>([]);
   const [instances, setInstances] = useState<WorkflowInstance[]>([]);
   const [alert, setAlert] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -105,6 +107,7 @@ export default function WorkflowPage() {
 
     if (!selectedWorkflowId) {
       setVersions([]);
+      setSubschemas([]);
       setInstances([]);
       return () => {
         active = false;
@@ -114,13 +117,15 @@ export default function WorkflowPage() {
     setDetailLoading(true);
     Promise.all([
       api.workflows.listVersions(selectedWorkflowId),
+      api.workflows.listSubschemas(),
       api.workflows.listInstances(selectedWorkflowId)
     ])
-      .then(([nextVersions, nextInstances]) => {
+      .then(([nextVersions, nextSubschemas, nextInstances]) => {
         if (!active) {
           return;
         }
         setVersions(nextVersions);
+        setSubschemas(nextSubschemas);
         setInstances(nextInstances);
       })
       .catch((error) => {
@@ -258,6 +263,7 @@ export default function WorkflowPage() {
                   <WorkflowSchemaEditor
                     key={selectedWorkflow.id}
                     onVersionCreated={handleVersionCreated}
+                    subschemas={subschemas}
                     versions={versions}
                     workflow={selectedWorkflow}
                   />
@@ -385,6 +391,7 @@ function WorkflowVersionBar({
 
 interface WorkflowSchemaEditorProps {
   onVersionCreated: (version: WorkflowVersion, activated: boolean) => void;
+  subschemas: WorkflowSubschema[];
   versions: WorkflowVersion[];
   workflow: Workflow;
 }
@@ -404,6 +411,7 @@ interface WorkflowTestRun {
 
 function WorkflowSchemaEditor({
   onVersionCreated,
+  subschemas,
   versions,
   workflow
 }: WorkflowSchemaEditorProps) {
@@ -886,6 +894,7 @@ function WorkflowSchemaEditor({
           onOpenBodyGraph={handleOpenBodyGraph}
           onUpdateConfig={handleUpdateNodeConfig}
           onUpdateLabel={handleUpdateNodeLabel}
+          subschemas={subschemas}
         />
       </div>
 
@@ -1149,6 +1158,7 @@ interface WorkflowNodePropertiesProps {
   onOpenBodyGraph: () => void;
   onUpdateConfig: (nodeId: string, key: string, value: string) => void;
   onUpdateLabel: (nodeId: string, label: string) => void;
+  subschemas: WorkflowSubschema[];
 }
 
 function WorkflowNodeProperties({
@@ -1156,7 +1166,8 @@ function WorkflowNodeProperties({
   onDeleteNode,
   onOpenBodyGraph,
   onUpdateConfig,
-  onUpdateLabel
+  onUpdateLabel,
+  subschemas
 }: WorkflowNodePropertiesProps) {
   if (!node) {
     return (
@@ -1185,13 +1196,31 @@ function WorkflowNodeProperties({
         onChange={(event) => onUpdateLabel(node.id, event.currentTarget.value)}
         value={node.label}
       />
-      <TextInput
-        id={`workflow-node-${primary.key}-${node.id}`}
-        label={primary.label}
-        onChange={(event) => onUpdateConfig(node.id, primary.key, event.currentTarget.value)}
-        placeholder={primary.placeholder}
-        value={nodePrimaryValue(node, primary.key)}
-      />
+      {node.type === "sub_schema" ? (
+        <label className="workflow-select" htmlFor={`workflow-node-subSchemaSlug-${node.id}`}>
+          <span>{primary.label}</span>
+          <select
+            id={`workflow-node-subSchemaSlug-${node.id}`}
+            onChange={(event) => onUpdateConfig(node.id, "subSchemaSlug", event.currentTarget.value)}
+            value={nodePrimaryValue(node, "subSchemaSlug")}
+          >
+            <option value="">—</option>
+            {subschemas.map((subschema) => (
+              <option key={subschema.id} value={subschema.slug}>
+                {subschema.name} · {subschema.slug}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <TextInput
+          id={`workflow-node-${primary.key}-${node.id}`}
+          label={primary.label}
+          onChange={(event) => onUpdateConfig(node.id, primary.key, event.currentTarget.value)}
+          placeholder={primary.placeholder}
+          value={nodePrimaryValue(node, primary.key)}
+        />
+      )}
       {workflowNodeSupportsBodyGraph(node.type) ? (
         <Button onClick={onOpenBodyGraph} type="button" variant="secondary">
           <Boxes aria-hidden="true" size={16} />

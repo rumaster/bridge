@@ -124,6 +124,40 @@ describe("Валидация схемы Workflow на этапе сохране�
     assert.ok(pathsOf(result).includes("$.connections[0].fromPort"));
   });
 
+  it("принимает sub_schema как ссылку по slug без embedded bodyGraph", () => {
+    const schema = validSchema();
+    schema.nodes[0] = {
+      id: "start",
+      type: "sub_schema",
+      config: { subSchemaSlug: "support-common-context" },
+    };
+    const result = validateWorkflowSchema(schema);
+    assert.equal(result.valid, true, JSON.stringify(result.errors));
+  });
+
+  it("отвергает sub_schema без subSchemaSlug", () => {
+    const schema = validSchema();
+    schema.nodes[0] = { id: "start", type: "sub_schema", config: {} };
+    const result = validateWorkflowSchema(schema);
+    assert.equal(result.valid, false);
+    assert.ok(pathsOf(result).includes("$.nodes[0].config.subSchemaSlug"));
+  });
+
+  it("отвергает embedded bodyGraph внутри sub_schema", () => {
+    const schema = validSchema();
+    schema.nodes[0] = {
+      id: "start",
+      type: "sub_schema",
+      config: {
+        subSchemaSlug: "support-common-context",
+        bodyGraph: { nodes: [], connections: [] },
+      },
+    };
+    const result = validateWorkflowSchema(schema);
+    assert.equal(result.valid, false);
+    assert.ok(pathsOf(result).includes("$.nodes[0].config.bodyGraph"));
+  });
+
   it("отвергает ссылку входа на несуществующий узел", () => {
     const schema = validSchema();
     schema.nodes[1].input = { x: { kind: "node", node: "nobody", path: [] } };

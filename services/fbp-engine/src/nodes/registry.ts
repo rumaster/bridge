@@ -3,6 +3,7 @@ import { backendApiNode } from "./backend-api.js";
 import { branchNode } from "./branch.js";
 import { knowledgeBaseSearchNode } from "./knowledge-base-search.js";
 import { llmNode } from "./llm.js";
+import { subSchemaNode } from "./sub-schema.js";
 import { transformNode } from "./transform.js";
 import { waitEventNode } from "./wait-event.js";
 
@@ -17,6 +18,7 @@ const DEFINITIONS = [
   knowledgeBaseSearchNode,
   branchNode,
   transformNode,
+  subSchemaNode,
   waitEventNode,
 ];
 

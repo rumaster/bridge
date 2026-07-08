@@ -26,13 +26,18 @@ import {
   mapWorkflowVersion,
 } from "./workflow.dto";
 import {
+  collectWorkflowSubSchemaSlugs,
   createWorkflowSchemaValidationException,
   validateWorkflowSchema,
 } from "./workflow-schema.validator";
+import { WorkflowSubschemaService } from "./workflow-subschema.service";
 
 @Injectable()
 export class WorkflowService {
-  constructor(private readonly database: PgDatabase) {}
+  constructor(
+    private readonly database: PgDatabase,
+    private readonly subschemas: WorkflowSubschemaService,
+  ) {}
 
   async listWorkflows(organizationId: string): Promise<WorkflowResponseDto[]> {
     return this.database.withTenant(organizationId, async (client) => {
@@ -82,6 +87,7 @@ export class WorkflowService {
       if (!validation.valid) {
         throw createWorkflowSchemaValidationException(validation.errors);
       }
+      await this.requireActiveSubSchemas(client, organizationId, payload.schema);
 
       const version = await this.insertWorkflowVersion(
         client,
@@ -129,6 +135,7 @@ export class WorkflowService {
       if (!validation.valid) {
         throw createWorkflowSchemaValidationException(validation.errors);
       }
+      await this.requireActiveSubSchemas(client, organizationId, payload.schema);
 
       const result = await client.query<WorkflowDraftRow>(
         `
@@ -165,6 +172,7 @@ export class WorkflowService {
       if (!validation.valid) {
         throw createWorkflowSchemaValidationException(validation.errors);
       }
+      await this.requireActiveSubSchemas(client, organizationId, workflow.draft_schema);
 
       const version = await this.insertWorkflowVersion(
         client,
@@ -358,6 +366,26 @@ export class WorkflowService {
 
     if (result.rowCount === 0) {
       throw workflowNotFound(workflowId);
+    }
+  }
+
+  private async requireActiveSubSchemas(
+    client: Queryable,
+    organizationId: string,
+    schema: Record<string, unknown>,
+  ): Promise<void> {
+    const missingSubSchemas = await this.subschemas.findMissingActiveSlugs(
+      client,
+      organizationId,
+      collectWorkflowSubSchemaSlugs(schema),
+    );
+    if (missingSubSchemas.length > 0) {
+      throw createWorkflowSchemaValidationException(
+        missingSubSchemas.map((slug) => ({
+          path: "$.nodes[].config.subSchemaSlug",
+          message: `Активная Workflow-субсхема "${slug}" не найдена.`,
+        })),
+      );
     }
   }
 

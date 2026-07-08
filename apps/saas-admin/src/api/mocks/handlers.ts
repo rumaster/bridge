@@ -13,6 +13,7 @@ import {
   cloneWorkflowInstance,
   cloneWorkflowInstanceDetail,
   cloneWorkflowSchema,
+  cloneWorkflowSubschema,
   cloneWorkflowVersion,
   createMockCapabilityDescriptor,
   deriveOnboardingCommand,
@@ -28,6 +29,7 @@ import {
   createMockSession,
   mockWorkflowInstanceLogs,
   mockWorkflowInstances,
+  mockWorkflowSubschemas,
   mockWorkflowVersions,
   mockWorkflows
 } from "./fixtures";
@@ -59,6 +61,7 @@ import type {
   WorkflowDraft,
   WorkflowInstance,
   WorkflowSchema,
+  WorkflowSubschema,
   WorkflowVersion
 } from "../client/types";
 import { validateWorkflowSchema } from "../../shared/workflow";
@@ -73,6 +76,7 @@ let currentChannels: Channel[] = cloneChannels(mockChannels);
 let currentDocuments: KnowledgeDocument[] = cloneDocuments(mockKnowledgeDocuments);
 let currentWorkflows: Workflow[] = mockWorkflows.map(cloneWorkflow);
 let currentVersions: WorkflowVersion[] = mockWorkflowVersions.map(cloneWorkflowVersion);
+let currentSubschemas: WorkflowSubschema[] = mockWorkflowSubschemas.map(cloneWorkflowSubschema);
 let currentWorkflowDrafts: Record<string, WorkflowDraft> = {};
 let currentInstances: WorkflowInstance[] = mockWorkflowInstances.map(cloneWorkflowInstance);
 let currentBroadcasts: BroadcastCampaign[] = mockBroadcasts.map(cloneBroadcast);
@@ -385,6 +389,10 @@ export const handlers = [
 
   http.get(`${API_PREFIX}/workflows`, () => {
     return HttpResponse.json(currentWorkflows.map(cloneWorkflow));
+  }),
+
+  http.get(`${API_PREFIX}/workflow-subschemas`, () => {
+    return HttpResponse.json(currentSubschemas.map(cloneWorkflowSubschema));
   }),
 
   http.get(`${API_PREFIX}/workflows/:workflowId/versions`, ({ params }) => {
@@ -883,6 +891,7 @@ export function resetMockBackendState() {
   currentDocuments = cloneDocuments(mockKnowledgeDocuments);
   currentWorkflows = mockWorkflows.map(cloneWorkflow);
   currentVersions = mockWorkflowVersions.map(cloneWorkflowVersion);
+  currentSubschemas = mockWorkflowSubschemas.map(cloneWorkflowSubschema);
   currentWorkflowDrafts = {};
   currentInstances = mockWorkflowInstances.map(cloneWorkflowInstance);
   currentBroadcasts = mockBroadcasts.map(cloneBroadcast);

@@ -103,6 +103,49 @@ describe("Интеграция Backend↔FBP: узел Backend API через м
     assert.equal(mock.received[0].organization_id, ORG_A);
   });
 
+  it("разрешает sub_schema по slug при старте экземпляра и берёт обновлённый граф из registry", async () => {
+    const mock = createTenantBackendApiMock({ now: fixedNow });
+    const registry = new Map<string, any>([
+      ["shared-normalize", subSchemaReturning("v1")],
+    ]);
+    const engine = createFbpEngine({
+      backendClient: mock,
+      now: fixedNow,
+      resolveSubSchema: ({ slug }) => registry.get(slug),
+    });
+    const schema = {
+      schema_version: "1.0.0",
+      entry: "reuse",
+      nodes: [
+        {
+          id: "reuse",
+          type: "sub_schema",
+          input: { text: { kind: "params", path: ["text"] } },
+          config: { subSchemaSlug: "shared-normalize" },
+        },
+      ],
+      connections: [],
+    };
+
+    const first = await engine.runWorkflow({
+      schema,
+      context: context(ORG_A, "user-a"),
+      input: { text: "запрос" },
+    });
+    registry.set("shared-normalize", subSchemaReturning("v2"));
+    const second = await engine.runWorkflow({
+      schema,
+      context: context(ORG_A, "user-a"),
+      input: { text: "запрос" },
+    });
+
+    assert.equal(first.status, "completed");
+    assert.equal(first.output, "v1:запрос");
+    assert.equal(second.status, "completed");
+    assert.equal(second.output, "v2:запрос");
+    assert.deepEqual(schema.nodes[0].config, { subSchemaSlug: "shared-normalize" });
+  });
+
   it("МУЛЬТИАРЕНДНОСТЬ: org A не видит данные org B (§13.13-п.4, §22.6)", async () => {
     const mock = createTenantBackendApiMock({ now: fixedNow });
     const engine = makeEngine(mock);
@@ -189,3 +232,27 @@ describe("Интеграция Backend↔FBP: узел Backend API через м
     assert.equal(mock.received.length, 0, "запрос к Backend не отправлен при ошибке подстановки пути");
   });
 });
+
+function subSchemaReturning(prefix: string) {
+  return {
+    schema_version: "1.0.0",
+    entry: "format",
+    nodes: [
+      {
+        id: "format",
+        type: "transform",
+        input: { text: { kind: "params", path: ["text"] } },
+        config: {
+          expression: {
+            op: "concat",
+            args: [
+              { op: "lit", value: `${prefix}:` },
+              { op: "get", object: { op: "input" }, path: ["text"] },
+            ],
+          },
+        },
+      },
+    ],
+    connections: [],
+  };
+}

@@ -48,8 +48,8 @@ export const generatedOpenApiDocuments = [
     "openapi": "3.0.0",
     "title": "Bridge Backend Core API",
     "version": "1.0.0",
-    "pathCount": 57,
-    "operationCount": 69
+    "pathCount": 58,
+    "operationCount": 70
   },
   {
     "artifact": "packages/contracts/openapi/broadcasts/c8.broadcasts.openapi.json",
@@ -828,6 +828,17 @@ export const generatedOpenApiOperations = [
     "summary": "Create or resume anonymous Web Chat session",
     "tags": [
       "web-chat"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "get",
+    "path": "/api/v1/workflow-subschemas",
+    "operationId": "WorkflowSubschemaController_listSubschemas_v1",
+    "summary": "List reusable Workflow subschemas",
+    "tags": [
+      "workflow-subschemas"
     ]
   },
   {

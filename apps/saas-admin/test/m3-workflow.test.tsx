@@ -75,7 +75,8 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
 
     // Палитра ограничена каноническим набором C5 (ТЗ §13.13).
     const paletteButtons = await screen.findAllByRole("button", { name: /^Добавить узел:/ });
-    expect(paletteButtons).toHaveLength(6);
+    expect(paletteButtons).toHaveLength(7);
+    expect(screen.getByRole("button", { name: "Добавить узел: Субсхема" })).toBeInTheDocument();
 
     // Узел вызова Backend API помечен как изменяющий данные (ТЗ §13.5).
     await user.click(screen.getByRole("button", { name: "Узел Создать тикет" }));
@@ -108,6 +109,33 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
     expect(
       await screen.findByText("Сохранена версия v3. Выполняющиеся инстансы не затронуты.")
     ).toBeInTheDocument();
+  });
+
+  it("сохраняет sub_schema как ссылку на выбранный slug без bodyGraph", async () => {
+    const api = createWorkflowOperatorApi();
+    const createVersion = vi.spyOn(api.workflows, "createVersion");
+    const { user } = renderRoute("/workflow", { api, realtime: createMockC7RealtimeClient([]) });
+
+    await screen.findByRole("button", { name: "Открыть Workflow Автоответчик обращений" });
+    await user.click(await screen.findByRole("button", { name: "Добавить узел: Субсхема" }));
+    await user.selectOptions(await screen.findByLabelText("Субсхема"), "support-common-context");
+    await user.click(screen.getByRole("button", { name: "Сохранить как новую версию" }));
+
+    await waitFor(() => {
+      expect(createVersion).toHaveBeenCalledWith(
+        "wf-support-autoresponder",
+        expect.objectContaining({
+          schema: expect.objectContaining({
+            nodes: expect.arrayContaining([
+              expect.objectContaining({
+                type: "sub_schema",
+                config: { subSchemaSlug: "support-common-context" }
+              })
+            ])
+          })
+        })
+      );
+    });
   });
 
   it("добавляет узел перетаскиванием на canvas и поддерживает bodyGraph, черновик, публикацию, сброс и тестовый запуск", async () => {

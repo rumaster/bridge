@@ -15,6 +15,7 @@ export interface FbpEngineOptions {
   backendClient?: BackendApiClient;
   limits?: Record<string, unknown>;
   now?: () => string;
+  resolveSubSchema?: any;
 }
 
 /** Аргументы {@link createFbpEngine.runWorkflow}. */
@@ -33,6 +34,7 @@ export interface FbpRuntimeOptions {
   instances?: ReturnType<typeof createInstanceStore>;
   metrics?: ReturnType<typeof createWorkflowMetrics>;
   limits?: Record<string, unknown>;
+  resolveSubSchema?: any;
 }
 
 /**
@@ -49,7 +51,7 @@ export interface FbpRuntimeOptions {
  * прямого доступа к БД/внутренним сервисам: единственный канал данных — узел
  * Backend API через переданный `backendClient` (канал C3, §13.12, §13.13-п.3).
  */
-export function createFbpEngine({ backendClient, limits = {}, now }: FbpEngineOptions = {}) {
+export function createFbpEngine({ backendClient, limits = {}, now, resolveSubSchema = null }: FbpEngineOptions = {}) {
   if (!backendClient || typeof backendClient.call !== "function") {
     throw new TypeError(
       "createFbpEngine требует backendClient с методом call — движок меняет и читает данные только через Backend API (C3).",
@@ -73,7 +75,7 @@ export function createFbpEngine({ backendClient, limits = {}, now }: FbpEngineOp
     async runWorkflow({ schema, context, input = {}, instanceId }: RunWorkflowOptions = {}) {
       assertWorkflowSchema(schema, { limits: effectiveLimits });
       const resolvedInstanceId = resolveInstanceId(instanceId, context, schema, input);
-      const ctx = createContext({ context, schema, input, instanceId: resolvedInstanceId, now });
+      const ctx = createContext({ context, schema, input, instanceId: resolvedInstanceId, now, resolveSubSchema });
 
       try {
         const result = await runGraph({
@@ -121,13 +123,22 @@ export function createFbpRuntime({
   instances = createInstanceStore({ ...(now ? { now } : {}) }),
   metrics = createWorkflowMetrics(),
   limits = {},
+  resolveSubSchema = null,
 }: FbpRuntimeOptions = {}) {
   if (!backendClient || typeof backendClient.call !== "function") {
     throw new TypeError(
       "createFbpRuntime требует backendClient с методом call — данные идут только через Backend API (C3).",
     );
   }
-  const runtime = createInstanceRuntime({ backendClient, versions, instances, metrics, limits, ...(now ? { now } : {}) });
+  const runtime = createInstanceRuntime({
+    backendClient,
+    versions,
+    instances,
+    metrics,
+    limits,
+    resolveSubSchema,
+    ...(now ? { now } : {}),
+  });
   return {
     versions,
     instances,
@@ -151,7 +162,7 @@ export { createInstanceStore } from "./state/instance-store.js";
 export { createInstanceRuntime } from "./runtime/instance-runtime.js";
 export { createWorkflowMetrics, renderWorkflowMetrics } from "./metrics/workflow-metrics.js";
 
-function createContext({ context, schema, input, instanceId, now }) {
+function createContext({ context, schema, input, instanceId, now, resolveSubSchema = null }) {
   if (!context || typeof context.organization_id !== "string" || context.organization_id.trim() === "") {
     throw new WorkflowExecutionError(
       "invalid_context",
@@ -169,6 +180,8 @@ function createContext({ context, schema, input, instanceId, now }) {
     workflowId: schema.workflow_id ?? null,
     workflowVersionId: schema.workflow_version_id ?? null,
     input,
+    resolveSubSchema,
+    resolvedSubSchemas: schema.__resolved_subschemas ?? null,
     ...(now ? { now } : {}),
   });
 }

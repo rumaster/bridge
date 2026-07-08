@@ -267,6 +267,17 @@ export interface WorkflowVersion {
   created_at: ISODateTime;
 }
 
+export interface WorkflowSubschema {
+  id: string;
+  organization_id: string;
+  slug: string;
+  name: string;
+  schema: WorkflowSchema;
+  status: "draft" | "active";
+  created_at: ISODateTime;
+  updated_at: ISODateTime;
+}
+
 export interface WorkflowDraft {
   organization_id: string;
   workflow_id: string;
@@ -673,6 +684,7 @@ export interface SaasAdminApiClient {
   workflows: {
     listWorkflows: () => Promise<Workflow[]>;
     listVersions: (workflowId: string) => Promise<WorkflowVersion[]>;
+    listSubschemas: () => Promise<WorkflowSubschema[]>;
     getDraft: (workflowId: string) => Promise<WorkflowDraft>;
     saveDraft: (
       workflowId: string,

@@ -16,9 +16,16 @@ export interface ExecutionContextOptions {
   workflowVersionId?: string | null;
   input?: Record<string, unknown> | null;
   outputs?: Record<string, unknown> | null;
+  resolveSubSchema?: ResolveSubSchemaCallback | null;
+  resolvedSubSchemas?: Record<string, unknown> | null;
   seq?: number;
   now?: () => string;
 }
+
+export type ResolveSubSchemaCallback = (args: {
+  organizationId: string;
+  slug: string;
+}) => Promise<unknown> | unknown;
 
 /** Опции восстановления контекста из снимка. */
 export interface ExecutionContextSnapshotOptions {
@@ -47,6 +54,8 @@ export class ExecutionContext {
   #params;
   #outputs = new Map();
   #journal = [];
+  #resolveSubSchema;
+  #resolvedSubSchemas;
   #now;
   #seq = 0;
 
@@ -62,6 +71,8 @@ export class ExecutionContext {
     workflowVersionId,
     input = {},
     outputs = null,
+    resolveSubSchema = null,
+    resolvedSubSchemas = null,
     seq = 0,
     now = () => new Date().toISOString(),
   }: ExecutionContextOptions) {
@@ -81,6 +92,8 @@ export class ExecutionContext {
     this.#workflowId = workflowId;
     this.#workflowVersionId = workflowVersionId;
     this.#params = input ?? {};
+    this.#resolveSubSchema = typeof resolveSubSchema === "function" ? resolveSubSchema : null;
+    this.#resolvedSubSchemas = isRecord(resolvedSubSchemas) ? clone(resolvedSubSchemas) : {};
     this.#now = now;
     // Восстановление результатов ранее исполненных узлов из внешнего состояния
     // (stateless executor, ТЗ §25.3): любой узел-исполнитель поднимает контекст
@@ -120,6 +133,7 @@ export class ExecutionContext {
       workflowVersionId: snapshot.workflow_version_id ?? null,
       input: snapshot.input ?? {},
       outputs: snapshot.outputs ?? null,
+      resolvedSubSchemas: snapshot.resolved_subschemas ?? null,
       seq: snapshot.seq ?? 0,
       ...(now ? { now } : {}),
     });
@@ -149,6 +163,7 @@ export class ExecutionContext {
       workflow_version_id: this.#workflowVersionId,
       input: clone(this.#params),
       outputs,
+      resolved_subschemas: clone(this.#resolvedSubSchemas),
       seq: this.#seq,
     };
   }
@@ -163,6 +178,46 @@ export class ExecutionContext {
 
   get params() {
     return this.#params;
+  }
+
+  createChild({ input = {} } = {}) {
+    return new ExecutionContext({
+      organizationId: this.#organizationId,
+      actorUserId: this.#actorUserId,
+      trigger: this.#trigger,
+      roles: [...this.#roles],
+      correlationId: this.#correlationId,
+      locale: this.#locale,
+      instanceId: this.#instanceId,
+      workflowId: this.#workflowId,
+      workflowVersionId: this.#workflowVersionId,
+      input,
+      resolveSubSchema: this.#resolveSubSchema,
+      resolvedSubSchemas: this.#resolvedSubSchemas,
+      now: this.#now,
+    });
+  }
+
+  async resolveSubSchema(slug) {
+    if (typeof slug !== "string" || slug.trim() === "") {
+      throw new WorkflowExecutionError("invalid_subschema_ref", "Ссылка на субсхему должна быть непустой строкой.");
+    }
+
+    const normalized = slug.trim();
+    if (this.#resolveSubSchema) {
+      const schema = await this.#resolveSubSchema({ organizationId: this.#organizationId, slug: normalized });
+      return clone(schema);
+    }
+
+    if (Object.hasOwn(this.#resolvedSubSchemas, normalized)) {
+      return clone(this.#resolvedSubSchemas[normalized]);
+    }
+
+    throw new WorkflowExecutionError(
+      "subschema_not_found",
+      `Субсхема "${normalized}" не найдена в runtime registry.`,
+      { nodeType: "sub_schema" },
+    );
   }
 
   hasNodeOutput(nodeId) {

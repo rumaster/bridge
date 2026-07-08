@@ -7,6 +7,7 @@ import type { OnModuleDestroy } from "@nestjs/common";
 
 import { PgDatabase } from "../../common/database/database.service";
 import type { Queryable } from "../../common/database/database.service";
+import { collectWorkflowSubSchemaSlugs } from "../workflow/workflow-schema.validator";
 import type {
   FbpStartWorkflowFacadeRequest,
   FbpStartWorkflowFacadeResponse,
@@ -204,17 +205,25 @@ export class PgFbpWorkflowPersistence implements FbpWorkflowPersistence {
       }
 
       const row = result.rows[0];
+      const schema = {
+        ...row.schema,
+        workflow_id: row.workflow_id,
+        workflow_version_id: row.workflow_version_id,
+      };
+      const resolvedSubSchemas = await loadActiveWorkflowSubschemas(
+        client,
+        request.organization_id,
+        schema,
+      );
       return {
         context: {
           actor_user_id: request.actor_user_id,
           organization_id: request.organization_id,
           trigger: "manual",
         },
-        schema: {
-          ...row.schema,
-          workflow_id: row.workflow_id,
-          workflow_version_id: row.workflow_version_id,
-        },
+        schema: Object.keys(resolvedSubSchemas).length > 0
+          ? { ...schema, __resolved_subschemas: resolvedSubSchemas }
+          : schema,
       };
     });
   }
@@ -227,6 +236,49 @@ export class PgFbpWorkflowPersistence implements FbpWorkflowPersistence {
       await appendWorkflowJournal(client, journal);
     });
   }
+}
+
+async function loadActiveWorkflowSubschemas(
+  client: Queryable,
+  organizationId: string,
+  rootSchema: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const resolved: Record<string, unknown> = {};
+  const visited = new Set<string>();
+  const pending = collectWorkflowSubSchemaSlugs(rootSchema);
+
+  while (pending.length > 0) {
+    const slug = pending.shift() as string;
+    if (visited.has(slug)) {
+      continue;
+    }
+    visited.add(slug);
+
+    const result = await client.query<{ schema: Record<string, unknown>; slug: string }>(
+      `
+        SELECT slug, schema
+        FROM workflow_subschemas
+        WHERE organization_id = $1
+          AND status = 'active'
+          AND slug = $2
+        LIMIT 1
+      `,
+      [organizationId, slug],
+    );
+    if (result.rowCount === 0) {
+      throw new Error(`Active Workflow subschema ${slug} was not found.`);
+    }
+
+    const schema = result.rows[0].schema;
+    resolved[slug] = schema;
+    for (const nestedSlug of collectWorkflowSubSchemaSlugs(schema)) {
+      if (!visited.has(nestedSlug)) {
+        pending.push(nestedSlug);
+      }
+    }
+  }
+
+  return resolved;
 }
 
 export function createFbpGrpcUpstreamClientFromEnv(

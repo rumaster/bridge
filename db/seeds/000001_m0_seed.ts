@@ -5,6 +5,7 @@ import {
   SEEDED_ADMIN_USER_SEED,
 } from "../../packages/testing/src/db/m0-seed-data.js";
 import { SEEDED_WORKFLOW_DEFINITIONS } from "./workflow-definitions/stage2-workflows.js";
+import { SEEDED_WORKFLOW_SUBSCHEMAS } from "./workflow-definitions/stage4-subschemas.js";
 
 export async function seed(client) {
   await client.query("BEGIN");
@@ -116,12 +117,48 @@ export async function seed(client) {
       ],
     );
 
+    await seedWorkflowSubschemas(client);
     await seedWorkflowDefinitions(client);
 
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
+  }
+}
+
+async function seedWorkflowSubschemas(client) {
+  for (const subschema of SEEDED_WORKFLOW_SUBSCHEMAS) {
+    await client.query(
+      `
+        INSERT INTO workflow_subschemas (
+          id,
+          organization_id,
+          slug,
+          name,
+          schema,
+          status,
+          created_at,
+          updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::timestamptz, $8::timestamptz)
+        ON CONFLICT (organization_id, slug) DO UPDATE SET
+          name = EXCLUDED.name,
+          schema = EXCLUDED.schema,
+          status = EXCLUDED.status,
+          updated_at = EXCLUDED.updated_at
+      `,
+      [
+        subschema.id,
+        subschema.organization_id,
+        subschema.slug,
+        subschema.name,
+        JSON.stringify(subschema.schema),
+        subschema.status,
+        subschema.created_at,
+        subschema.updated_at,
+      ],
+    );
   }
 }
 
