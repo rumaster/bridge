@@ -1,12 +1,15 @@
 import { randomUUID } from "node:crypto";
 
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
 
 import { PgDatabase } from "../../common/database/database.service";
 import type { Queryable } from "../../common/database/database.service";
 import {
   CreateWorkflowVersionDto,
+  SaveWorkflowDraftDto,
   UpdateWorkflowDto,
+  WorkflowDraftResponseDto,
+  WorkflowDraftRow,
   WorkflowInstanceDetailResponseDto,
   WorkflowInstanceLogRow,
   WorkflowInstanceResponseDto,
@@ -16,6 +19,7 @@ import {
   WorkflowStatus,
   WorkflowVersionResponseDto,
   WorkflowVersionRow,
+  mapWorkflowDraft,
   mapWorkflow,
   mapWorkflowInstance,
   mapWorkflowLog,
@@ -79,38 +83,12 @@ export class WorkflowService {
         throw createWorkflowSchemaValidationException(validation.errors);
       }
 
-      const versionNoResult = await client.query<{ version_no: number | string }>(
-        `
-          SELECT COALESCE(MAX(version_no), 0) + 1 AS version_no
-          FROM workflow_versions
-          WHERE organization_id = $1 AND workflow_id = $2
-        `,
-        [organizationId, workflowId],
-      );
-      const versionId = randomUUID();
-      const versionNo = Number(versionNoResult.rows[0]?.version_no ?? 1);
-      const result = await client.query<WorkflowVersionRow>(
-        `
-          INSERT INTO workflow_versions (
-            id,
-            organization_id,
-            workflow_id,
-            version_no,
-            schema,
-            created_by,
-            created_at
-          )
-          VALUES ($1, $2, $3, $4, $5::jsonb, $6, now())
-          RETURNING id, organization_id, workflow_id, version_no, schema, created_by, created_at
-        `,
-        [
-          versionId,
-          organizationId,
-          workflowId,
-          versionNo,
-          JSON.stringify(payload.schema),
-          actorUserId ?? null,
-        ],
+      const version = await this.insertWorkflowVersion(
+        client,
+        organizationId,
+        workflowId,
+        payload.schema,
+        actorUserId,
       );
 
       if (payload.activate) {
@@ -122,11 +100,120 @@ export class WorkflowService {
                 updated_at = now()
             WHERE organization_id = $1 AND id = $2
           `,
-          [organizationId, workflowId, versionId],
+          [organizationId, workflowId, version.id],
         );
       }
 
-      return mapWorkflowVersion(result.rows[0]);
+      return mapWorkflowVersion(version);
+    });
+  }
+
+  async getDraft(
+    organizationId: string,
+    workflowId: string,
+  ): Promise<WorkflowDraftResponseDto> {
+    return this.database.withTenant(organizationId, async (client) => {
+      const workflow = await this.readWorkflowDraft(client, organizationId, workflowId);
+      return mapWorkflowDraft(workflow);
+    });
+  }
+
+  async saveDraft(
+    organizationId: string,
+    workflowId: string,
+    payload: SaveWorkflowDraftDto,
+  ): Promise<WorkflowDraftResponseDto> {
+    return this.database.withTenant(organizationId, async (client) => {
+      await this.requireWorkflow(client, organizationId, workflowId);
+      const validation = validateWorkflowSchema(payload.schema);
+      if (!validation.valid) {
+        throw createWorkflowSchemaValidationException(validation.errors);
+      }
+
+      const result = await client.query<WorkflowDraftRow>(
+        `
+          UPDATE workflows
+          SET draft_schema = $3::jsonb,
+              draft_updated_at = now(),
+              updated_at = now()
+          WHERE organization_id = $1 AND id = $2
+          RETURNING id, organization_id, draft_schema, draft_updated_at
+        `,
+        [organizationId, workflowId, JSON.stringify(payload.schema)],
+      );
+
+      if (result.rowCount === 0) {
+        throw workflowNotFound(workflowId);
+      }
+
+      return mapWorkflowDraft(result.rows[0]);
+    });
+  }
+
+  async promoteDraft(
+    organizationId: string,
+    workflowId: string,
+    actorUserId: string | undefined,
+  ): Promise<WorkflowVersionResponseDto> {
+    return this.database.withTenant(organizationId, async (client) => {
+      const workflow = await this.readWorkflowDraft(client, organizationId, workflowId);
+      if (!workflow.draft_schema) {
+        throw workflowDraftMissing(workflowId);
+      }
+
+      const validation = validateWorkflowSchema(workflow.draft_schema);
+      if (!validation.valid) {
+        throw createWorkflowSchemaValidationException(validation.errors);
+      }
+
+      const version = await this.insertWorkflowVersion(
+        client,
+        organizationId,
+        workflowId,
+        workflow.draft_schema,
+        actorUserId,
+      );
+
+      await client.query(
+        `
+          UPDATE workflows
+          SET default_version_id = $3,
+              status = 'active',
+              draft_schema = NULL,
+              draft_updated_at = NULL,
+              updated_at = now()
+          WHERE organization_id = $1 AND id = $2
+        `,
+        [organizationId, workflowId, version.id],
+      );
+
+      return mapWorkflowVersion(version);
+    });
+  }
+
+  async resetDraft(
+    organizationId: string,
+    workflowId: string,
+  ): Promise<WorkflowDraftResponseDto> {
+    return this.database.withTenant(organizationId, async (client) => {
+      await this.requireWorkflow(client, organizationId, workflowId);
+      const result = await client.query<WorkflowDraftRow>(
+        `
+          UPDATE workflows
+          SET draft_schema = NULL,
+              draft_updated_at = NULL,
+              updated_at = now()
+          WHERE organization_id = $1 AND id = $2
+          RETURNING id, organization_id, draft_schema, draft_updated_at
+        `,
+        [organizationId, workflowId],
+      );
+
+      if (result.rowCount === 0) {
+        throw workflowNotFound(workflowId);
+      }
+
+      return mapWorkflowDraft(result.rows[0]);
     });
   }
 
@@ -294,6 +381,72 @@ export class WorkflowService {
       throw workflowVersionNotFound(versionId);
     }
   }
+
+  private async readWorkflowDraft(
+    client: Queryable,
+    organizationId: string,
+    workflowId: string,
+  ): Promise<WorkflowDraftRow> {
+    const result = await client.query<WorkflowDraftRow>(
+      `
+        SELECT id, organization_id, draft_schema, draft_updated_at
+        FROM workflows
+        WHERE organization_id = $1 AND id = $2
+        LIMIT 1
+      `,
+      [organizationId, workflowId],
+    );
+
+    if (result.rowCount === 0) {
+      throw workflowNotFound(workflowId);
+    }
+
+    return result.rows[0];
+  }
+
+  private async insertWorkflowVersion(
+    client: Queryable,
+    organizationId: string,
+    workflowId: string,
+    schema: Record<string, unknown>,
+    actorUserId: string | undefined,
+  ): Promise<WorkflowVersionRow> {
+    const versionNoResult = await client.query<{ version_no: number | string }>(
+      `
+        SELECT COALESCE(MAX(version_no), 0) + 1 AS version_no
+        FROM workflow_versions
+        WHERE organization_id = $1 AND workflow_id = $2
+      `,
+      [organizationId, workflowId],
+    );
+    const versionId = randomUUID();
+    const versionNo = Number(versionNoResult.rows[0]?.version_no ?? 1);
+    const result = await client.query<WorkflowVersionRow>(
+      `
+        INSERT INTO workflow_versions (
+          id,
+          organization_id,
+          workflow_id,
+          version_no,
+          schema,
+          created_by,
+          created_at
+        )
+        VALUES ($1, $2, $3, $4, $5::jsonb, $6, now())
+        RETURNING id, organization_id, workflow_id, version_no, schema, created_by, created_at
+      `,
+      [
+        versionId,
+        organizationId,
+        workflowId,
+        versionNo,
+        JSON.stringify(schema),
+        actorUserId ?? null,
+      ],
+    );
+
+    return result.rows[0];
+  }
 }
 
 function resolveNextStatus(payload: UpdateWorkflowDto): undefined | WorkflowStatus {
@@ -321,6 +474,14 @@ function workflowVersionNotFound(versionId: string): NotFoundException {
     code: "WORKFLOW_VERSION_NOT_FOUND",
     description: `Workflow version ${versionId} was not found.`,
     humanMessage: "Версия Workflow не найдена.",
+  });
+}
+
+function workflowDraftMissing(workflowId: string): BadRequestException {
+  return new BadRequestException({
+    code: "WORKFLOW_DRAFT_MISSING",
+    description: `Workflow ${workflowId} has no draft schema to promote.`,
+    humanMessage: "У Workflow нет черновика для публикации.",
   });
 }
 

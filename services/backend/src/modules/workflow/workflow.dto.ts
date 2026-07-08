@@ -36,6 +36,12 @@ export class CreateWorkflowVersionDto {
   activate?: boolean;
 }
 
+export class SaveWorkflowDraftDto {
+  @ApiProperty({ type: Object })
+  @IsObject()
+  schema!: Record<string, unknown>;
+}
+
 export class UpdateWorkflowDto {
   @ApiPropertyOptional({ example: true })
   @IsBoolean()
@@ -80,6 +86,27 @@ export class WorkflowResponseDto {
 
   @ApiProperty({ example: "2026-07-04T10:04:00.000Z" })
   updated_at!: string;
+}
+
+export class WorkflowDraftResponseDto {
+  @ApiProperty({ example: "30000000-0000-4000-8000-000000000101" })
+  organization_id!: string;
+
+  @ApiProperty({ example: "30000000-0000-4000-8000-000000000801" })
+  workflow_id!: string;
+
+  @ApiProperty({ example: true })
+  has_draft!: boolean;
+
+  @ApiProperty({ nullable: true, type: Object })
+  schema!: null | Record<string, unknown>;
+
+  @ApiProperty({
+    example: "2026-07-04T10:04:00.000Z",
+    nullable: true,
+    type: String,
+  })
+  draft_updated_at!: null | string;
 }
 
 export class WorkflowVersionResponseDto {
@@ -179,6 +206,13 @@ export interface WorkflowVersionRow {
   workflow_id: string;
 }
 
+export interface WorkflowDraftRow {
+  draft_schema: null | Record<string, unknown>;
+  draft_updated_at: Date | null | string;
+  id: string;
+  organization_id: string;
+}
+
 export interface WorkflowInstanceRow {
   created_at: Date | string;
   finished_at: Date | null | string;
@@ -210,6 +244,16 @@ export function mapWorkflow(row: WorkflowRow): WorkflowResponseDto {
     organization_id: row.organization_id,
     status: row.status,
     updated_at: toIso(row.updated_at),
+  };
+}
+
+export function mapWorkflowDraft(row: WorkflowDraftRow): WorkflowDraftResponseDto {
+  return {
+    draft_updated_at: nullableIso(row.draft_updated_at),
+    has_draft: row.draft_schema !== null,
+    organization_id: row.organization_id,
+    schema: row.draft_schema,
+    workflow_id: row.id,
   };
 }
 

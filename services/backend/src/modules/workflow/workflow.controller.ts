@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   Param,
@@ -21,7 +22,9 @@ import { getRequiredOrganizationId, ORGANIZATION_ID_HEADER } from "../../common/
 import type { HeaderValue } from "../../common/request-context";
 import {
   CreateWorkflowVersionDto,
+  SaveWorkflowDraftDto,
   UpdateWorkflowDto,
+  WorkflowDraftResponseDto,
   WorkflowInstanceDetailResponseDto,
   WorkflowInstanceResponseDto,
   WorkflowResponseDto,
@@ -58,6 +61,60 @@ export class WorkflowController {
       getRequiredOrganizationId(organizationIdHeader),
       workflowId,
     );
+  }
+
+  @Get(":workflowId/draft")
+  @Version("1")
+  @ApiOperation({ summary: "Read persisted Workflow draft schema" })
+  @ApiOkResponse({ type: WorkflowDraftResponseDto })
+  getDraft(
+    @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: HeaderValue,
+    @Param("workflowId", new ParseUUIDPipe({ version: "4" })) workflowId: string,
+  ): Promise<WorkflowDraftResponseDto> {
+    return this.workflows.getDraft(getRequiredOrganizationId(organizationIdHeader), workflowId);
+  }
+
+  @Patch(":workflowId/draft")
+  @Version("1")
+  @ApiOperation({ summary: "Persist Workflow draft schema" })
+  @ApiOkResponse({ type: WorkflowDraftResponseDto })
+  saveDraft(
+    @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: HeaderValue,
+    @Param("workflowId", new ParseUUIDPipe({ version: "4" })) workflowId: string,
+    @Body() body: SaveWorkflowDraftDto,
+  ): Promise<WorkflowDraftResponseDto> {
+    return this.workflows.saveDraft(
+      getRequiredOrganizationId(organizationIdHeader),
+      workflowId,
+      body,
+    );
+  }
+
+  @Post(":workflowId/draft\\:promote")
+  @Version("1")
+  @ApiOperation({ summary: "Promote Workflow draft to a new active immutable version" })
+  @ApiCreatedResponse({ type: WorkflowVersionResponseDto })
+  promoteDraft(
+    @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: HeaderValue,
+    @Param("workflowId", new ParseUUIDPipe({ version: "4" })) workflowId: string,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<WorkflowVersionResponseDto> {
+    return this.workflows.promoteDraft(
+      getRequiredOrganizationId(organizationIdHeader),
+      workflowId,
+      request.auth?.user.id,
+    );
+  }
+
+  @Delete(":workflowId/draft")
+  @Version("1")
+  @ApiOperation({ summary: "Reset Workflow draft to the latest published schema" })
+  @ApiOkResponse({ type: WorkflowDraftResponseDto })
+  resetDraft(
+    @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: HeaderValue,
+    @Param("workflowId", new ParseUUIDPipe({ version: "4" })) workflowId: string,
+  ): Promise<WorkflowDraftResponseDto> {
+    return this.workflows.resetDraft(getRequiredOrganizationId(organizationIdHeader), workflowId);
   }
 
   @Post(":workflowId/versions")

@@ -31,8 +31,8 @@
       "base_path": "/api/v1",
       "openapi": {
         "artifact": "packages/contracts/openapi/backend-core/openapi.json",
-        "generated_operation_count": 65,
-        "generated_path_count": 55,
+        "generated_operation_count": 69,
+        "generated_path_count": 57,
         "metadata": {
           "x-contract-id": "C3",
           "x-owner": "SVC-API",
