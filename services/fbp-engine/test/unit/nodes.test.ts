@@ -103,16 +103,43 @@ describe("Узел Backend API: формирование вызова с кон�
 });
 
 describe("Узел Transform: безопасное преобразование", () => {
-  it("исполняет валидированное выражение над input", () => {
-    const result = transformNode.execute({
+  it("исполняет валидированное выражение над input", async () => {
+    const result = await transformNode.execute({
       node: { config: { expression: { op: "upper", args: [{ op: "get", object: { op: "input" }, path: ["name"] }] } } },
       input: { name: "иван" },
     });
     assert.deepEqual(result, { output: "ИВАН", port: "out" });
   });
 
+  it("исполняет mode=code через sandbox и возвращает JSON-результат", async () => {
+    const result = await transformNode.execute({
+      node: {
+        config: {
+          mode: "code",
+          code: "return { total: input.a + input.b, processType: typeof process };",
+        },
+      },
+      input: { a: 2, b: 3 },
+      limits: { codeTimeoutMs: 500, maxResultBytes: 4096 },
+    });
+    assert.deepEqual(result, { output: { total: 5, processType: "undefined" }, port: "out" });
+  });
+
   it("validate отвергает отсутствие expression", () => {
     assert.ok(validateConfig(transformNode, {}).some((error) => error.path.endsWith(".expression")));
+  });
+
+  it("validate принимает code-режим с опасными токенами — их блокирует runtime sandbox", () => {
+    const errors = validateConfig(transformNode, {
+      mode: "code",
+      code: "return typeof process + ':' + typeof require + ':' + typeof constructor;",
+    });
+    assert.deepEqual(errors, []);
+  });
+
+  it("validate требует mode=code для поля code", () => {
+    const errors = validateConfig(transformNode, { code: "return input;" });
+    assert.ok(errors.some((error) => error.path.endsWith(".mode")));
   });
 });
 

@@ -172,7 +172,10 @@ function decorateError(error, node) {
     error.nodeType = error.nodeType ?? node.type;
     return error;
   }
-  return new WorkflowExecutionError("node_execution_error", error?.message ?? String(error), {
+  const reason = typeof error?.reason === "string" && error.reason !== ""
+    ? error.reason
+    : "node_execution_error";
+  return new WorkflowExecutionError(reason, error?.message ?? String(error), {
     nodeId: node.id,
     nodeType: node.type,
   });

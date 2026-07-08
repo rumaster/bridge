@@ -234,13 +234,28 @@ export const TRANSFORM_ALLOWED_OPERATIONS = Object.freeze([
 
 /**
  * Значения по умолчанию для ограничений ресурсов Transform Node (§13.4):
- * бюджет шагов (детерминированно ограничивает время; грамматика без
- * неограниченных циклов), максимальный размер результата и длины строк/массивов.
+ * бюджет шагов для декларативного `expression`, лимиты AST/коллекций/результата
+ * и runtime-бюджеты для sandbox-режима `code`.
  */
-export const TRANSFORM_DEFAULT_LIMITS = Object.freeze({
+export interface TransformDefaultLimits {
+  codeMemoryMb: number;
+  codeTimeoutMs: number;
+  maxArrayLength: number;
+  maxAstDepth: number;
+  maxAstNodes: number;
+  maxCodeLength: number;
+  maxResultBytes: number;
+  maxSteps: number;
+  maxStringLength: number;
+}
+
+export const TRANSFORM_DEFAULT_LIMITS: Readonly<TransformDefaultLimits> = Object.freeze({
+  codeMemoryMb: 16,
+  codeTimeoutMs: 200,
   maxSteps: 100000,
   maxAstNodes: 2000,
   maxAstDepth: 64,
+  maxCodeLength: 65536,
   maxStringLength: 65536,
   maxArrayLength: 100000,
   maxResultBytes: 262144,
