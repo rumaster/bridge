@@ -81,6 +81,43 @@ describe("SaaS Administration MSW mocks — M3 Workflow (C5)", () => {
     ).rejects.toThrow();
   });
 
+  it("сохраняет, читает, публикует и сбрасывает persisted draft Workflow", async () => {
+    const api = createSaasAdminApiClient({ baseUrl: "/api/v1" });
+
+    const emptyDraft = await api.workflows.getDraft("wf-support-autoresponder");
+    expect(emptyDraft).toMatchObject({
+      has_draft: false,
+      schema: null,
+      workflow_id: "wf-support-autoresponder"
+    });
+
+    const saved = await api.workflows.saveDraft("wf-support-autoresponder", {
+      schema: editedSchema
+    });
+    expect(saved).toMatchObject({
+      has_draft: true,
+      schema: editedSchema,
+      workflow_id: "wf-support-autoresponder"
+    });
+
+    const reloaded = await api.workflows.getDraft("wf-support-autoresponder");
+    expect(reloaded.schema).toEqual(editedSchema);
+
+    const promoted = await api.workflows.promoteDraft("wf-support-autoresponder");
+    expect(promoted).toMatchObject({
+      id: "wfv-created-1",
+      schema: editedSchema,
+      version_no: 3,
+      workflow_id: "wf-support-autoresponder"
+    });
+    const afterPromote = await api.workflows.getDraft("wf-support-autoresponder");
+    expect(afterPromote).toMatchObject({ has_draft: false, schema: null });
+
+    await api.workflows.saveDraft("wf-support-autoresponder", { schema: editedSchema });
+    const reset = await api.workflows.resetDraft("wf-support-autoresponder");
+    expect(reset).toMatchObject({ has_draft: false, schema: null });
+  });
+
   it("отдаёт историю исполнения и диагностику инстанса", async () => {
     const api = createSaasAdminApiClient({ baseUrl: "/api/v1" });
 

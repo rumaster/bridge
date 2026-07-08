@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { DragEvent } from "react";
 import {
   ArrowLeft,
@@ -202,10 +202,6 @@ export default function WorkflowPage() {
     );
   }
 
-  function handleWorkflowUpdated(updated: Workflow) {
-    setWorkflows((current) => replaceWorkflow(current, updated));
-  }
-
   return (
     <section className="page-section">
       <div className="page-heading">
@@ -262,7 +258,6 @@ export default function WorkflowPage() {
                   <WorkflowSchemaEditor
                     key={selectedWorkflow.id}
                     onVersionCreated={handleVersionCreated}
-                    onWorkflowUpdated={handleWorkflowUpdated}
                     versions={versions}
                     workflow={selectedWorkflow}
                   />
@@ -390,7 +385,6 @@ function WorkflowVersionBar({
 
 interface WorkflowSchemaEditorProps {
   onVersionCreated: (version: WorkflowVersion, activated: boolean) => void;
-  onWorkflowUpdated: (workflow: Workflow) => void;
   versions: WorkflowVersion[];
   workflow: Workflow;
 }
@@ -410,7 +404,6 @@ interface WorkflowTestRun {
 
 function WorkflowSchemaEditor({
   onVersionCreated,
-  onWorkflowUpdated,
   versions,
   workflow
 }: WorkflowSchemaEditorProps) {
@@ -432,6 +425,8 @@ function WorkflowSchemaEditor({
   const [activateOnSave, setActivateOnSave] = useState(false);
   const [hasDraft, setHasDraft] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
+  const [draftUpdatedAt, setDraftUpdatedAt] = useState<string | null>(null);
+  const [draftLoading, setDraftLoading] = useState(true);
   const [testScope, setTestScope] = useState<WorkflowTestScope>("schema");
   const [testRun, setTestRun] = useState<WorkflowTestRun | null>(null);
   const [saving, setSaving] = useState(false);
@@ -451,11 +446,82 @@ function WorkflowSchemaEditor({
     () => draftSchema.nodes.find((node) => node.id === selectedNodeId) ?? null,
     [draftSchema.nodes, selectedNodeId]
   );
+  const latestDraftRef = useRef({
+    draftSaved,
+    hasDraft,
+    schema: rootDraftSchema,
+    valid: validation.valid,
+    workflowId: workflow.id
+  });
 
-  function loadVersionSchema(versionId: string) {
+  useEffect(() => {
+    latestDraftRef.current = {
+      draftSaved,
+      hasDraft,
+      schema: rootDraftSchema,
+      valid: validation.valid,
+      workflowId: workflow.id
+    };
+  }, [draftSaved, hasDraft, rootDraftSchema, validation.valid, workflow.id]);
+
+  useEffect(() => {
+    let active = true;
+    setDraftLoading(true);
+    setEditorAlert(null);
+
+    api.workflows
+      .getDraft(workflow.id)
+      .then((draft) => {
+        if (!active) {
+          return;
+        }
+        const nextSchema = draft.has_draft && draft.schema ? draft.schema : defaultVersion.schema;
+        setBaseVersionId(defaultVersion.id);
+        setRootDraftSchema(cloneDraftSchema(nextSchema));
+        setBodyPath([]);
+        setSelectedNodeId(nextSchema.nodes[0]?.id ?? null);
+        setConnectionFrom("");
+        setConnectionTo("");
+        setHasDraft(draft.has_draft);
+        setDraftSaved(draft.has_draft);
+        setDraftUpdatedAt(draft.draft_updated_at);
+        setTestRun(null);
+      })
+      .catch((error) => {
+        if (active) {
+          setEditorAlert(getProblemMessage(error, "Не удалось загрузить черновик Workflow."));
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setDraftLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [api, defaultVersion.id, defaultVersion.schema, workflow.id]);
+
+  useEffect(() => {
+    return () => {
+      const latest = latestDraftRef.current;
+      if (latest.workflowId === workflow.id && latest.hasDraft && !latest.draftSaved && latest.valid) {
+        void api.workflows.saveDraft(workflow.id, { schema: latest.schema });
+      }
+    };
+  }, [api, workflow.id]);
+
+  async function loadVersionSchema(versionId: string) {
     const base = versions.find((version) => version.id === versionId);
     if (!base) {
       return;
+    }
+    if (hasDraft && !draftSaved) {
+      const saved = await persistDraft("Текущий черновик сохранён перед переключением версии.");
+      if (!saved) {
+        return;
+      }
     }
     setBaseVersionId(versionId);
     setRootDraftSchema(cloneDraftSchema(base.schema));
@@ -465,6 +531,7 @@ function WorkflowSchemaEditor({
     setConnectionTo("");
     setHasDraft(false);
     setDraftSaved(false);
+    setDraftUpdatedAt(null);
     setTestRun(null);
     setEditorAlert(null);
     setEditorNotice(null);
@@ -503,6 +570,7 @@ function WorkflowSchemaEditor({
 
   function handleDeleteNode(nodeId: string) {
     updateActiveSchema((current) => ({
+      ...current,
       nodes: current.nodes.filter((node) => node.id !== nodeId),
       connections: current.connections.filter(
         (connection) => connection.from !== nodeId && connection.to !== nodeId
@@ -574,16 +642,39 @@ function WorkflowSchemaEditor({
     setConnectionTo("");
   }
 
-  function handleSaveDraft() {
+  async function persistDraft(notice: string | null = "Черновик сохранён."): Promise<boolean> {
     if (!validation.valid) {
       setEditorAlert("Исправьте ошибки схемы перед сохранением черновика.");
-      return;
+      return false;
     }
 
-    setHasDraft(true);
-    setDraftSaved(true);
+    setSaving(true);
     setEditorAlert(null);
-    setEditorNotice("Черновик сохранён локально.");
+
+    try {
+      const draft = await api.workflows.saveDraft(workflow.id, { schema: rootDraftSchema });
+      if (draft.schema) {
+        setRootDraftSchema(cloneDraftSchema(draft.schema));
+        const selectedNodeStillExists = draft.schema.nodes.some((node) => node.id === selectedNodeId);
+        setSelectedNodeId(selectedNodeStillExists ? selectedNodeId : draft.schema.nodes[0]?.id ?? null);
+      }
+      setHasDraft(true);
+      setDraftSaved(true);
+      setDraftUpdatedAt(draft.draft_updated_at);
+      if (notice !== null) {
+        setEditorNotice(notice);
+      }
+      return true;
+    } catch (error) {
+      setEditorAlert(getProblemMessage(error, "Не удалось сохранить черновик."));
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSaveDraft() {
+    await persistDraft();
   }
 
   async function handleSave(activate = activateOnSave, notice?: string) {
@@ -600,6 +691,9 @@ function WorkflowSchemaEditor({
         schema: rootDraftSchema,
         activate
       });
+      if (hasDraft) {
+        await api.workflows.resetDraft(workflow.id);
+      }
       onVersionCreated(version, activate);
       setBaseVersionId(version.id);
       setRootDraftSchema(cloneDraftSchema(version.schema));
@@ -607,6 +701,7 @@ function WorkflowSchemaEditor({
       setSelectedNodeId(version.schema.nodes[0]?.id ?? null);
       setHasDraft(false);
       setDraftSaved(false);
+      setDraftUpdatedAt(null);
       setActivateOnSave(false);
       setEditorNotice(notice ?? null);
     } catch (error) {
@@ -617,11 +712,43 @@ function WorkflowSchemaEditor({
   }
 
   async function handlePublishDraft() {
-    await handleSave(true, "Черновик опубликован как активная версия.");
+    if (!validation.valid) {
+      setEditorAlert("Исправьте ошибки схемы перед публикацией черновика.");
+      return;
+    }
+
+    if (!draftSaved) {
+      const saved = await persistDraft(null);
+      if (!saved) {
+        return;
+      }
+    }
+
+    setSaving(true);
+    setEditorAlert(null);
+
+    try {
+      const version = await api.workflows.promoteDraft(workflow.id);
+      onVersionCreated(version, true);
+      setBaseVersionId(version.id);
+      setRootDraftSchema(cloneDraftSchema(version.schema));
+      setBodyPath([]);
+      setSelectedNodeId(version.schema.nodes[0]?.id ?? null);
+      setHasDraft(false);
+      setDraftSaved(false);
+      setDraftUpdatedAt(null);
+      setActivateOnSave(false);
+      setTestRun(null);
+      setEditorNotice("Черновик опубликован как активная версия.");
+    } catch (error) {
+      setEditorAlert(getProblemMessage(error, "Не удалось опубликовать черновик."));
+    } finally {
+      setSaving(false);
+    }
   }
 
-  async function handleRollbackToBase() {
-    const base = versions.find((version) => version.id === baseVersionId);
+  async function handleResetDraft() {
+    const base = versions.find((version) => version.id === workflow.default_version_id) ?? defaultVersion;
     if (!base) {
       return;
     }
@@ -631,26 +758,30 @@ function WorkflowSchemaEditor({
     setEditorNotice(null);
 
     try {
-      const updated = await api.workflows.updateWorkflow(workflow.id, {
-        default_version_id: base.id,
-        status: "active"
-      });
-      onWorkflowUpdated(updated);
+      await api.workflows.resetDraft(workflow.id);
       setRootDraftSchema(cloneDraftSchema(base.schema));
+      setBaseVersionId(base.id);
       setBodyPath([]);
       setSelectedNodeId(base.schema.nodes[0]?.id ?? null);
       setHasDraft(false);
       setDraftSaved(false);
+      setDraftUpdatedAt(null);
       setTestRun(null);
-      setEditorNotice(`Откат выполнен: активна версия v${base.version_no}.`);
+      setEditorNotice(`Черновик сброшен к активной версии v${base.version_no}.`);
     } catch (error) {
-      setEditorAlert(getProblemMessage(error, "Не удалось выполнить откат версии."));
+      setEditorAlert(getProblemMessage(error, "Не удалось сбросить черновик."));
     } finally {
       setSaving(false);
     }
   }
 
-  function handleRunTest() {
+  async function handleRunTest() {
+    if (hasDraft && !draftSaved) {
+      const saved = await persistDraft("Черновик автосохранён перед тестовым запуском.");
+      if (!saved) {
+        return;
+      }
+    }
     setTestRun(simulateWorkflowTest(rootDraftSchema, testScope));
     setEditorAlert(null);
     setEditorNotice("Тестовый запуск завершён.");
@@ -670,7 +801,7 @@ function WorkflowSchemaEditor({
           <label htmlFor={`workflow-base-version-${workflow.id}`}>Редактируемая версия</label>
           <select
             id={`workflow-base-version-${workflow.id}`}
-            onChange={(event) => loadVersionSchema(event.currentTarget.value)}
+            onChange={(event) => void loadVersionSchema(event.currentTarget.value)}
             value={baseVersionId}
           >
             {versions.map((version) => (
@@ -691,6 +822,8 @@ function WorkflowSchemaEditor({
 
       {editorNotice ? <div className="form-success">{editorNotice}</div> : null}
 
+      {draftLoading ? <div className="route-loader">Загрузка черновика...</div> : null}
+
       <div className="workflow-editor-toolbar">
         <div className="workflow-breadcrumb" aria-label="Текущий граф">
           <Boxes aria-hidden="true" size={16} />
@@ -698,6 +831,7 @@ function WorkflowSchemaEditor({
           <Badge tone={hasDraft ? "warning" : "success"}>
             {hasDraft ? (draftSaved ? "Черновик сохранён" : "Есть черновик") : "Опубликовано"}
           </Badge>
+          {draftUpdatedAt ? <span className="muted">сохранён {draftUpdatedAt}</span> : null}
         </div>
         {bodyPath.length > 0 ? (
           <Button onClick={handleExitBodyGraph} type="button" variant="secondary">
@@ -787,7 +921,7 @@ function WorkflowSchemaEditor({
           onChange={(event) => setActivateOnSave(event.currentTarget.checked)}
         />
         <Button
-          disabled={saving || !validation.valid}
+          disabled={saving || draftLoading || !validation.valid}
           onClick={() => void handleSave()}
           type="button"
         >
@@ -795,8 +929,8 @@ function WorkflowSchemaEditor({
           Сохранить как новую версию
         </Button>
         <Button
-          disabled={saving || !validation.valid}
-          onClick={handleSaveDraft}
+          disabled={saving || draftLoading || !validation.valid}
+          onClick={() => void handleSaveDraft()}
           type="button"
           variant="secondary"
         >
@@ -804,7 +938,7 @@ function WorkflowSchemaEditor({
           Сохранить черновик
         </Button>
         <Button
-          disabled={saving || !validation.valid}
+          disabled={saving || draftLoading || !validation.valid || !hasDraft}
           onClick={() => void handlePublishDraft()}
           type="button"
         >
@@ -812,17 +946,17 @@ function WorkflowSchemaEditor({
           Опубликовать черновик
         </Button>
         <Button
-          disabled={saving}
-          onClick={() => void handleRollbackToBase()}
+          disabled={saving || draftLoading || !hasDraft}
+          onClick={() => void handleResetDraft()}
           type="button"
           variant="ghost"
         >
           <RotateCcw aria-hidden="true" size={16} />
-          Откатить к выбранной версии
+          Сбросить черновик
         </Button>
       </div>
       <p className="muted workflow-save-hint">
-        Сохранение создаёт неизменяемую версию и не влияет на выполняющиеся инстансы (ТЗ §13.10).
+        Черновик хранится на Backend до публикации; публикация создаёт неизменяемую версию и не влияет на выполняющиеся инстансы (ТЗ §13.10).
       </p>
 
       <div className="workflow-test-controls">
@@ -836,7 +970,7 @@ function WorkflowSchemaEditor({
             <option value="bodyGraph">Текущая bodyGraph</option>
           </select>
         </label>
-        <Button disabled={!validation.valid} onClick={handleRunTest} type="button" variant="secondary">
+        <Button disabled={!validation.valid} onClick={() => void handleRunTest()} type="button" variant="secondary">
           <FlaskConical aria-hidden="true" size={16} />
           Тестовый запуск
         </Button>
@@ -1276,6 +1410,7 @@ function WorkflowInstancesPanel({ instances, workflowId }: WorkflowInstancesPane
 
 function cloneDraftSchema(schema: WorkflowSchema): WorkflowSchema {
   return {
+    ...schema,
     nodes: schema.nodes.map((node) => ({
       ...node,
       config: cloneNodeConfig(node.config),

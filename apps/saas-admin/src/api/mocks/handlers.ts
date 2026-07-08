@@ -9,6 +9,7 @@ import {
   cloneNotification,
   cloneNotificationSettings,
   cloneWorkflow,
+  cloneWorkflowDraft,
   cloneWorkflowInstance,
   cloneWorkflowInstanceDetail,
   cloneWorkflowSchema,
@@ -55,6 +56,7 @@ import type {
   UpdateOrganizationRequest,
   UpdateWorkflowRequest,
   Workflow,
+  WorkflowDraft,
   WorkflowInstance,
   WorkflowSchema,
   WorkflowVersion
@@ -71,6 +73,7 @@ let currentChannels: Channel[] = cloneChannels(mockChannels);
 let currentDocuments: KnowledgeDocument[] = cloneDocuments(mockKnowledgeDocuments);
 let currentWorkflows: Workflow[] = mockWorkflows.map(cloneWorkflow);
 let currentVersions: WorkflowVersion[] = mockWorkflowVersions.map(cloneWorkflowVersion);
+let currentWorkflowDrafts: Record<string, WorkflowDraft> = {};
 let currentInstances: WorkflowInstance[] = mockWorkflowInstances.map(cloneWorkflowInstance);
 let currentBroadcasts: BroadcastCampaign[] = mockBroadcasts.map(cloneBroadcast);
 let currentBroadcastStats: Record<string, BroadcastStats> = cloneBroadcastStatsMap(mockBroadcastStats);
@@ -439,6 +442,98 @@ export const handlers = [
     return HttpResponse.json(cloneWorkflowVersion(version), { status: 201 });
   }),
 
+  http.get(`${API_PREFIX}/workflows/:workflowId/draft`, ({ params }) => {
+    const workflow = currentWorkflows.find((item) => item.id === params.workflowId);
+    if (!workflow) {
+      return problem(404, "Not Found", "Workflow not found.");
+    }
+
+    return HttpResponse.json(
+      cloneWorkflowDraft(currentWorkflowDrafts[workflow.id] ?? emptyWorkflowDraft(workflow))
+    );
+  }),
+
+  http.patch(`${API_PREFIX}/workflows/:workflowId/draft`, async ({ params, request }) => {
+    const workflow = currentWorkflows.find((item) => item.id === params.workflowId);
+    if (!workflow) {
+      return problem(404, "Not Found", "Workflow not found.");
+    }
+
+    const body = (await request.json()) as Partial<{ schema: WorkflowSchema }>;
+    const errors = validateWorkflowVersionPayload(body.schema);
+    if (errors.length > 0) {
+      return validationProblem(errors, "Request payload does not match C5 workflow draft DTO.");
+    }
+
+    const draft: WorkflowDraft = {
+      organization_id: workflow.organization_id,
+      workflow_id: workflow.id,
+      has_draft: true,
+      schema: cloneWorkflowSchema(body.schema as WorkflowSchema),
+      draft_updated_at: "2026-07-03T11:14:00.000Z"
+    };
+    currentWorkflowDrafts = {
+      ...currentWorkflowDrafts,
+      [workflow.id]: draft
+    };
+
+    return HttpResponse.json(cloneWorkflowDraft(draft));
+  }),
+
+  http.post(/\/api\/v1\/workflows\/([^/]+)\/draft:promote$/, ({ request }) => {
+    const workflowId = getLastPathMatch(request.url, /\/workflows\/([^/]+)\/draft:promote$/);
+    const workflow = currentWorkflows.find((item) => item.id === workflowId);
+    if (!workflow) {
+      return problem(404, "Not Found", "Workflow not found.");
+    }
+    const draft = currentWorkflowDrafts[workflow.id];
+    if (!draft?.schema) {
+      return validationProblem(
+        [{ field: "draft", message: "Черновик Workflow отсутствует." }],
+        "Workflow draft is missing."
+      );
+    }
+
+    const versionNo =
+      currentVersions
+        .filter((version) => version.workflow_id === workflow.id)
+        .reduce((max, version) => Math.max(max, version.version_no), 0) + 1;
+    const version: WorkflowVersion = {
+      id: `wfv-created-${nextWorkflowVersionNumber++}`,
+      organization_id: workflow.organization_id,
+      workflow_id: workflow.id,
+      version_no: versionNo,
+      schema: cloneWorkflowSchema(draft.schema),
+      created_by: mockSession.user.displayName,
+      created_at: "2026-07-03T11:15:00.000Z"
+    };
+
+    currentVersions = [...currentVersions, version];
+    currentWorkflows = currentWorkflows.map((item) =>
+      item.id === workflow.id
+        ? {
+            ...item,
+            status: "active",
+            default_version_id: version.id,
+            updated_at: "2026-07-03T11:15:00.000Z"
+          }
+        : item
+    );
+    delete currentWorkflowDrafts[workflow.id];
+
+    return HttpResponse.json(cloneWorkflowVersion(version), { status: 201 });
+  }),
+
+  http.delete(`${API_PREFIX}/workflows/:workflowId/draft`, ({ params }) => {
+    const workflow = currentWorkflows.find((item) => item.id === params.workflowId);
+    if (!workflow) {
+      return problem(404, "Not Found", "Workflow not found.");
+    }
+
+    delete currentWorkflowDrafts[workflow.id];
+    return HttpResponse.json(cloneWorkflowDraft(emptyWorkflowDraft(workflow)));
+  }),
+
   http.get(`${API_PREFIX}/workflows/:workflowId/instances/:instanceId`, ({ params }) => {
     const instance = currentInstances.find(
       (item) => item.id === params.instanceId && item.workflow_id === params.workflowId
@@ -788,6 +883,7 @@ export function resetMockBackendState() {
   currentDocuments = cloneDocuments(mockKnowledgeDocuments);
   currentWorkflows = mockWorkflows.map(cloneWorkflow);
   currentVersions = mockWorkflowVersions.map(cloneWorkflowVersion);
+  currentWorkflowDrafts = {};
   currentInstances = mockWorkflowInstances.map(cloneWorkflowInstance);
   currentBroadcasts = mockBroadcasts.map(cloneBroadcast);
   currentBroadcastStats = cloneBroadcastStatsMap(mockBroadcastStats);
@@ -824,6 +920,16 @@ function validateWorkflowVersionPayload(schema: WorkflowSchema | undefined) {
   }
 
   return errors;
+}
+
+function emptyWorkflowDraft(workflow: Workflow): WorkflowDraft {
+  return {
+    organization_id: workflow.organization_id,
+    workflow_id: workflow.id,
+    has_draft: false,
+    schema: null,
+    draft_updated_at: null
+  };
 }
 
 function validateOrganization(input: Partial<UpdateOrganizationRequest>) {
