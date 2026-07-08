@@ -18,6 +18,7 @@ import {
   formatPgVector,
   TEST_EMBEDDING_DIMENSIONS,
 } from "../../packages/testing/src/db/factories.js";
+import { validateWorkflowSchema } from "../../services/fbp-engine/src/schema/validate-workflow.js";
 
 const execFileAsync = promisify(execFile);
 const POSTGRES_PORT = 5432;
@@ -118,6 +119,22 @@ const TENANT_ORGANIZATION_ID_TABLES = TENANT_RLS_TABLES.filter(
 const ORG_A = "10000000-0000-4000-8000-000000000101";
 const ORG_B = "10000000-0000-4000-8000-000000000102";
 const ROLE_MANAGER = "00000000-0000-4000-8000-000000000003";
+const SEEDED_WORKFLOW_CASES = [
+  {
+    defaultVersionId: "00000000-0000-4000-8000-000000000811",
+    id: "00000000-0000-4000-8000-000000000801",
+    name: "Автоответчик обращений",
+    status: "active",
+    versionId: "00000000-0000-4000-8000-000000000811",
+  },
+  {
+    defaultVersionId: "00000000-0000-4000-8000-000000000812",
+    id: "00000000-0000-4000-8000-000000000802",
+    name: "Квалификация лидов",
+    status: "draft",
+    versionId: "00000000-0000-4000-8000-000000000812",
+  },
+];
 const M1_FIXTURES = {
   [ORG_A]: {
     organization: ORG_A,
@@ -460,6 +477,68 @@ async function assertDataPlatformSchema(client, { expectSeedData }) {
     seededAdminRoles.rows.map((row) => row.code),
     ["administrator"],
   );
+
+  await assertSeededWorkflowCases(client);
+}
+
+async function assertSeededWorkflowCases(client) {
+  const workflowIds = SEEDED_WORKFLOW_CASES.map((workflow) => workflow.id);
+  const workflows = await client.query(
+    `
+      SELECT id, name, status, default_version_id
+      FROM workflows
+      WHERE organization_id = $1
+        AND id = ANY($2::uuid[])
+      ORDER BY id
+    `,
+    [DEMO_ORGANIZATION_SEED.id, workflowIds],
+  );
+
+  assert.deepEqual(
+    workflows.rows.map((row) => ({
+      defaultVersionId: row.default_version_id,
+      id: row.id,
+      name: row.name,
+      status: row.status,
+    })),
+    SEEDED_WORKFLOW_CASES.map((workflow) => ({
+      defaultVersionId: workflow.defaultVersionId,
+      id: workflow.id,
+      name: workflow.name,
+      status: workflow.status,
+    })),
+  );
+
+  const versions = await client.query(
+    `
+      SELECT id, workflow_id, version_no, schema, created_by
+      FROM workflow_versions
+      WHERE organization_id = $1
+        AND workflow_id = ANY($2::uuid[])
+      ORDER BY workflow_id, version_no
+    `,
+    [DEMO_ORGANIZATION_SEED.id, workflowIds],
+  );
+
+  assert.deepEqual(
+    versions.rows.map((row) => ({
+      createdBy: row.created_by,
+      id: row.id,
+      versionNo: Number(row.version_no),
+      workflowId: row.workflow_id,
+    })),
+    SEEDED_WORKFLOW_CASES.map((workflow) => ({
+      createdBy: SEEDED_ADMIN_USER_SEED.id,
+      id: workflow.versionId,
+      versionNo: 1,
+      workflowId: workflow.id,
+    })),
+  );
+
+  for (const row of versions.rows) {
+    const validation = validateWorkflowSchema(row.schema);
+    assert.equal(validation.valid, true, JSON.stringify(validation.errors));
+  }
 }
 
 async function assertDataPlatformSchemaDropped(client) {
@@ -2593,6 +2672,7 @@ describe("SVC-DATA M5 migrations", { timeout: 300_000 }, () => {
 
       await withClient(adminConfig, async (client) => {
         await runMigrations({ databaseUrl: adminConfig, direction: "up" });
+        await runSeeds({ client });
         await runSeeds({ client });
         await assertDataPlatformSchema(client, { expectSeedData: true });
         await insertM1TenantSlice(client, ORG_A);
