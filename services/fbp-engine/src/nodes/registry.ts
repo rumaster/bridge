@@ -38,8 +38,8 @@ export function listNodeTypes() {
 }
 
 function assertRegistryMatchesCatalog() {
-  const catalog = new Set(FBP_NODE_TYPES);
-  const registered = new Set(REGISTRY.keys());
+  const catalog = new Set<string>(FBP_NODE_TYPES);
+  const registered = new Set<string>(REGISTRY.keys());
 
   const missing = [...catalog].filter((type) => !registered.has(type));
   const extra = [...registered].filter((type) => !catalog.has(type));

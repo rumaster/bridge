@@ -26,8 +26,8 @@ test("Оператор платформы правит Workflow: безопас�
     page.getByRole("button", { name: "Открыть Workflow Автоответчик обращений" })
   ).toBeVisible();
 
-  // Палитра ограничена безопасным набором узлов (ТЗ §13.13), включая sub_schema.
-  await expect(page.getByRole("button", { name: /^Добавить узел:/ })).toHaveCount(7);
+  // Палитра ограничена каноническим набором узлов C5 (ТЗ §13.13).
+  await expect(page.getByRole("button", { name: /^Добавить узел:/ })).toHaveCount(6);
 
   // Узел вызова Backend API помечен как изменяющий данные (ТЗ §13.5).
   await page.getByRole("button", { name: "Узел Создать тикет" }).click();

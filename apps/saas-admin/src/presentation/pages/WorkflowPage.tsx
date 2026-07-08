@@ -395,7 +395,7 @@ interface WorkflowSchemaEditorProps {
   workflow: Workflow;
 }
 
-type WorkflowTestScope = "schema" | "bodyGraph" | "subSchemas";
+type WorkflowTestScope = "schema" | "bodyGraph";
 
 interface WorkflowTestLogEntry {
   id: string;
@@ -834,7 +834,6 @@ function WorkflowSchemaEditor({
           >
             <option value="schema">Схема</option>
             <option value="bodyGraph">Текущая bodyGraph</option>
-            <option value="subSchemas">Субсхемы</option>
           </select>
         </label>
         <Button disabled={!validation.valid} onClick={handleRunTest} type="button" variant="secondary">
@@ -1374,11 +1373,9 @@ function getBodyPathLabels(root: WorkflowSchema, path: string[]): string[] {
 function simulateWorkflowTest(schema: WorkflowSchema, scope: WorkflowTestScope): WorkflowTestRun {
   const logs: WorkflowTestLogEntry[] = [];
   const targetSchemas =
-    scope === "subSchemas"
-      ? collectSubSchemaGraphs(schema)
-      : scope === "bodyGraph"
-        ? collectBodyGraphs(schema)
-        : [{ label: "Корневая схема", schema }];
+    scope === "bodyGraph"
+      ? collectBodyGraphs(schema)
+      : [{ label: "Корневая схема", schema }];
   const runSchemas = targetSchemas.length > 0 ? targetSchemas : [{ label: "Корневая схема", schema }];
 
   runSchemas.forEach((item, schemaIndex) => {
@@ -1439,32 +1436,12 @@ function collectBodyGraphs(schema: WorkflowSchema): Array<{ label: string; schem
   return bodyGraphs;
 }
 
-function collectSubSchemaGraphs(
-  schema: WorkflowSchema
-): Array<{ label: string; schema: WorkflowSchema }> {
-  const subSchemas: Array<{ label: string; schema: WorkflowSchema }> = [];
-
-  schema.nodes.forEach((node) => {
-    const bodyGraph = node.config[WORKFLOW_BODY_GRAPH_CONFIG_KEY];
-    if (node.type === "sub_schema" && isWorkflowSchema(bodyGraph)) {
-      subSchemas.push({ label: `Субсхема: ${node.label}`, schema: bodyGraph });
-    }
-    if (isWorkflowSchema(bodyGraph)) {
-      subSchemas.push(...collectSubSchemaGraphs(bodyGraph));
-    }
-  });
-
-  return subSchemas;
-}
-
 function workflowTestScopeLabel(scope: WorkflowTestScope): string {
   switch (scope) {
     case "schema":
       return "Схема";
     case "bodyGraph":
       return "bodyGraph";
-    case "subSchemas":
-      return "Субсхемы";
   }
 }
 

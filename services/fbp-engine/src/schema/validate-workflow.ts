@@ -2,6 +2,8 @@ import {
   FBP_INPUT_SOURCE_KINDS,
   TRANSFORM_DEFAULT_LIMITS,
   WORKFLOW_SCHEMA_VERSION,
+  arePortTypesCompatible,
+  getFbpNodePortDefinition,
 } from "../../../../packages/contracts/src/c5.js";
 import { WorkflowSchemaValidationError } from "../core/errors.js";
 import { findCycle } from "../core/graph.js";
@@ -176,29 +178,73 @@ function validateConnections(connections, nodes, nodeIds, errors) {
   }
 
   const seen = new Set();
+  const nodesById = new Map();
+  nodes.forEach((node) => {
+    if (isRecord(node) && typeof node.id === "string") {
+      nodesById.set(node.id, node);
+    }
+  });
   connections.forEach((connection, index) => {
     const path = `$.connections[${index}]`;
     if (!isRecord(connection)) {
       errors.push({ path, message: "Соединение должно быть объектом." });
       return;
     }
+    const fromNode = nodesById.get(connection.from);
+    const toNode = nodesById.get(connection.to);
     if (!nodeIds.has(connection.from)) {
       errors.push({ path: `${path}.from`, message: `Соединение исходит из несуществующего узла "${connection.from}".` });
     }
     if (!nodeIds.has(connection.to)) {
       errors.push({ path: `${path}.to`, message: `Соединение ведёт в несуществующий узел "${connection.to}".` });
     }
-    const port = connection.port ?? "out";
-    if (typeof port !== "string" || port.trim() === "") {
-      errors.push({ path: `${path}.port`, message: "port должен быть непустой строкой." });
+
+    const fromPortId = validateConnectionPortId(connection.fromPort, `${path}.fromPort`, errors);
+    const toPortId = validateConnectionPortId(connection.toPort, `${path}.toPort`, errors);
+    if (!fromPortId || !toPortId) {
       return;
     }
-    const key = `${connection.from}${port}`;
+
+    const fromPort = fromNode
+      ? getFbpNodePortDefinition(fromNode.type, "output", fromPortId)
+      : null;
+    const toPort = toNode
+      ? getFbpNodePortDefinition(toNode.type, "input", toPortId)
+      : null;
+
+    if (fromNode && !fromPort) {
+      errors.push({
+        path: `${path}.fromPort`,
+        message: `У узла "${connection.from}" нет выходного порта "${fromPortId}".`,
+      });
+    }
+    if (toNode && !toPort) {
+      errors.push({
+        path: `${path}.toPort`,
+        message: `У узла "${connection.to}" нет входного порта "${toPortId}".`,
+      });
+    }
+    if (fromPort && toPort && !arePortTypesCompatible(fromPort.type, toPort.type)) {
+      errors.push({
+        path: `${path}.toPort`,
+        message: `Типы портов несовместимы: ${fromPort.type} → ${toPort.type}.`,
+      });
+    }
+
+    const key = `${connection.from}${fromPortId}`;
     if (seen.has(key)) {
-      errors.push({ path: `${path}.port`, message: `Дублирующийся выходной порт "${port}" узла "${connection.from}".` });
+      errors.push({ path: `${path}.fromPort`, message: `Дублирующийся выходной порт "${fromPortId}" узла "${connection.from}".` });
     }
     seen.add(key);
   });
+}
+
+function validateConnectionPortId(value, path, errors) {
+  if (typeof value !== "string" || value.trim() === "") {
+    errors.push({ path, message: "fromPort/toPort должны быть непустыми строками." });
+    return null;
+  }
+  return value;
 }
 
 function validateAcyclic(schema, errors) {

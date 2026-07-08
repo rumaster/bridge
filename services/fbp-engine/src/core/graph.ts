@@ -3,8 +3,9 @@
  * предметно-нейтрально (ТЗ §13.13-п.1) — это лишь топология: какие узлы есть и
  * какой узел исполняется следующим при данном выходном порту.
  *
- * Соединение: `{ from: nodeId, port?: "out", to: nodeId }`. Большинство узлов
- * эмитят порт "out"; узел `branch` эмитит "true"/"false".
+ * Соединение: `{ from, fromPort, to, toPort }`. Большинство узлов эмитят порт
+ * "out"; узел `branch` эмитит "true"/"false". `port` читается только как
+ * legacy fallback для старых опубликованных схем до Этапа 1.
  */
 export const DEFAULT_PORT = "out";
 
@@ -16,7 +17,7 @@ export function buildGraph(schema) {
 
   const connectionsFrom = new Map();
   for (const connection of schema.connections ?? []) {
-    const port = connection.port ?? DEFAULT_PORT;
+    const port = connection.fromPort ?? connection.port ?? DEFAULT_PORT;
     if (!connectionsFrom.has(connection.from)) {
       connectionsFrom.set(connection.from, new Map());
     }

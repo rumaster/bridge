@@ -76,21 +76,23 @@ export function validateWorkflowStateChangedEvent(event) {
 // C5_VERSION остаётся "1.0.0".
 // ---------------------------------------------------------------------------
 
-/** Версия схемы Workflow (форма графа Node/Connection). */
-export const WORKFLOW_SCHEMA_VERSION = "1.0.0";
-
-/**
- * Предметно-нейтральный набор узлов коммуникационной платформы (ТЗ §13.13-п.1).
- * Ядро исполнения нейтрально; доменные узлы исходного fbp-engine удалены.
- */
-export const FBP_NODE_TYPES = Object.freeze([
-  "backend-api", // единственный санкционированный способ менять данные (§13.5)
-  "llm", // вызов LLM через Backend/AI-фасад (§13.6)
-  "knowledge-base-search", // поиск в Knowledge Base через Backend (§13.7)
-  "branch", // ветвление по булеву выражению (§13.4)
-  "transform", // безопасное преобразование данных (§13.4)
-  "wait-event", // ожидание внешнего события (§13.4)
-]);
+export {
+  FBP_NODE_TYPE_DEFINITIONS,
+  FBP_NODE_TYPES,
+  FBP_PORT_TYPES,
+  WORKFLOW_SCHEMA_VERSION,
+  arePortTypesCompatible,
+  getFbpNodePortDefinition,
+  getFbpNodeTypeDefinition,
+} from "./c5-workflow.js";
+export type {
+  FbpNodePortDefinition,
+  FbpNodePrimaryFieldDefinition,
+  FbpNodeType,
+  FbpNodeTypeDefinition,
+  FbpPortDirection,
+  FbpPortType,
+} from "./c5-workflow.js";
 
 /** HTTP-методы, доступные узлу Backend API (совпадают с DTO C5). */
 export const FBP_BACKEND_API_METHODS = Object.freeze([

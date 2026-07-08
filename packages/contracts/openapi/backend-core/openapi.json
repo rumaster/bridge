@@ -4362,13 +4362,12 @@
           "node_type": {
             "type": "string",
             "enum": [
-              "backend_api_call",
-              "llm_call",
-              "kb_search",
+              "backend-api",
+              "llm",
+              "knowledge-base-search",
               "branch",
               "transform",
-              "wait_event",
-              "sub_schema"
+              "wait-event"
             ]
           },
           "event": {

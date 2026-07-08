@@ -73,9 +73,9 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
       await screen.findByRole("button", { name: "Открыть Workflow Автоответчик обращений" })
     ).toBeInTheDocument();
 
-    // Палитра ограничена безопасным набором узлов (ТЗ §13.13) и включает sub-schema.
+    // Палитра ограничена каноническим набором C5 (ТЗ §13.13).
     const paletteButtons = await screen.findAllByRole("button", { name: /^Добавить узел:/ });
-    expect(paletteButtons).toHaveLength(7);
+    expect(paletteButtons).toHaveLength(6);
 
     // Узел вызова Backend API помечен как изменяющий данные (ТЗ §13.5).
     await user.click(screen.getByRole("button", { name: "Узел Создать тикет" }));
@@ -118,16 +118,16 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
 
     await screen.findByRole("button", { name: "Открыть Workflow Автоответчик обращений" });
 
-    const source = await screen.findByRole("button", { name: "Добавить узел: Субсхема" });
+    const source = await screen.findByRole("button", { name: "Добавить узел: Transform Node" });
     const canvas = screen.getByRole("group", { name: "Схема узлов и связей" });
     const dataTransfer = createDataTransfer();
     fireEvent.dragStart(source, { dataTransfer });
     fireEvent.dragOver(canvas, { clientX: 360, clientY: 220, dataTransfer });
     fireEvent.drop(canvas, { clientX: 360, clientY: 220, dataTransfer });
 
-    await user.click(await screen.findByRole("button", { name: "Узел Субсхема" }));
+    await user.click(await screen.findByRole("button", { name: "Узел Transform Node" }));
     await user.click(screen.getByRole("button", { name: "Открыть bodyGraph" }));
-    expect(await screen.findByText("Корневая схема / Субсхема")).toBeInTheDocument();
+    expect(await screen.findByText("Корневая схема / Transform Node")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Добавить узел: Transform Node" }));
     const fromSelect = screen.getByLabelText("Из узла");
@@ -159,7 +159,7 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
           schema: expect.objectContaining({
             nodes: expect.arrayContaining([
               expect.objectContaining({
-                type: "sub_schema",
+                type: "transform",
                 config: expect.objectContaining({
                   bodyGraph: expect.objectContaining({
                     nodes: expect.arrayContaining([

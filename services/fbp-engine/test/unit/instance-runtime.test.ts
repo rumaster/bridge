@@ -34,8 +34,8 @@ function waitingSchema() {
       },
     ],
     connections: [
-      { from: "prepare", to: "gate" },
-      { from: "gate", to: "persist" },
+      { from: "prepare", fromPort: "out", to: "gate", toPort: "in" },
+      { from: "gate", fromPort: "out", to: "persist", toPort: "in" },
     ],
   };
 }

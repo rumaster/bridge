@@ -261,21 +261,21 @@ export const mockWorkflowVersions: WorkflowVersion[] = [
     schema: {
       nodes: [
         {
-          id: "node-wait_event-1",
-          type: "wait_event",
+          id: "node-wait-event-1",
+          type: "wait-event",
           label: "Входящее сообщение",
-          config: { event: "channel.message_received" },
+          config: { event_type: "channel.message_received" },
           position: { x: 40, y: 40 }
         },
         {
-          id: "node-llm_call-1",
-          type: "llm_call",
+          id: "node-llm-1",
+          type: "llm",
           label: "Черновик ответа",
           config: { prompt: "Ответь клиенту вежливо" },
           position: { x: 260, y: 40 }
         }
       ],
-      connections: [{ id: "conn-1", from: "node-wait_event-1", to: "node-llm_call-1" }]
+      connections: [{ id: "conn-1", from: "node-wait-event-1", fromPort: "out", to: "node-llm-1", toPort: "in" }]
     }
   },
   {
@@ -288,60 +288,46 @@ export const mockWorkflowVersions: WorkflowVersion[] = [
     schema: {
       nodes: [
         {
-          id: "node-wait_event-1",
-          type: "wait_event",
+          id: "node-wait-event-1",
+          type: "wait-event",
           label: "Входящее сообщение",
-          config: { event: "channel.message_received" },
+          config: { event_type: "channel.message_received" },
           position: { x: 40, y: 40 }
         },
         {
-          id: "node-kb_search-1",
-          type: "kb_search",
+          id: "node-knowledge-base-search-1",
+          type: "knowledge-base-search",
           label: "Поиск в базе знаний",
           config: { query: "{{message.text}}" },
           position: { x: 260, y: 40 }
         },
         {
-          id: "node-llm_call-1",
-          type: "llm_call",
+          id: "node-llm-1",
+          type: "llm",
           label: "Черновик ответа",
           config: { prompt: "Ответь клиенту на основе найденных материалов" },
           position: { x: 700, y: 40 }
         },
         {
-          id: "node-sub_schema-1",
-          type: "sub_schema",
+          id: "node-transform-1",
+          type: "transform",
           label: "Собрать тело ответа",
-          config: {
-            schema_id: "support.reply-body",
-            bodyGraph: {
-              nodes: [
-                {
-                  id: "node-sub_schema-1-body-transform",
-                  type: "transform",
-                  label: "Нормализовать контекст",
-                  config: { expression: "payload" },
-                  position: { x: 40, y: 40 }
-                }
-              ],
-              connections: []
-            }
-          },
+          config: { expression: "payload" },
           position: { x: 480, y: 40 }
         },
         {
-          id: "node-backend_api_call-1",
-          type: "backend_api_call",
+          id: "node-backend-api-1",
+          type: "backend-api",
           label: "Создать тикет",
-          config: { endpoint: "POST /api/v1/tickets" },
+          config: { path: "/api/v1/tickets" },
           position: { x: 700, y: 190 }
         }
       ],
       connections: [
-        { id: "conn-1", from: "node-wait_event-1", to: "node-kb_search-1" },
-        { id: "conn-2", from: "node-kb_search-1", to: "node-sub_schema-1" },
-        { id: "conn-3", from: "node-sub_schema-1", to: "node-llm_call-1" },
-        { id: "conn-4", from: "node-llm_call-1", to: "node-backend_api_call-1" }
+        { id: "conn-1", from: "node-wait-event-1", fromPort: "out", to: "node-knowledge-base-search-1", toPort: "in" },
+        { id: "conn-2", from: "node-knowledge-base-search-1", fromPort: "out", to: "node-transform-1", toPort: "in" },
+        { id: "conn-3", from: "node-transform-1", fromPort: "out", to: "node-llm-1", toPort: "in" },
+        { id: "conn-4", from: "node-llm-1", fromPort: "out", to: "node-backend-api-1", toPort: "in" }
       ]
     }
   },
@@ -355,10 +341,10 @@ export const mockWorkflowVersions: WorkflowVersion[] = [
     schema: {
       nodes: [
         {
-          id: "node-wait_event-1",
-          type: "wait_event",
+          id: "node-wait-event-1",
+          type: "wait-event",
           label: "Новый лид",
-          config: { event: "channel.message_received" },
+          config: { event_type: "channel.message_received" },
           position: { x: 40, y: 40 }
         },
         {
@@ -369,16 +355,16 @@ export const mockWorkflowVersions: WorkflowVersion[] = [
           position: { x: 260, y: 40 }
         },
         {
-          id: "node-backend_api_call-1",
-          type: "backend_api_call",
+          id: "node-backend-api-1",
+          type: "backend-api",
           label: "Создать сделку",
-          config: { endpoint: "POST /api/v1/deals" },
+          config: { path: "/api/v1/deals" },
           position: { x: 480, y: 40 }
         }
       ],
       connections: [
-        { id: "conn-1", from: "node-wait_event-1", to: "node-branch-1" },
-        { id: "conn-2", from: "node-branch-1", to: "node-backend_api_call-1" }
+        { id: "conn-1", from: "node-wait-event-1", fromPort: "out", to: "node-branch-1", toPort: "in" },
+        { id: "conn-2", from: "node-branch-1", fromPort: "true", to: "node-backend-api-1", toPort: "in" }
       ]
     }
   }
@@ -413,32 +399,32 @@ export const mockWorkflowInstanceLogs: Record<string, WorkflowInstanceLogEntry[]
   "wfi-support-1001": [
     {
       id: "log-1001-1",
-      node_id: "node-wait_event-1",
-      node_type: "wait_event",
+      node_id: "node-wait-event-1",
+      node_type: "wait-event",
       event: "node.completed",
       message: "Получено сообщение от клиента.",
       created_at: "2026-07-03T10:00:00.500Z"
     },
     {
       id: "log-1001-2",
-      node_id: "node-kb_search-1",
-      node_type: "kb_search",
+      node_id: "node-knowledge-base-search-1",
+      node_type: "knowledge-base-search",
       event: "node.completed",
       message: "Найдено 2 фрагмента в базе знаний.",
       created_at: "2026-07-03T10:00:01.500Z"
     },
     {
       id: "log-1001-3",
-      node_id: "node-llm_call-1",
-      node_type: "llm_call",
+      node_id: "node-llm-1",
+      node_type: "llm",
       event: "node.completed",
       message: "LLM подготовил черновик ответа.",
       created_at: "2026-07-03T10:00:02.500Z"
     },
     {
       id: "log-1001-4",
-      node_id: "node-backend_api_call-1",
-      node_type: "backend_api_call",
+      node_id: "node-backend-api-1",
+      node_type: "backend-api",
       event: "node.completed",
       message: "Backend API создал тикет T-1001.",
       created_at: "2026-07-03T10:00:03.500Z"
@@ -454,8 +440,8 @@ export const mockWorkflowInstanceLogs: Record<string, WorkflowInstanceLogEntry[]
   "wfi-support-1002": [
     {
       id: "log-1002-1",
-      node_id: "node-wait_event-1",
-      node_type: "wait_event",
+      node_id: "node-wait-event-1",
+      node_type: "wait-event",
       event: "node.completed",
       message: "Получено сообщение от клиента.",
       created_at: "2026-07-03T09:30:00.500Z"

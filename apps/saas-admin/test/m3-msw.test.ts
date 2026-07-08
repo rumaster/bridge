@@ -6,21 +6,21 @@ import type { WorkflowSchema } from "../src/api/client/types";
 const editedSchema: WorkflowSchema = {
   nodes: [
     {
-      id: "node-wait_event-1",
-      type: "wait_event",
+      id: "node-wait-event-1",
+      type: "wait-event",
       label: "Входящее сообщение",
-      config: { event: "channel.message_received" },
+      config: { event_type: "channel.message_received" },
       position: { x: 40, y: 40 }
     },
     {
-      id: "node-backend_api_call-1",
-      type: "backend_api_call",
+      id: "node-backend-api-1",
+      type: "backend-api",
       label: "Создать тикет",
-      config: { endpoint: "POST /api/v1/tickets" },
+      config: { path: "/api/v1/tickets" },
       position: { x: 260, y: 40 }
     }
   ],
-  connections: [{ id: "conn-1", from: "node-wait_event-1", to: "node-backend_api_call-1" }]
+  connections: [{ id: "conn-1", from: "node-wait-event-1", fromPort: "out", to: "node-backend-api-1", toPort: "in" }]
 };
 
 describe("SaaS Administration MSW mocks — M3 Workflow (C5)", () => {

@@ -4,7 +4,6 @@ import type { WorkflowNode, WorkflowNodeType, WorkflowSchema } from "../src/api/
 import {
   SAFE_WORKFLOW_NODE_TYPES,
   createWorkflowConnection,
-  createWorkflowBodyGraph,
   createWorkflowNode,
   isSafeWorkflowNodeType,
   validateWorkflowSchema,
@@ -15,7 +14,7 @@ import {
 function node(overrides: Partial<WorkflowNode> & { id: string }): WorkflowNode {
   return {
     id: overrides.id,
-    type: overrides.type ?? "wait_event",
+    type: overrides.type ?? "wait-event",
     label: overrides.label ?? "Узел",
     config: overrides.config ?? {},
     position: overrides.position ?? { x: 0, y: 0 }
@@ -23,50 +22,38 @@ function node(overrides: Partial<WorkflowNode> & { id: string }): WorkflowNode {
 }
 
 describe("safe workflow node set (ТЗ §13.13)", () => {
-  it("ограничивает палитру безопасными типами с поддержкой sub_schema", () => {
+  it("ограничивает палитру каноническими типами C5", () => {
     expect(SAFE_WORKFLOW_NODE_TYPES).toEqual([
-      "wait_event",
-      "kb_search",
-      "llm_call",
+      "backend-api",
+      "llm",
+      "knowledge-base-search",
       "branch",
       "transform",
-      "backend_api_call",
-      "sub_schema"
+      "wait-event"
     ]);
   });
 
   it("считает узел изменяющим данные только для вызова Backend API (ТЗ §13.5)", () => {
     const mutating = SAFE_WORKFLOW_NODE_TYPES.filter((type) => workflowNodeMutatesData(type));
-    expect(mutating).toEqual(["backend_api_call"]);
+    expect(mutating).toEqual(["backend-api"]);
   });
 
   it("распознаёт безопасные типы и отвергает произвольные", () => {
     expect(isSafeWorkflowNodeType("transform")).toBe(true);
-    expect(isSafeWorkflowNodeType("sub_schema")).toBe(true);
+    expect(isSafeWorkflowNodeType("wait_event")).toBe(false);
     expect(isSafeWorkflowNodeType("db_write")).toBe(false);
   });
 });
 
 describe("createWorkflowNode / createWorkflowConnection", () => {
   it("создаёт узел с детерминированным id и пустым основным полем", () => {
-    const created = createWorkflowNode("kb_search", []);
-    const primary = workflowNodePrimaryField("kb_search");
+    const created = createWorkflowNode("knowledge-base-search", []);
+    const primary = workflowNodePrimaryField("knowledge-base-search");
 
-    expect(created.id).toBe("node-kb_search-1");
-    expect(created.type).toBe("kb_search");
+    expect(created.id).toBe("node-knowledge-base-search-1");
+    expect(created.type).toBe("knowledge-base-search");
     expect(created.config).toEqual({ [primary.key]: "" });
     expect(created.label.trim().length).toBeGreaterThan(0);
-  });
-
-  it("создаёт sub_schema с bodyGraph для вложенного редактирования", () => {
-    const created = createWorkflowNode("sub_schema", []);
-
-    expect(created.config).toMatchObject({
-      schema_id: "",
-      bodyGraph: expect.objectContaining({
-        nodes: expect.arrayContaining([expect.objectContaining({ type: "transform" })])
-      })
-    });
   });
 
   it("гарантирует уникальность id при совпадении префикса", () => {
@@ -80,30 +67,18 @@ describe("createWorkflowNode / createWorkflowConnection", () => {
     const first = createWorkflowConnection("a", "b", []);
     const second = createWorkflowConnection("b", "c", [first]);
 
-    expect(first).toEqual({ id: "conn-1", from: "a", to: "b" });
+    expect(first).toEqual({ id: "conn-1", from: "a", fromPort: "out", to: "b", toPort: "in" });
     expect(second.id).toBe("conn-2");
-  });
-
-  it("создаёт пустой bodyGraph с детерминированным узлом Transform", () => {
-    const bodyGraph = createWorkflowBodyGraph("node-sub_schema-1");
-
-    expect(bodyGraph.nodes).toEqual([
-      expect.objectContaining({
-        id: "node-sub_schema-1-body-transform",
-        type: "transform"
-      })
-    ]);
-    expect(bodyGraph.connections).toEqual([]);
   });
 });
 
 describe("validateWorkflowSchema", () => {
   const valid: WorkflowSchema = {
     nodes: [
-      node({ id: "n1", type: "wait_event", label: "Событие" }),
-      node({ id: "n2", type: "backend_api_call", label: "Вызов API" })
+      node({ id: "n1", type: "wait-event", label: "Событие" }),
+      node({ id: "n2", type: "backend-api", label: "Вызов API" })
     ],
-    connections: [{ id: "conn-1", from: "n1", to: "n2" }]
+    connections: [{ id: "conn-1", from: "n1", fromPort: "out", to: "n2", toPort: "in" }]
   };
 
   it("принимает корректную схему из безопасных узлов", () => {
@@ -111,13 +86,13 @@ describe("validateWorkflowSchema", () => {
     expect(result).toEqual({ valid: true, errors: [] });
   });
 
-  it("проверяет bodyGraph внутри узла sub_schema", () => {
+  it("проверяет bodyGraph внутри узла, если он явно задан", () => {
     const result = validateWorkflowSchema({
       nodes: [
         node({
           id: "sub",
-          type: "sub_schema",
-          label: "Субсхема",
+          type: "transform",
+          label: "Трансформация",
           config: { bodyGraph: { nodes: [], connections: [] } }
         })
       ],
@@ -125,7 +100,7 @@ describe("validateWorkflowSchema", () => {
     });
 
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain("bodyGraph узла «Субсхема»: Схема должна содержать хотя бы один узел.");
+    expect(result.errors).toContain("bodyGraph узла «Трансформация»: Схема должна содержать хотя бы один узел.");
   });
 
   it("требует хотя бы один узел", () => {
@@ -137,7 +112,7 @@ describe("validateWorkflowSchema", () => {
   it("отвергает дублирующиеся идентификаторы узлов", () => {
     const result = validateWorkflowSchema({
       nodes: [node({ id: "dup", label: "A" }), node({ id: "dup", label: "B" })],
-      connections: [{ id: "conn-1", from: "dup", to: "dup" }]
+      connections: [{ id: "conn-1", from: "dup", fromPort: "out", to: "dup", toPort: "in" }]
     });
     expect(result.valid).toBe(false);
     expect(result.errors).toContain("Обнаружены дублирующиеся идентификаторы узлов.");
@@ -164,7 +139,7 @@ describe("validateWorkflowSchema", () => {
   it("запрещает связь узла на самого себя", () => {
     const result = validateWorkflowSchema({
       nodes: [node({ id: "n1", label: "A" }), node({ id: "n2", label: "B" })],
-      connections: [{ id: "conn-1", from: "n1", to: "n1" }]
+      connections: [{ id: "conn-1", from: "n1", fromPort: "out", to: "n1", toPort: "in" }]
     });
     expect(result.valid).toBe(false);
     expect(result.errors).toContain("Узел не может ссылаться сам на себя.");
@@ -173,10 +148,19 @@ describe("validateWorkflowSchema", () => {
   it("отвергает связь на несуществующий узел", () => {
     const result = validateWorkflowSchema({
       nodes: [node({ id: "n1", label: "A" }), node({ id: "n2", label: "B" })],
-      connections: [{ id: "conn-1", from: "n1", to: "ghost" }]
+      connections: [{ id: "conn-1", from: "n1", fromPort: "out", to: "ghost", toPort: "in" }]
     });
     expect(result.valid).toBe(false);
     expect(result.errors).toContain("Связь ссылается на несуществующий узел.");
+  });
+
+  it("требует fromPort/toPort у связи", () => {
+    const result = validateWorkflowSchema({
+      nodes: [node({ id: "n1", label: "A" }), node({ id: "n2", label: "B" })],
+      connections: [{ id: "conn-1", from: "n1", to: "n2" } as WorkflowSchema["connections"][number]]
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain("Связь должна указывать fromPort и toPort.");
   });
 
   it("требует связь при наличии нескольких узлов", () => {

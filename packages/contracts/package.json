@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./registry": "./src/registry.ts",
     "./c5": "./src/c5.ts",
+    "./c5-workflow": "./src/c5-workflow.ts",
     "./c4": "./src/c4.ts",
     "./c6": "./src/c6.ts",
     "./c7": "./src/c7.ts",
