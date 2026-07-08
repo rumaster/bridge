@@ -39,6 +39,7 @@ import type {
   Workflow,
   WorkflowInstance,
   WorkflowInstanceDetail,
+  WorkflowSubschema,
   WorkflowVersion
 } from "./types";
 
@@ -138,6 +139,7 @@ export function createSaasAdminApiClient(options: SaasAdminApiClientOptions = {}
       listWorkflows: () => requestJson<Workflow[]>("/workflows"),
       listVersions: (workflowId: string) =>
         requestJson<WorkflowVersion[]>(`/workflows/${workflowId}/versions`),
+      listSubschemas: () => requestJson<WorkflowSubschema[]>("/workflow-subschemas"),
       createVersion: (workflowId: string, request: CreateWorkflowVersionRequest) =>
         requestJson<WorkflowVersion>(`/workflows/${workflowId}/versions`, {
           method: "POST",

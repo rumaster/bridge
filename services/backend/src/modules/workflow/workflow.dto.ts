@@ -10,9 +10,13 @@ export const WORKFLOW_NODE_TYPES = [
   "knowledge-base-search",
   "branch",
   "transform",
+  "sub_schema",
   "wait-event",
 ] as const;
 export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number];
+
+export const WORKFLOW_SUBSCHEMA_STATUSES = ["draft", "active"] as const;
+export type WorkflowSubschemaStatus = (typeof WORKFLOW_SUBSCHEMA_STATUSES)[number];
 
 export type WorkflowInstanceStatus =
   | "callback_recorded"
@@ -105,6 +109,32 @@ export class WorkflowVersionResponseDto {
   created_at!: string;
 }
 
+export class WorkflowSubschemaResponseDto {
+  @ApiProperty({ example: "30000000-0000-4000-8000-000000000841" })
+  id!: string;
+
+  @ApiProperty({ example: "30000000-0000-4000-8000-000000000101" })
+  organization_id!: string;
+
+  @ApiProperty({ example: "support-common-context" })
+  slug!: string;
+
+  @ApiProperty({ example: "Общий контекст поддержки" })
+  name!: string;
+
+  @ApiProperty({ type: Object })
+  schema!: Record<string, unknown>;
+
+  @ApiProperty({ enum: WORKFLOW_SUBSCHEMA_STATUSES, example: "active" })
+  status!: WorkflowSubschemaStatus;
+
+  @ApiProperty({ example: "2026-07-08T12:00:00.000Z" })
+  created_at!: string;
+
+  @ApiProperty({ example: "2026-07-08T12:00:00.000Z" })
+  updated_at!: string;
+}
+
 export class WorkflowInstanceResponseDto {
   @ApiProperty({ example: "30000000-0000-4000-8000-000000000821" })
   id!: string;
@@ -179,6 +209,17 @@ export interface WorkflowVersionRow {
   workflow_id: string;
 }
 
+export interface WorkflowSubschemaRow {
+  created_at: Date | string;
+  id: string;
+  name: string;
+  organization_id: string;
+  schema: Record<string, unknown>;
+  slug: string;
+  status: WorkflowSubschemaStatus;
+  updated_at: Date | string;
+}
+
 export interface WorkflowInstanceRow {
   created_at: Date | string;
   finished_at: Date | null | string;
@@ -222,6 +263,19 @@ export function mapWorkflowVersion(row: WorkflowVersionRow): WorkflowVersionResp
     schema: row.schema,
     version_no: Number(row.version_no),
     workflow_id: row.workflow_id,
+  };
+}
+
+export function mapWorkflowSubschema(row: WorkflowSubschemaRow): WorkflowSubschemaResponseDto {
+  return {
+    created_at: toIso(row.created_at),
+    id: row.id,
+    name: row.name,
+    organization_id: row.organization_id,
+    schema: row.schema,
+    slug: row.slug,
+    status: row.status,
+    updated_at: toIso(row.updated_at),
   };
 }
 

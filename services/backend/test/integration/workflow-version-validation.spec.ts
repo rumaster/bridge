@@ -8,6 +8,7 @@ import { GenericContainer, Wait } from "testcontainers";
 import type { StartedTestContainer } from "testcontainers";
 
 import { PgDatabase } from "../../src/common/database/database.service";
+import { WorkflowSubschemaService } from "../../src/modules/workflow/workflow-subschema.service";
 import { WorkflowService } from "../../src/modules/workflow/workflow.service";
 
 jest.setTimeout(300_000);
@@ -44,7 +45,7 @@ describe("WorkflowService createVersion validation", () => {
     runRootScript("scripts/db-migrate.ts", ["up"], databaseUrl);
     await seedWorkflow(databaseUrl);
     database = new PgDatabase();
-    service = new WorkflowService(database);
+    service = new WorkflowService(database, new WorkflowSubschemaService(database));
   });
 
   afterAll(async () => {
@@ -120,6 +121,41 @@ describe("WorkflowService createVersion validation", () => {
       },
       "$.nodes[0].config.organization_id",
     ],
+    [
+      "sub_schema embedded bodyGraph",
+      {
+        entry: "shared",
+        nodes: [
+          {
+            config: {
+              bodyGraph: { connections: [], nodes: [] },
+              subSchemaSlug: "support-common-context",
+            },
+            id: "shared",
+            type: "sub_schema",
+          },
+        ],
+        schema_version: "1.0.0",
+      },
+      "$.nodes[0].config.bodyGraph",
+    ],
+    [
+      "missing active sub_schema",
+      {
+        entry: "shared",
+        nodes: [
+          {
+            config: {
+              subSchemaSlug: "missing-subschema",
+            },
+            id: "shared",
+            type: "sub_schema",
+          },
+        ],
+        schema_version: "1.0.0",
+      },
+      "$.nodes[].config.subSchemaSlug",
+    ],
   ])("rejects an invalid schema before inserting a new immutable version: %s", async (_name, schema, errorPath) => {
     await expect(
       service.createVersion(
@@ -170,14 +206,14 @@ describe("WorkflowService createVersion validation", () => {
 
 function validWorkflowSchema(): Record<string, unknown> {
   return {
-    entry: "start",
+    entry: "shared",
     nodes: [
       {
         config: {
-          expression: { op: "input" },
+          subSchemaSlug: "support-common-context",
         },
-        id: "start",
-        type: "transform",
+        id: "shared",
+        type: "sub_schema",
       },
     ],
     schema_version: "1.0.0",
@@ -214,6 +250,34 @@ async function seedWorkflow(databaseUrl: string): Promise<void> {
         VALUES ($1, $2, 'Workflow validation fixture', 'draft')
       `,
       [WORKFLOW_ID, ORG_ID],
+    );
+    await client.query(
+      `
+        INSERT INTO workflow_subschemas (id, organization_id, slug, name, schema, status)
+        VALUES (
+          '41000000-0000-4000-8000-000000000441',
+          $1,
+          'support-common-context',
+          'Общий контекст поддержки',
+          $2::jsonb,
+          'active'
+        )
+      `,
+      [
+        ORG_ID,
+        JSON.stringify({
+          connections: [],
+          entry: "start",
+          nodes: [
+            {
+              config: { expression: { op: "input" } },
+              id: "start",
+              type: "transform",
+            },
+          ],
+          schema_version: "1.0.0",
+        }),
+      ],
     );
   });
 }

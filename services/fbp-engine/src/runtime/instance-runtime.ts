@@ -13,6 +13,7 @@ export interface InstanceRuntimeOptions {
   instances?: any;
   metrics?: any;
   limits?: Record<string, unknown>;
+  resolveSubSchema?: any;
   now?: () => string;
 }
 
@@ -57,6 +58,7 @@ export function createInstanceRuntime({
   instances,
   metrics = null,
   limits = {},
+  resolveSubSchema = null,
   now = () => new Date().toISOString(),
 }: InstanceRuntimeOptions = {}) {
   if (!backendClient || typeof backendClient.call !== "function") {
@@ -250,6 +252,8 @@ export function createInstanceRuntime({
       workflowId: version.workflow_id,
       workflowVersionId: version.id,
       input,
+      resolveSubSchema,
+      resolvedSubSchemas: version.schema?.__resolved_subschemas ?? null,
       now,
     });
   }

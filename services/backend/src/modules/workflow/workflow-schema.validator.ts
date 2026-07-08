@@ -49,6 +49,7 @@ const FBP_NODE_TYPES = new Set([
   "knowledge-base-search",
   "branch",
   "transform",
+  "sub_schema",
   "wait-event",
 ]);
 const FBP_BACKEND_API_METHODS = new Set(["GET", "POST", "PUT", "PATCH", "DELETE"]);
@@ -142,6 +143,7 @@ const NODE_VALIDATORS: Record<string, NodeValidator> = Object.freeze({
   branch: validateBranchConfig,
   "knowledge-base-search": validateKnowledgeBaseSearchConfig,
   llm: validateLlmConfig,
+  sub_schema: validateSubSchemaConfig,
   transform: validateTransformConfig,
   "wait-event": validateWaitEventConfig,
 });
@@ -193,6 +195,12 @@ export function createWorkflowSchemaValidationException(
     errors,
     humanMessage: "Схема Workflow не прошла валидацию.",
   });
+}
+
+export function collectWorkflowSubSchemaSlugs(schema: unknown): string[] {
+  const slugs = new Set<string>();
+  collectSubSchemaSlugsFromSchema(schema, slugs);
+  return [...slugs].sort();
 }
 
 function resolveLimits(limits: Partial<TransformLimits> | undefined): TransformLimits {
@@ -442,6 +450,22 @@ function validateTransformConfig(config: unknown, { errors, limits, path }: Node
   pushTransformErrors(config.expression, `${path}.expression`, errors, limits);
 }
 
+function validateSubSchemaConfig(config: unknown, { errors, path }: NodeValidationContext): void {
+  if (!isRecord(config)) {
+    errors.push({ path, message: "Узел sub_schema требует объект config." });
+    return;
+  }
+  if (config.bodyGraph !== undefined) {
+    errors.push({
+      path: `${path}.bodyGraph`,
+      message: "Узел sub_schema хранит только ссылку subSchemaSlug; embedded bodyGraph запрещён.",
+    });
+  }
+  if (typeof config.subSchemaSlug !== "string" || config.subSchemaSlug.trim() === "") {
+    errors.push({ path: `${path}.subSchemaSlug`, message: "Узел sub_schema требует непустой subSchemaSlug." });
+  }
+}
+
 function validateLlmConfig(config: unknown, { errors, limits, path }: NodeValidationContext): void {
   if (!isRecord(config) || config.prompt === undefined) {
     errors.push({
@@ -488,6 +512,25 @@ function validateWaitEventConfig(config: unknown, { errors, limits, path }: Node
   }
   if (config.timeout_ms !== undefined) {
     validateTimeout(config.timeout_ms, `${path}.timeout_ms`, errors, {});
+  }
+}
+
+function collectSubSchemaSlugsFromSchema(schema: unknown, slugs: Set<string>): void {
+  if (!isRecord(schema) || !Array.isArray(schema.nodes)) {
+    return;
+  }
+
+  for (const node of schema.nodes) {
+    if (!isRecord(node)) {
+      continue;
+    }
+    const config = isRecord(node.config) ? node.config : {};
+    if (node.type === "sub_schema" && typeof config.subSchemaSlug === "string" && config.subSchemaSlug.trim() !== "") {
+      slugs.add(config.subSchemaSlug.trim());
+    }
+    if (isRecord(config.bodyGraph)) {
+      collectSubSchemaSlugsFromSchema(config.bodyGraph, slugs);
+    }
   }
 }
 

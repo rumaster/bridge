@@ -71,8 +71,9 @@ describe("Контракт C5: каталог нейтральных узлов 
 
   it("каталог не содержит доменных узлов исходного fbp-engine (нейтральность §13.13-п.1)", () => {
     const nodeTypes = new Set<string>(FBP_NODE_TYPES);
-    assert.equal(FBP_NODE_TYPES.length, 6);
+    assert.equal(FBP_NODE_TYPES.length, 7);
     assert.ok(FBP_NODE_TYPES.includes("backend-api"));
+    assert.ok(FBP_NODE_TYPES.includes("sub_schema"));
     assert.ok(FBP_NODE_TYPES.includes("transform"));
     // Никаких прямых доменных/БД-узлов: единственная запись данных — через backend-api.
     for (const forbidden of ["sql", "db", "http", "shell", "exec", "email", "crm"]) {

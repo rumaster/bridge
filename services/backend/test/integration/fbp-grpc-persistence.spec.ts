@@ -65,7 +65,8 @@ describe("PgFbpWorkflowPersistence", () => {
       workflow_version_id: VERSION_ID,
     };
 
-    await expect(persistence.loadStartContext(request)).resolves.toMatchObject({
+    const startContext = await persistence.loadStartContext(request);
+    expect(startContext).toMatchObject({
       context: {
         actor_user_id: "manager-fbp-stage-2",
         organization_id: ORG_ID,
@@ -74,6 +75,25 @@ describe("PgFbpWorkflowPersistence", () => {
       schema: {
         workflow_id: WORKFLOW_ID,
         workflow_version_id: VERSION_ID,
+      },
+    });
+    expect(startContext.schema.nodes).toEqual([
+      {
+        config: { subSchemaSlug: "support-common-context" },
+        id: "prepare",
+        type: "sub_schema",
+      },
+    ]);
+    expect(startContext.schema.__resolved_subschemas).toMatchObject({
+      "support-common-context": {
+        entry: "sub-start",
+        nodes: [
+          {
+            config: { expression: { op: "input" } },
+            id: "sub-start",
+            type: "transform",
+          },
+        ],
       },
     });
 
@@ -161,6 +181,33 @@ async function seedWorkflow(databaseUrl: string): Promise<void> {
     );
     await client.query(
       `
+        INSERT INTO workflow_subschemas (id, organization_id, slug, name, schema, status)
+        VALUES (
+          '40000000-0000-4000-8000-000000000405',
+          $1,
+          'support-common-context',
+          'Общий контекст поддержки',
+          $2::jsonb,
+          'active'
+        )
+      `,
+      [
+        ORG_ID,
+        JSON.stringify({
+          entry: "sub-start",
+          nodes: [
+            {
+              config: { expression: { op: "input" } },
+              id: "sub-start",
+              type: "transform",
+            },
+          ],
+          schema_version: "1.0.0",
+        }),
+      ],
+    );
+    await client.query(
+      `
         INSERT INTO workflow_versions (id, organization_id, workflow_id, version_no, schema, created_by)
         VALUES ($1, $2, $3, 1, $4::jsonb, NULL)
       `,
@@ -170,7 +217,13 @@ async function seedWorkflow(databaseUrl: string): Promise<void> {
         WORKFLOW_ID,
         JSON.stringify({
           entry: "prepare",
-          nodes: [{ id: "prepare", type: "transform" }],
+          nodes: [
+            {
+              config: { subSchemaSlug: "support-common-context" },
+              id: "prepare",
+              type: "sub_schema",
+            },
+          ],
           schema_version: "1.0.0",
         }),
       ],

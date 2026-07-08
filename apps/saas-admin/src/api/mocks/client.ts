@@ -26,6 +26,7 @@ import type {
   UpdateWorkflowRequest,
   Workflow,
   WorkflowInstance,
+  WorkflowSubschema,
   WorkflowVersion
 } from "../client/types";
 import { createMockC7RealtimeClient } from "../client/realtime";
@@ -42,6 +43,7 @@ import {
   cloneWorkflowInstance,
   cloneWorkflowInstanceDetail,
   cloneWorkflowSchema,
+  cloneWorkflowSubschema,
   cloneWorkflowVersion,
   createMockCapabilityDescriptor,
   deriveOnboardingCommand,
@@ -57,6 +59,7 @@ import {
   mockSession,
   mockWorkflowInstanceLogs,
   mockWorkflowInstances,
+  mockWorkflowSubschemas,
   mockWorkflowVersions,
   mockWorkflows
 } from "./fixtures";
@@ -78,6 +81,7 @@ export function createMockSaasAdminApiClient(
   let currentDocuments: KnowledgeDocument[] = cloneMockKnowledgeDocuments();
   let currentWorkflows: Workflow[] = mockWorkflows.map(cloneWorkflow);
   let currentVersions: WorkflowVersion[] = mockWorkflowVersions.map(cloneWorkflowVersion);
+  let currentSubschemas: WorkflowSubschema[] = mockWorkflowSubschemas.map(cloneWorkflowSubschema);
   let currentInstances: WorkflowInstance[] = mockWorkflowInstances.map(cloneWorkflowInstance);
   let currentBroadcasts: BroadcastCampaign[] = mockBroadcasts.map(cloneBroadcast);
   let currentBroadcastStats: Record<string, BroadcastStats> = cloneMockBroadcastStats();
@@ -325,6 +329,9 @@ export function createMockSaasAdminApiClient(
         return currentVersions
           .filter((version) => version.workflow_id === workflowId)
           .map(cloneWorkflowVersion);
+      },
+      async listSubschemas() {
+        return currentSubschemas.map(cloneWorkflowSubschema);
       },
       async createVersion(workflowId: string, request: CreateWorkflowVersionRequest) {
         const workflow = requireWorkflow(currentWorkflows, workflowId);

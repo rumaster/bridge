@@ -102,6 +102,14 @@ export const FBP_NODE_TYPE_DEFINITIONS = Object.freeze([
     ports: [EXEC_INPUT_PORT, EXEC_OUTPUT_PORT],
   },
   {
+    type: "sub_schema",
+    label: "Субсхема",
+    description: "Запускает переиспользуемую Workflow-субсхему по ссылке на slug.",
+    primaryField: { key: "subSchemaSlug", label: "Субсхема", placeholder: "support-common-context" },
+    mutatesData: false,
+    ports: [EXEC_INPUT_PORT, EXEC_OUTPUT_PORT],
+  },
+  {
     type: "wait-event",
     label: "Ожидание события",
     description: "Приостанавливает исполнение до наступления внешнего события.",

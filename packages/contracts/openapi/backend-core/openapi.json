@@ -1922,6 +1922,31 @@
         ]
       }
     },
+    "/api/v1/workflow-subschemas": {
+      "get": {
+        "operationId": "WorkflowSubschemaController_listSubschemas_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/WorkflowSubschemaResponseDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "List reusable Workflow subschemas",
+        "tags": [
+          "workflow-subschemas"
+        ]
+      }
+    },
     "/api/v1/ai/onboarding:apply": {
       "post": {
         "operationId": "BackendApiController_applyOnboarding_v1",
@@ -4367,6 +4392,7 @@
               "knowledge-base-search",
               "branch",
               "transform",
+              "sub_schema",
               "wait-event"
             ]
           },
@@ -4445,6 +4471,56 @@
           "status",
           "created_at",
           "logs"
+        ]
+      },
+      "WorkflowSubschemaResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000841"
+          },
+          "organization_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000101"
+          },
+          "slug": {
+            "type": "string",
+            "example": "support-common-context"
+          },
+          "name": {
+            "type": "string",
+            "example": "Общий контекст поддержки"
+          },
+          "schema": {
+            "type": "object"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "active"
+            ],
+            "example": "active"
+          },
+          "created_at": {
+            "type": "string",
+            "example": "2026-07-08T12:00:00.000Z"
+          },
+          "updated_at": {
+            "type": "string",
+            "example": "2026-07-08T12:00:00.000Z"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "slug",
+          "name",
+          "schema",
+          "status",
+          "created_at",
+          "updated_at"
         ]
       },
       "OnboardingApplyDto": {

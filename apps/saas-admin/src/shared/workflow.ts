@@ -153,6 +153,16 @@ export function validateWorkflowSchema(schema: WorkflowSchema): WorkflowSchemaVa
       errors.push(`У узла «${node.id}» должна быть заполнена метка.`);
     }
 
+    if (node.type === "sub_schema") {
+      const slug = node.config.subSchemaSlug;
+      if (typeof slug !== "string" || slug.trim() === "") {
+        errors.push(`Узел «${node.label || node.id}» должен ссылаться на субсхему.`);
+      }
+      if (node.config[WORKFLOW_BODY_GRAPH_CONFIG_KEY] !== undefined) {
+        errors.push(`Узел «${node.label || node.id}» хранит только ссылку на субсхему без bodyGraph.`);
+      }
+    }
+
     const bodyGraph = node.config[WORKFLOW_BODY_GRAPH_CONFIG_KEY];
     if (bodyGraph !== undefined) {
       if (!isWorkflowSchema(bodyGraph)) {

@@ -24,6 +24,7 @@ import type {
   WorkflowInstanceDetail,
   WorkflowInstanceLogEntry,
   WorkflowSchema,
+  WorkflowSubschema,
   WorkflowVersion
 } from "../client/types";
 
@@ -370,6 +371,30 @@ export const mockWorkflowVersions: WorkflowVersion[] = [
   }
 ];
 
+export const mockWorkflowSubschemas: WorkflowSubschema[] = [
+  {
+    id: "wfs-support-common-context",
+    organization_id: "org-demo",
+    slug: "support-common-context",
+    name: "Общий контекст поддержки",
+    status: "active",
+    created_at: "2026-07-08T12:00:00.000Z",
+    updated_at: "2026-07-08T12:00:00.000Z",
+    schema: {
+      nodes: [
+        {
+          id: "node-normalize-support-context",
+          type: "transform",
+          label: "Нормализовать общий контекст",
+          config: { expression: "payload" },
+          position: { x: 40, y: 40 }
+        }
+      ],
+      connections: []
+    }
+  }
+];
+
 export const mockWorkflowInstances: WorkflowInstance[] = [
   {
     id: "wfi-support-1001",
@@ -496,6 +521,10 @@ function cloneWorkflowConfigValue(value: unknown): unknown {
 
 export function cloneWorkflowVersion(version: WorkflowVersion): WorkflowVersion {
   return { ...version, schema: cloneWorkflowSchema(version.schema) };
+}
+
+export function cloneWorkflowSubschema(subschema: WorkflowSubschema): WorkflowSubschema {
+  return { ...subschema, schema: cloneWorkflowSchema(subschema.schema) };
 }
 
 export function cloneWorkflowInstance(instance: WorkflowInstance): WorkflowInstance {

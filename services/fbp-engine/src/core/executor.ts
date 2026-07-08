@@ -32,6 +32,7 @@ export async function runGraph({
   backendClient,
   limits = TRANSFORM_DEFAULT_LIMITS,
   maxNodeSteps = DEFAULT_MAX_NODE_STEPS,
+  subSchemaStack = [],
   resume = false,
   startNodeId = null,
   resumeOutput = null,
@@ -92,7 +93,15 @@ export async function runGraph({
 
     let result;
     try {
-      result = await definition.execute({ node, input, ctx, backendClient, limits });
+      result = await definition.execute({
+        node,
+        input,
+        ctx,
+        backendClient,
+        limits,
+        runSubSchema: (slug, subInput = input) =>
+          runSubSchema({ slug, input: subInput, ctx, backendClient, limits, maxNodeSteps, subSchemaStack }),
+      });
     } catch (error) {
       ctx.appendJournal("node.failed", {
         nodeId: node.id,
@@ -130,6 +139,31 @@ export async function runGraph({
 
   ctx.appendJournal("workflow.completed", { data: { steps } });
   return { status: "completed", output: lastOutput, journal: ctx.journal };
+}
+
+async function runSubSchema({ slug, input, ctx, backendClient, limits, maxNodeSteps, subSchemaStack }) {
+  const normalized = String(slug ?? "").trim();
+  if (normalized === "") {
+    throw new WorkflowExecutionError("invalid_subschema_ref", "Ссылка на субсхему должна быть непустой строкой.");
+  }
+  if (subSchemaStack.includes(normalized)) {
+    throw new WorkflowExecutionError(
+      "subschema_cycle",
+      `Обнаружена рекурсивная ссылка на субсхему "${normalized}".`,
+      { nodeType: "sub_schema" },
+    );
+  }
+
+  const schema = await ctx.resolveSubSchema(normalized);
+  const childCtx = ctx.createChild({ input });
+  return runGraph({
+    schema,
+    ctx: childCtx,
+    backendClient,
+    limits,
+    maxNodeSteps,
+    subSchemaStack: [...subSchemaStack, normalized],
+  });
 }
 
 function decorateError(error, node) {
