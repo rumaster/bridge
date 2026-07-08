@@ -145,6 +145,71 @@ describe("M5-10 e2e (CP-9): нагрузка + харденинг + полнот
     assert.equal(validateTransformExpression(legit).valid, true);
   });
 
+  it("харденинг Transform Node code: произвольный JS исполняется в sandbox с runtime-блокировками (§13.4)", async () => {
+    const { seed } = makeCluster({ nodeCount: 1 });
+    seed.publishVersion({
+      organizationId: ORG_A,
+      workflowId: "wf-transform-code",
+      schema: {
+        schema_version: "1.0.0",
+        workflow_id: "wf-transform-code",
+        entry: "code",
+        nodes: [
+          {
+            id: "code",
+            type: "transform",
+            input: { amount: { kind: "params", path: ["amount"] } },
+            config: {
+              mode: "code",
+              code: "const doubled = input.amount * 2; return { doubled, processType: typeof process };",
+            },
+          },
+        ],
+        connections: [],
+      },
+    });
+
+    const ok = await seed.start({
+      organizationId: ORG_A,
+      workflowId: "wf-transform-code",
+      context: ctx(ORG_A, "operator"),
+      input: { amount: 21 },
+    });
+    assert.equal(ok.status, "completed");
+    assert.deepEqual(ok.output, { doubled: 42, processType: "undefined" });
+
+    seed.publishVersion({
+      organizationId: ORG_A,
+      workflowId: "wf-transform-code-attack",
+      schema: {
+        schema_version: "1.0.0",
+        workflow_id: "wf-transform-code-attack",
+        entry: "attack",
+        nodes: [
+          {
+            id: "attack",
+            type: "transform",
+            config: {
+              mode: "code",
+              code: 'return globalThis.constructor.constructor("return process")();',
+            },
+          },
+        ],
+        connections: [],
+      },
+    });
+
+    const failed = await seed.start({
+      organizationId: ORG_A,
+      workflowId: "wf-transform-code-attack",
+      context: ctx(ORG_A, "operator"),
+      input: {},
+    });
+    assert.equal(failed.status, "failed");
+    assert.equal(failed.error.reason, "code_execution_failed");
+    assert.match(failed.error.message, /Code generation from strings disallowed|process is not defined/);
+  });
+
   it("деградация Backend не блокирует ядро: провал фиксируется в журнале, движок продолжает работу (§5.4, §13.2)", async () => {
     let backendUp = false;
     const healthy = createTenantBackendApiMock({ now: fixedNow });

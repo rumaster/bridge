@@ -15,9 +15,12 @@ export interface WorkflowSchemaValidationOptions {
 }
 
 interface TransformLimits {
+  codeMemoryMb: number;
+  codeTimeoutMs: number;
   maxArrayLength: number;
   maxAstDepth: number;
   maxAstNodes: number;
+  maxCodeLength: number;
   maxResultBytes: number;
   maxSteps: number;
   maxStringLength: number;
@@ -64,9 +67,12 @@ const FORBIDDEN_BACKEND_API_CONFIG_KEYS = new Set([
 const PLACEHOLDER = /\{([A-Za-z0-9_]+)\}/g;
 
 const TRANSFORM_DEFAULT_LIMITS: TransformLimits = Object.freeze({
+  codeMemoryMb: 16,
+  codeTimeoutMs: 200,
   maxArrayLength: 100000,
   maxAstDepth: 64,
   maxAstNodes: 2000,
+  maxCodeLength: 65536,
   maxResultBytes: 262144,
   maxSteps: 100000,
   maxStringLength: 65536,
@@ -443,11 +449,58 @@ function validateBranchConfig(config: unknown, { errors, limits, path }: NodeVal
 }
 
 function validateTransformConfig(config: unknown, { errors, limits, path }: NodeValidationContext): void {
-  if (!isRecord(config) || config.expression === undefined) {
+  if (!isRecord(config)) {
+    errors.push({ path, message: "Узел transform требует объект config." });
+    return;
+  }
+
+  if (config.code !== undefined && config.mode !== "code") {
+    errors.push({ path: `${path}.mode`, message: "Поле code доступно только при mode=\"code\"." });
+    return;
+  }
+
+  const mode = config.mode ?? "expression";
+  if (mode === "expression") {
+    validateTransformExpressionConfig(config, { errors, limits, path });
+    return;
+  }
+
+  if (mode === "code") {
+    validateTransformCodeConfig(config, { errors, limits, path });
+    return;
+  }
+
+  errors.push({ path: `${path}.mode`, message: "mode должен быть expression или code." });
+}
+
+function validateTransformExpressionConfig(
+  config: Record<string, unknown>,
+  { errors, limits, path }: NodeValidationContext,
+): void {
+  if (config.expression === undefined) {
     errors.push({ path: `${path}.expression`, message: "Узел transform требует поле expression." });
     return;
   }
+
   pushTransformErrors(config.expression, `${path}.expression`, errors, limits);
+}
+
+function validateTransformCodeConfig(
+  config: Record<string, unknown>,
+  { errors, limits, path }: NodeValidationContext,
+): void {
+  if (typeof config.code !== "string" || config.code.trim() === "") {
+    errors.push({ path: `${path}.code`, message: "mode=code требует непустое строковое поле code." });
+    return;
+  }
+
+  if (Buffer.byteLength(config.code, "utf8") > limits.maxCodeLength) {
+    errors.push({ path: `${path}.code`, message: `code превышает лимит ${limits.maxCodeLength} байт.` });
+  }
+
+  if (config.expression !== undefined) {
+    errors.push({ path: `${path}.expression`, message: "mode=code не использует поле expression." });
+  }
 }
 
 function validateSubSchemaConfig(config: unknown, { errors, path }: NodeValidationContext): void {

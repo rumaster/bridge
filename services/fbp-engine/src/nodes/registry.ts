@@ -7,12 +7,18 @@ import { subSchemaNode } from "./sub-schema.js";
 import { transformNode } from "./transform.js";
 import { waitEventNode } from "./wait-event.js";
 
+interface NodeDefinition {
+  execute: (context: any) => any;
+  type: string;
+  validate?: (config: any, context: any) => void;
+}
+
 /**
  * Реестр предметно-нейтральных узлов (ТЗ §13.13-п.1). Единый источник истины —
  * каталог `FBP_NODE_TYPES` контракта C5; реестр обязан покрывать его полностью и
  * без «лишних» типов. Рассинхронизация ловится контрактным/юнит-тестом.
  */
-const DEFINITIONS = [
+const DEFINITIONS: NodeDefinition[] = [
   backendApiNode,
   llmNode,
   knowledgeBaseSearchNode,
@@ -22,7 +28,7 @@ const DEFINITIONS = [
   waitEventNode,
 ];
 
-const REGISTRY = new Map(DEFINITIONS.map((node) => [node.type, node]));
+const REGISTRY = new Map<string, NodeDefinition>(DEFINITIONS.map((node) => [node.type, node]));
 
 // Ранняя проверка целостности: реестр в точности соответствует каталогу C5.
 assertRegistryMatchesCatalog();

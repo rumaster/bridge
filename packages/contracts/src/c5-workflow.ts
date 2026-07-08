@@ -96,7 +96,7 @@ export const FBP_NODE_TYPE_DEFINITIONS = Object.freeze([
   {
     type: "transform",
     label: "Transform Node",
-    description: "Преобразует данные безопасным декларативным выражением.",
+    description: "Преобразует данные через безопасное expression или sandbox code.",
     primaryField: { key: "expression", label: "Выражение трансформации", placeholder: "payload.text.trim()" },
     mutatesData: false,
     ports: [EXEC_INPUT_PORT, EXEC_OUTPUT_PORT],
