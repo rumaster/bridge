@@ -41,14 +41,31 @@ function createDataTransfer(): DataTransfer {
   } as unknown as DataTransfer;
 }
 
+/**
+ * Узлы добавляются только перетаскиванием на холст (ТЗ §13.13, требование 3):
+ * клик по элементу палитры больше не создаёт узел, поэтому тесты используют
+ * последовательность dragStart → dragOver → drop.
+ */
+function dragNodeToCanvas(nodeLabel: string, clientX = 360, clientY = 220) {
+  const source = screen.getByRole("button", { name: `Добавить узел: ${nodeLabel}` });
+  const canvas = screen.getByRole("group", { name: "Схема узлов и связей" });
+  const dataTransfer = createDataTransfer();
+  fireEvent.dragStart(source, { dataTransfer });
+  fireEvent.dragOver(canvas, { clientX, clientY, dataTransfer });
+  fireEvent.drop(canvas, { clientX, clientY, dataTransfer });
+}
+
+/** Дожидается загрузки и авто-выбора первой схемы Workflow в верхней панели. */
+function findSelectedWorkflowHeading() {
+  return screen.findByRole("heading", { name: "Автоответчик обращений" });
+}
+
 describe("SaaS Administration M3 Workflow editor (C5)", () => {
   it("открывает вкладку и схемы для роли platform_operator", async () => {
     const api = createWorkflowOperatorApi();
     renderRoute("/workflow", { api, realtime: createMockC7RealtimeClient([]) });
 
-    expect(
-      await screen.findByRole("button", { name: "Открыть Workflow Автоответчик обращений" })
-    ).toBeInTheDocument();
+    expect(await findSelectedWorkflowHeading()).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Workflow" })).toBeInTheDocument();
   });
 
@@ -60,7 +77,7 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
       await screen.findByText("Раздел Workflow доступен только оператору платформы.")
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("button", { name: "Открыть Workflow Автоответчик обращений" })
+      screen.queryByRole("heading", { name: "Автоответчик обращений" })
     ).not.toBeInTheDocument();
   });
 
@@ -69,10 +86,8 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
     const createVersion = vi.spyOn(api.workflows, "createVersion");
     const { user } = renderRoute("/workflow", { api, realtime: createMockC7RealtimeClient([]) });
 
-    // Список Workflow загружается и авто-выбирает первый сценарий.
-    expect(
-      await screen.findByRole("button", { name: "Открыть Workflow Автоответчик обращений" })
-    ).toBeInTheDocument();
+    // Схема загружается и авто-выбирается в верхней панели.
+    expect(await findSelectedWorkflowHeading()).toBeInTheDocument();
 
     // Палитра ограничена каноническим набором C5 (ТЗ §13.13).
     const paletteButtons = await screen.findAllByRole("button", { name: /^Добавить узел:/ });
@@ -83,8 +98,8 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
     await user.click(screen.getByRole("button", { name: "Узел Создать тикет" }));
     expect(within(screen.getByRole("region", { name: "Редактор схемы Workflow" })).getByText("Изменяет данные")).toBeInTheDocument();
 
-    // Добавляем узел ветвления и переименовываем его в панели свойств.
-    await user.click(screen.getByRole("button", { name: "Добавить узел: Ветвление" }));
+    // Добавляем узел ветвления перетаскиванием и переименовываем его в панели свойств.
+    dragNodeToCanvas("Ветвление");
     const labelInput = await screen.findByLabelText("Метка узла");
     expect(labelInput).toHaveValue("Ветвление");
     await user.clear(labelInput);
@@ -117,8 +132,9 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
     const createVersion = vi.spyOn(api.workflows, "createVersion");
     const { user } = renderRoute("/workflow", { api, realtime: createMockC7RealtimeClient([]) });
 
-    await screen.findByRole("button", { name: "Открыть Workflow Автоответчик обращений" });
-    await user.click(await screen.findByRole("button", { name: "Добавить узел: Субсхема" }));
+    await findSelectedWorkflowHeading();
+    await screen.findByRole("button", { name: "Добавить узел: Субсхема" });
+    dragNodeToCanvas("Субсхема");
     await user.selectOptions(await screen.findByLabelText("Субсхема"), "support-common-context");
     await user.click(screen.getByRole("button", { name: "Сохранить как новую версию" }));
 
@@ -146,7 +162,7 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
     const resetDraft = vi.spyOn(api.workflows, "resetDraft");
     const { user } = renderRoute("/workflow", { api, realtime: createMockC7RealtimeClient([]) });
 
-    await screen.findByRole("button", { name: "Открыть Workflow Автоответчик обращений" });
+    await findSelectedWorkflowHeading();
 
     const source = await screen.findByRole("button", { name: "Добавить узел: Transform Node" });
     const canvas = screen.getByRole("group", { name: "Схема узлов и связей" });
@@ -159,7 +175,7 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
     await user.click(screen.getByRole("button", { name: "Открыть bodyGraph" }));
     expect(await screen.findByText("Корневая схема / Transform Node")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Добавить узел: Transform Node" }));
+    dragNodeToCanvas("Transform Node");
     const fromSelect = screen.getByLabelText("Из узла");
     const toSelect = screen.getByLabelText("В узел");
     await user.selectOptions(
@@ -207,7 +223,7 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
     });
     expect(await screen.findByText("Черновик сброшен к активной версии v2.")).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: "Добавить узел: Ветвление" }));
+    dragNodeToCanvas("Ветвление");
     await user.click(screen.getByRole("button", { name: "Опубликовать черновик" }));
     await waitFor(() => {
       expect(promoteDraft).toHaveBeenCalledWith("wf-support-autoresponder");
@@ -222,10 +238,9 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
       realtime: createMockC7RealtimeClient([])
     });
 
-    await screen.findByRole("button", { name: "Открыть Workflow Автоответчик обращений" });
-    await firstRender.user.click(
-      await screen.findByRole("button", { name: "Добавить узел: Ветвление" }),
-    );
+    await findSelectedWorkflowHeading();
+    await screen.findByRole("button", { name: "Добавить узел: Ветвление" });
+    dragNodeToCanvas("Ветвление");
     const labelInput = await screen.findByLabelText("Метка узла");
     await firstRender.user.clear(labelInput);
     await firstRender.user.type(labelInput, "Проверка SLA");
@@ -280,7 +295,7 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
       api,
       realtime: createMockC7RealtimeClient([])
     });
-    await screen.findByRole("button", { name: "Открыть Workflow Автоответчик обращений" });
+    await findSelectedWorkflowHeading();
     await screen.findByRole("button", { name: "Импорт JSON" });
 
     const input = container.querySelector<HTMLInputElement>(
@@ -345,7 +360,7 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
       api,
       realtime: createMockC7RealtimeClient([])
     });
-    await screen.findByRole("button", { name: "Открыть Workflow Автоответчик обращений" });
+    await findSelectedWorkflowHeading();
     await screen.findByRole("button", { name: "Импорт JSON" });
     await waitFor(() => {
       expect(screen.getByLabelText("Цель импорта")).toBeEnabled();
@@ -383,7 +398,7 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
     const updateWorkflow = vi.spyOn(api.workflows, "updateWorkflow");
     const { user } = renderRoute("/workflow", { api, realtime: createMockC7RealtimeClient([]) });
 
-    await screen.findByRole("button", { name: "Открыть Workflow Автоответчик обращений" });
+    await findSelectedWorkflowHeading();
 
     // Включение/отключение Workflow (ТЗ §16.7).
     await user.click(screen.getByRole("button", { name: "Отключить" }));
@@ -411,6 +426,10 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
     const api = createWorkflowOperatorApi();
     const getInstance = vi.spyOn(api.workflows, "getInstance");
     const { user } = renderRoute("/workflow", { api, realtime: createMockC7RealtimeClient([]) });
+
+    // История исполнения — выдвижная панель: открываем её из верхней панели (ТЗ §13, требование 6).
+    await findSelectedWorkflowHeading();
+    await user.click(screen.getByRole("button", { name: "История исполнения" }));
 
     const historyPanel = await screen.findByRole("region", { name: "История исполнения Workflow" });
     await user.click(

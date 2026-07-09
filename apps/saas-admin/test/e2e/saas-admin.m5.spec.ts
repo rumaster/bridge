@@ -51,9 +51,8 @@ test("Workflow доступен оператору платформы и скр�
   await expect(page.getByRole("heading", { level: 1, name: "Workflow" })).toBeVisible();
   const operatorNav = page.getByRole("navigation", { name: "Администрирование организации" });
   await expect(operatorNav.getByRole("link", { name: "Workflow" })).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Открыть Workflow Автоответчик обращений" })
-  ).toBeVisible();
+  // Схема выбирается в выпадающем списке верхней панели, её имя — заголовок редактора.
+  await expect(page.getByRole("heading", { name: "Автоответчик обращений" })).toBeVisible();
 });
 
 test("Доступность: skip-link ведёт к содержимому и лендмарки на месте", async ({ page }) => {

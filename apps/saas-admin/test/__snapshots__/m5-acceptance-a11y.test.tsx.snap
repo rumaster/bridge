@@ -133,15 +133,11 @@ exports[`SaaS Administration M5 acceptance and accessibility > фиксируе�
     },
     {
       "level": 2,
-      "name": "Список Workflow",
-    },
-    {
-      "level": 2,
       "name": "Автоответчик обращений",
     },
     {
-      "level": 2,
-      "name": "Редактор схемы",
+      "level": 3,
+      "name": "Информация о схеме",
     },
     {
       "level": 3,
@@ -154,10 +150,6 @@ exports[`SaaS Administration M5 acceptance and accessibility > фиксируе�
     {
       "level": 3,
       "name": "Связи узлов",
-    },
-    {
-      "level": 2,
-      "name": "История исполнения",
     },
   ],
 }

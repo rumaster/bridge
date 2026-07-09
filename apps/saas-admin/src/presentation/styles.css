@@ -71,16 +71,20 @@ textarea {
 }
 
 .admin-shell {
-  display: grid;
-  grid-template-columns: 264px minmax(0, 1fr);
-  min-height: 100vh;
-}
-
-.sidebar {
   display: flex;
   flex-direction: column;
-  gap: 24px;
-  padding: 20px;
+  min-height: 100vh;
+  height: 100vh;
+}
+
+/* Главное меню — горизонтальная верхняя панель (макет fbp_engine): освобождает
+   пространство по ширине под содержимое, брендинг и сессия по краям, навигация в центре. */
+.app-topbar {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  min-height: 60px;
+  padding: 10px 24px;
   color: #f7fbff;
   background: #22313f;
 }
@@ -90,6 +94,7 @@ textarea {
   align-items: center;
   gap: 10px;
   font-weight: 700;
+  flex-shrink: 0;
 }
 
 .brand-mark {
@@ -104,19 +109,24 @@ textarea {
 }
 
 .nav-list {
-  display: grid;
-  gap: 6px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
 }
 
 .nav-link {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 40px;
-  padding: 9px 10px;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 12px;
   border-radius: 6px;
   color: #d9e4ef;
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .nav-link.active,
@@ -125,21 +135,11 @@ textarea {
   background: rgba(255, 255, 255, 0.12);
 }
 
-.workspace-main {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  min-width: 0;
-}
-
-.topbar {
+.app-topbar-session {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  min-height: 64px;
-  padding: 12px 24px;
-  border-bottom: 1px solid #d6dee8;
-  background: #ffffff;
+  gap: 14px;
+  flex-shrink: 0;
 }
 
 .session-summary {
@@ -149,8 +149,27 @@ textarea {
   min-width: 0;
 }
 
+.workspace-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
 .workspace-content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
   padding: 24px;
+  overflow: auto;
+}
+
+/* Flush-режим для экранов с холстом (Workflow): содержимое занимает всю высоту
+   окна без внутренних отступов и внешней прокрутки — прокручиваются сами панели. */
+.workspace-content--flush {
+  padding: 0;
+  overflow: hidden;
+  display: flex;
 }
 
 .page-section {
@@ -846,20 +865,14 @@ div.broadcast-stats {
 }
 
 @media (max-width: 820px) {
-  .admin-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar {
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    gap: 14px;
-    padding: 14px;
+  .app-topbar {
+    flex-wrap: wrap;
+    gap: 12px;
   }
 
   .nav-list {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    order: 3;
+    flex-basis: 100%;
   }
 
   .nav-link {
@@ -894,9 +907,13 @@ div.broadcast-stats {
 }
 
 @media (max-width: 620px) {
-  .topbar {
+  .app-topbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .app-topbar-session {
+    justify-content: space-between;
   }
 
   .module-grid,
@@ -904,114 +921,93 @@ div.broadcast-stats {
     grid-template-columns: 1fr;
   }
 
-  .nav-list {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .channel-type-options {
     grid-template-columns: 1fr;
   }
 }
 
-/* ── Workflow editor (C5) ─────────────────────────────────────────────── */
-.workflow-layout {
-  display: grid;
-  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
-  align-items: start;
-  gap: 16px;
+/* ── Workflow editor (C5, редизайн под fbp_engine — issue #252) ───────── */
+/* Полноэкранный редактор: страница занимает всю высоту окна без внешней
+   прокрутки, а прокручиваются левая палитра, холст и правая панель по
+   отдельности (ТЗ §13 требования 1, 5, 6). */
+.workflow-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0;
+  min-width: 0;
+  min-height: 0;
+  max-width: none;
 }
 
-.workflow-detail {
-  display: grid;
+.workflow-page-heading {
+  padding: 14px 24px 0;
+}
+
+.workflow-page > .form-alert,
+.workflow-page > .form-success {
+  margin: 0 24px;
+}
+
+.workflow-workspace {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.workflow-body {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Верхняя панель схемы: выбор через dropdown, статус, активная версия, история. */
+.workflow-topbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
   gap: 16px;
+  padding: 12px 24px;
+  border-bottom: 1px solid #d6dee8;
+  background: #ffffff;
+}
+
+.workflow-topbar-scheme {
+  min-width: 220px;
+}
+
+.workflow-topbar-meta {
+  display: grid;
+  gap: 6px;
   min-width: 0;
 }
 
-.workflow-list {
-  display: grid;
-  gap: 14px;
-  padding: 18px;
-}
-
-.workflow-list-items {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.workflow-list-item {
-  display: grid;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid #d6dee8;
-  border-radius: 8px;
-  background: #f8fafc;
-}
-
-.workflow-list-item.selected {
-  border-color: #116a7b;
-  box-shadow: inset 3px 0 0 #116a7b;
-}
-
-.workflow-list-select {
-  display: grid;
-  gap: 6px;
-  padding: 0;
-  border: 0;
-  cursor: pointer;
-  background: transparent;
-  text-align: left;
-}
-
-.workflow-list-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #172331;
-  font-weight: 800;
-}
-
-.workflow-list-title svg {
-  color: #116a7b;
-}
-
-.workflow-list-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.workflow-toggle {
-  width: fit-content;
-}
-
-.workflow-version-bar {
-  display: grid;
-  gap: 14px;
-  padding: 18px;
-}
-
-.workflow-version-heading {
-  display: grid;
-  gap: 4px;
-}
-
-.workflow-version-heading h2 {
+.workflow-topbar-meta h2 {
   margin: 0;
   color: #172331;
   font-size: 1.1rem;
 }
 
-.workflow-version-control {
-  display: grid;
+.workflow-topbar-tags {
+  display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  color: #344256;
-  font-weight: 700;
 }
 
-.workflow-version-control select,
+.workflow-topbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.workflow-topbar-version {
+  min-width: 220px;
+}
+
 .workflow-editor-base select,
 .workflow-select select {
   min-height: 40px;
@@ -1024,9 +1020,14 @@ div.broadcast-stats {
 }
 
 .workflow-editor {
-  display: grid;
-  gap: 16px;
-  padding: 18px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  padding: 14px 24px;
+  overflow: hidden;
 }
 
 .workflow-editor-base {
@@ -1062,17 +1063,43 @@ div.broadcast-stats {
   color: #172331;
 }
 
+/* Три колонки на всю высоту рабочей области; каждая колонка прокручивается
+   независимо (ТЗ §13 требования 5, 6). */
 .workflow-editor-grid {
   display: grid;
-  grid-template-columns: minmax(180px, 220px) minmax(0, 1fr) minmax(220px, 280px);
+  grid-template-columns: minmax(200px, 240px) minmax(0, 1fr) minmax(240px, 300px);
   gap: 14px;
-  align-items: start;
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
 }
 
 .workflow-palette {
   display: grid;
   gap: 8px;
   align-content: start;
+  min-height: 0;
+  padding-right: 4px;
+  overflow-y: auto;
+}
+
+.workflow-schema-info {
+  display: grid;
+  gap: 8px;
+}
+
+.workflow-palette-hint {
+  margin: 0;
+  font-size: 0.82rem;
+}
+
+.workflow-side-panel {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  min-height: 0;
+  padding-right: 4px;
+  overflow-y: auto;
 }
 
 .workflow-palette h3,
@@ -1125,10 +1152,11 @@ div.broadcast-stats {
   color: #c27a1a;
 }
 
+/* Холст занимает всю высоту центральной колонки; масштаб колесом мыши. */
 .workflow-canvas {
+  position: relative;
   overflow: auto;
-  min-height: 300px;
-  max-height: 460px;
+  min-height: 0;
   padding: 8px;
   border: 1px solid #d6dee8;
   border-radius: 8px;
@@ -1141,6 +1169,47 @@ div.broadcast-stats {
 .workflow-canvas:focus-within {
   border-color: #116a7b;
   box-shadow: 0 0 0 3px rgba(17, 106, 123, 0.14);
+}
+
+.workflow-canvas-toolbar {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 4px 6px;
+  border: 1px solid #d6dee8;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.workflow-zoom-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 28px;
+  padding: 4px 6px;
+  border: 1px solid #c7d2de;
+  border-radius: 6px;
+  cursor: pointer;
+  color: #172331;
+  background: #ffffff;
+  font-weight: 700;
+}
+
+.workflow-zoom-button:hover {
+  border-color: #116a7b;
+}
+
+.workflow-zoom-value {
+  min-width: 44px;
+  color: #344256;
+  font-weight: 700;
+  text-align: center;
 }
 
 .workflow-canvas-surface {
@@ -1350,10 +1419,16 @@ div.broadcast-stats {
   font-weight: 800;
 }
 
+/* История исполнения — выдвижная панель справа на всю высоту рабочей области. */
 .workflow-instances {
   display: grid;
   gap: 14px;
+  align-content: start;
+  width: min(420px, 92vw);
+  min-height: 0;
   padding: 18px;
+  border-left: 1px solid #d6dee8;
+  overflow-y: auto;
 }
 
 .workflow-instance-list {
@@ -1623,13 +1698,38 @@ div.broadcast-stats {
 }
 
 @media (max-width: 1040px) {
+  /* На узких экранах колонки редактора складываются в поток, панели и холст
+     прокручиваются вместе с рабочей областью. */
+  .workflow-editor {
+    overflow: auto;
+  }
+
   .workflow-editor-grid {
     grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .workflow-palette,
+  .workflow-side-panel {
+    overflow: visible;
+  }
+
+  .workflow-canvas {
+    min-height: 320px;
+  }
+
+  .workflow-body {
+    flex-wrap: wrap;
+  }
+
+  .workflow-instances {
+    width: 100%;
+    border-left: 0;
+    border-top: 1px solid #d6dee8;
   }
 }
 
 @media (max-width: 900px) {
-  .workflow-layout,
   .onboarding-layout {
     grid-template-columns: 1fr;
   }

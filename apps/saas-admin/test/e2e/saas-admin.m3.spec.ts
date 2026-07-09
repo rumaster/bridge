@@ -16,15 +16,49 @@ async function loginAsUser(
   await page.getByRole("button", { name: "Войти" }).click();
 }
 
+/**
+ * Узлы добавляются только перетаскиванием с палитры на холст (ТЗ этап §252,
+ * дизайн fbp_engine). Эмулируем HTML5 drag-and-drop нативными DragEvent с общим
+ * DataTransfer, так как палитра больше не добавляет узлы по клику.
+ */
+async function dragPaletteNodeToCanvas(
+  page: import("@playwright/test").Page,
+  nodeLabel: string
+) {
+  await page.evaluate((label) => {
+    const source = document.querySelector(`[aria-label="Добавить узел: ${label}"]`);
+    const canvas = document.querySelector('[aria-label="Схема узлов и связей"]');
+    if (!source || !canvas) {
+      throw new Error(`Не найден узел палитры «${label}» или холст`);
+    }
+
+    const dataTransfer = new DataTransfer();
+    const rect = canvas.getBoundingClientRect();
+    const clientX = rect.left + Math.min(rect.width - 40, 200);
+    const clientY = rect.top + Math.min(rect.height - 40, 140);
+
+    const dispatch = (target: Element, type: string) =>
+      target.dispatchEvent(
+        new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer, clientX, clientY })
+      );
+
+    dispatch(source, "dragstart");
+    dispatch(canvas, "dragenter");
+    dispatch(canvas, "dragover");
+    dispatch(canvas, "drop");
+    dispatch(source, "dragend");
+  }, nodeLabel);
+}
+
 test("Оператор платформы правит Workflow: безопасная палитра, новая версия и переключение состояния", async ({
   page
 }) => {
   await loginAsUser(page, "/workflow", "@operator_demo");
 
   await expect(page.getByRole("heading", { name: "Workflow", level: 1 })).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Открыть Workflow Автоответчик обращений" })
-  ).toBeVisible();
+  // Схема выбирается через выпадающий список верхней панели (дизайн fbp_engine),
+  // а её имя отражается заголовком редактора.
+  await expect(page.getByRole("heading", { name: "Автоответчик обращений" })).toBeVisible();
 
   // Палитра ограничена каноническим набором узлов C5 с sub_schema-ссылкой этапа 4.
   await expect(page.getByRole("button", { name: /^Добавить узел:/ })).toHaveCount(7);
@@ -35,8 +69,8 @@ test("Оператор платформы правит Workflow: безопас�
     page.getByRole("region", { name: "Редактор схемы Workflow" }).getByText("Изменяет данные")
   ).toBeVisible();
 
-  // Добавляем узел, переименовываем и сохраняем как новую версию (ТЗ §13.10).
-  await page.getByRole("button", { name: "Добавить узел: Ветвление" }).click();
+  // Добавляем узел перетаскиванием, переименовываем и сохраняем как новую версию (ТЗ §13.10).
+  await dragPaletteNodeToCanvas(page, "Ветвление");
   const labelInput = page.getByLabel("Метка узла");
   await labelInput.fill("Проверка бюджета");
   await page.getByRole("button", { name: "Сохранить как новую версию" }).click();
@@ -48,6 +82,9 @@ test("Оператор платформы правит Workflow: безопас�
   // Включение/отключение Workflow (ТЗ §16.7).
   await page.getByRole("button", { name: "Отключить" }).click();
   await expect(page.getByText("Workflow отключен")).toBeVisible();
+
+  // История исполнения открывается выдвижной панелью из верхней панели (дизайн fbp_engine).
+  await page.getByRole("button", { name: "История исполнения" }).click();
 
   // Диагностика инстанса из истории исполнения.
   await page
