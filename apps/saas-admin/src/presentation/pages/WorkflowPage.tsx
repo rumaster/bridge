@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DragEvent } from "react";
+import type { ChangeEvent, DragEvent } from "react";
 import {
   ArrowLeft,
   Boxes,
   Database,
+  Download,
+  FileUp,
   FlaskConical,
   History,
   Link2,
@@ -19,12 +21,15 @@ import {
 } from "lucide-react";
 
 import type {
+  ImportWorkflowRequest,
   Workflow,
+  WorkflowImportTarget,
   WorkflowInstance,
   WorkflowInstanceDetail,
   WorkflowNode,
   WorkflowNodeType,
   WorkflowSchema,
+  WorkflowSchemaExport,
   WorkflowSubschema,
   WorkflowVersion
 } from "../../api/client/types";
@@ -431,6 +436,7 @@ function WorkflowSchemaEditor({
   const [connectionFrom, setConnectionFrom] = useState("");
   const [connectionTo, setConnectionTo] = useState("");
   const [activateOnSave, setActivateOnSave] = useState(false);
+  const [importTarget, setImportTarget] = useState<WorkflowImportTarget>("draft");
   const [hasDraft, setHasDraft] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
   const [draftUpdatedAt, setDraftUpdatedAt] = useState<string | null>(null);
@@ -440,6 +446,7 @@ function WorkflowSchemaEditor({
   const [saving, setSaving] = useState(false);
   const [editorAlert, setEditorAlert] = useState<string | null>(null);
   const [editorNotice, setEditorNotice] = useState<string | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const draftSchema = useMemo(
     () => getSchemaAtPath(rootDraftSchema, bodyPath),
@@ -783,6 +790,97 @@ function WorkflowSchemaEditor({
     }
   }
 
+  async function handleExportWorkflow() {
+    setSaving(true);
+    setEditorAlert(null);
+    setEditorNotice(null);
+
+    try {
+      const exported = await api.workflows.exportWorkflow(workflow.id);
+      downloadWorkflowExport(exported);
+      setEditorNotice(`Экспортирована активная версия v${exported.workflow.version_no}.`);
+    } catch (error) {
+      setEditorAlert(getProblemMessage(error, "Не удалось экспортировать Workflow JSON."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleImportClick() {
+    importInputRef.current?.click();
+  }
+
+  async function handleImportFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0] ?? null;
+    event.currentTarget.value = "";
+    if (!file) {
+      return;
+    }
+
+    setSaving(true);
+    setEditorAlert(null);
+    setEditorNotice(null);
+
+    try {
+      const parsed = JSON.parse(await file.text()) as unknown;
+      const payload = normalizeWorkflowImportPayload(parsed, workflow, defaultVersion);
+      const importValidation = validateWorkflowSchema(payload.schema);
+      if (!importValidation.valid) {
+        setEditorAlert(`Файл импорта не прошёл проверку: ${importValidation.errors.join(" ")}`);
+        return;
+      }
+
+      const diffSummary = summarizeWorkflowSchemaDiff(rootDraftSchema, payload.schema);
+      const targetLabel = workflowImportTargetLabel(importTarget);
+      const confirmed = window.confirm(
+        `Импортировать JSON Workflow как ${targetLabel}?\n${diffSummary}`,
+      );
+      if (!confirmed) {
+        return;
+      }
+
+      const imported = await api.workflows.importWorkflow(workflow.id, {
+        ...payload,
+        activate: importTarget === "version" ? activateOnSave : undefined,
+        target: importTarget
+      });
+
+      const importedSchema =
+        imported.target === "version" ? imported.version?.schema : imported.draft?.schema;
+      if (!importedSchema) {
+        throw new Error("Workflow import did not return a schema.");
+      }
+      if (imported.target === "version" && imported.version) {
+        onVersionCreated(imported.version, Boolean(activateOnSave));
+        if (hasDraft) {
+          await api.workflows.resetDraft(workflow.id);
+        }
+      }
+
+      setRootDraftSchema(cloneDraftSchema(importedSchema));
+      setBaseVersionId(
+        imported.target === "version" && imported.version ? imported.version.id : defaultVersion.id
+      );
+      setBodyPath([]);
+      setSelectedNodeId(importedSchema.nodes[0]?.id ?? null);
+      setConnectionFrom("");
+      setConnectionTo("");
+      setHasDraft(imported.target === "draft");
+      setDraftSaved(imported.target === "draft");
+      setDraftUpdatedAt(imported.target === "draft" ? imported.draft?.draft_updated_at ?? null : null);
+      setTestRun(null);
+      setEditorNotice(
+        imported.target === "version"
+          ? `JSON импортирован как новая версия v${imported.version?.version_no}.`
+          : "JSON импортирован и сохранён как черновик.",
+      );
+    } catch (error) {
+      setEditorAlert(getProblemMessage(error, "Не удалось импортировать Workflow JSON."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleRunTest() {
     if (hasDraft && !draftSaved) {
       const saved = await persistDraft("Черновик автосохранён перед тестовым запуском.");
@@ -963,6 +1061,43 @@ function WorkflowSchemaEditor({
           <RotateCcw aria-hidden="true" size={16} />
           Сбросить черновик
         </Button>
+        <Button
+          disabled={saving || draftLoading}
+          onClick={() => void handleExportWorkflow()}
+          type="button"
+          variant="secondary"
+        >
+          <Download aria-hidden="true" size={16} />
+          Экспорт JSON
+        </Button>
+        <label className="workflow-select workflow-import-target">
+          <span>Цель импорта</span>
+          <select
+            disabled={saving || draftLoading}
+            onChange={(event) => setImportTarget(event.currentTarget.value as WorkflowImportTarget)}
+            value={importTarget}
+          >
+            <option value="draft">Черновик</option>
+            <option value="version">Новая версия</option>
+          </select>
+        </label>
+        <Button
+          disabled={saving || draftLoading}
+          onClick={handleImportClick}
+          type="button"
+          variant="secondary"
+        >
+          <FileUp aria-hidden="true" size={16} />
+          Импорт JSON
+        </Button>
+        <input
+          accept="application/json,.json"
+          aria-label="Файл импорта Workflow JSON"
+          onChange={(event) => void handleImportFile(event)}
+          ref={importInputRef}
+          style={{ display: "none" }}
+          type="file"
+        />
       </div>
       <p className="muted workflow-save-hint">
         Черновик хранится на Backend до публикации; публикация создаёт неизменяемую версию и не влияет на выполняющиеся инстансы (ТЗ §13.10).
@@ -1609,9 +1744,136 @@ function workflowTestScopeLabel(scope: WorkflowTestScope): string {
   }
 }
 
+function workflowImportTargetLabel(target: WorkflowImportTarget): string {
+  switch (target) {
+    case "draft":
+      return "черновик";
+    case "version":
+      return "новую версию";
+  }
+}
+
 function nodePrimaryValue(node: WorkflowNode, key: string): string {
   const value = node.config[key];
   return typeof value === "string" ? value : value == null ? "" : String(value);
+}
+
+function normalizeWorkflowImportPayload(
+  value: unknown,
+  workflow: Workflow,
+  defaultVersion: WorkflowVersion
+): ImportWorkflowRequest {
+  if (isWorkflowSchemaExport(value)) {
+    return { ...value, target: "draft" };
+  }
+
+  if (isWorkflowSchema(value)) {
+    return {
+      contract: "C5.WorkflowSchemaExport",
+      exported_at: new Date().toISOString(),
+      schema: value,
+      target: "draft",
+      version: "1.0.0",
+      workflow: {
+        id: workflow.id,
+        name: workflow.name,
+        version_id: defaultVersion.id,
+        version_no: defaultVersion.version_no
+      }
+    };
+  }
+
+  throw new Error("Файл должен содержать экспорт Workflow JSON или объект schema.");
+}
+
+function isWorkflowSchemaExport(value: unknown): value is WorkflowSchemaExport {
+  return (
+    isRecord(value) &&
+    value.contract === "C5.WorkflowSchemaExport" &&
+    typeof value.version === "string" &&
+    typeof value.exported_at === "string" &&
+    isRecord(value.workflow) &&
+    typeof value.workflow.id === "string" &&
+    typeof value.workflow.name === "string" &&
+    typeof value.workflow.version_id === "string" &&
+    typeof value.workflow.version_no === "number" &&
+    isWorkflowSchema(value.schema)
+  );
+}
+
+function summarizeWorkflowSchemaDiff(current: WorkflowSchema, next: WorkflowSchema): string {
+  const currentNodes = new Map(current.nodes.map((node) => [node.id, node]));
+  const nextNodes = new Map(next.nodes.map((node) => [node.id, node]));
+  const addedNodes = next.nodes.filter((node) => !currentNodes.has(node.id)).length;
+  const removedNodes = current.nodes.filter((node) => !nextNodes.has(node.id)).length;
+  const changedNodes = next.nodes.filter((node) => {
+    const previous = currentNodes.get(node.id);
+    return previous ? JSON.stringify(previous) !== JSON.stringify(node) : false;
+  }).length;
+  const currentConnections = new Set(current.connections.map(connectionSignature));
+  const nextConnections = new Set(next.connections.map(connectionSignature));
+  const addedConnections = next.connections.filter(
+    (connection) => !currentConnections.has(connectionSignature(connection))
+  ).length;
+  const removedConnections = current.connections.filter(
+    (connection) => !nextConnections.has(connectionSignature(connection))
+  ).length;
+
+  const lines = [
+    `Узлы: +${addedNodes}, -${removedNodes}, изменено ${changedNodes}.`,
+    `Связи: +${addedConnections}, -${removedConnections}.`
+  ];
+
+  if (
+    addedNodes === 0 &&
+    removedNodes === 0 &&
+    changedNodes === 0 &&
+    addedConnections === 0 &&
+    removedConnections === 0
+  ) {
+    lines.push("Отличий в узлах и связях не найдено.");
+  }
+
+  return lines.join("\n");
+}
+
+function connectionSignature(connection: WorkflowSchema["connections"][number]): string {
+  return [
+    connection.from,
+    connection.fromPort,
+    connection.to,
+    connection.toPort,
+    connection.label ?? ""
+  ].join("::");
+}
+
+function downloadWorkflowExport(exported: WorkflowSchemaExport): void {
+  const json = JSON.stringify(exported, null, 2);
+  const blob = new Blob([json], { type: "application/json" });
+  const anchor = document.createElement("a");
+  const objectUrl =
+    typeof URL.createObjectURL === "function"
+      ? URL.createObjectURL(blob)
+      : `data:application/json;charset=utf-8,${encodeURIComponent(json)}`;
+
+  anchor.href = objectUrl;
+  anchor.download = `${sanitizeFileName(exported.workflow.name)}-v${exported.workflow.version_no}.workflow.json`;
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+
+  if (objectUrl.startsWith("blob:") && typeof URL.revokeObjectURL === "function") {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
+function sanitizeFileName(value: string): string {
+  const sanitized = value.trim().replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  return sanitized || "workflow";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function replaceWorkflow(workflows: Workflow[], next: Workflow) {

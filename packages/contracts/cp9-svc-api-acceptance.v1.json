@@ -31,8 +31,8 @@
       "base_path": "/api/v1",
       "openapi": {
         "artifact": "packages/contracts/openapi/backend-core/openapi.json",
-        "generated_operation_count": 70,
-        "generated_path_count": 58,
+        "generated_operation_count": 72,
+        "generated_path_count": 60,
         "metadata": {
           "x-contract-id": "C3",
           "x-owner": "SVC-API",
@@ -49,6 +49,8 @@
         { "method": "post", "path": "/api/v1/fbp/workflows/{workflowId}:start" },
         { "method": "post", "path": "/api/v1/ai/onboarding:apply" },
         { "method": "post", "path": "/api/v1/workflows/backend-api-node:invoke" },
+        { "method": "get", "path": "/api/v1/workflows/{workflowId}/export" },
+        { "method": "post", "path": "/api/v1/workflows/{workflowId}/import" },
         { "method": "get", "path": "/api/v1/workflow-subschemas" },
         { "method": "post", "path": "/api/v1/broadcasts" },
         { "method": "get", "path": "/api/v1/notifications" },
@@ -99,6 +101,7 @@
         "services/backend/test/integration/web-chat-public.spec.ts",
         "services/backend/test/integration/m3-facades.spec.ts",
         "services/backend/test/integration/m4-facades.spec.ts",
+        "services/backend/test/integration/workflow-version-validation.spec.ts",
         "tests/contract/cp9-svc-api-acceptance.test.ts"
       ]
     }

@@ -1238,6 +1238,10 @@ div.broadcast-stats {
   font-weight: 700;
 }
 
+.workflow-import-target {
+  min-width: 150px;
+}
+
 .workflow-connection-list {
   display: grid;
   gap: 8px;

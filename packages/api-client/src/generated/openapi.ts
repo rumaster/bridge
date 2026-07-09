@@ -48,8 +48,8 @@ export const generatedOpenApiDocuments = [
     "openapi": "3.0.0",
     "title": "Bridge Backend Core API",
     "version": "1.0.0",
-    "pathCount": 58,
-    "operationCount": 70
+    "pathCount": 60,
+    "operationCount": 72
   },
   {
     "artifact": "packages/contracts/openapi/broadcasts/c8.broadcasts.openapi.json",
@@ -903,6 +903,28 @@ export const generatedOpenApiOperations = [
     "path": "/api/v1/workflows/{workflowId}/draft:promote",
     "operationId": "WorkflowController_promoteDraft_v1",
     "summary": "Promote Workflow draft to a new active immutable version",
+    "tags": [
+      "workflows"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "get",
+    "path": "/api/v1/workflows/{workflowId}/export",
+    "operationId": "WorkflowController_exportWorkflow_v1",
+    "summary": "Export the active Workflow schema as JSON",
+    "tags": [
+      "workflows"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "post",
+    "path": "/api/v1/workflows/{workflowId}/import",
+    "operationId": "WorkflowController_importWorkflow_v1",
+    "summary": "Import a Workflow schema JSON into draft or immutable version",
     "tags": [
       "workflows"
     ]

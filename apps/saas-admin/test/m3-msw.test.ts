@@ -118,6 +118,37 @@ describe("SaaS Administration MSW mocks — M3 Workflow (C5)", () => {
     expect(reset).toMatchObject({ has_draft: false, schema: null });
   });
 
+  it("экспортирует Workflow и импортирует JSON обратно в persisted draft", async () => {
+    const api = createSaasAdminApiClient({ baseUrl: "/api/v1" });
+
+    const exported = await api.workflows.exportWorkflow("wf-support-autoresponder");
+    expect(exported).toMatchObject({
+      contract: "C5.WorkflowSchemaExport",
+      version: "1.0.0",
+      workflow: {
+        id: "wf-support-autoresponder",
+        version_id: "wfv-support-2",
+        version_no: 2
+      }
+    });
+
+    const imported = await api.workflows.importWorkflow("wf-support-autoresponder", {
+      ...exported,
+      schema: editedSchema
+    });
+    expect(imported).toMatchObject({
+      target: "draft",
+      draft: {
+        has_draft: true,
+        schema: editedSchema,
+        workflow_id: "wf-support-autoresponder"
+      }
+    });
+
+    const reloaded = await api.workflows.getDraft("wf-support-autoresponder");
+    expect(reloaded.schema).toEqual(editedSchema);
+  });
+
   it("отдаёт историю исполнения и диагностику инстанса", async () => {
     const api = createSaasAdminApiClient({ baseUrl: "/api/v1" });
 

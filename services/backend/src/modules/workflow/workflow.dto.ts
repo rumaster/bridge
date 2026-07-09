@@ -1,8 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsBoolean, IsIn, IsObject, IsOptional, IsUUID } from "class-validator";
+import { IsBoolean, IsIn, IsObject, IsOptional, IsString, IsUUID } from "class-validator";
 
 export const WORKFLOW_STATUSES = ["draft", "active", "archived"] as const;
 export type WorkflowStatus = (typeof WORKFLOW_STATUSES)[number];
+
+export const WORKFLOW_SCHEMA_EXPORT_CONTRACT = "C5.WorkflowSchemaExport" as const;
+export const WORKFLOW_SCHEMA_EXPORT_VERSION = "1.0.0" as const;
+export const WORKFLOW_IMPORT_TARGETS = ["draft", "version"] as const;
+export type WorkflowImportTarget = (typeof WORKFLOW_IMPORT_TARGETS)[number];
 
 export const WORKFLOW_NODE_TYPES = [
   "backend-api",
@@ -44,6 +49,56 @@ export class SaveWorkflowDraftDto {
   @ApiProperty({ type: Object })
   @IsObject()
   schema!: Record<string, unknown>;
+}
+
+export class WorkflowSchemaExportWorkflowDto {
+  @ApiProperty({ example: "30000000-0000-4000-8000-000000000801" })
+  id!: string;
+
+  @ApiProperty({ example: "Распределение обращений" })
+  name!: string;
+
+  @ApiProperty({ example: "30000000-0000-4000-8000-000000000811" })
+  version_id!: string;
+
+  @ApiProperty({ example: 1 })
+  version_no!: number;
+}
+
+export class ImportWorkflowSchemaDto {
+  @ApiPropertyOptional({ example: WORKFLOW_SCHEMA_EXPORT_CONTRACT, type: String })
+  @IsString()
+  @IsOptional()
+  contract?: string;
+
+  @ApiPropertyOptional({ example: WORKFLOW_SCHEMA_EXPORT_VERSION, type: String })
+  @IsString()
+  @IsOptional()
+  version?: string;
+
+  @ApiPropertyOptional({ example: "2026-07-09T00:00:00.000Z", type: String })
+  @IsString()
+  @IsOptional()
+  exported_at?: string;
+
+  @ApiPropertyOptional({ type: WorkflowSchemaExportWorkflowDto })
+  @IsObject()
+  @IsOptional()
+  workflow?: WorkflowSchemaExportWorkflowDto;
+
+  @ApiProperty({ type: Object })
+  @IsObject()
+  schema!: Record<string, unknown>;
+
+  @ApiPropertyOptional({ default: "draft", enum: WORKFLOW_IMPORT_TARGETS })
+  @IsIn(WORKFLOW_IMPORT_TARGETS)
+  @IsOptional()
+  target?: WorkflowImportTarget;
+
+  @ApiPropertyOptional({ default: false })
+  @IsBoolean()
+  @IsOptional()
+  activate?: boolean;
 }
 
 export class UpdateWorkflowDto {
@@ -134,6 +189,34 @@ export class WorkflowVersionResponseDto {
 
   @ApiProperty({ example: "2026-07-04T10:04:00.000Z" })
   created_at!: string;
+}
+
+export class WorkflowSchemaExportResponseDto {
+  @ApiProperty({ example: WORKFLOW_SCHEMA_EXPORT_CONTRACT, type: String })
+  contract!: typeof WORKFLOW_SCHEMA_EXPORT_CONTRACT;
+
+  @ApiProperty({ example: WORKFLOW_SCHEMA_EXPORT_VERSION, type: String })
+  version!: typeof WORKFLOW_SCHEMA_EXPORT_VERSION;
+
+  @ApiProperty({ example: "2026-07-09T00:00:00.000Z" })
+  exported_at!: string;
+
+  @ApiProperty({ type: WorkflowSchemaExportWorkflowDto })
+  workflow!: WorkflowSchemaExportWorkflowDto;
+
+  @ApiProperty({ type: Object })
+  schema!: Record<string, unknown>;
+}
+
+export class WorkflowImportResponseDto {
+  @ApiProperty({ enum: WORKFLOW_IMPORT_TARGETS, example: "draft" })
+  target!: WorkflowImportTarget;
+
+  @ApiPropertyOptional({ type: WorkflowDraftResponseDto })
+  draft?: WorkflowDraftResponseDto;
+
+  @ApiPropertyOptional({ type: WorkflowVersionResponseDto })
+  version?: WorkflowVersionResponseDto;
 }
 
 export class WorkflowSubschemaResponseDto {
@@ -232,6 +315,14 @@ export interface WorkflowVersionRow {
   id: string;
   organization_id: string;
   schema: Record<string, unknown>;
+  version_no: number | string;
+  workflow_id: string;
+}
+
+export interface WorkflowExportRow {
+  name: string;
+  schema: Record<string, unknown>;
+  version_id: string;
   version_no: number | string;
   workflow_id: string;
 }

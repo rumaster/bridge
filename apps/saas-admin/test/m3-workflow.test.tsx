@@ -4,6 +4,7 @@ import { RouterProvider } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { createMockC7RealtimeClient } from "../src/api/client/realtime";
+import type { WorkflowSchema } from "../src/api/client/types";
 import { createMockSaasAdminApiClient } from "../src/api/mocks/client";
 import { createMockSession } from "../src/api/mocks/fixtures";
 import { createSaasAdminRouter } from "../src/routing/router";
@@ -236,6 +237,145 @@ describe("SaaS Administration M3 Workflow editor (C5)", () => {
     renderRoute("/workflow", { api, realtime: createMockC7RealtimeClient([]) });
     expect(await screen.findByRole("button", { name: "Узел Проверка SLA" })).toBeInTheDocument();
     expect(await screen.findByText("Черновик сохранён")).toBeInTheDocument();
+  });
+
+  it("импортирует Workflow JSON в persisted draft после diff-подтверждения", async () => {
+    const api = createWorkflowOperatorApi();
+    const importWorkflow = vi.spyOn(api.workflows, "importWorkflow");
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const importedSchema: WorkflowSchema = {
+      schema_version: "1.0.0",
+      entry: "node-wait-event-import",
+      nodes: [
+        {
+          id: "node-wait-event-import",
+          type: "wait-event",
+          label: "Входящее сообщение",
+          config: { event_type: "channel.message_received" },
+          position: { x: 40, y: 40 }
+        }
+      ],
+      connections: []
+    };
+    const file = new File(
+      [
+        JSON.stringify({
+          contract: "C5.WorkflowSchemaExport",
+          version: "1.0.0",
+          exported_at: "2026-07-03T11:17:00.000Z",
+          workflow: {
+            id: "wf-support-autoresponder",
+            name: "Автоответчик обращений",
+            version_id: "wfv-support-2",
+            version_no: 2
+          },
+          schema: importedSchema
+        })
+      ],
+      "workflow.json",
+      { type: "application/json" }
+    );
+
+    const { container } = renderRoute("/workflow", {
+      api,
+      realtime: createMockC7RealtimeClient([])
+    });
+    await screen.findByRole("button", { name: "Открыть Workflow Автоответчик обращений" });
+    await screen.findByRole("button", { name: "Импорт JSON" });
+
+    const input = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Файл импорта Workflow JSON"]'
+    );
+    expect(input).not.toBeNull();
+    fireEvent.change(input as HTMLInputElement, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(confirm).toHaveBeenCalledWith(expect.stringContaining("Узлы:"));
+      expect(importWorkflow).toHaveBeenCalledWith(
+        "wf-support-autoresponder",
+        expect.objectContaining({
+          schema: importedSchema,
+          target: "draft"
+        })
+      );
+    });
+    expect(await screen.findByText("JSON импортирован и сохранён как черновик.")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Узел Входящее сообщение" })).toBeInTheDocument();
+    confirm.mockRestore();
+  });
+
+  it("импортирует Workflow JSON как новую версию после выбора цели импорта", async () => {
+    const api = createWorkflowOperatorApi();
+    const importWorkflow = vi.spyOn(api.workflows, "importWorkflow");
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const importedSchema: WorkflowSchema = {
+      schema_version: "1.0.0",
+      entry: "node-version-import",
+      nodes: [
+        {
+          id: "node-version-import",
+          type: "wait-event",
+          label: "Импортированная версия",
+          config: { event_type: "channel.message_received" },
+          position: { x: 80, y: 80 }
+        }
+      ],
+      connections: []
+    };
+    const file = new File(
+      [
+        JSON.stringify({
+          contract: "C5.WorkflowSchemaExport",
+          version: "1.0.0",
+          exported_at: "2026-07-03T11:17:00.000Z",
+          workflow: {
+            id: "wf-support-autoresponder",
+            name: "Автоответчик обращений",
+            version_id: "wfv-support-2",
+            version_no: 2
+          },
+          schema: importedSchema
+        })
+      ],
+      "workflow-version.json",
+      { type: "application/json" }
+    );
+
+    const { container, user } = renderRoute("/workflow", {
+      api,
+      realtime: createMockC7RealtimeClient([])
+    });
+    await screen.findByRole("button", { name: "Открыть Workflow Автоответчик обращений" });
+    await screen.findByRole("button", { name: "Импорт JSON" });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Цель импорта")).toBeEnabled();
+    });
+    await user.selectOptions(screen.getByLabelText("Цель импорта"), "version");
+    await waitFor(() => {
+      expect(screen.getByLabelText("Цель импорта")).toHaveValue("version");
+    });
+
+    const input = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Файл импорта Workflow JSON"]'
+    );
+    expect(input).not.toBeNull();
+    fireEvent.change(input as HTMLInputElement, { target: { files: [file] } });
+
+    await waitFor(() => {
+      expect(confirm).toHaveBeenCalledWith(expect.stringContaining("как новую версию"));
+      expect(importWorkflow).toHaveBeenCalledWith(
+        "wf-support-autoresponder",
+        expect.objectContaining({
+          schema: importedSchema,
+          target: "version"
+        })
+      );
+    });
+    expect(await screen.findByText(/JSON импортирован как новая версия v/)).toBeInTheDocument();
+    expect(
+      await screen.findByRole("button", { name: "Узел Импортированная версия" })
+    ).toBeInTheDocument();
+    confirm.mockRestore();
   });
 
   it("включает/отключает Workflow и переключает активную версию по умолчанию", async () => {

@@ -43,6 +43,7 @@ import type {
   CreateBroadcastRequest,
   CreateKnowledgeDocumentRequest,
   CreateWorkflowVersionRequest,
+  ImportWorkflowRequest,
   KnowledgeDocument,
   Notification,
   NotificationSetting,
@@ -540,6 +541,98 @@ export const handlers = [
 
     delete currentWorkflowDrafts[workflow.id];
     return HttpResponse.json(cloneWorkflowDraft(emptyWorkflowDraft(workflow)));
+  }),
+
+  http.get(`${API_PREFIX}/workflows/:workflowId/export`, ({ params }) => {
+    const workflow = currentWorkflows.find((item) => item.id === params.workflowId);
+    if (!workflow) {
+      return problem(404, "Not Found", "Workflow not found.");
+    }
+    const version = currentVersions.find(
+      (item) => item.workflow_id === workflow.id && item.id === workflow.default_version_id
+    );
+    if (!version) {
+      return problem(400, "Bad Request", "Workflow default version not found.");
+    }
+
+    return HttpResponse.json({
+      contract: "C5.WorkflowSchemaExport",
+      version: "1.0.0",
+      exported_at: "2026-07-03T11:17:00.000Z",
+      workflow: {
+        id: workflow.id,
+        name: workflow.name,
+        version_id: version.id,
+        version_no: version.version_no
+      },
+      schema: cloneWorkflowSchema(version.schema)
+    });
+  }),
+
+  http.post(`${API_PREFIX}/workflows/:workflowId/import`, async ({ params, request }) => {
+    const workflow = currentWorkflows.find((item) => item.id === params.workflowId);
+    if (!workflow) {
+      return problem(404, "Not Found", "Workflow not found.");
+    }
+
+    const body = (await request.json()) as Partial<ImportWorkflowRequest>;
+    if (body.contract !== "C5.WorkflowSchemaExport" || body.version !== "1.0.0") {
+      return validationProblem(
+        [{ field: "contract", message: "Workflow import JSON must use C5.WorkflowSchemaExport v1.0.0." }],
+        "Request payload does not match C5 workflow import DTO."
+      );
+    }
+
+    const errors = validateWorkflowVersionPayload(body.schema);
+    if (errors.length > 0) {
+      return validationProblem(errors, "Request payload does not match C5 workflow import DTO.");
+    }
+
+    if (body.target === "version") {
+      const versionNo =
+        currentVersions
+          .filter((version) => version.workflow_id === workflow.id)
+          .reduce((max, version) => Math.max(max, version.version_no), 0) + 1;
+      const version: WorkflowVersion = {
+        id: `wfv-created-${nextWorkflowVersionNumber++}`,
+        organization_id: workflow.organization_id,
+        workflow_id: workflow.id,
+        version_no: versionNo,
+        schema: cloneWorkflowSchema(body.schema as WorkflowSchema),
+        created_by: mockSession.user.displayName,
+        created_at: "2026-07-03T11:15:00.000Z"
+      };
+
+      currentVersions = [...currentVersions, version];
+      if (body.activate) {
+        currentWorkflows = currentWorkflows.map((item) =>
+          item.id === workflow.id
+            ? {
+                ...item,
+                status: "active",
+                default_version_id: version.id,
+                updated_at: "2026-07-03T11:15:00.000Z"
+              }
+            : item
+        );
+      }
+
+      return HttpResponse.json({ target: "version", version: cloneWorkflowVersion(version) });
+    }
+
+    const draft: WorkflowDraft = {
+      organization_id: workflow.organization_id,
+      workflow_id: workflow.id,
+      has_draft: true,
+      schema: cloneWorkflowSchema(body.schema as WorkflowSchema),
+      draft_updated_at: "2026-07-03T11:14:00.000Z"
+    };
+    currentWorkflowDrafts = {
+      ...currentWorkflowDrafts,
+      [workflow.id]: draft
+    };
+
+    return HttpResponse.json({ draft: cloneWorkflowDraft(draft), target: "draft" });
   }),
 
   http.get(`${API_PREFIX}/workflows/:workflowId/instances/:instanceId`, ({ params }) => {

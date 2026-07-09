@@ -339,6 +339,34 @@ export interface SaveWorkflowDraftRequest {
   schema: WorkflowSchema;
 }
 
+export type WorkflowImportTarget = "draft" | "version";
+
+export interface WorkflowSchemaExportWorkflow {
+  id: string;
+  name: string;
+  version_id: string;
+  version_no: number;
+}
+
+export interface WorkflowSchemaExport {
+  contract: "C5.WorkflowSchemaExport";
+  version: string;
+  exported_at: ISODateTime;
+  workflow: WorkflowSchemaExportWorkflow;
+  schema: WorkflowSchema;
+}
+
+export interface ImportWorkflowRequest extends WorkflowSchemaExport {
+  target?: WorkflowImportTarget;
+  activate?: boolean;
+}
+
+export interface ImportWorkflowResponse {
+  target: WorkflowImportTarget;
+  draft?: WorkflowDraft;
+  version?: WorkflowVersion;
+}
+
 // ── AI Onboarding (C4, SVC-AI) ────────────────────────────────────────────
 // Диалоговый помощник формирует структурированную команду (ТЗ §16.8). Команда —
 // лишь описание намерения; Backend проверяет полномочия и схему (§12.6) и
@@ -692,6 +720,11 @@ export interface SaasAdminApiClient {
     ) => Promise<WorkflowDraft>;
     promoteDraft: (workflowId: string) => Promise<WorkflowVersion>;
     resetDraft: (workflowId: string) => Promise<WorkflowDraft>;
+    exportWorkflow: (workflowId: string) => Promise<WorkflowSchemaExport>;
+    importWorkflow: (
+      workflowId: string,
+      request: ImportWorkflowRequest
+    ) => Promise<ImportWorkflowResponse>;
     createVersion: (
       workflowId: string,
       request: CreateWorkflowVersionRequest
