@@ -11,6 +11,8 @@ import type {
   CreateBroadcastResponse,
   CreateKnowledgeDocumentRequest,
   CreateWorkflowVersionRequest,
+  ImportWorkflowRequest,
+  ImportWorkflowResponse,
   DeleteKnowledgeDocumentResponse,
   KnowledgeDocument,
   ListBroadcastsResponse,
@@ -41,6 +43,7 @@ import type {
   WorkflowDraft,
   WorkflowInstance,
   WorkflowInstanceDetail,
+  WorkflowSchemaExport,
   WorkflowSubschema,
   WorkflowVersion
 } from "./types";
@@ -157,6 +160,13 @@ export function createSaasAdminApiClient(options: SaasAdminApiClientOptions = {}
       resetDraft: (workflowId: string) =>
         requestJson<WorkflowDraft>(`/workflows/${workflowId}/draft`, {
           method: "DELETE"
+        }),
+      exportWorkflow: (workflowId: string) =>
+        requestJson<WorkflowSchemaExport>(`/workflows/${workflowId}/export`),
+      importWorkflow: (workflowId: string, request: ImportWorkflowRequest) =>
+        requestJson<ImportWorkflowResponse>(`/workflows/${workflowId}/import`, {
+          method: "POST",
+          body: JSON.stringify(request)
         }),
       createVersion: (workflowId: string, request: CreateWorkflowVersionRequest) =>
         requestJson<WorkflowVersion>(`/workflows/${workflowId}/versions`, {

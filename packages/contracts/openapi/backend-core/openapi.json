@@ -1808,6 +1808,78 @@
         ]
       }
     },
+    "/api/v1/workflows/{workflowId}/export": {
+      "get": {
+        "operationId": "WorkflowController_exportWorkflow_v1",
+        "parameters": [
+          {
+            "name": "workflowId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowSchemaExportResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Export the active Workflow schema as JSON",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
+    "/api/v1/workflows/{workflowId}/import": {
+      "post": {
+        "operationId": "WorkflowController_importWorkflow_v1",
+        "parameters": [
+          {
+            "name": "workflowId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ImportWorkflowSchemaDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowImportResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Import a Workflow schema JSON into draft or immutable version",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
     "/api/v1/workflows/{workflowId}/draft": {
       "get": {
         "operationId": "WorkflowController_getDraft_v1",
@@ -4416,6 +4488,101 @@
           "created_at"
         ]
       },
+      "WorkflowSchemaExportWorkflowDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000801"
+          },
+          "name": {
+            "type": "string",
+            "example": "Распределение обращений"
+          },
+          "version_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000811"
+          },
+          "version_no": {
+            "type": "number",
+            "example": 1
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version_id",
+          "version_no"
+        ]
+      },
+      "WorkflowSchemaExportResponseDto": {
+        "type": "object",
+        "properties": {
+          "contract": {
+            "type": "string",
+            "example": "C5.WorkflowSchemaExport"
+          },
+          "version": {
+            "type": "string",
+            "example": "1.0.0"
+          },
+          "exported_at": {
+            "type": "string",
+            "example": "2026-07-09T00:00:00.000Z"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowSchemaExportWorkflowDto"
+          },
+          "schema": {
+            "type": "object"
+          }
+        },
+        "required": [
+          "contract",
+          "version",
+          "exported_at",
+          "workflow",
+          "schema"
+        ]
+      },
+      "ImportWorkflowSchemaDto": {
+        "type": "object",
+        "properties": {
+          "contract": {
+            "type": "string",
+            "example": "C5.WorkflowSchemaExport"
+          },
+          "version": {
+            "type": "string",
+            "example": "1.0.0"
+          },
+          "exported_at": {
+            "type": "string",
+            "example": "2026-07-09T00:00:00.000Z"
+          },
+          "workflow": {
+            "$ref": "#/components/schemas/WorkflowSchemaExportWorkflowDto"
+          },
+          "schema": {
+            "type": "object"
+          },
+          "target": {
+            "type": "string",
+            "default": "draft",
+            "enum": [
+              "draft",
+              "version"
+            ]
+          },
+          "activate": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "required": [
+          "schema"
+        ]
+      },
       "WorkflowDraftResponseDto": {
         "type": "object",
         "properties": {
@@ -4447,6 +4614,28 @@
           "has_draft",
           "schema",
           "draft_updated_at"
+        ]
+      },
+      "WorkflowImportResponseDto": {
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "version"
+            ],
+            "example": "draft"
+          },
+          "draft": {
+            "$ref": "#/components/schemas/WorkflowDraftResponseDto"
+          },
+          "version": {
+            "$ref": "#/components/schemas/WorkflowVersionResponseDto"
+          }
+        },
+        "required": [
+          "target"
         ]
       },
       "SaveWorkflowDraftDto": {

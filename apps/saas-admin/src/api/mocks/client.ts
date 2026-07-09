@@ -8,6 +8,7 @@ import type {
   CreateBroadcastRequest,
   CreateKnowledgeDocumentRequest,
   CreateWorkflowVersionRequest,
+  ImportWorkflowRequest,
   KnowledgeDocument,
   Notification,
   NotificationSetting,
@@ -402,6 +403,81 @@ export function createMockSaasAdminApiClient(
         const workflow = requireWorkflow(currentWorkflows, workflowId);
         delete currentWorkflowDrafts[workflowId];
         return cloneWorkflowDraft(emptyWorkflowDraft(workflow));
+      },
+      async exportWorkflow(workflowId: string) {
+        const workflow = requireWorkflow(currentWorkflows, workflowId);
+        const version = currentVersions.find(
+          (item) => item.workflow_id === workflowId && item.id === workflow.default_version_id
+        );
+        if (!version) {
+          throw new Error("Workflow default version not found");
+        }
+
+        return {
+          contract: "C5.WorkflowSchemaExport" as const,
+          version: "1.0.0",
+          exported_at: "2026-07-03T11:17:00.000Z",
+          workflow: {
+            id: workflow.id,
+            name: workflow.name,
+            version_id: version.id,
+            version_no: version.version_no
+          },
+          schema: cloneWorkflowSchema(version.schema)
+        };
+      },
+      async importWorkflow(workflowId: string, request: ImportWorkflowRequest) {
+        const workflow = requireWorkflow(currentWorkflows, workflowId);
+        if (request.contract !== "C5.WorkflowSchemaExport" || request.version !== "1.0.0") {
+          throw new Error("Workflow import JSON is invalid");
+        }
+        validateWorkflowDraftRequest({ schema: request.schema });
+
+        if (request.target === "version") {
+          const versionNo =
+            currentVersions
+              .filter((version) => version.workflow_id === workflowId)
+              .reduce((max, version) => Math.max(max, version.version_no), 0) + 1;
+          const version: WorkflowVersion = {
+            id: `wfv-created-${nextVersionNumber++}`,
+            organization_id: workflow.organization_id,
+            workflow_id: workflowId,
+            version_no: versionNo,
+            schema: cloneWorkflowSchema(request.schema),
+            created_by: initialSession.user.displayName,
+            created_at: "2026-07-03T11:15:00.000Z"
+          };
+
+          currentVersions = [...currentVersions, version];
+          if (request.activate) {
+            currentWorkflows = currentWorkflows.map((item) =>
+              item.id === workflowId
+                ? {
+                    ...item,
+                    status: "active",
+                    default_version_id: version.id,
+                    updated_at: "2026-07-03T11:15:00.000Z"
+                  }
+                : item
+            );
+          }
+
+          return { target: "version" as const, version: cloneWorkflowVersion(version) };
+        }
+
+        const draft: WorkflowDraft = {
+          organization_id: workflow.organization_id,
+          workflow_id: workflow.id,
+          has_draft: true,
+          schema: cloneWorkflowSchema(request.schema),
+          draft_updated_at: "2026-07-03T11:14:00.000Z"
+        };
+        currentWorkflowDrafts = {
+          ...currentWorkflowDrafts,
+          [workflowId]: draft
+        };
+
+        return { draft: cloneWorkflowDraft(draft), target: "draft" as const };
       },
       async createVersion(workflowId: string, request: CreateWorkflowVersionRequest) {
         const workflow = requireWorkflow(currentWorkflows, workflowId);

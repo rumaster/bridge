@@ -22,12 +22,15 @@ import { getRequiredOrganizationId, ORGANIZATION_ID_HEADER } from "../../common/
 import type { HeaderValue } from "../../common/request-context";
 import {
   CreateWorkflowVersionDto,
+  ImportWorkflowSchemaDto,
   SaveWorkflowDraftDto,
   UpdateWorkflowDto,
   WorkflowDraftResponseDto,
+  WorkflowImportResponseDto,
   WorkflowInstanceDetailResponseDto,
   WorkflowInstanceResponseDto,
   WorkflowResponseDto,
+  WorkflowSchemaExportResponseDto,
   WorkflowVersionResponseDto,
 } from "./workflow.dto";
 import { WorkflowService } from "./workflow.service";
@@ -60,6 +63,38 @@ export class WorkflowController {
     return this.workflows.listVersions(
       getRequiredOrganizationId(organizationIdHeader),
       workflowId,
+    );
+  }
+
+  @Get(":workflowId/export")
+  @Version("1")
+  @ApiOperation({ summary: "Export the active Workflow schema as JSON" })
+  @ApiOkResponse({ type: WorkflowSchemaExportResponseDto })
+  exportWorkflow(
+    @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: HeaderValue,
+    @Param("workflowId", new ParseUUIDPipe({ version: "4" })) workflowId: string,
+  ): Promise<WorkflowSchemaExportResponseDto> {
+    return this.workflows.exportWorkflow(
+      getRequiredOrganizationId(organizationIdHeader),
+      workflowId,
+    );
+  }
+
+  @Post(":workflowId/import")
+  @Version("1")
+  @ApiOperation({ summary: "Import a Workflow schema JSON into draft or immutable version" })
+  @ApiOkResponse({ type: WorkflowImportResponseDto })
+  importWorkflow(
+    @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: HeaderValue,
+    @Param("workflowId", new ParseUUIDPipe({ version: "4" })) workflowId: string,
+    @Body() body: ImportWorkflowSchemaDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<WorkflowImportResponseDto> {
+    return this.workflows.importWorkflow(
+      getRequiredOrganizationId(organizationIdHeader),
+      workflowId,
+      body,
+      request.auth?.user.id,
     );
   }
 

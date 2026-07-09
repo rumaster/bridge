@@ -6,16 +6,22 @@ import { PgDatabase } from "../../common/database/database.service";
 import type { Queryable } from "../../common/database/database.service";
 import {
   CreateWorkflowVersionDto,
+  ImportWorkflowSchemaDto,
   SaveWorkflowDraftDto,
   UpdateWorkflowDto,
+  WorkflowExportRow,
   WorkflowDraftResponseDto,
   WorkflowDraftRow,
+  WorkflowImportResponseDto,
   WorkflowInstanceDetailResponseDto,
   WorkflowInstanceLogRow,
   WorkflowInstanceResponseDto,
   WorkflowInstanceRow,
   WorkflowResponseDto,
   WorkflowRow,
+  WorkflowSchemaExportResponseDto,
+  WORKFLOW_SCHEMA_EXPORT_CONTRACT,
+  WORKFLOW_SCHEMA_EXPORT_VERSION,
   WorkflowStatus,
   WorkflowVersionResponseDto,
   WorkflowVersionRow,
@@ -83,11 +89,7 @@ export class WorkflowService {
   ): Promise<WorkflowVersionResponseDto> {
     return this.database.withTenant(organizationId, async (client) => {
       await this.requireWorkflow(client, organizationId, workflowId);
-      const validation = validateWorkflowSchema(payload.schema);
-      if (!validation.valid) {
-        throw createWorkflowSchemaValidationException(validation.errors);
-      }
-      await this.requireActiveSubSchemas(client, organizationId, payload.schema);
+      await this.assertWorkflowSchemaPersistable(client, organizationId, payload.schema);
 
       const version = await this.insertWorkflowVersion(
         client,
@@ -131,11 +133,7 @@ export class WorkflowService {
   ): Promise<WorkflowDraftResponseDto> {
     return this.database.withTenant(organizationId, async (client) => {
       await this.requireWorkflow(client, organizationId, workflowId);
-      const validation = validateWorkflowSchema(payload.schema);
-      if (!validation.valid) {
-        throw createWorkflowSchemaValidationException(validation.errors);
-      }
-      await this.requireActiveSubSchemas(client, organizationId, payload.schema);
+      await this.assertWorkflowSchemaPersistable(client, organizationId, payload.schema);
 
       const result = await client.query<WorkflowDraftRow>(
         `
@@ -168,11 +166,7 @@ export class WorkflowService {
         throw workflowDraftMissing(workflowId);
       }
 
-      const validation = validateWorkflowSchema(workflow.draft_schema);
-      if (!validation.valid) {
-        throw createWorkflowSchemaValidationException(validation.errors);
-      }
-      await this.requireActiveSubSchemas(client, organizationId, workflow.draft_schema);
+      await this.assertWorkflowSchemaPersistable(client, organizationId, workflow.draft_schema);
 
       const version = await this.insertWorkflowVersion(
         client,
@@ -196,6 +190,113 @@ export class WorkflowService {
       );
 
       return mapWorkflowVersion(version);
+    });
+  }
+
+  async exportWorkflow(
+    organizationId: string,
+    workflowId: string,
+  ): Promise<WorkflowSchemaExportResponseDto> {
+    return this.database.withTenant(organizationId, async (client) => {
+      await this.requireWorkflow(client, organizationId, workflowId);
+      const result = await client.query<WorkflowExportRow>(
+        `
+          SELECT
+            w.id AS workflow_id,
+            w.name,
+            v.id AS version_id,
+            v.version_no,
+            v.schema
+          FROM workflows w
+          JOIN workflow_versions v
+            ON v.organization_id = w.organization_id
+           AND v.workflow_id = w.id
+           AND v.id = w.default_version_id
+          WHERE w.organization_id = $1 AND w.id = $2
+          LIMIT 1
+        `,
+        [organizationId, workflowId],
+      );
+
+      if (result.rowCount === 0) {
+        throw workflowDefaultVersionMissing(workflowId);
+      }
+
+      const row = result.rows[0];
+      return {
+        contract: WORKFLOW_SCHEMA_EXPORT_CONTRACT,
+        exported_at: new Date().toISOString(),
+        schema: row.schema,
+        version: WORKFLOW_SCHEMA_EXPORT_VERSION,
+        workflow: {
+          id: row.workflow_id,
+          name: row.name,
+          version_id: row.version_id,
+          version_no: Number(row.version_no),
+        },
+      };
+    });
+  }
+
+  async importWorkflow(
+    organizationId: string,
+    workflowId: string,
+    payload: ImportWorkflowSchemaDto,
+    actorUserId: string | undefined,
+  ): Promise<WorkflowImportResponseDto> {
+    return this.database.withTenant(organizationId, async (client) => {
+      await this.requireWorkflow(client, organizationId, workflowId);
+      validateWorkflowImportEnvelope(payload);
+      await this.assertWorkflowSchemaPersistable(client, organizationId, payload.schema);
+
+      if (payload.target === "version") {
+        const version = await this.insertWorkflowVersion(
+          client,
+          organizationId,
+          workflowId,
+          payload.schema,
+          actorUserId,
+        );
+
+        if (payload.activate) {
+          await client.query(
+            `
+              UPDATE workflows
+              SET default_version_id = $3,
+                  status = 'active',
+                  updated_at = now()
+              WHERE organization_id = $1 AND id = $2
+            `,
+            [organizationId, workflowId, version.id],
+          );
+        }
+
+        return {
+          target: "version",
+          version: mapWorkflowVersion(version),
+        };
+      }
+
+      const result = await client.query<WorkflowDraftRow>(
+        `
+          UPDATE workflows
+          SET draft_schema = $3::jsonb,
+              draft_updated_at = now(),
+              updated_at = now()
+          WHERE organization_id = $1 AND id = $2
+          RETURNING id, organization_id, draft_schema, draft_updated_at
+        `,
+        [organizationId, workflowId, JSON.stringify(payload.schema)],
+      );
+
+      if (result.rowCount === 0) {
+        throw workflowNotFound(workflowId);
+      }
+
+      return {
+        draft: mapWorkflowDraft(result.rows[0]),
+        target: "draft",
+      };
     });
   }
 
@@ -389,6 +490,18 @@ export class WorkflowService {
     }
   }
 
+  private async assertWorkflowSchemaPersistable(
+    client: Queryable,
+    organizationId: string,
+    schema: Record<string, unknown>,
+  ): Promise<void> {
+    const validation = validateWorkflowSchema(schema);
+    if (!validation.valid) {
+      throw createWorkflowSchemaValidationException(validation.errors);
+    }
+    await this.requireActiveSubSchemas(client, organizationId, schema);
+  }
+
   private async requireWorkflowVersion(
     client: Queryable,
     organizationId: string,
@@ -511,6 +624,40 @@ function workflowDraftMissing(workflowId: string): BadRequestException {
     description: `Workflow ${workflowId} has no draft schema to promote.`,
     humanMessage: "У Workflow нет черновика для публикации.",
   });
+}
+
+function workflowDefaultVersionMissing(workflowId: string): BadRequestException {
+  return new BadRequestException({
+    code: "WORKFLOW_DEFAULT_VERSION_MISSING",
+    description: `Workflow ${workflowId} has no active default version to export.`,
+    humanMessage: "У Workflow нет активной версии для экспорта.",
+  });
+}
+
+function workflowImportInvalid(message: string): BadRequestException {
+  return new BadRequestException({
+    code: "WORKFLOW_IMPORT_INVALID",
+    description: message,
+    humanMessage: "JSON импорта Workflow некорректен.",
+  });
+}
+
+function validateWorkflowImportEnvelope(payload: ImportWorkflowSchemaDto): void {
+  if (
+    payload.contract !== undefined &&
+    payload.contract !== WORKFLOW_SCHEMA_EXPORT_CONTRACT
+  ) {
+    throw workflowImportInvalid(
+      `contract должен быть "${WORKFLOW_SCHEMA_EXPORT_CONTRACT}".`,
+    );
+  }
+
+  if (
+    payload.version !== undefined &&
+    payload.version !== WORKFLOW_SCHEMA_EXPORT_VERSION
+  ) {
+    throw workflowImportInvalid(`version должен быть "${WORKFLOW_SCHEMA_EXPORT_VERSION}".`);
+  }
 }
 
 function workflowInstanceNotFound(instanceId: string): NotFoundException {

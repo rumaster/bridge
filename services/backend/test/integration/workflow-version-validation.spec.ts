@@ -333,6 +333,122 @@ describe("WorkflowService createVersion validation", () => {
     });
     await expect(countWorkflowVersions(databaseUrl, PROMOTE_WORKFLOW_ID)).resolves.toBe(2);
   });
+
+  it("exports the active Workflow schema with metadata", async () => {
+    const exported = await service.exportWorkflow(ORG_ID, DRAFT_WORKFLOW_ID);
+
+    expect(exported).toMatchObject({
+      contract: "C5.WorkflowSchemaExport",
+      version: "1.0.0",
+      workflow: {
+        id: DRAFT_WORKFLOW_ID,
+        name: "Workflow draft fixture",
+        version_id: DRAFT_VERSION_ID,
+        version_no: 1,
+      },
+      schema: validWorkflowSchema("seed-start"),
+    });
+    expect(exported.exported_at).toEqual(expect.any(String));
+  });
+
+  it("imports an exported Workflow schema into the persisted draft by default", async () => {
+    const exported = await service.exportWorkflow(ORG_ID, DRAFT_WORKFLOW_ID);
+    const schema = validWorkflowSchema("imported-draft-node");
+
+    const imported = await service.importWorkflow(
+      ORG_ID,
+      DRAFT_WORKFLOW_ID,
+      {
+        ...exported,
+        schema,
+      },
+      undefined,
+    );
+
+    expect(imported).toMatchObject({
+      target: "draft",
+      draft: {
+        has_draft: true,
+        schema,
+        workflow_id: DRAFT_WORKFLOW_ID,
+      },
+    });
+    await expect(readWorkflowDraft(databaseUrl, DRAFT_WORKFLOW_ID)).resolves.toMatchObject({
+      draft_schema: schema,
+      draft_updated_at: expect.any(String),
+    });
+    await expect(countWorkflowVersions(databaseUrl, DRAFT_WORKFLOW_ID)).resolves.toBe(1);
+  });
+
+  it("imports an exported Workflow schema as a new active version", async () => {
+    const exported = await service.exportWorkflow(ORG_ID, DRAFT_WORKFLOW_ID);
+    const draftBeforeImport = await readWorkflowDraft(databaseUrl, DRAFT_WORKFLOW_ID);
+    const schema = validWorkflowSchema("imported-version-node");
+
+    const imported = await service.importWorkflow(
+      ORG_ID,
+      DRAFT_WORKFLOW_ID,
+      {
+        ...exported,
+        activate: true,
+        schema,
+        target: "version",
+      },
+      undefined,
+    );
+
+    expect(imported).toMatchObject({
+      target: "version",
+      version: {
+        schema,
+        version_no: 2,
+        workflow_id: DRAFT_WORKFLOW_ID,
+      },
+    });
+    expect(imported.version).toBeDefined();
+    await expect(countWorkflowVersions(databaseUrl, DRAFT_WORKFLOW_ID)).resolves.toBe(2);
+    await expect(readDefaultVersionId(databaseUrl, DRAFT_WORKFLOW_ID)).resolves.toBe(
+      imported.version?.id,
+    );
+    await expect(readWorkflowDraft(databaseUrl, DRAFT_WORKFLOW_ID)).resolves.toEqual(
+      draftBeforeImport,
+    );
+  });
+
+  it("rejects an imported invalid Workflow schema before writing the draft", async () => {
+    const exported = await service.exportWorkflow(ORG_ID, DRAFT_WORKFLOW_ID);
+    const draftBeforeImport = await readWorkflowDraft(databaseUrl, DRAFT_WORKFLOW_ID);
+
+    await expect(
+      service.importWorkflow(
+        ORG_ID,
+        DRAFT_WORKFLOW_ID,
+        {
+          ...exported,
+          schema: {
+            entry: "start",
+            nodes: [{ id: "start", type: "sql-exec", config: {} }],
+            schema_version: "1.0.0",
+          },
+        },
+        undefined,
+      ),
+    ).rejects.toMatchObject({
+      name: "BadRequestException",
+      response: expect.objectContaining({
+        code: "WORKFLOW_SCHEMA_INVALID",
+        errors: expect.arrayContaining([
+          expect.objectContaining({
+            path: "$.nodes[0].type",
+          }),
+        ]),
+      }),
+    });
+
+    await expect(readWorkflowDraft(databaseUrl, DRAFT_WORKFLOW_ID)).resolves.toEqual(
+      draftBeforeImport,
+    );
+  });
 });
 
 function validWorkflowSchema(
