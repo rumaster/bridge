@@ -7,6 +7,7 @@ import type {
   ConnectChannelRequest,
   CreateBroadcastRequest,
   CreateKnowledgeDocumentRequest,
+  CreateWorkflowSubschemaRequest,
   CreateWorkflowVersionRequest,
   ImportWorkflowRequest,
   KnowledgeDocument,
@@ -26,6 +27,7 @@ import type {
   UpdateOrganizationConfigurationRequest,
   UpdateOrganizationRequest,
   UpdateWorkflowRequest,
+  UpdateWorkflowSubschemaRequest,
   Workflow,
   WorkflowDraft,
   WorkflowInstance,
@@ -97,6 +99,7 @@ export function createMockSaasAdminApiClient(
   let nextChannelNumber = 1;
   let nextDocumentNumber = 1;
   let nextVersionNumber = 1;
+  let nextSubschemaNumber = 1;
   let nextOnboardingNumber = 1;
   let nextConfigurationVersion = 2;
   let nextBroadcastNumber = 1;
@@ -338,6 +341,50 @@ export function createMockSaasAdminApiClient(
       },
       async listSubschemas() {
         return currentSubschemas.map(cloneWorkflowSubschema);
+      },
+      async createSubschema(request: CreateWorkflowSubschemaRequest) {
+        const slug = request.slug.trim();
+        const name = request.name.trim();
+        validateWorkflowSubschemaSlug(slug);
+        if (!name) {
+          throw new Error("Workflow subschema name is required");
+        }
+        if (currentSubschemas.some((item) => item.slug === slug)) {
+          throw new Error("Workflow subschema slug already exists");
+        }
+
+        const subschema: WorkflowSubschema = {
+          id: `wfs-created-${nextSubschemaNumber++}`,
+          organization_id: currentOrganization.id,
+          slug,
+          name,
+          status: "draft",
+          schema: createWorkflowSubschemaSeed(slug),
+          created_at: "2026-07-09T12:00:00.000Z",
+          updated_at: "2026-07-09T12:00:00.000Z"
+        };
+
+        currentSubschemas = [...currentSubschemas, subschema];
+        return cloneWorkflowSubschema(subschema);
+      },
+      async updateSubschema(subschemaId: string, request: UpdateWorkflowSubschemaRequest) {
+        const subschema = currentSubschemas.find((item) => item.id === subschemaId);
+        if (!subschema) {
+          throw new Error("Workflow subschema not found");
+        }
+        validateWorkflowDraftRequest({ schema: request.schema });
+
+        const updated: WorkflowSubschema = {
+          ...subschema,
+          schema: cloneWorkflowSchema(request.schema),
+          status: "active",
+          updated_at: "2026-07-09T12:05:00.000Z"
+        };
+        currentSubschemas = currentSubschemas.map((item) =>
+          item.id === subschemaId ? updated : item
+        );
+
+        return cloneWorkflowSubschema(updated);
       },
       async getDraft(workflowId: string) {
         const workflow = requireWorkflow(currentWorkflows, workflowId);
@@ -846,6 +893,32 @@ function validateWorkflowDraftRequest(request: SaveWorkflowDraftRequest): void {
   if (!validation.valid) {
     throw new Error("Workflow draft schema is invalid");
   }
+}
+
+const WORKFLOW_SUBSCHEMA_SLUG_PATTERN = /^[A-Za-z0-9_-]{1,100}$/;
+
+function validateWorkflowSubschemaSlug(slug: string): void {
+  if (!WORKFLOW_SUBSCHEMA_SLUG_PATTERN.test(slug)) {
+    throw new Error("Workflow subschema slug is invalid");
+  }
+}
+
+/** Стартовая схема новой субсхемы: один transform-узел (безопасный набор, ТЗ §13.13). */
+function createWorkflowSubschemaSeed(slug: string) {
+  return {
+    schema_version: "1.0.0",
+    entry: `${slug}-entry`,
+    nodes: [
+      {
+        id: `${slug}-entry`,
+        type: "transform" as const,
+        label: "Подготовить контекст",
+        config: { expression: "payload" },
+        position: { x: 40, y: 40 }
+      }
+    ],
+    connections: []
+  };
 }
 
 export function createMockSaasAdminServices(options: CreateMockSaasAdminServicesOptions = {}) {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, DragEvent } from "react";
+import type { ChangeEvent, DragEvent, FormEvent, ReactNode } from "react";
 import {
   ArrowLeft,
   Boxes,
@@ -13,7 +13,6 @@ import {
   Plus,
   Power,
   RotateCcw,
-  Save,
   ShieldCheck,
   Trash2,
   UploadCloud,
@@ -25,7 +24,6 @@ import {
 import type {
   ImportWorkflowRequest,
   Workflow,
-  WorkflowImportTarget,
   WorkflowInstance,
   WorkflowInstanceDetail,
   WorkflowNode,
@@ -55,7 +53,7 @@ import {
   workflowStatusLabel,
   workflowStatusTone
 } from "../../shared/workflow";
-import { Badge, Button, CheckboxInput, Panel, TextInput } from "../../shared/ui-kit";
+import { Badge, Button, Panel, TextInput } from "../../shared/ui-kit";
 
 export default function WorkflowPage() {
   const { session } = useAuth();
@@ -71,7 +69,6 @@ export default function WorkflowPage() {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [pendingWorkflowId, setPendingWorkflowId] = useState<string | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -215,6 +212,18 @@ export default function WorkflowPage() {
     );
   }
 
+  function handleSubschemaCreated(subschema: WorkflowSubschema) {
+    setSubschemas((current) => [...current, subschema]);
+  }
+
+  function handleSubschemaSaved(subschema: WorkflowSubschema) {
+    setSubschemas((current) =>
+      current.some((item) => item.id === subschema.id)
+        ? current.map((item) => (item.id === subschema.id ? subschema : item))
+        : [...current, subschema]
+    );
+  }
+
   return (
     <section className="page-section workflow-page">
       <div className="page-heading workflow-page-heading">
@@ -241,164 +250,128 @@ export default function WorkflowPage() {
         <div className="workflow-workspace">
           {loading ? <div className="route-loader">Загрузка Workflow...</div> : null}
 
-          <WorkflowTopbar
-            historyOpen={historyOpen}
-            onActivateVersion={(versionId) =>
-              selectedWorkflow && void handleActivateVersion(selectedWorkflow, versionId)
-            }
-            onSelectWorkflow={setSelectedWorkflowId}
-            onToggleEnabled={() =>
-              selectedWorkflow && void handleToggleEnabled(selectedWorkflow)
-            }
-            onToggleHistory={() => setHistoryOpen((open) => !open)}
-            pending={Boolean(selectedWorkflow) && pendingWorkflowId === selectedWorkflowId}
-            selectedWorkflowId={selectedWorkflowId}
-            versions={versions}
-            workflow={selectedWorkflow}
-            workflows={workflows}
-          />
-
-          <div className="workflow-body">
-            {selectedWorkflow ? (
-              detailLoading ? (
-                <div className="route-loader">Загрузка версий и истории...</div>
-              ) : versions.length > 0 ? (
-                <WorkflowSchemaEditor
-                  key={selectedWorkflow.id}
-                  onVersionCreated={handleVersionCreated}
-                  subschemas={subschemas}
-                  versions={versions}
-                  workflow={selectedWorkflow}
+          {selectedWorkflow && !detailLoading && versions.length > 0 ? (
+            <WorkflowSchemaEditor
+              instances={instances}
+              key={selectedWorkflow.id}
+              onActivateVersion={(versionId) =>
+                void handleActivateVersion(selectedWorkflow, versionId)
+              }
+              onSelectWorkflow={setSelectedWorkflowId}
+              onSubschemaCreated={handleSubschemaCreated}
+              onSubschemaSaved={handleSubschemaSaved}
+              onToggleEnabled={() => void handleToggleEnabled(selectedWorkflow)}
+              onVersionCreated={handleVersionCreated}
+              pending={pendingWorkflowId === selectedWorkflow.id}
+              selectedWorkflowId={selectedWorkflowId}
+              subschemas={subschemas}
+              versions={versions}
+              workflow={selectedWorkflow}
+              workflows={workflows}
+            />
+          ) : (
+            <>
+              <div className="workflow-topbar">
+                <WorkflowSchemeSelect
+                  disabled={workflows.length === 0}
+                  onSelect={setSelectedWorkflowId}
+                  selectedWorkflowId={selectedWorkflowId}
+                  workflows={workflows}
                 />
-              ) : null
-            ) : null}
-
-            {historyOpen && selectedWorkflow ? (
-              <WorkflowInstancesPanel
-                instances={instances}
-                onClose={() => setHistoryOpen(false)}
-                workflowId={selectedWorkflow.id}
-              />
-            ) : null}
-          </div>
+              </div>
+              {detailLoading ? (
+                <div className="route-loader">Загрузка версий и истории...</div>
+              ) : null}
+            </>
+          )}
         </div>
       ) : null}
     </section>
   );
 }
 
-interface WorkflowTopbarProps {
-  historyOpen: boolean;
-  onActivateVersion: (versionId: string) => void;
-  onSelectWorkflow: (workflowId: string) => void;
-  onToggleEnabled: () => void;
-  onToggleHistory: () => void;
-  pending: boolean;
+interface WorkflowSchemeSelectProps {
+  disabled?: boolean;
+  onSelect: (workflowId: string) => void;
   selectedWorkflowId: string | null;
-  versions: WorkflowVersion[];
-  workflow: Workflow | null;
   workflows: Workflow[];
 }
 
-/**
- * Верхняя панель редактора Workflow (ТЗ §13, макет fbp_engine): выбор схемы через
- * выпадающий список, статус, включение/отключение, активная версия по умолчанию и
- * переключатель истории исполнения. Освобождает пространство под холст редактора.
- */
-function WorkflowTopbar({
-  historyOpen,
-  onActivateVersion,
-  onSelectWorkflow,
-  onToggleEnabled,
-  onToggleHistory,
-  pending,
+/** Выпадающий выбор схемы Workflow (слева в верхней панели, макет /#/schemas fbp_engine). */
+function WorkflowSchemeSelect({
+  disabled,
+  onSelect,
   selectedWorkflowId,
-  versions,
-  workflow,
   workflows
-}: WorkflowTopbarProps) {
-  const versionSelectId = "workflow-active-version";
+}: WorkflowSchemeSelectProps) {
   return (
-    <div className="workflow-topbar">
-      <label className="workflow-select workflow-topbar-scheme">
-        <span>Схема Workflow</span>
-        <select
-          aria-label="Схема Workflow"
-          disabled={workflows.length === 0}
-          onChange={(event) => onSelectWorkflow(event.currentTarget.value)}
-          value={selectedWorkflowId ?? ""}
-        >
-          {workflows.length === 0 ? <option value="">—</option> : null}
-          {workflows.map((item) => (
-            <option key={item.id} value={item.id}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-      </label>
+    <label className="workflow-select workflow-topbar-scheme">
+      <select
+        aria-label="Схема Workflow"
+        disabled={disabled}
+        onChange={(event) => onSelect(event.currentTarget.value)}
+        value={selectedWorkflowId ?? ""}
+      >
+        {workflows.length === 0 ? <option value="">—</option> : null}
+        {workflows.map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
 
-      {workflow ? (
-        <>
-          <div className="workflow-topbar-meta">
-            <h2>{workflow.name}</h2>
-            <div className="workflow-topbar-tags">
-              <Badge tone={workflowStatusTone(workflow.status)}>
-                {workflowStatusLabel(workflow.status)}
-              </Badge>
-              <Badge tone={workflow.enabled ? "success" : "neutral"}>
-                {workflow.enabled ? "Включен" : "Отключен"}
-              </Badge>
-            </div>
-          </div>
+interface WorkflowModalProps {
+  children: ReactNode;
+  onClose: () => void;
+  title: string;
+}
 
-          <div className="workflow-topbar-actions">
-            <Button
-              disabled={pending}
-              onClick={onToggleEnabled}
-              type="button"
-              variant="secondary"
-            >
-              <Power aria-hidden="true" size={16} />
-              {workflow.enabled ? "Отключить" : "Включить"}
-            </Button>
-
-            <label className="workflow-select workflow-topbar-version">
-              <span>Активная версия по умолчанию</span>
-              <select
-                disabled={pending || versions.length === 0}
-                id={versionSelectId}
-                onChange={(event) => onActivateVersion(event.currentTarget.value)}
-                value={workflow.default_version_id}
-              >
-                {versions.map((version) => (
-                  <option key={version.id} value={version.id}>
-                    v{version.version_no} · {version.created_at}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <Button
-              aria-pressed={historyOpen}
-              onClick={onToggleHistory}
-              type="button"
-              variant={historyOpen ? "primary" : "secondary"}
-            >
-              <History aria-hidden="true" size={16} />
-              История исполнения
-            </Button>
-          </div>
-        </>
-      ) : null}
+/** Лёгкое модальное окно (макет /#/schemas): затемнение + диалог, закрытие по фону и по крестику. */
+function WorkflowModal({ children, onClose, title }: WorkflowModalProps) {
+  return (
+    <div className="workflow-modal-overlay" onClick={onClose} role="presentation">
+      <div
+        aria-label={title}
+        aria-modal="true"
+        className="workflow-modal"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <div className="workflow-modal-head">
+          <h2>{title}</h2>
+          <button
+            aria-label="Закрыть"
+            className="workflow-modal-close"
+            onClick={onClose}
+            title="Закрыть"
+            type="button"
+          >
+            <X aria-hidden="true" size={18} />
+          </button>
+        </div>
+        <div className="workflow-modal-body">{children}</div>
+      </div>
     </div>
   );
 }
 
 interface WorkflowSchemaEditorProps {
+  instances: WorkflowInstance[];
+  onActivateVersion: (versionId: string) => void;
+  onSelectWorkflow: (workflowId: string) => void;
+  onSubschemaCreated: (subschema: WorkflowSubschema) => void;
+  onSubschemaSaved: (subschema: WorkflowSubschema) => void;
+  onToggleEnabled: () => void;
   onVersionCreated: (version: WorkflowVersion, activated: boolean) => void;
+  pending: boolean;
+  selectedWorkflowId: string | null;
   subschemas: WorkflowSubschema[];
   versions: WorkflowVersion[];
   workflow: Workflow;
+  workflows: Workflow[];
 }
 
 type WorkflowTestScope = "schema" | "bodyGraph";
@@ -414,17 +387,30 @@ interface WorkflowTestRun {
   scope: WorkflowTestScope;
 }
 
+/** Цель редактирования: рабочая схема Workflow или отдельная субсхема. */
+type WorkflowEditTarget = { kind: "workflow" } | { kind: "subschema"; subschema: WorkflowSubschema };
+
 function WorkflowSchemaEditor({
+  instances,
+  onActivateVersion,
+  onSelectWorkflow,
+  onSubschemaCreated,
+  onSubschemaSaved,
+  onToggleEnabled,
   onVersionCreated,
+  pending,
+  selectedWorkflowId,
   subschemas,
   versions,
-  workflow
+  workflow,
+  workflows
 }: WorkflowSchemaEditorProps) {
   const api = useSaasAdminApi();
   const defaultVersion = useMemo(
     () => versions.find((version) => version.id === workflow.default_version_id) ?? versions[0],
     [versions, workflow.default_version_id]
   );
+  const [editTarget, setEditTarget] = useState<WorkflowEditTarget>({ kind: "workflow" });
   const [baseVersionId, setBaseVersionId] = useState(defaultVersion.id);
   const [rootDraftSchema, setRootDraftSchema] = useState<WorkflowSchema>(() =>
     cloneDraftSchema(defaultVersion.schema)
@@ -435,8 +421,6 @@ function WorkflowSchemaEditor({
   );
   const [connectionFrom, setConnectionFrom] = useState("");
   const [connectionTo, setConnectionTo] = useState("");
-  const [activateOnSave, setActivateOnSave] = useState(false);
-  const [importTarget, setImportTarget] = useState<WorkflowImportTarget>("draft");
   const [hasDraft, setHasDraft] = useState(false);
   const [draftSaved, setDraftSaved] = useState(false);
   const [draftUpdatedAt, setDraftUpdatedAt] = useState<string | null>(null);
@@ -446,8 +430,12 @@ function WorkflowSchemaEditor({
   const [saving, setSaving] = useState(false);
   const [editorAlert, setEditorAlert] = useState<string | null>(null);
   const [editorNotice, setEditorNotice] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [testOpen, setTestOpen] = useState(false);
+  const [subDialogOpen, setSubDialogOpen] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
 
+  const editingSubschema = editTarget.kind === "subschema";
   const draftSchema = useMemo(
     () => getSchemaAtPath(rootDraftSchema, bodyPath),
     [bodyPath, rootDraftSchema]
@@ -463,6 +451,7 @@ function WorkflowSchemaEditor({
   );
   const latestDraftRef = useRef({
     draftSaved,
+    editingSubschema,
     hasDraft,
     schema: rootDraftSchema,
     valid: validation.valid,
@@ -472,12 +461,13 @@ function WorkflowSchemaEditor({
   useEffect(() => {
     latestDraftRef.current = {
       draftSaved,
+      editingSubschema,
       hasDraft,
       schema: rootDraftSchema,
       valid: validation.valid,
       workflowId: workflow.id
     };
-  }, [draftSaved, hasDraft, rootDraftSchema, validation.valid, workflow.id]);
+  }, [draftSaved, editingSubschema, hasDraft, rootDraftSchema, validation.valid, workflow.id]);
 
   useEffect(() => {
     let active = true;
@@ -491,6 +481,7 @@ function WorkflowSchemaEditor({
           return;
         }
         const nextSchema = draft.has_draft && draft.schema ? draft.schema : defaultVersion.schema;
+        setEditTarget({ kind: "workflow" });
         setBaseVersionId(defaultVersion.id);
         setRootDraftSchema(cloneDraftSchema(nextSchema));
         setBodyPath([]);
@@ -521,36 +512,17 @@ function WorkflowSchemaEditor({
   useEffect(() => {
     return () => {
       const latest = latestDraftRef.current;
-      if (latest.workflowId === workflow.id && latest.hasDraft && !latest.draftSaved && latest.valid) {
+      if (
+        !latest.editingSubschema &&
+        latest.workflowId === workflow.id &&
+        latest.hasDraft &&
+        !latest.draftSaved &&
+        latest.valid
+      ) {
         void api.workflows.saveDraft(workflow.id, { schema: latest.schema });
       }
     };
   }, [api, workflow.id]);
-
-  async function loadVersionSchema(versionId: string) {
-    const base = versions.find((version) => version.id === versionId);
-    if (!base) {
-      return;
-    }
-    if (hasDraft && !draftSaved) {
-      const saved = await persistDraft("Текущий черновик сохранён перед переключением версии.");
-      if (!saved) {
-        return;
-      }
-    }
-    setBaseVersionId(versionId);
-    setRootDraftSchema(cloneDraftSchema(base.schema));
-    setBodyPath([]);
-    setSelectedNodeId(base.schema.nodes[0]?.id ?? null);
-    setConnectionFrom("");
-    setConnectionTo("");
-    setHasDraft(false);
-    setDraftSaved(false);
-    setDraftUpdatedAt(null);
-    setTestRun(null);
-    setEditorAlert(null);
-    setEditorNotice(null);
-  }
 
   function updateActiveSchema(updater: (schema: WorkflowSchema) => WorkflowSchema) {
     setRootDraftSchema((current) => updateSchemaAtPath(current, bodyPath, updater));
@@ -688,47 +660,73 @@ function WorkflowSchemaEditor({
     }
   }
 
-  async function handleSaveDraft() {
-    await persistDraft();
-  }
+  /** Перезагрузка черновика из рабочей версии (или субсхемы) — иконка тулбара. */
+  async function handleReload() {
+    if (editTarget.kind === "subschema") {
+      setRootDraftSchema(cloneDraftSchema(editTarget.subschema.schema));
+      setBodyPath([]);
+      setSelectedNodeId(editTarget.subschema.schema.nodes[0]?.id ?? null);
+      setHasDraft(false);
+      setDraftSaved(true);
+      setTestRun(null);
+      setEditorAlert(null);
+      setEditorNotice("Схема субсхемы перезагружена из сохранённой версии.");
+      return;
+    }
 
-  async function handleSave(activate = activateOnSave, notice?: string) {
-    if (!validation.valid) {
-      setEditorAlert("Исправьте ошибки схемы перед сохранением.");
+    const base = versions.find((version) => version.id === workflow.default_version_id) ?? defaultVersion;
+    if (!base) {
       return;
     }
 
     setSaving(true);
     setEditorAlert(null);
+    setEditorNotice(null);
 
     try {
-      const version = await api.workflows.createVersion(workflow.id, {
-        schema: rootDraftSchema,
-        activate
-      });
-      if (hasDraft) {
-        await api.workflows.resetDraft(workflow.id);
-      }
-      onVersionCreated(version, activate);
-      setBaseVersionId(version.id);
-      setRootDraftSchema(cloneDraftSchema(version.schema));
+      await api.workflows.resetDraft(workflow.id);
+      setRootDraftSchema(cloneDraftSchema(base.schema));
+      setBaseVersionId(base.id);
       setBodyPath([]);
-      setSelectedNodeId(version.schema.nodes[0]?.id ?? null);
+      setSelectedNodeId(base.schema.nodes[0]?.id ?? null);
       setHasDraft(false);
       setDraftSaved(false);
       setDraftUpdatedAt(null);
-      setActivateOnSave(false);
-      setEditorNotice(notice ?? null);
+      setTestRun(null);
+      setEditorNotice(`Черновик перезагружен из рабочей версии v${base.version_no}.`);
     } catch (error) {
-      setEditorAlert(getProblemMessage(error, "Не удалось сохранить новую версию."));
+      setEditorAlert(getProblemMessage(error, "Не удалось перезагрузить черновик."));
     } finally {
       setSaving(false);
     }
   }
 
-  async function handlePublishDraft() {
+  /** Сохранить черновик в рабочую версию — иконка тулбара (promote / updateSubschema). */
+  async function handleSaveToWorking() {
     if (!validation.valid) {
-      setEditorAlert("Исправьте ошибки схемы перед публикацией черновика.");
+      setEditorAlert("Исправьте ошибки схемы перед сохранением.");
+      return;
+    }
+
+    if (editTarget.kind === "subschema") {
+      setSaving(true);
+      setEditorAlert(null);
+      try {
+        const updated = await api.workflows.updateSubschema(editTarget.subschema.id, {
+          schema: rootDraftSchema
+        });
+        onSubschemaSaved(updated);
+        setEditTarget({ kind: "subschema", subschema: updated });
+        setRootDraftSchema(cloneDraftSchema(updated.schema));
+        setHasDraft(false);
+        setDraftSaved(true);
+        setTestRun(null);
+        setEditorNotice(`Субсхема «${updated.name}» сохранена.`);
+      } catch (error) {
+        setEditorAlert(getProblemMessage(error, "Не удалось сохранить субсхему."));
+      } finally {
+        setSaving(false);
+      }
       return;
     }
 
@@ -752,39 +750,10 @@ function WorkflowSchemaEditor({
       setHasDraft(false);
       setDraftSaved(false);
       setDraftUpdatedAt(null);
-      setActivateOnSave(false);
       setTestRun(null);
-      setEditorNotice("Черновик опубликован как активная версия.");
+      setEditorNotice("Черновик сохранён в рабочую версию.");
     } catch (error) {
-      setEditorAlert(getProblemMessage(error, "Не удалось опубликовать черновик."));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleResetDraft() {
-    const base = versions.find((version) => version.id === workflow.default_version_id) ?? defaultVersion;
-    if (!base) {
-      return;
-    }
-
-    setSaving(true);
-    setEditorAlert(null);
-    setEditorNotice(null);
-
-    try {
-      await api.workflows.resetDraft(workflow.id);
-      setRootDraftSchema(cloneDraftSchema(base.schema));
-      setBaseVersionId(base.id);
-      setBodyPath([]);
-      setSelectedNodeId(base.schema.nodes[0]?.id ?? null);
-      setHasDraft(false);
-      setDraftSaved(false);
-      setDraftUpdatedAt(null);
-      setTestRun(null);
-      setEditorNotice(`Черновик сброшен к активной версии v${base.version_no}.`);
-    } catch (error) {
-      setEditorAlert(getProblemMessage(error, "Не удалось сбросить черновик."));
+      setEditorAlert(getProblemMessage(error, "Не удалось сохранить черновик в рабочую версию."));
     } finally {
       setSaving(false);
     }
@@ -796,11 +765,16 @@ function WorkflowSchemaEditor({
     setEditorNotice(null);
 
     try {
-      const exported = await api.workflows.exportWorkflow(workflow.id);
-      downloadWorkflowExport(exported);
-      setEditorNotice(`Экспортирована активная версия v${exported.workflow.version_no}.`);
+      if (editTarget.kind === "subschema") {
+        downloadWorkflowExport(buildSubschemaExport(editTarget.subschema, rootDraftSchema));
+        setEditorNotice(`Экспортирована субсхема «${editTarget.subschema.name}».`);
+      } else {
+        const exported = await api.workflows.exportWorkflow(workflow.id);
+        downloadWorkflowExport(exported);
+        setEditorNotice(`Экспортирована активная версия v${exported.workflow.version_no}.`);
+      }
     } catch (error) {
-      setEditorAlert(getProblemMessage(error, "Не удалось экспортировать Workflow JSON."));
+      setEditorAlert(getProblemMessage(error, "Не удалось экспортировать JSON."));
     } finally {
       setSaving(false);
     }
@@ -831,58 +805,55 @@ function WorkflowSchemaEditor({
       }
 
       const diffSummary = summarizeWorkflowSchemaDiff(rootDraftSchema, payload.schema);
-      const targetLabel = workflowImportTargetLabel(importTarget);
-      const confirmed = window.confirm(
-        `Импортировать JSON Workflow как ${targetLabel}?\n${diffSummary}`,
-      );
+      const targetLabel = editTarget.kind === "subschema" ? "субсхему" : "черновик";
+      const confirmed = window.confirm(`Импортировать JSON как ${targetLabel}?\n${diffSummary}`);
       if (!confirmed) {
+        return;
+      }
+
+      if (editTarget.kind === "subschema") {
+        setRootDraftSchema(cloneDraftSchema(payload.schema));
+        setBodyPath([]);
+        setSelectedNodeId(payload.schema.nodes[0]?.id ?? null);
+        setConnectionFrom("");
+        setConnectionTo("");
+        setHasDraft(true);
+        setDraftSaved(false);
+        setTestRun(null);
+        setEditorNotice("JSON загружен в редактор субсхемы. Сохраните, чтобы применить.");
         return;
       }
 
       const imported = await api.workflows.importWorkflow(workflow.id, {
         ...payload,
-        activate: importTarget === "version" ? activateOnSave : undefined,
-        target: importTarget
+        target: "draft"
       });
 
-      const importedSchema =
-        imported.target === "version" ? imported.version?.schema : imported.draft?.schema;
+      const importedSchema = imported.draft?.schema;
       if (!importedSchema) {
         throw new Error("Workflow import did not return a schema.");
       }
-      if (imported.target === "version" && imported.version) {
-        onVersionCreated(imported.version, Boolean(activateOnSave));
-        if (hasDraft) {
-          await api.workflows.resetDraft(workflow.id);
-        }
-      }
 
       setRootDraftSchema(cloneDraftSchema(importedSchema));
-      setBaseVersionId(
-        imported.target === "version" && imported.version ? imported.version.id : defaultVersion.id
-      );
+      setBaseVersionId(defaultVersion.id);
       setBodyPath([]);
       setSelectedNodeId(importedSchema.nodes[0]?.id ?? null);
       setConnectionFrom("");
       setConnectionTo("");
-      setHasDraft(imported.target === "draft");
-      setDraftSaved(imported.target === "draft");
-      setDraftUpdatedAt(imported.target === "draft" ? imported.draft?.draft_updated_at ?? null : null);
+      setHasDraft(true);
+      setDraftSaved(true);
+      setDraftUpdatedAt(imported.draft?.draft_updated_at ?? null);
       setTestRun(null);
-      setEditorNotice(
-        imported.target === "version"
-          ? `JSON импортирован как новая версия v${imported.version?.version_no}.`
-          : "JSON импортирован и сохранён как черновик.",
-      );
+      setEditorNotice("JSON импортирован и сохранён как черновик.");
     } catch (error) {
-      setEditorAlert(getProblemMessage(error, "Не удалось импортировать Workflow JSON."));
+      setEditorAlert(getProblemMessage(error, "Не удалось импортировать JSON."));
     } finally {
       setSaving(false);
     }
   }
 
   async function handleRunTest() {
-    if (hasDraft && !draftSaved) {
+    if (editTarget.kind === "workflow" && hasDraft && !draftSaved) {
       const saved = await persistDraft("Черновик автосохранён перед тестовым запуском.");
       if (!saved) {
         return;
@@ -893,111 +864,163 @@ function WorkflowSchemaEditor({
     setEditorNotice("Тестовый запуск завершён.");
   }
 
+  async function handleCreateSubschema(slug: string, name: string) {
+    setSaving(true);
+    setEditorAlert(null);
+
+    try {
+      // Сохраняем черновик рабочей схемы, чтобы не потерять правки при переходе.
+      if (editTarget.kind === "workflow" && hasDraft && !draftSaved && validation.valid) {
+        await persistDraft(null);
+      }
+
+      const subschema = await api.workflows.createSubschema({ slug, name });
+      onSubschemaCreated(subschema);
+      setSubDialogOpen(false);
+      setEditTarget({ kind: "subschema", subschema });
+      setRootDraftSchema(cloneDraftSchema(subschema.schema));
+      setBodyPath([]);
+      setSelectedNodeId(subschema.schema.nodes[0]?.id ?? null);
+      setConnectionFrom("");
+      setConnectionTo("");
+      setHasDraft(false);
+      setDraftSaved(true);
+      setTestRun(null);
+      setHistoryOpen(false);
+      setEditorNotice(`Субсхема «${name}» создана. Отредактируйте её и сохраните.`);
+    } catch (error) {
+      setEditorAlert(getProblemMessage(error, "Не удалось создать субсхему."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleBackToWorkflow() {
+    if (editTarget.kind !== "subschema") {
+      return;
+    }
+    if (hasDraft && !draftSaved && validation.valid) {
+      try {
+        const updated = await api.workflows.updateSubschema(editTarget.subschema.id, {
+          schema: rootDraftSchema
+        });
+        onSubschemaSaved(updated);
+      } catch (error) {
+        setEditorAlert(getProblemMessage(error, "Не удалось сохранить субсхему перед выходом."));
+        return;
+      }
+    }
+
+    setEditTarget({ kind: "workflow" });
+    setTestRun(null);
+    setEditorAlert(null);
+    setEditorNotice(null);
+
+    const draft = await api.workflows.getDraft(workflow.id).catch(() => null);
+    const nextSchema = draft?.has_draft && draft.schema ? draft.schema : defaultVersion.schema;
+    setBaseVersionId(defaultVersion.id);
+    setRootDraftSchema(cloneDraftSchema(nextSchema));
+    setBodyPath([]);
+    setSelectedNodeId(nextSchema.nodes[0]?.id ?? null);
+    setConnectionFrom("");
+    setConnectionTo("");
+    setHasDraft(Boolean(draft?.has_draft));
+    setDraftSaved(Boolean(draft?.has_draft));
+    setDraftUpdatedAt(draft?.draft_updated_at ?? null);
+  }
+
+  const schemeTitle = editingSubschema ? editTarget.subschema.name : workflow.name;
+  const draftStatusText = editingSubschema
+    ? hasDraft
+      ? "Есть несохранённые изменения субсхемы"
+      : "Субсхема сохранена"
+    : hasDraft
+      ? "Есть незафиксированный черновик"
+      : "Черновик совпадает с рабочей версией";
+
   return (
     <section aria-label="Редактор схемы Workflow" className="workflow-editor">
-      <div className="workflow-editor-toolbar">
-        <div className="workflow-breadcrumb" aria-label="Текущий граф">
-          <Boxes aria-hidden="true" size={16} />
-          <span>{["Корневая схема", ...bodyPathLabels].join(" / ")}</span>
-          <Badge tone={hasDraft ? "warning" : "success"}>
-            {hasDraft ? (draftSaved ? "Черновик сохранён" : "Есть черновик") : "Опубликовано"}
-          </Badge>
-          {draftUpdatedAt ? <span className="muted">сохранён {draftUpdatedAt}</span> : null}
-          {bodyPath.length > 0 ? (
-            <Button onClick={handleExitBodyGraph} type="button" variant="secondary">
+      <div className="workflow-topbar">
+        {editingSubschema ? (
+          <div className="workflow-topbar-scheme workflow-subschema-heading">
+            <Button onClick={() => void handleBackToWorkflow()} type="button" variant="secondary">
               <ArrowLeft aria-hidden="true" size={16} />
-              Вернуться к родительской схеме
+              Вернуться к Workflow
             </Button>
-          ) : null}
-        </div>
-
-        <div className="workflow-editor-actions">
-          <label className="workflow-select workflow-editor-base">
-            <span>Редактируемая версия</span>
-            <select
-              id={`workflow-base-version-${workflow.id}`}
-              onChange={(event) => void loadVersionSchema(event.currentTarget.value)}
-              value={baseVersionId}
-            >
-              {versions.map((version) => (
-                <option key={version.id} value={version.id}>
-                  v{version.version_no}
-                  {version.id === workflow.default_version_id ? " · активная" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <CheckboxInput
-            checked={activateOnSave}
-            id={`workflow-activate-${workflow.id}`}
-            label="Активировать сразу"
-            onChange={(event) => setActivateOnSave(event.currentTarget.checked)}
+            <span className="workflow-subschema-name">Субсхема: {editTarget.subschema.name}</span>
+          </div>
+        ) : (
+          <WorkflowSchemeSelect
+            disabled={saving || workflows.length === 0}
+            onSelect={onSelectWorkflow}
+            selectedWorkflowId={selectedWorkflowId}
+            workflows={workflows}
           />
-          <Button
-            disabled={saving || draftLoading || !validation.valid}
-            onClick={() => void handleSave()}
-            type="button"
+        )}
+
+        <div aria-label="Действия со схемой" className="workflow-toolbar" role="toolbar">
+          <span
+            className={`workflow-draft-status ${hasDraft ? "has-draft" : ""}`}
+            title={draftStatusText}
           >
-            <Save aria-hidden="true" size={16} />
-            Сохранить как новую версию
-          </Button>
+            <ShieldCheck aria-hidden="true" size={16} />
+            <span className="workflow-draft-status-text">{draftStatusText}</span>
+          </span>
+
           <Button
-            disabled={saving || draftLoading || !validation.valid}
-            onClick={() => void handleSaveDraft()}
-            type="button"
-            variant="secondary"
-          >
-            <Save aria-hidden="true" size={16} />
-            Сохранить черновик
-          </Button>
-          <Button
-            disabled={saving || draftLoading || !validation.valid || !hasDraft}
-            onClick={() => void handlePublishDraft()}
-            type="button"
-          >
-            <UploadCloud aria-hidden="true" size={16} />
-            Опубликовать черновик
-          </Button>
-          <Button
-            disabled={saving || draftLoading || !hasDraft}
-            onClick={() => void handleResetDraft()}
+            aria-label="Перезагрузить черновик из рабочей версии"
+            className="workflow-toolbar-button"
+            disabled={saving || draftLoading}
+            onClick={() => void handleReload()}
+            title="Перезагрузить черновик из рабочей версии"
             type="button"
             variant="ghost"
           >
-            <RotateCcw aria-hidden="true" size={16} />
-            Сбросить черновик
+            <RotateCcw aria-hidden="true" size={18} />
           </Button>
           <Button
+            aria-label="Создать субсхему"
+            className="workflow-toolbar-button"
+            disabled={saving || draftLoading}
+            onClick={() => setSubDialogOpen(true)}
+            title="Создать субсхему"
+            type="button"
+            variant="ghost"
+          >
+            <Plus aria-hidden="true" size={18} />
+          </Button>
+          <Button
+            aria-label="Сохранить черновик в рабочую версию"
+            className="workflow-toolbar-button"
+            disabled={saving || draftLoading || !validation.valid}
+            onClick={() => void handleSaveToWorking()}
+            title="Сохранить черновик в рабочую версию"
+            type="button"
+            variant="ghost"
+          >
+            <UploadCloud aria-hidden="true" size={18} />
+          </Button>
+          <Button
+            aria-label="Экспорт JSON"
+            className="workflow-toolbar-button"
             disabled={saving || draftLoading}
             onClick={() => void handleExportWorkflow()}
+            title="Экспорт JSON"
             type="button"
-            variant="secondary"
+            variant="ghost"
           >
-            <Download aria-hidden="true" size={16} />
-            Экспорт JSON
+            <Download aria-hidden="true" size={18} />
           </Button>
-          <label className="workflow-select workflow-import-target">
-            <span>Цель импорта</span>
-            <select
-              disabled={saving || draftLoading}
-              onChange={(event) =>
-                setImportTarget(event.currentTarget.value as WorkflowImportTarget)
-              }
-              value={importTarget}
-            >
-              <option value="draft">Черновик</option>
-              <option value="version">Новая версия</option>
-            </select>
-          </label>
           <Button
+            aria-label="Импорт JSON"
+            className="workflow-toolbar-button"
             disabled={saving || draftLoading}
             onClick={handleImportClick}
+            title="Импорт JSON"
             type="button"
-            variant="secondary"
+            variant="ghost"
           >
-            <FileUp aria-hidden="true" size={16} />
-            Импорт JSON
+            <FileUp aria-hidden="true" size={18} />
           </Button>
           <input
             accept="application/json,.json"
@@ -1007,24 +1030,27 @@ function WorkflowSchemaEditor({
             style={{ display: "none" }}
             type="file"
           />
-          <label className="workflow-select workflow-test-scope">
-            <span>Область теста</span>
-            <select
-              onChange={(event) => setTestScope(event.currentTarget.value as WorkflowTestScope)}
-              value={testScope}
-            >
-              <option value="schema">Схема</option>
-              <option value="bodyGraph">Текущая bodyGraph</option>
-            </select>
-          </label>
           <Button
-            disabled={!validation.valid}
-            onClick={() => void handleRunTest()}
+            aria-label="История исполнения"
+            aria-pressed={historyOpen}
+            className="workflow-toolbar-button"
+            disabled={editingSubschema}
+            onClick={() => setHistoryOpen(true)}
+            title="История исполнения"
             type="button"
-            variant="secondary"
+            variant="ghost"
           >
-            <FlaskConical aria-hidden="true" size={16} />
-            Тестовый запуск
+            <History aria-hidden="true" size={18} />
+          </Button>
+          <Button
+            aria-label="Тестовый запуск"
+            className="workflow-toolbar-button"
+            onClick={() => setTestOpen(true)}
+            title="Тестовый запуск"
+            type="button"
+            variant="ghost"
+          >
+            <FlaskConical aria-hidden="true" size={18} />
           </Button>
         </div>
       </div>
@@ -1042,7 +1068,59 @@ function WorkflowSchemaEditor({
       <div className="workflow-editor-grid">
         <div className="workflow-palette" aria-label="Палитра узлов">
           <div className="workflow-schema-info">
+            <div className="workflow-schema-meta">
+              <h2 className="workflow-schema-name">{schemeTitle}</h2>
+              <div className="workflow-topbar-tags">
+                {editingSubschema ? (
+                  <Badge tone="neutral">Субсхема</Badge>
+                ) : (
+                  <>
+                    <Badge tone={workflowStatusTone(workflow.status)}>
+                      {workflowStatusLabel(workflow.status)}
+                    </Badge>
+                    <Badge tone={workflow.enabled ? "success" : "neutral"}>
+                      {workflow.enabled ? "Включен" : "Отключен"}
+                    </Badge>
+                  </>
+                )}
+              </div>
+            </div>
             <h3>Информация о схеме</h3>
+
+            {editingSubschema ? (
+              <p className="muted">Слаг: {editTarget.subschema.slug}</p>
+            ) : (
+              <>
+                <Button
+                  className="workflow-schema-toggle"
+                  disabled={pending}
+                  onClick={onToggleEnabled}
+                  type="button"
+                  variant="secondary"
+                >
+                  <Power aria-hidden="true" size={16} />
+                  {workflow.enabled ? "Отключить" : "Включить"}
+                </Button>
+                <label className="workflow-select">
+                  <span>Активная версия по умолчанию</span>
+                  <select
+                    disabled={pending || versions.length === 0}
+                    onChange={(event) => onActivateVersion(event.currentTarget.value)}
+                    value={workflow.default_version_id}
+                  >
+                    {versions.map((version) => (
+                      <option key={version.id} value={version.id}>
+                        v{version.version_no} · {version.created_at}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <p className="muted">Обновлён {workflow.updated_at}</p>
+              </>
+            )}
+
+            {draftUpdatedAt ? <p className="muted">Черновик сохранён {draftUpdatedAt}</p> : null}
+
             {validation.errors.length > 0 ? (
               <ul className="workflow-validation" aria-label="Ошибки валидации схемы">
                 {validation.errors.map((error) => (
@@ -1086,15 +1164,30 @@ function WorkflowSchemaEditor({
           ))}
         </div>
 
-        <WorkflowCanvas
-          connections={draftSchema.connections}
-          key={bodyPath.join("/") || baseVersionId}
-          nodes={draftSchema.nodes}
-          onDropNode={handleAddNode}
-          onMoveNode={handleMoveNode}
-          onSelectNode={setSelectedNodeId}
-          selectedNodeId={selectedNodeId}
-        />
+        <div className="workflow-graph-column">
+          <div className="workflow-graph-breadcrumb" aria-label="Текущий граф">
+            <Boxes aria-hidden="true" size={16} />
+            <span>
+              {[editingSubschema ? "Субсхема" : "Корневая схема", ...bodyPathLabels].join(" / ")}
+            </span>
+            {bodyPath.length > 0 ? (
+              <Button onClick={handleExitBodyGraph} type="button" variant="secondary">
+                <ArrowLeft aria-hidden="true" size={16} />
+                Вернуться к родительской схеме
+              </Button>
+            ) : null}
+          </div>
+
+          <WorkflowCanvas
+            connections={draftSchema.connections}
+            key={bodyPath.join("/") || (editingSubschema ? editTarget.subschema.id : baseVersionId)}
+            nodes={draftSchema.nodes}
+            onDropNode={handleAddNode}
+            onMoveNode={handleMoveNode}
+            onSelectNode={setSelectedNodeId}
+            selectedNodeId={selectedNodeId}
+          />
+        </div>
 
         <div className="workflow-side-panel" aria-label="Свойства и связи узлов">
           <WorkflowNodeProperties
@@ -1116,6 +1209,36 @@ function WorkflowSchemaEditor({
             onFromChange={setConnectionFrom}
             onToChange={setConnectionTo}
           />
+        </div>
+      </div>
+
+      {subDialogOpen ? (
+        <WorkflowNewSubschemaModal
+          existingSlugs={subschemas.map((item) => item.slug)}
+          onClose={() => setSubDialogOpen(false)}
+          onCreateSubschema={(slug, name) => void handleCreateSubschema(slug, name)}
+          saving={saving}
+        />
+      ) : null}
+
+      {testOpen ? (
+        <WorkflowModal onClose={() => setTestOpen(false)} title="Тестовый запуск">
+          <div className="workflow-test-controls">
+            <label className="workflow-select">
+              <span>Область теста</span>
+              <select
+                onChange={(event) => setTestScope(event.currentTarget.value as WorkflowTestScope)}
+                value={testScope}
+              >
+                <option value="schema">Схема</option>
+                <option value="bodyGraph">Текущая bodyGraph</option>
+              </select>
+            </label>
+            <Button disabled={!validation.valid} onClick={() => void handleRunTest()} type="button">
+              <FlaskConical aria-hidden="true" size={16} />
+              Запустить тест
+            </Button>
+          </div>
 
           {testRun ? (
             <div className="workflow-test-log" role="region" aria-label="Лог тестового запуска">
@@ -1132,10 +1255,92 @@ function WorkflowSchemaEditor({
                 ))}
               </ol>
             </div>
-          ) : null}
-        </div>
-      </div>
+          ) : (
+            <p className="muted">Запустите тест, чтобы увидеть детерминированный лог dry-run.</p>
+          )}
+        </WorkflowModal>
+      ) : null}
+
+      {historyOpen && !editingSubschema ? (
+        <WorkflowModal onClose={() => setHistoryOpen(false)} title="История исполнения">
+          <WorkflowInstancesPanel instances={instances} workflowId={workflow.id} />
+        </WorkflowModal>
+      ) : null}
     </section>
+  );
+}
+
+interface WorkflowNewSubschemaModalProps {
+  existingSlugs: string[];
+  onClose: () => void;
+  onCreateSubschema: (slug: string, name: string) => void;
+  saving: boolean;
+}
+
+const WORKFLOW_SUBSCHEMA_SLUG_PATTERN = /^[A-Za-z0-9_-]{1,100}$/;
+
+function WorkflowNewSubschemaModal({
+  existingSlugs,
+  onClose,
+  onCreateSubschema,
+  saving
+}: WorkflowNewSubschemaModalProps) {
+  const [slug, setSlug] = useState("");
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedSlug = slug.trim();
+    const trimmedName = name.trim();
+    if (!WORKFLOW_SUBSCHEMA_SLUG_PATTERN.test(trimmedSlug)) {
+      setError("Slug: латиница, цифры, дефис или подчёркивание (1–100 символов).");
+      return;
+    }
+    if (existingSlugs.includes(trimmedSlug)) {
+      setError("Субсхема с таким slug уже существует.");
+      return;
+    }
+    if (!trimmedName) {
+      setError("Укажите название субсхемы.");
+      return;
+    }
+    setError(null);
+    onCreateSubschema(trimmedSlug, trimmedName);
+  }
+
+  return (
+    <WorkflowModal onClose={onClose} title="Создать субсхему">
+      <form className="workflow-subschema-form" onSubmit={handleSubmit}>
+        <TextInput
+          autoFocus
+          id="workflow-subschema-slug"
+          label="Slug (имя схемы)"
+          onChange={(event) => setSlug(event.currentTarget.value)}
+          placeholder="my-sub-schema"
+          value={slug}
+        />
+        <TextInput
+          id="workflow-subschema-name"
+          label="Название"
+          onChange={(event) => setName(event.currentTarget.value)}
+          placeholder="Общий контекст"
+          value={name}
+        />
+        <p className="muted">
+          Субсхема создаётся отдельной сущностью; после создания откроется её редактор.
+        </p>
+        {error ? (
+          <div className="form-alert" role="alert">
+            {error}
+          </div>
+        ) : null}
+        <Button disabled={saving} type="submit">
+          <Plus aria-hidden="true" size={16} />
+          Создать
+        </Button>
+      </form>
+    </WorkflowModal>
   );
 }
 
@@ -1526,11 +1731,10 @@ function WorkflowConnectionsEditor({
 
 interface WorkflowInstancesPanelProps {
   instances: WorkflowInstance[];
-  onClose: () => void;
   workflowId: string;
 }
 
-function WorkflowInstancesPanel({ instances, onClose, workflowId }: WorkflowInstancesPanelProps) {
+function WorkflowInstancesPanel({ instances, workflowId }: WorkflowInstancesPanelProps) {
   const api = useSaasAdminApi();
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
   const [detail, setDetail] = useState<WorkflowInstanceDetail | null>(null);
@@ -1554,25 +1758,8 @@ function WorkflowInstancesPanel({ instances, onClose, workflowId }: WorkflowInst
   }
 
   return (
-    <Panel aria-label="История исполнения Workflow" as="section" className="workflow-instances">
-      <div className="panel-heading-row">
-        <div className="channel-title">
-          <History aria-hidden="true" size={20} />
-          <div>
-            <h2>История исполнения</h2>
-            <p>Просмотр запусков и диагностики (без влияния на активные инстансы).</p>
-          </div>
-        </div>
-        <Button
-          aria-label="Закрыть историю исполнения"
-          onClick={onClose}
-          type="button"
-          variant="ghost"
-        >
-          <X aria-hidden="true" size={16} />
-          Закрыть
-        </Button>
-      </div>
+    <div aria-label="История исполнения Workflow" className="workflow-instances" role="region">
+      <p className="muted">Просмотр запусков и диагностики (без влияния на активные инстансы).</p>
 
       {instances.length === 0 ? (
         <p className="muted">Инстансов ещё не было.</p>
@@ -1640,7 +1827,7 @@ function WorkflowInstancesPanel({ instances, onClose, workflowId }: WorkflowInst
           </ol>
         </div>
       ) : null}
-    </Panel>
+    </div>
   );
 }
 
@@ -1816,15 +2003,6 @@ function workflowTestScopeLabel(scope: WorkflowTestScope): string {
   }
 }
 
-function workflowImportTargetLabel(target: WorkflowImportTarget): string {
-  switch (target) {
-    case "draft":
-      return "черновик";
-    case "version":
-      return "новую версию";
-  }
-}
-
 function nodePrimaryValue(node: WorkflowNode, key: string): string {
   const value = node.config[key];
   return typeof value === "string" ? value : value == null ? "" : String(value);
@@ -1871,6 +2049,25 @@ function isWorkflowSchemaExport(value: unknown): value is WorkflowSchemaExport {
     typeof value.workflow.version_no === "number" &&
     isWorkflowSchema(value.schema)
   );
+}
+
+/** Формирует экспортный конверт C5 для субсхемы (переиспользует загрузку в файл). */
+function buildSubschemaExport(
+  subschema: WorkflowSubschema,
+  schema: WorkflowSchema
+): WorkflowSchemaExport {
+  return {
+    contract: "C5.WorkflowSchemaExport",
+    version: "1.0.0",
+    exported_at: new Date().toISOString(),
+    workflow: {
+      id: subschema.id,
+      name: subschema.name,
+      version_id: subschema.id,
+      version_no: 1
+    },
+    schema: cloneDraftSchema(schema)
+  };
 }
 
 function summarizeWorkflowSchemaDiff(current: WorkflowSchema, next: WorkflowSchema): string {

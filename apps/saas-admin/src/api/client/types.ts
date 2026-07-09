@@ -367,6 +367,15 @@ export interface ImportWorkflowResponse {
   version?: WorkflowVersion;
 }
 
+export interface CreateWorkflowSubschemaRequest {
+  slug: string;
+  name: string;
+}
+
+export interface UpdateWorkflowSubschemaRequest {
+  schema: WorkflowSchema;
+}
+
 // ── AI Onboarding (C4, SVC-AI) ────────────────────────────────────────────
 // Диалоговый помощник формирует структурированную команду (ТЗ §16.8). Команда —
 // лишь описание намерения; Backend проверяет полномочия и схему (§12.6) и
@@ -713,6 +722,11 @@ export interface SaasAdminApiClient {
     listWorkflows: () => Promise<Workflow[]>;
     listVersions: (workflowId: string) => Promise<WorkflowVersion[]>;
     listSubschemas: () => Promise<WorkflowSubschema[]>;
+    createSubschema: (request: CreateWorkflowSubschemaRequest) => Promise<WorkflowSubschema>;
+    updateSubschema: (
+      subschemaId: string,
+      request: UpdateWorkflowSubschemaRequest
+    ) => Promise<WorkflowSubschema>;
     getDraft: (workflowId: string) => Promise<WorkflowDraft>;
     saveDraft: (
       workflowId: string,

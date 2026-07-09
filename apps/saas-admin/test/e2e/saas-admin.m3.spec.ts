@@ -69,21 +69,20 @@ test("Оператор платформы правит Workflow: безопас�
     page.getByRole("region", { name: "Редактор схемы Workflow" }).getByText("Изменяет данные")
   ).toBeVisible();
 
-  // Добавляем узел перетаскиванием, переименовываем и сохраняем как новую версию (ТЗ §13.10).
+  // Добавляем узел перетаскиванием, переименовываем и сохраняем черновик в рабочую версию
+  // через иконочный тулбар (ТЗ §13.10, дизайн fbp_engine).
   await dragPaletteNodeToCanvas(page, "Ветвление");
   const labelInput = page.getByLabel("Метка узла");
   await labelInput.fill("Проверка бюджета");
-  await page.getByRole("button", { name: "Сохранить как новую версию" }).click();
+  await page.getByRole("button", { name: "Сохранить черновик в рабочую версию" }).click();
 
-  await expect(
-    page.getByText("Сохранена версия v3. Выполняющиеся инстансы не затронуты.")
-  ).toBeVisible();
+  await expect(page.getByText("Черновик сохранён в рабочую версию.")).toBeVisible();
 
-  // Включение/отключение Workflow (ТЗ §16.7).
+  // Включение/отключение Workflow из панели «Информация о схеме» (ТЗ §16.7).
   await page.getByRole("button", { name: "Отключить" }).click();
   await expect(page.getByText("Workflow отключен")).toBeVisible();
 
-  // История исполнения открывается выдвижной панелью из верхней панели (дизайн fbp_engine).
+  // История исполнения открывается модальным окном из иконочного тулбара (дизайн fbp_engine).
   await page.getByRole("button", { name: "История исполнения" }).click();
 
   // Диагностика инстанса из истории исполнения.

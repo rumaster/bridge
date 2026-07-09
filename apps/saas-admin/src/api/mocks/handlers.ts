@@ -42,6 +42,7 @@ import type {
   ConnectChannelRequest,
   CreateBroadcastRequest,
   CreateKnowledgeDocumentRequest,
+  CreateWorkflowSubschemaRequest,
   CreateWorkflowVersionRequest,
   ImportWorkflowRequest,
   KnowledgeDocument,
@@ -58,6 +59,7 @@ import type {
   UpdateOrganizationConfigurationRequest,
   UpdateOrganizationRequest,
   UpdateWorkflowRequest,
+  UpdateWorkflowSubschemaRequest,
   Workflow,
   WorkflowDraft,
   WorkflowInstance,
@@ -88,6 +90,7 @@ let currentNotificationSettings: NotificationSetting[] =
 let nextChannelNumber = 1;
 let nextDocumentNumber = 1;
 let nextWorkflowVersionNumber = 1;
+let nextWorkflowSubschemaNumber = 1;
 let nextOnboardingNumber = 1;
 let nextConfigurationVersion = 2;
 let nextBroadcastNumber = 1;
@@ -394,6 +397,78 @@ export const handlers = [
 
   http.get(`${API_PREFIX}/workflow-subschemas`, () => {
     return HttpResponse.json(currentSubschemas.map(cloneWorkflowSubschema));
+  }),
+
+  http.post(`${API_PREFIX}/workflow-subschemas`, async ({ request }) => {
+    const body = (await request.json()) as Partial<CreateWorkflowSubschemaRequest>;
+    const slug = typeof body.slug === "string" ? body.slug.trim() : "";
+    const name = typeof body.name === "string" ? body.name.trim() : "";
+    const errors: NonNullable<ProblemDetails["errors"]> = [];
+    if (!/^[A-Za-z0-9_-]{1,100}$/.test(slug)) {
+      errors.push({ field: "slug", message: "Slug must match [A-Za-z0-9_-]{1,100}." });
+    }
+    if (!name) {
+      errors.push({ field: "name", message: "Name is required." });
+    }
+    if (errors.length > 0) {
+      return validationProblem(errors, "Request payload does not match C5 subschema DTO.");
+    }
+    if (currentSubschemas.some((item) => item.slug === slug)) {
+      return problem(409, "Conflict", "Workflow subschema slug already exists.");
+    }
+
+    const entryId = `${slug}-entry`;
+    const subschema: WorkflowSubschema = {
+      id: `wfs-created-${nextWorkflowSubschemaNumber++}`,
+      organization_id: currentOrganization.id,
+      slug,
+      name,
+      status: "draft",
+      schema: {
+        schema_version: "1.0.0",
+        entry: entryId,
+        nodes: [
+          {
+            id: entryId,
+            type: "transform",
+            label: "Подготовить контекст",
+            config: { expression: "payload" },
+            position: { x: 40, y: 40 }
+          }
+        ],
+        connections: []
+      },
+      created_at: "2026-07-09T12:00:00.000Z",
+      updated_at: "2026-07-09T12:00:00.000Z"
+    };
+
+    currentSubschemas = [...currentSubschemas, subschema];
+    return HttpResponse.json(cloneWorkflowSubschema(subschema), { status: 201 });
+  }),
+
+  http.patch(`${API_PREFIX}/workflow-subschemas/:subschemaId`, async ({ params, request }) => {
+    const subschema = currentSubschemas.find((item) => item.id === params.subschemaId);
+    if (!subschema) {
+      return problem(404, "Not Found", "Workflow subschema not found.");
+    }
+
+    const body = (await request.json()) as Partial<UpdateWorkflowSubschemaRequest>;
+    const errors = validateWorkflowVersionPayload(body.schema);
+    if (errors.length > 0) {
+      return validationProblem(errors, "Request payload does not match C5 subschema DTO.");
+    }
+
+    const updated: WorkflowSubschema = {
+      ...subschema,
+      schema: cloneWorkflowSchema(body.schema as WorkflowSchema),
+      status: "active",
+      updated_at: "2026-07-09T12:05:00.000Z"
+    };
+    currentSubschemas = currentSubschemas.map((item) =>
+      item.id === subschema.id ? updated : item
+    );
+
+    return HttpResponse.json(cloneWorkflowSubschema(updated));
   }),
 
   http.get(`${API_PREFIX}/workflows/:workflowId/versions`, ({ params }) => {

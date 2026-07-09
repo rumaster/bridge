@@ -956,18 +956,12 @@ div.broadcast-stats {
   min-height: 0;
 }
 
-.workflow-body {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-}
-
-/* Верхняя панель схемы: выбор через dropdown, статус, активная версия, история. */
+/* Верхняя панель: слева — выбор схемы, справа — иконочный тулбар (макет /#/schemas). */
 .workflow-topbar {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
+  justify-content: space-between;
   gap: 16px;
   padding: 12px 24px;
   border-bottom: 1px solid #d6dee8;
@@ -978,37 +972,60 @@ div.broadcast-stats {
   min-width: 220px;
 }
 
-.workflow-topbar-meta {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-
-.workflow-topbar-meta h2 {
-  margin: 0;
-  color: #172331;
-  font-size: 1.1rem;
-}
-
 .workflow-topbar-tags {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.workflow-topbar-actions {
+.workflow-subschema-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.workflow-subschema-name {
+  color: #172331;
+  font-weight: 700;
+}
+
+/* Компактный тулбар из пиктограмм по правому краю верхней панели. */
+.workflow-toolbar {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 12px;
+  align-items: center;
+  gap: 6px;
   margin-left: auto;
 }
 
-.workflow-topbar-version {
-  min-width: 220px;
+.workflow-toolbar-button.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  min-width: 38px;
 }
 
-.workflow-editor-base select,
+/* Индикатор синхронизации черновика с рабочей версией. */
+.workflow-draft-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  color: #4b5a6b;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.workflow-draft-status.has-draft {
+  color: #c27a1a;
+}
+
+.workflow-draft-status-text {
+  white-space: nowrap;
+}
+
 .workflow-select select {
   min-height: 40px;
   padding: 8px 10px;
@@ -1026,30 +1043,26 @@ div.broadcast-stats {
   gap: 12px;
   min-width: 0;
   min-height: 0;
-  padding: 14px 24px;
+  padding: 0 0 14px;
   overflow: hidden;
 }
 
-.workflow-editor-base {
-  display: grid;
-  gap: 6px;
-  color: #344256;
-  font-weight: 700;
+.workflow-editor > .form-alert,
+.workflow-editor > .form-success,
+.workflow-editor > .route-loader {
+  margin: 0 24px;
 }
 
-.workflow-editor-toolbar {
+/* Центральная колонка: хлебные крошки графа над холстом. */
+.workflow-graph-column {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 12px;
-  border: 1px solid #d6dee8;
-  border-radius: 8px;
-  background: #f8fafc;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
 }
 
-.workflow-breadcrumb {
+.workflow-graph-breadcrumb {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -1059,8 +1072,86 @@ div.broadcast-stats {
   font-weight: 700;
 }
 
-.workflow-breadcrumb strong {
+/* Информация о схеме: статус, включение, активная версия, валидация. */
+.workflow-schema-meta {
+  display: grid;
+  gap: 6px;
+}
+
+.workflow-schema-name {
+  margin: 0;
   color: #172331;
+  font-size: 1.05rem;
+}
+
+.workflow-schema-toggle {
+  width: fit-content;
+}
+
+/* Модальные окна: история, тест, создание субсхемы. */
+.workflow-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 48px 16px;
+  background: rgba(15, 27, 41, 0.55);
+  overflow: auto;
+}
+
+.workflow-modal {
+  width: min(720px, 100%);
+  max-height: calc(100vh - 96px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 20px 60px rgba(15, 27, 41, 0.35);
+}
+
+.workflow-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.workflow-modal-head h2 {
+  margin: 0;
+  color: #172331;
+  font-size: 1.1rem;
+}
+
+.workflow-modal-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: #4b5a6b;
+  cursor: pointer;
+}
+
+.workflow-modal-close:hover {
+  background: #eef2f6;
+}
+
+.workflow-modal-body {
+  display: grid;
+  gap: 12px;
+  padding: 18px 20px;
+  overflow: auto;
+}
+
+.workflow-subschema-form {
+  display: grid;
+  gap: 12px;
 }
 
 /* Три колонки на всю высоту рабочей области; каждая колонка прокручивается
@@ -1307,10 +1398,6 @@ div.broadcast-stats {
   font-weight: 700;
 }
 
-.workflow-import-target {
-  min-width: 150px;
-}
-
 .workflow-connection-list {
   display: grid;
   gap: 8px;
@@ -1360,18 +1447,6 @@ div.broadcast-stats {
   margin: 0;
   color: #0d5132;
   font-weight: 700;
-}
-
-.workflow-save-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 12px;
-}
-
-.workflow-save-hint {
-  margin: 0;
 }
 
 .workflow-test-controls {
@@ -1424,11 +1499,7 @@ div.broadcast-stats {
   display: grid;
   gap: 14px;
   align-content: start;
-  width: min(420px, 92vw);
   min-height: 0;
-  padding: 18px;
-  border-left: 1px solid #d6dee8;
-  overflow-y: auto;
 }
 
 .workflow-instance-list {
@@ -1716,16 +1787,6 @@ div.broadcast-stats {
 
   .workflow-canvas {
     min-height: 320px;
-  }
-
-  .workflow-body {
-    flex-wrap: wrap;
-  }
-
-  .workflow-instances {
-    width: 100%;
-    border-left: 0;
-    border-top: 1px solid #d6dee8;
   }
 }
 

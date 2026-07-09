@@ -10,6 +10,7 @@ import type {
   CreateBroadcastRequest,
   CreateBroadcastResponse,
   CreateKnowledgeDocumentRequest,
+  CreateWorkflowSubschemaRequest,
   CreateWorkflowVersionRequest,
   ImportWorkflowRequest,
   ImportWorkflowResponse,
@@ -39,6 +40,7 @@ import type {
   UpdateOrganizationConfigurationRequest,
   UpdateOrganizationRequest,
   UpdateWorkflowRequest,
+  UpdateWorkflowSubschemaRequest,
   Workflow,
   WorkflowDraft,
   WorkflowInstance,
@@ -145,6 +147,16 @@ export function createSaasAdminApiClient(options: SaasAdminApiClientOptions = {}
       listVersions: (workflowId: string) =>
         requestJson<WorkflowVersion[]>(`/workflows/${workflowId}/versions`),
       listSubschemas: () => requestJson<WorkflowSubschema[]>("/workflow-subschemas"),
+      createSubschema: (request: CreateWorkflowSubschemaRequest) =>
+        requestJson<WorkflowSubschema>("/workflow-subschemas", {
+          method: "POST",
+          body: JSON.stringify(request)
+        }),
+      updateSubschema: (subschemaId: string, request: UpdateWorkflowSubschemaRequest) =>
+        requestJson<WorkflowSubschema>(`/workflow-subschemas/${subschemaId}`, {
+          method: "PATCH",
+          body: JSON.stringify(request)
+        }),
       getDraft: (workflowId: string) =>
         requestJson<WorkflowDraft>(`/workflows/${workflowId}/draft`),
       saveDraft: (workflowId: string, request: SaveWorkflowDraftRequest) =>
