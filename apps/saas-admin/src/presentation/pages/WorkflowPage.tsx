@@ -17,7 +17,9 @@ import {
   ShieldCheck,
   Trash2,
   UploadCloud,
-  Workflow as WorkflowIcon
+  X,
+  ZoomIn,
+  ZoomOut
 } from "lucide-react";
 
 import type {
@@ -69,6 +71,7 @@ export default function WorkflowPage() {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [pendingWorkflowId, setPendingWorkflowId] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -213,14 +216,10 @@ export default function WorkflowPage() {
   }
 
   return (
-    <section className="page-section">
-      <div className="page-heading">
+    <section className="page-section workflow-page">
+      <div className="page-heading workflow-page-heading">
         <Badge tone="neutral">Автоматизация</Badge>
         <h1>Workflow</h1>
-        <p>
-          Список Workflow (C5), безопасный редактор схемы (ТЗ §13.13) и сохранение изменений новой
-          версией (ТЗ §13.10) — выполняющиеся инстансы не затрагиваются.
-        </p>
       </div>
 
       {!canEdit ? (
@@ -239,158 +238,159 @@ export default function WorkflowPage() {
       {success ? <div className="form-success">{success}</div> : null}
 
       {canEdit ? (
-        <>
+        <div className="workflow-workspace">
           {loading ? <div className="route-loader">Загрузка Workflow...</div> : null}
 
-          <div className="workflow-layout">
-            <WorkflowListPanel
-              onSelect={setSelectedWorkflowId}
-              onToggleEnabled={(workflow) => void handleToggleEnabled(workflow)}
-              pendingWorkflowId={pendingWorkflowId}
-              selectedWorkflowId={selectedWorkflowId}
-              workflows={workflows}
-            />
+          <WorkflowTopbar
+            historyOpen={historyOpen}
+            onActivateVersion={(versionId) =>
+              selectedWorkflow && void handleActivateVersion(selectedWorkflow, versionId)
+            }
+            onSelectWorkflow={setSelectedWorkflowId}
+            onToggleEnabled={() =>
+              selectedWorkflow && void handleToggleEnabled(selectedWorkflow)
+            }
+            onToggleHistory={() => setHistoryOpen((open) => !open)}
+            pending={Boolean(selectedWorkflow) && pendingWorkflowId === selectedWorkflowId}
+            selectedWorkflowId={selectedWorkflowId}
+            versions={versions}
+            workflow={selectedWorkflow}
+            workflows={workflows}
+          />
 
+          <div className="workflow-body">
             {selectedWorkflow ? (
-              <div className="workflow-detail">
-                <WorkflowVersionBar
-                  disabled={pendingWorkflowId === selectedWorkflow.id}
-                  onActivateVersion={(versionId) =>
-                    void handleActivateVersion(selectedWorkflow, versionId)
-                  }
+              detailLoading ? (
+                <div className="route-loader">Загрузка версий и истории...</div>
+              ) : versions.length > 0 ? (
+                <WorkflowSchemaEditor
+                  key={selectedWorkflow.id}
+                  onVersionCreated={handleVersionCreated}
+                  subschemas={subschemas}
                   versions={versions}
                   workflow={selectedWorkflow}
                 />
+              ) : null
+            ) : null}
 
-                {detailLoading ? (
-                  <div className="route-loader">Загрузка версий и истории...</div>
-                ) : versions.length > 0 ? (
-                  <WorkflowSchemaEditor
-                    key={selectedWorkflow.id}
-                    onVersionCreated={handleVersionCreated}
-                    subschemas={subschemas}
-                    versions={versions}
-                    workflow={selectedWorkflow}
-                  />
-                ) : null}
-
-                <WorkflowInstancesPanel instances={instances} workflowId={selectedWorkflow.id} />
-              </div>
+            {historyOpen && selectedWorkflow ? (
+              <WorkflowInstancesPanel
+                instances={instances}
+                onClose={() => setHistoryOpen(false)}
+                workflowId={selectedWorkflow.id}
+              />
             ) : null}
           </div>
-        </>
+        </div>
       ) : null}
     </section>
   );
 }
 
-interface WorkflowListPanelProps {
-  onSelect: (workflowId: string) => void;
-  onToggleEnabled: (workflow: Workflow) => void;
-  pendingWorkflowId: string | null;
+interface WorkflowTopbarProps {
+  historyOpen: boolean;
+  onActivateVersion: (versionId: string) => void;
+  onSelectWorkflow: (workflowId: string) => void;
+  onToggleEnabled: () => void;
+  onToggleHistory: () => void;
+  pending: boolean;
   selectedWorkflowId: string | null;
+  versions: WorkflowVersion[];
+  workflow: Workflow | null;
   workflows: Workflow[];
 }
 
-function WorkflowListPanel({
-  onSelect,
-  onToggleEnabled,
-  pendingWorkflowId,
-  selectedWorkflowId,
-  workflows
-}: WorkflowListPanelProps) {
-  return (
-    <Panel aria-label="Список Workflow" as="section" className="workflow-list">
-      <div className="panel-heading-row">
-        <div>
-          <h2>Список Workflow</h2>
-          <p>Включение/отключение и выбор активной версии (ТЗ §16.7).</p>
-        </div>
-      </div>
-
-      <ul className="workflow-list-items">
-        {workflows.map((workflow) => {
-          const selected = workflow.id === selectedWorkflowId;
-          return (
-            <li className={`workflow-list-item ${selected ? "selected" : ""}`} key={workflow.id}>
-              <button
-                aria-current={selected}
-                aria-label={`Открыть Workflow ${workflow.name}`}
-                className="workflow-list-select"
-                onClick={() => onSelect(workflow.id)}
-                type="button"
-              >
-                <span className="workflow-list-title">
-                  <WorkflowIcon aria-hidden="true" size={18} />
-                  {workflow.name}
-                </span>
-                <span className="muted">{workflow.description}</span>
-                <span className="workflow-list-tags">
-                  <Badge tone={workflowStatusTone(workflow.status)}>
-                    {workflowStatusLabel(workflow.status)}
-                  </Badge>
-                  <Badge tone={workflow.enabled ? "success" : "neutral"}>
-                    {workflow.enabled ? "Включен" : "Отключен"}
-                  </Badge>
-                </span>
-              </button>
-              <Button
-                className="workflow-toggle"
-                disabled={pendingWorkflowId === workflow.id}
-                onClick={() => onToggleEnabled(workflow)}
-                type="button"
-                variant="secondary"
-              >
-                <Power aria-hidden="true" size={16} />
-                {workflow.enabled ? "Отключить" : "Включить"}
-              </Button>
-            </li>
-          );
-        })}
-      </ul>
-    </Panel>
-  );
-}
-
-interface WorkflowVersionBarProps {
-  disabled: boolean;
-  onActivateVersion: (versionId: string) => void;
-  versions: WorkflowVersion[];
-  workflow: Workflow;
-}
-
-function WorkflowVersionBar({
-  disabled,
+/**
+ * Верхняя панель редактора Workflow (ТЗ §13, макет fbp_engine): выбор схемы через
+ * выпадающий список, статус, включение/отключение, активная версия по умолчанию и
+ * переключатель истории исполнения. Освобождает пространство под холст редактора.
+ */
+function WorkflowTopbar({
+  historyOpen,
   onActivateVersion,
+  onSelectWorkflow,
+  onToggleEnabled,
+  onToggleHistory,
+  pending,
+  selectedWorkflowId,
   versions,
-  workflow
-}: WorkflowVersionBarProps) {
-  const selectId = `workflow-active-version-${workflow.id}`;
+  workflow,
+  workflows
+}: WorkflowTopbarProps) {
+  const versionSelectId = "workflow-active-version";
   return (
-    <Panel className="workflow-version-bar">
-      <div className="workflow-version-heading">
-        <h2>{workflow.name}</h2>
-        <span className="muted">{workflow.description}</span>
-      </div>
-      <div className="workflow-version-control">
-        <label htmlFor={selectId}>Активная версия по умолчанию</label>
+    <div className="workflow-topbar">
+      <label className="workflow-select workflow-topbar-scheme">
+        <span>Схема Workflow</span>
         <select
-          disabled={disabled || versions.length === 0}
-          id={selectId}
-          onChange={(event) => onActivateVersion(event.currentTarget.value)}
-          value={workflow.default_version_id}
+          aria-label="Схема Workflow"
+          disabled={workflows.length === 0}
+          onChange={(event) => onSelectWorkflow(event.currentTarget.value)}
+          value={selectedWorkflowId ?? ""}
         >
-          {versions.map((version) => (
-            <option key={version.id} value={version.id}>
-              v{version.version_no} · {version.created_at}
+          {workflows.length === 0 ? <option value="">—</option> : null}
+          {workflows.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
             </option>
           ))}
         </select>
-        <span className="muted">
-          Переключение версии не влияет на уже выполняющиеся инстансы (ТЗ §13.10).
-        </span>
-      </div>
-    </Panel>
+      </label>
+
+      {workflow ? (
+        <>
+          <div className="workflow-topbar-meta">
+            <h2>{workflow.name}</h2>
+            <div className="workflow-topbar-tags">
+              <Badge tone={workflowStatusTone(workflow.status)}>
+                {workflowStatusLabel(workflow.status)}
+              </Badge>
+              <Badge tone={workflow.enabled ? "success" : "neutral"}>
+                {workflow.enabled ? "Включен" : "Отключен"}
+              </Badge>
+            </div>
+          </div>
+
+          <div className="workflow-topbar-actions">
+            <Button
+              disabled={pending}
+              onClick={onToggleEnabled}
+              type="button"
+              variant="secondary"
+            >
+              <Power aria-hidden="true" size={16} />
+              {workflow.enabled ? "Отключить" : "Включить"}
+            </Button>
+
+            <label className="workflow-select workflow-topbar-version">
+              <span>Активная версия по умолчанию</span>
+              <select
+                disabled={pending || versions.length === 0}
+                id={versionSelectId}
+                onChange={(event) => onActivateVersion(event.currentTarget.value)}
+                value={workflow.default_version_id}
+              >
+                {versions.map((version) => (
+                  <option key={version.id} value={version.id}>
+                    v{version.version_no} · {version.created_at}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <Button
+              aria-pressed={historyOpen}
+              onClick={onToggleHistory}
+              type="button"
+              variant={historyOpen ? "primary" : "secondary"}
+            >
+              <History aria-hidden="true" size={16} />
+              История исполнения
+            </Button>
+          </div>
+        </>
+      ) : null}
+    </div>
   );
 }
 
@@ -894,29 +894,138 @@ function WorkflowSchemaEditor({
   }
 
   return (
-    <Panel aria-label="Редактор схемы Workflow" as="section" className="workflow-editor">
-      <div className="panel-heading-row">
-        <div>
-          <h2>Редактор схемы</h2>
-          <p>
-            Палитра ограничена безопасным набором узлов (ТЗ §13.13). Данные изменяет только узел
-            вызова Backend API (ТЗ §13.5).
-          </p>
+    <section aria-label="Редактор схемы Workflow" className="workflow-editor">
+      <div className="workflow-editor-toolbar">
+        <div className="workflow-breadcrumb" aria-label="Текущий граф">
+          <Boxes aria-hidden="true" size={16} />
+          <span>{["Корневая схема", ...bodyPathLabels].join(" / ")}</span>
+          <Badge tone={hasDraft ? "warning" : "success"}>
+            {hasDraft ? (draftSaved ? "Черновик сохранён" : "Есть черновик") : "Опубликовано"}
+          </Badge>
+          {draftUpdatedAt ? <span className="muted">сохранён {draftUpdatedAt}</span> : null}
+          {bodyPath.length > 0 ? (
+            <Button onClick={handleExitBodyGraph} type="button" variant="secondary">
+              <ArrowLeft aria-hidden="true" size={16} />
+              Вернуться к родительской схеме
+            </Button>
+          ) : null}
         </div>
-        <div className="workflow-editor-base">
-          <label htmlFor={`workflow-base-version-${workflow.id}`}>Редактируемая версия</label>
-          <select
-            id={`workflow-base-version-${workflow.id}`}
-            onChange={(event) => void loadVersionSchema(event.currentTarget.value)}
-            value={baseVersionId}
+
+        <div className="workflow-editor-actions">
+          <label className="workflow-select workflow-editor-base">
+            <span>Редактируемая версия</span>
+            <select
+              id={`workflow-base-version-${workflow.id}`}
+              onChange={(event) => void loadVersionSchema(event.currentTarget.value)}
+              value={baseVersionId}
+            >
+              {versions.map((version) => (
+                <option key={version.id} value={version.id}>
+                  v{version.version_no}
+                  {version.id === workflow.default_version_id ? " · активная" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <CheckboxInput
+            checked={activateOnSave}
+            id={`workflow-activate-${workflow.id}`}
+            label="Активировать сразу"
+            onChange={(event) => setActivateOnSave(event.currentTarget.checked)}
+          />
+          <Button
+            disabled={saving || draftLoading || !validation.valid}
+            onClick={() => void handleSave()}
+            type="button"
           >
-            {versions.map((version) => (
-              <option key={version.id} value={version.id}>
-                v{version.version_no}
-                {version.id === workflow.default_version_id ? " · активная" : ""}
-              </option>
-            ))}
-          </select>
+            <Save aria-hidden="true" size={16} />
+            Сохранить как новую версию
+          </Button>
+          <Button
+            disabled={saving || draftLoading || !validation.valid}
+            onClick={() => void handleSaveDraft()}
+            type="button"
+            variant="secondary"
+          >
+            <Save aria-hidden="true" size={16} />
+            Сохранить черновик
+          </Button>
+          <Button
+            disabled={saving || draftLoading || !validation.valid || !hasDraft}
+            onClick={() => void handlePublishDraft()}
+            type="button"
+          >
+            <UploadCloud aria-hidden="true" size={16} />
+            Опубликовать черновик
+          </Button>
+          <Button
+            disabled={saving || draftLoading || !hasDraft}
+            onClick={() => void handleResetDraft()}
+            type="button"
+            variant="ghost"
+          >
+            <RotateCcw aria-hidden="true" size={16} />
+            Сбросить черновик
+          </Button>
+          <Button
+            disabled={saving || draftLoading}
+            onClick={() => void handleExportWorkflow()}
+            type="button"
+            variant="secondary"
+          >
+            <Download aria-hidden="true" size={16} />
+            Экспорт JSON
+          </Button>
+          <label className="workflow-select workflow-import-target">
+            <span>Цель импорта</span>
+            <select
+              disabled={saving || draftLoading}
+              onChange={(event) =>
+                setImportTarget(event.currentTarget.value as WorkflowImportTarget)
+              }
+              value={importTarget}
+            >
+              <option value="draft">Черновик</option>
+              <option value="version">Новая версия</option>
+            </select>
+          </label>
+          <Button
+            disabled={saving || draftLoading}
+            onClick={handleImportClick}
+            type="button"
+            variant="secondary"
+          >
+            <FileUp aria-hidden="true" size={16} />
+            Импорт JSON
+          </Button>
+          <input
+            accept="application/json,.json"
+            aria-label="Файл импорта Workflow JSON"
+            onChange={(event) => void handleImportFile(event)}
+            ref={importInputRef}
+            style={{ display: "none" }}
+            type="file"
+          />
+          <label className="workflow-select workflow-test-scope">
+            <span>Область теста</span>
+            <select
+              onChange={(event) => setTestScope(event.currentTarget.value as WorkflowTestScope)}
+              value={testScope}
+            >
+              <option value="schema">Схема</option>
+              <option value="bodyGraph">Текущая bodyGraph</option>
+            </select>
+          </label>
+          <Button
+            disabled={!validation.valid}
+            onClick={() => void handleRunTest()}
+            type="button"
+            variant="secondary"
+          >
+            <FlaskConical aria-hidden="true" size={16} />
+            Тестовый запуск
+          </Button>
         </div>
       </div>
 
@@ -930,26 +1039,28 @@ function WorkflowSchemaEditor({
 
       {draftLoading ? <div className="route-loader">Загрузка черновика...</div> : null}
 
-      <div className="workflow-editor-toolbar">
-        <div className="workflow-breadcrumb" aria-label="Текущий граф">
-          <Boxes aria-hidden="true" size={16} />
-          <span>{["Корневая схема", ...bodyPathLabels].join(" / ")}</span>
-          <Badge tone={hasDraft ? "warning" : "success"}>
-            {hasDraft ? (draftSaved ? "Черновик сохранён" : "Есть черновик") : "Опубликовано"}
-          </Badge>
-          {draftUpdatedAt ? <span className="muted">сохранён {draftUpdatedAt}</span> : null}
-        </div>
-        {bodyPath.length > 0 ? (
-          <Button onClick={handleExitBodyGraph} type="button" variant="secondary">
-            <ArrowLeft aria-hidden="true" size={16} />
-            Вернуться к родительской схеме
-          </Button>
-        ) : null}
-      </div>
-
       <div className="workflow-editor-grid">
         <div className="workflow-palette" aria-label="Палитра узлов">
+          <div className="workflow-schema-info">
+            <h3>Информация о схеме</h3>
+            {validation.errors.length > 0 ? (
+              <ul className="workflow-validation" aria-label="Ошибки валидации схемы">
+                {validation.errors.map((error) => (
+                  <li key={error}>{error}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="workflow-validation-ok">
+                <ShieldCheck aria-hidden="true" size={16} />
+                Схема соответствует безопасному набору узлов.
+              </p>
+            )}
+          </div>
+
           <h3>Палитра узлов</h3>
+          <p className="muted workflow-palette-hint">
+            Перетащите узел на холст, чтобы добавить его в схему (ТЗ §13.13).
+          </p>
           {SAFE_WORKFLOW_NODE_TYPES.map((type) => (
             <button
               aria-label={`Добавить узел: ${workflowNodeTypeLabel(type)}`}
@@ -960,7 +1071,6 @@ function WorkflowSchemaEditor({
                 event.dataTransfer.effectAllowed = "copy";
                 event.dataTransfer.setData(NODE_DND_MIME, type);
               }}
-              onClick={() => handleAddNode(type)}
               type="button"
             >
               <span className="workflow-palette-item-title">
@@ -986,157 +1096,46 @@ function WorkflowSchemaEditor({
           selectedNodeId={selectedNodeId}
         />
 
-        <WorkflowNodeProperties
-          node={selectedNode}
-          onDeleteNode={handleDeleteNode}
-          onOpenBodyGraph={handleOpenBodyGraph}
-          onUpdateConfig={handleUpdateNodeConfig}
-          onUpdateLabel={handleUpdateNodeLabel}
-          subschemas={subschemas}
-        />
-      </div>
+        <div className="workflow-side-panel" aria-label="Свойства и связи узлов">
+          <WorkflowNodeProperties
+            node={selectedNode}
+            onDeleteNode={handleDeleteNode}
+            onOpenBodyGraph={handleOpenBodyGraph}
+            onUpdateConfig={handleUpdateNodeConfig}
+            onUpdateLabel={handleUpdateNodeLabel}
+            subschemas={subschemas}
+          />
 
-      <WorkflowConnectionsEditor
-        connectionFrom={connectionFrom}
-        connectionTo={connectionTo}
-        connections={draftSchema.connections}
-        nodes={draftSchema.nodes}
-        onAddConnection={handleAddConnection}
-        onDeleteConnection={handleDeleteConnection}
-        onFromChange={setConnectionFrom}
-        onToChange={setConnectionTo}
-      />
+          <WorkflowConnectionsEditor
+            connectionFrom={connectionFrom}
+            connectionTo={connectionTo}
+            connections={draftSchema.connections}
+            nodes={draftSchema.nodes}
+            onAddConnection={handleAddConnection}
+            onDeleteConnection={handleDeleteConnection}
+            onFromChange={setConnectionFrom}
+            onToChange={setConnectionTo}
+          />
 
-      {validation.errors.length > 0 ? (
-        <ul className="workflow-validation" aria-label="Ошибки валидации схемы">
-          {validation.errors.map((error) => (
-            <li key={error}>{error}</li>
-          ))}
-        </ul>
-      ) : (
-        <p className="workflow-validation-ok">
-          <ShieldCheck aria-hidden="true" size={16} />
-          Схема соответствует безопасному набору узлов.
-        </p>
-      )}
-
-      <div className="workflow-save-row">
-        <CheckboxInput
-          checked={activateOnSave}
-          id={`workflow-activate-${workflow.id}`}
-          label="Сделать новую версию активной сразу"
-          onChange={(event) => setActivateOnSave(event.currentTarget.checked)}
-        />
-        <Button
-          disabled={saving || draftLoading || !validation.valid}
-          onClick={() => void handleSave()}
-          type="button"
-        >
-          <Save aria-hidden="true" size={16} />
-          Сохранить как новую версию
-        </Button>
-        <Button
-          disabled={saving || draftLoading || !validation.valid}
-          onClick={() => void handleSaveDraft()}
-          type="button"
-          variant="secondary"
-        >
-          <Save aria-hidden="true" size={16} />
-          Сохранить черновик
-        </Button>
-        <Button
-          disabled={saving || draftLoading || !validation.valid || !hasDraft}
-          onClick={() => void handlePublishDraft()}
-          type="button"
-        >
-          <UploadCloud aria-hidden="true" size={16} />
-          Опубликовать черновик
-        </Button>
-        <Button
-          disabled={saving || draftLoading || !hasDraft}
-          onClick={() => void handleResetDraft()}
-          type="button"
-          variant="ghost"
-        >
-          <RotateCcw aria-hidden="true" size={16} />
-          Сбросить черновик
-        </Button>
-        <Button
-          disabled={saving || draftLoading}
-          onClick={() => void handleExportWorkflow()}
-          type="button"
-          variant="secondary"
-        >
-          <Download aria-hidden="true" size={16} />
-          Экспорт JSON
-        </Button>
-        <label className="workflow-select workflow-import-target">
-          <span>Цель импорта</span>
-          <select
-            disabled={saving || draftLoading}
-            onChange={(event) => setImportTarget(event.currentTarget.value as WorkflowImportTarget)}
-            value={importTarget}
-          >
-            <option value="draft">Черновик</option>
-            <option value="version">Новая версия</option>
-          </select>
-        </label>
-        <Button
-          disabled={saving || draftLoading}
-          onClick={handleImportClick}
-          type="button"
-          variant="secondary"
-        >
-          <FileUp aria-hidden="true" size={16} />
-          Импорт JSON
-        </Button>
-        <input
-          accept="application/json,.json"
-          aria-label="Файл импорта Workflow JSON"
-          onChange={(event) => void handleImportFile(event)}
-          ref={importInputRef}
-          style={{ display: "none" }}
-          type="file"
-        />
-      </div>
-      <p className="muted workflow-save-hint">
-        Черновик хранится на Backend до публикации; публикация создаёт неизменяемую версию и не влияет на выполняющиеся инстансы (ТЗ §13.10).
-      </p>
-
-      <div className="workflow-test-controls">
-        <label className="workflow-select">
-          <span>Область тестового запуска</span>
-          <select
-            onChange={(event) => setTestScope(event.currentTarget.value as WorkflowTestScope)}
-            value={testScope}
-          >
-            <option value="schema">Схема</option>
-            <option value="bodyGraph">Текущая bodyGraph</option>
-          </select>
-        </label>
-        <Button disabled={!validation.valid} onClick={() => void handleRunTest()} type="button" variant="secondary">
-          <FlaskConical aria-hidden="true" size={16} />
-          Тестовый запуск
-        </Button>
-      </div>
-
-      {testRun ? (
-        <div className="workflow-test-log" role="region" aria-label="Лог тестового запуска">
-          <div className="workflow-test-log-heading">
-            <Badge tone="success">{workflowTestScopeLabel(testRun.scope)}</Badge>
-            <span className="muted">Детерминированный dry-run без мутаций данных.</span>
-          </div>
-          <ol className="workflow-log">
-            {testRun.logs.map((entry) => (
-              <li key={entry.id}>
-                <span className="workflow-log-event">{entry.event}</span>
-                <span className="workflow-log-message">{entry.message}</span>
-              </li>
-            ))}
-          </ol>
+          {testRun ? (
+            <div className="workflow-test-log" role="region" aria-label="Лог тестового запуска">
+              <div className="workflow-test-log-heading">
+                <Badge tone="success">{workflowTestScopeLabel(testRun.scope)}</Badge>
+                <span className="muted">Детерминированный dry-run без мутаций данных.</span>
+              </div>
+              <ol className="workflow-log">
+                {testRun.logs.map((entry) => (
+                  <li key={entry.id}>
+                    <span className="workflow-log-event">{entry.event}</span>
+                    <span className="workflow-log-message">{entry.message}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
         </div>
-      ) : null}
-    </Panel>
+      </div>
+    </section>
   );
 }
 
@@ -1154,6 +1153,14 @@ const NODE_MOVE_DND_MIME = "application/x-bridge-workflow-node-id";
 const NODE_WIDTH = 176;
 const NODE_HEIGHT = 68;
 
+const CANVAS_MIN_SCALE = 0.5;
+const CANVAS_MAX_SCALE = 2;
+const CANVAS_SCALE_STEP = 0.1;
+
+function clampCanvasScale(scale: number): number {
+  return Math.min(CANVAS_MAX_SCALE, Math.max(CANVAS_MIN_SCALE, Math.round(scale * 100) / 100));
+}
+
 function WorkflowCanvas({
   connections,
   nodes,
@@ -1165,6 +1172,26 @@ function WorkflowCanvas({
   const width = Math.max(480, ...nodes.map((node) => node.position.x + NODE_WIDTH + 40));
   const height = Math.max(280, ...nodes.map((node) => node.position.y + NODE_HEIGHT + 40));
   const nodeById = new Map(nodes.map((node) => [node.id, node] as const));
+  const [scale, setScale] = useState(1);
+  const canvasRef = useRef<HTMLDivElement>(null);
+
+  // Масштабирование колесом мыши (ТЗ §13 — макет fbp_engine). Нативный слушатель с
+  // passive:false нужен, чтобы предотвратить прокрутку страницы во время зума.
+  useEffect(() => {
+    const element = canvasRef.current;
+    if (!element) {
+      return;
+    }
+
+    function handleWheel(event: WheelEvent) {
+      event.preventDefault();
+      const direction = event.deltaY < 0 ? 1 : -1;
+      setScale((current) => clampCanvasScale(current + direction * CANVAS_SCALE_STEP));
+    }
+
+    element.addEventListener("wheel", handleWheel, { passive: false });
+    return () => element.removeEventListener("wheel", handleWheel);
+  }, []);
 
   function handleDragOver(event: DragEvent<HTMLDivElement>) {
     if (
@@ -1186,7 +1213,7 @@ function WorkflowCanvas({
     }
 
     event.preventDefault();
-    const position = workflowDropPosition(event);
+    const position = workflowDropPosition(event, scale);
     if (nodeId) {
       onMoveNode(nodeId, position);
       onSelectNode(nodeId);
@@ -1204,9 +1231,40 @@ function WorkflowCanvas({
       aria-label="Схема узлов и связей"
       onDragOver={handleDragOver}
       onDrop={handleDrop}
+      ref={canvasRef}
       role="group"
     >
-      <div className="workflow-canvas-surface" style={{ width, height }}>
+      <div className="workflow-canvas-toolbar" aria-label="Масштаб холста">
+        <button
+          aria-label="Уменьшить масштаб"
+          className="workflow-zoom-button"
+          onClick={() => setScale((current) => clampCanvasScale(current - CANVAS_SCALE_STEP))}
+          type="button"
+        >
+          <ZoomOut aria-hidden="true" size={16} />
+        </button>
+        <span className="workflow-zoom-value">{Math.round(scale * 100)}%</span>
+        <button
+          aria-label="Увеличить масштаб"
+          className="workflow-zoom-button"
+          onClick={() => setScale((current) => clampCanvasScale(current + CANVAS_SCALE_STEP))}
+          type="button"
+        >
+          <ZoomIn aria-hidden="true" size={16} />
+        </button>
+        <button
+          aria-label="Сбросить масштаб"
+          className="workflow-zoom-button"
+          onClick={() => setScale(1)}
+          type="button"
+        >
+          100%
+        </button>
+      </div>
+      <div
+        className="workflow-canvas-surface"
+        style={{ width, height, transform: `scale(${scale})`, transformOrigin: "0 0" }}
+      >
         <svg aria-hidden="true" className="workflow-canvas-edges" height={height} width={width}>
           <defs>
             <marker
@@ -1270,7 +1328,10 @@ function WorkflowCanvas({
   );
 }
 
-function workflowDropPosition(event: DragEvent<HTMLDivElement>): WorkflowNode["position"] {
+function workflowDropPosition(
+  event: DragEvent<HTMLDivElement>,
+  scale = 1
+): WorkflowNode["position"] {
   const rect = event.currentTarget.getBoundingClientRect();
   const clientX = Number.isFinite(event.clientX) ? event.clientX : rect.left + 180;
   const clientY = Number.isFinite(event.clientY) ? event.clientY : rect.top + 140;
@@ -1280,10 +1341,11 @@ function workflowDropPosition(event: DragEvent<HTMLDivElement>): WorkflowNode["p
   const scrollTop = Number.isFinite(event.currentTarget.scrollTop)
     ? event.currentTarget.scrollTop
     : 0;
+  const safeScale = scale > 0 ? scale : 1;
 
   return {
-    x: Math.max(20, Math.round(clientX - rect.left + scrollLeft - NODE_WIDTH / 2)),
-    y: Math.max(20, Math.round(clientY - rect.top + scrollTop - NODE_HEIGHT / 2))
+    x: Math.max(20, Math.round((clientX - rect.left + scrollLeft) / safeScale - NODE_WIDTH / 2)),
+    y: Math.max(20, Math.round((clientY - rect.top + scrollTop) / safeScale - NODE_HEIGHT / 2))
   };
 }
 
@@ -1464,10 +1526,11 @@ function WorkflowConnectionsEditor({
 
 interface WorkflowInstancesPanelProps {
   instances: WorkflowInstance[];
+  onClose: () => void;
   workflowId: string;
 }
 
-function WorkflowInstancesPanel({ instances, workflowId }: WorkflowInstancesPanelProps) {
+function WorkflowInstancesPanel({ instances, onClose, workflowId }: WorkflowInstancesPanelProps) {
   const api = useSaasAdminApi();
   const [selectedInstanceId, setSelectedInstanceId] = useState<string | null>(null);
   const [detail, setDetail] = useState<WorkflowInstanceDetail | null>(null);
@@ -1500,6 +1563,15 @@ function WorkflowInstancesPanel({ instances, workflowId }: WorkflowInstancesPane
             <p>Просмотр запусков и диагностики (без влияния на активные инстансы).</p>
           </div>
         </div>
+        <Button
+          aria-label="Закрыть историю исполнения"
+          onClick={onClose}
+          type="button"
+          variant="ghost"
+        >
+          <X aria-hidden="true" size={16} />
+          Закрыть
+        </Button>
       </div>
 
       {instances.length === 0 ? (

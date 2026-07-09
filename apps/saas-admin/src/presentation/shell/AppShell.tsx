@@ -10,7 +10,7 @@ import {
   Users,
   Workflow
 } from "lucide-react";
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useLocation } from "react-router-dom";
 
 import type { AdminRole } from "../../api/client/types";
 import { hasAnyRole, useAuth } from "../../state/auth";
@@ -40,15 +40,19 @@ const navItems: NavItem[] = [
 
 export function AppShell() {
   const { logout, session, status } = useAuth();
+  const location = useLocation();
   const visibleNavItems = navItems.filter((item) => !item.roles || hasAnyRole(session, item.roles));
   const roleLabel = getRoleLabel(session?.roles[0]);
+  // Экраны с холстом-редактором (Workflow) занимают всю высоту окна без внутренних
+  // отступов рабочей области — верхнее меню освобождает пространство под содержимое.
+  const flush = location.pathname.startsWith("/workflow");
 
   return (
     <div className="admin-shell">
       <a className="skip-link" href="#main-content">
         Перейти к содержимому
       </a>
-      <aside className="sidebar">
+      <header className="app-topbar" role="banner">
         <div className="brand">
           <span className="brand-mark">SA</span>
           <span>SaaS Administration</span>
@@ -62,10 +66,8 @@ export function AppShell() {
             </NavLink>
           ))}
         </nav>
-      </aside>
 
-      <main className="workspace-main">
-        <header className="topbar" role="banner">
+        <div className="app-topbar-session">
           <div className="session-summary">
             <Badge tone={status === "authenticated" ? "success" : "neutral"}>
               {status === "authenticated" ? roleLabel : "Гость"}
@@ -76,9 +78,15 @@ export function AppShell() {
             <LogOut aria-hidden="true" size={16} />
             Выйти
           </Button>
-        </header>
+        </div>
+      </header>
 
-        <div className="workspace-content" id="main-content" tabIndex={-1}>
+      <main className="workspace-main">
+        <div
+          className={`workspace-content ${flush ? "workspace-content--flush" : ""}`}
+          id="main-content"
+          tabIndex={-1}
+        >
           <Outlet />
         </div>
       </main>

@@ -47,7 +47,9 @@ const SCREEN_READY_HEADINGS: Record<string, string[]> = {
     "Использовано 80% месячного лимита сообщений"
   ],
   "/onboarding": ["Текущая конфигурация"],
-  "/workflow": ["Автоответчик обращений", "История исполнения"]
+  // Дожидаемся полного рендера редактора (палитра + панель свойств/связей),
+  // иначе снапшот заголовков нестабилен из-за асинхронной загрузки черновика.
+  "/workflow": ["Автоответчик обращений", "Информация о схеме", "Свойства узла", "Связи узлов"]
 };
 
 function renderRoute(path: string, services: SaasAdminServiceOverrides = createMockSaasAdminServices()) {
@@ -162,7 +164,7 @@ describe("SaaS Administration M5 acceptance and accessibility", () => {
       "utf8"
     );
 
-    // Планшетный брейкпоинт сворачивает сайдбар в верхнюю навигацию.
+    // Планшетный брейкпоинт переносит навигацию верхнего меню на отдельную строку.
     expect(stylesheet).toMatch(/@media \(max-width: 820px\)/);
     // Узкий брейкпоинт для компактных планшетов/телефонов.
     expect(stylesheet).toMatch(/@media \(max-width: 620px\)/);
