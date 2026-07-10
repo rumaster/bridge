@@ -152,6 +152,16 @@ services:
       BACKEND_BASE_URL: ${BACKEND_BASE_URL:-http://backend:3000}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-https://api.telegram.org}
+      # Входящий Telegram-драйвер (T3) и RF-first Edge-маршрут входящих (T5).
+      # EDGE_INGRESS_URL пуст → прямой приём в ядро; задан → клиенты РФ (канал с
+      # config.region="RF"/route_via_edge) идут через Edge Cluster.
+      TELEGRAM_INBOUND_ENABLED: ${TELEGRAM_INBOUND_ENABLED:-true}
+      TELEGRAM_INBOUND_POLL_TIMEOUT_SECONDS: ${TELEGRAM_INBOUND_POLL_TIMEOUT_SECONDS:-30}
+      TELEGRAM_INBOUND_REFRESH_INTERVAL_MS: ${TELEGRAM_INBOUND_REFRESH_INTERVAL_MS:-30000}
+      CHANNEL_SECRET_CACHE_TTL_MS: ${CHANNEL_SECRET_CACHE_TTL_MS:-60000}
+      EDGE_INGRESS_URL: ${EDGE_INGRESS_URL:-}
+      # Боевой профиль: false снимает mock-fallback доставки (T6).
+      DELIVERY_ALLOW_MOCK_FALLBACK: ${DELIVERY_ALLOW_MOCK_FALLBACK:-true}
       EMAIL_DELIVERY_URL: ${EMAIL_DELIVERY_URL:-}
       EMAIL_DELIVERY_TOKEN: ${EMAIL_DELIVERY_TOKEN:-}
       MAX_DELIVERY_URL: ${MAX_DELIVERY_URL:-}
@@ -189,6 +199,9 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       NOTIFICATION_TRIGGER_STREAM: ${NOTIFICATION_TRIGGER_STREAM:-bridge:notifications:trigger}
       NOTIFICATION_TRIGGER_GROUP: ${NOTIFICATION_TRIGGER_GROUP:-svc-notif}
+      # Боевое Telegram-плечо уведомлений (G-8): задан URL → карточки менеджеру
+      # форвардятся в telegram-console (SVC-TGC); пусто → recording-mock.
+      SVC_TGC_NOTIFICATIONS_URL: ${SVC_TGC_NOTIFICATIONS_URL:-}
     ports:
       - "${NOTIFICATION_PLATFORM_PORT:-3010}:${NOTIFICATION_PLATFORM_PORT:-3010}"
       - "${NOTIFICATION_GRPC_PORT:-3110}:${NOTIFICATION_GRPC_PORT:-3110}"
@@ -309,6 +322,10 @@ services:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-https://api.telegram.org}
       MANAGER_WORKSPACE_PUBLIC_URL: ${MANAGER_WORKSPACE_PUBLIC_URL:-http://localhost:8082}
+      # Приёмник проактивных карточек от SVC-NOTIF (G-8). Задайте порт (напр. 3020)
+      # и SVC_TGC_NOTIFICATIONS_URL=http://telegram-console:3020 у notification-platform.
+      TELEGRAM_CONSOLE_NOTIFICATIONS_PORT: ${TELEGRAM_CONSOLE_NOTIFICATIONS_PORT:-}
+      TELEGRAM_CONSOLE_NOTIFICATIONS_HOST: ${TELEGRAM_CONSOLE_NOTIFICATIONS_HOST:-0.0.0.0}
     depends_on:
       backend:
         condition: service_started
