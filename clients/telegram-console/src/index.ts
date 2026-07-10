@@ -4,6 +4,8 @@ export {
   createTelegramConsoleBackendApiClient,
 } from "./backend-api-client.js";
 export { createTelegramConsoleRouter } from "./handler-router.js";
+export { createTelegramConsoleNotificationDispatcher } from "./notification-dispatcher.js";
+export { createTelegramConsoleNotificationServer } from "./notification-server.js";
 export { createTelegramLongPollingRunner } from "./long-polling-runner.js";
 export { createMockTelegramConsoleBackendApi, MockBackendApiError } from "./mock-backend-api.js";
 export { createMockTelegramApiAdapter } from "./mock-telegram-api.js";

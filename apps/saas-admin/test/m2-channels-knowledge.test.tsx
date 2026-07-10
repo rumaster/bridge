@@ -96,7 +96,9 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
       config: { bot_username: "bridge_support_bot" },
       configLabel: "Bot username",
       configValue: "bridge_support_bot",
-      credentialsRef: "secret://telegram/org-demo/support-bot",
+      secretLabel: "Токен бота",
+      secretValue: "123456789:AAEEuMlqL7f4t2Qb9cVvZ0xYw1sRtUvWxYz",
+      expectedSecret: { credentials: "123456789:AAEEuMlqL7f4t2Qb9cVvZ0xYw1sRtUvWxYz" },
       name: "Telegram Sales"
     },
     {
@@ -105,7 +107,9 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
       config: { endpoint: "max-support-bot" },
       configLabel: "Endpoint",
       configValue: "max-support-bot",
-      credentialsRef: "secret://max/org-demo/support-bot",
+      secretLabel: "credentials_ref",
+      secretValue: "secret://max/org-demo/support-bot",
+      expectedSecret: { credentials_ref: "secret://max/org-demo/support-bot" },
       name: "MAX Support"
     },
     {
@@ -114,12 +118,24 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
       config: { from_email: "support@example.test" },
       configLabel: "From email",
       configValue: "support@example.test",
-      credentialsRef: "secret://email/org-demo/support",
+      secretLabel: "credentials_ref",
+      secretValue: "secret://email/org-demo/support",
+      expectedSecret: { credentials_ref: "secret://email/org-demo/support" },
       name: "Email Support"
     }
   ] as const)(
     "connects $channelLabel from the channels page",
-    async ({ channelLabel, channelType, config, configLabel, configValue, credentialsRef, name }) => {
+    async ({
+      channelLabel,
+      channelType,
+      config,
+      configLabel,
+      configValue,
+      secretLabel,
+      secretValue,
+      expectedSecret,
+      name
+    }) => {
       const api = createMockSaasAdminApiClient();
       const createChannel = vi.spyOn(api.channels, "createChannel");
       const { user } = renderRoute("/channels", { api, realtime: createMockC7RealtimeClient([]) });
@@ -127,7 +143,7 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
       await screen.findByRole("heading", { name: "Каналы связи" });
       await user.click(screen.getByRole("radio", { name: channelLabel }));
       await user.type(screen.getByLabelText("Название канала"), name);
-      await user.type(screen.getByLabelText("credentials_ref"), credentialsRef);
+      await user.type(screen.getByLabelText(secretLabel), secretValue);
       await user.type(screen.getByLabelText(configLabel), configValue);
       await user.click(screen.getByRole("button", { name: "Подключить канал" }));
 
@@ -137,7 +153,7 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
           organization_id: mockSession.organization.id,
           channel_type: channelType,
           name,
-          credentials_ref: credentialsRef,
+          ...expectedSecret,
           config
         })
       );

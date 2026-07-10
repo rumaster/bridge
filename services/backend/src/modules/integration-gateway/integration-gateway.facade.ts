@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
 
 import { FacadeResilience, type FacadeResilienceOptions } from "../../common/resilience/resilience";
+import type { PgDatabase } from "../../common/database/database.service";
+import type { ChannelSecretEnvelope } from "../../common/secrets/channel-secret.store";
 import type { FacadeStatusDto } from "../ai-integration/ai-integration.facade";
 import type { IntegrationGatewayUpstreamClient } from "./integration-gateway.upstream";
 
@@ -48,6 +50,7 @@ export interface ConnectWebChatChannelRequest {
   channel_type?: "web_chat";
   name: string;
   credentials_ref?: string;
+  credentials?: string;
   config?: Record<string, unknown>;
 }
 
@@ -56,8 +59,41 @@ export interface ConnectChannelRequest {
   channel_type: ChannelType;
   name: string;
   credentials_ref?: string;
+  /** Plaintext-секрет канала (например токен Telegram-бота). Шифруется, не возвращается. */
+  credentials?: string;
   config?: Record<string, unknown>;
 }
+
+export interface ChannelTestResultFacade {
+  accepted: true;
+  channel_id: string;
+  status: ChannelStatus;
+  checked_at: string;
+  error?: string;
+}
+
+/** Маршрутный минимум активного канала для входящего драйвера SVC-INT (T3, без токена). */
+export interface ActiveChannelSummary {
+  channel_id: string;
+  organization_id: string;
+  config: Record<string, unknown>;
+}
+
+/** Порт хранилища секретов каналов (реализуется ChannelSecretService, DR-03). */
+export interface ChannelSecretPort {
+  buildCredentialsRef(input: {
+    channelType: string;
+    organizationId: string;
+    label?: string;
+  }): string;
+  encrypt(plaintext: string): ChannelSecretEnvelope;
+  resolveChannelSecret(input: {
+    credentialsRef: string;
+    organizationId?: string;
+  }): Promise<string | null>;
+}
+
+export type ChannelDatabasePort = Pick<PgDatabase, "withTenant">;
 
 export type AdapterName =
   | "web-chat-adapter"
@@ -85,6 +121,23 @@ export interface IntegrationGatewayFacadeOptions {
   clock?: () => string;
   resilience?: FacadeResilience | FacadeResilienceOptions;
   upstream?: IntegrationGatewayUpstreamClient | null;
+  database?: ChannelDatabasePort | null;
+  channelSecrets?: ChannelSecretPort | null;
+  fetchImpl?: typeof globalThis.fetch;
+  telegramApiBaseUrl?: string;
+}
+
+interface ChannelRow {
+  id: string;
+  organization_id: string;
+  channel_type: ChannelType;
+  name: string;
+  status: ChannelStatus;
+  credentials_ref: string | null;
+  config: Record<string, unknown> | null;
+  last_check_at?: Date | string | null;
+  created_at: Date | string;
+  updated_at: Date | string;
 }
 
 const C6_CAPABILITIES: CapabilityName[] = [
@@ -198,29 +251,34 @@ const CHANNEL_CAPABILITY_PROFILES: Record<
 
 @Injectable()
 export class IntegrationGatewayFacade {
-  private readonly channels = new Map<string, ChannelFacade>();
   private readonly clock: () => string;
   private readonly resilience: FacadeResilience;
   private readonly upstream: IntegrationGatewayUpstreamClient | null;
+  private readonly database: ChannelDatabasePort | null;
+  private readonly channelSecrets: ChannelSecretPort | null;
+  private readonly fetchImpl: typeof globalThis.fetch;
+  private readonly telegramApiBaseUrl: string;
 
   constructor(
     @Optional()
     @Inject(INTEGRATION_GATEWAY_CLOCK)
-    optionsOrClock: (() => string) | IntegrationGatewayFacadeOptions = {},
-    upstream: IntegrationGatewayUpstreamClient | null = null,
+    options: IntegrationGatewayFacadeOptions = {},
   ) {
-    const options =
-      typeof optionsOrClock === "function"
-        ? { clock: optionsOrClock, upstream }
-        : optionsOrClock;
-
     this.clock = options.clock ?? (() => new Date().toISOString());
     this.upstream = options.upstream ?? null;
+    this.database = options.database ?? null;
+    this.channelSecrets = options.channelSecrets ?? null;
+    this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
+    this.telegramApiBaseUrl = (
+      options.telegramApiBaseUrl ??
+      process.env.TELEGRAM_API_BASE_URL ??
+      "https://api.telegram.org"
+    ).replace(/\/+$/, "");
     this.resilience =
       options.resilience instanceof FacadeResilience
         ? options.resilience
         : new FacadeResilience({
-            defaultTimeoutMs: 1_000,
+            defaultTimeoutMs: 2_500,
             ...(options.resilience ?? {}),
           });
   }
@@ -234,44 +292,154 @@ export class IntegrationGatewayFacade {
     };
   }
 
-  listChannels(organizationId?: string): ChannelFacade[] {
-    return Array.from(this.channels.values())
-      .filter((channel) => !organizationId || channel.organization_id === organizationId)
-      .map((channel) => ({ ...channel }));
+  async listChannels(organizationId: string): Promise<ChannelFacade[]> {
+    const rows = await this.requireDatabase().withTenant(organizationId, (client) =>
+      client.query<ChannelRow>(
+        `
+          SELECT id, organization_id, channel_type, name, status,
+                 credentials_ref, config, last_check_at, created_at, updated_at
+          FROM channels
+          WHERE organization_id = $1
+          ORDER BY created_at ASC, id ASC
+        `,
+        [organizationId],
+      ),
+    );
+
+    return rows.rows.map((row) => mapRowToFacade(row));
   }
 
-  connectWebChatChannel(request: ConnectWebChatChannelRequest): ChannelFacade {
-    return this.connectChannel({
-      ...request,
-      channel_type: "web_chat",
-    });
+  /**
+   * Резолвит plaintext-токен доставки для подключённого канала организации
+   * (S2S, Этап T2). Выбирает не отключённый канал нужного типа с
+   * `credentials_ref` (предпочитая `connected`) и расшифровывает его секрет.
+   * Возвращает null, если канал или секрет не настроены.
+   */
+  async resolveChannelDeliveryToken(
+    organizationId: string,
+    channelType: ChannelType,
+  ): Promise<string | null> {
+    const result = await this.requireDatabase().withTenant(organizationId, (client) =>
+      client.query<{ credentials_ref: string | null }>(
+        `
+          SELECT credentials_ref
+          FROM channels
+          WHERE organization_id = $1
+            AND channel_type = $2
+            AND status <> 'disabled'
+            AND credentials_ref IS NOT NULL
+          ORDER BY (status = 'connected') DESC, updated_at DESC
+          LIMIT 1
+        `,
+        [organizationId, channelType],
+      ),
+    );
+
+    const credentialsRef = result.rows[0]?.credentials_ref;
+    if (!credentialsRef) {
+      return null;
+    }
+
+    return this.requireChannelSecrets().resolveChannelSecret({ credentialsRef, organizationId });
   }
 
-  connectChannel(request: ConnectChannelRequest): ChannelFacade {
+  /**
+   * Список подключённых каналов заданного типа по всем организациям (S2S,
+   * Этап T3). Возвращает только маршрутный минимум `{channel_id,
+   * organization_id, config}` — БЕЗ токена: входящий драйвер SVC-INT берёт
+   * токен отдельным S2S-эндпоинтом секрета (T2). Используется, чтобы SVC-INT,
+   * не имея доступа к БД (ТЗ §22.3), знал, для каких ботов поднимать поллер
+   * входящих и в какую организацию маппить апдейты. Запрос выполняется как
+   * platform operator (кросс-тенантный реестр), сужен по `channel_type` и
+   * статусу `connected`.
+   */
+  async listActiveChannelsByType(channelType: ChannelType): Promise<ActiveChannelSummary[]> {
+    const result = await this.requireDatabase().withTenant(
+      "",
+      (client) =>
+        client.query<{
+          id: string;
+          organization_id: string;
+          config: Record<string, unknown> | null;
+        }>(
+          `
+            SELECT id, organization_id, config
+            FROM channels
+            WHERE channel_type = $1
+              AND status = 'connected'
+              AND credentials_ref IS NOT NULL
+            ORDER BY organization_id ASC, id ASC
+          `,
+          [channelType],
+        ),
+      { isPlatformOperator: true },
+    );
+
+    return result.rows.map((row) => ({
+      channel_id: row.id,
+      organization_id: row.organization_id,
+      config: row.config ?? {},
+    }));
+  }
+
+  connectWebChatChannel(request: ConnectWebChatChannelRequest): Promise<ChannelFacade> {
+    return this.connectChannel({ ...request, channel_type: "web_chat" });
+  }
+
+  async connectChannel(request: ConnectChannelRequest): Promise<ChannelFacade> {
     const timestamp = this.clock();
     const channelType = request.channel_type;
-    const channel: ChannelFacade = {
-      id: `${channelType.replace("_", "-")}-${randomUUID()}`,
-      organization_id: request.organization_id,
-      channel_type: channelType,
-      name: request.name,
-      status: "connected",
-      ...(request.credentials_ref ? { credentials_ref: request.credentials_ref } : {}),
-      config: request.config ?? {},
-      created_at: timestamp,
-      updated_at: timestamp,
-    };
+    const channelId = randomUUID();
+    const plaintext = request.credentials?.trim();
 
-    this.channels.set(channel.id, channel);
+    let credentialsRef = request.credentials_ref?.trim() || null;
+    let envelope: ChannelSecretEnvelope | null = null;
+    if (plaintext) {
+      const secrets = this.requireChannelSecrets();
+      credentialsRef = secrets.buildCredentialsRef({
+        channelType,
+        organizationId: request.organization_id,
+        label: channelId,
+      });
+      envelope = secrets.encrypt(plaintext);
+    }
 
-    return { ...channel };
+    const config = request.config ?? {};
+
+    const inserted = await this.requireDatabase().withTenant(
+      request.organization_id,
+      (client) =>
+        client.query<ChannelRow>(
+          `
+            INSERT INTO channels (
+              id, organization_id, channel_type, name, status,
+              credentials_ref, credentials_envelope, config, created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, 'connected', $5, $6::jsonb, $7::jsonb, $8::timestamptz, $8::timestamptz)
+            RETURNING id, organization_id, channel_type, name, status,
+                      credentials_ref, config, last_check_at, created_at, updated_at
+          `,
+          [
+            channelId,
+            request.organization_id,
+            channelType,
+            request.name,
+            credentialsRef,
+            envelope ? JSON.stringify(envelope) : null,
+            JSON.stringify(config),
+            timestamp,
+          ],
+        ),
+    );
+
+    return mapRowToFacade(inserted.rows[0]);
   }
 
   async getChannelCapabilities(
     channelId: string,
     organizationId?: string,
   ): Promise<CapabilityDescriptorFacade> {
-    const channel = this.findChannel(channelId, organizationId);
+    const channel = await this.findChannel(channelId, organizationId);
     if (this.upstream) {
       return this.getUpstreamChannelCapabilities(channelId, organizationId, channel ?? undefined);
     }
@@ -287,47 +455,124 @@ export class IntegrationGatewayFacade {
     });
   }
 
-  testChannel(
+  async testChannel(
     channelId: string,
     organizationId?: string,
-  ):
-    | {
-        accepted: true;
-        channel_id: string;
-        status: ChannelStatus;
-        checked_at: string;
-      }
-    | Promise<{
-        accepted: true;
-        channel_id: string;
-        status: ChannelStatus;
-        checked_at: string;
-      }> {
-    const channel = this.getChannel(channelId, organizationId);
+  ): Promise<ChannelTestResultFacade> {
+    const channel = await this.getChannel(channelId, organizationId);
+
+    if (channel.channel_type === "telegram") {
+      return this.testTelegramChannel(channel);
+    }
+
     if (this.upstream) {
       return this.testUpstreamChannel(channel);
     }
 
     const checkedAt = this.clock();
-    const updatedChannel = {
-      ...channel,
-      last_check_at: checkedAt,
-      status: "connected" as const,
-      updated_at: checkedAt,
-    };
-
-    this.channels.set(channel.id, updatedChannel);
+    await this.persistChannelCheck(channel, {
+      status: "connected",
+      checkedAt,
+      config: channel.config,
+    });
 
     return {
       accepted: true,
       channel_id: channel.id,
-      status: updatedChannel.status,
+      status: "connected",
       checked_at: checkedAt,
     };
   }
 
-  private getChannel(channelId: string, organizationId?: string): ChannelFacade {
-    const channel = this.findChannel(channelId, organizationId);
+  private async testTelegramChannel(channel: ChannelFacade): Promise<ChannelTestResultFacade> {
+    const checkedAt = this.clock();
+    const config = { ...channel.config };
+    let status: ChannelStatus;
+    let error: string | undefined;
+
+    const token = channel.credentials_ref
+      ? await this.requireChannelSecrets().resolveChannelSecret({
+          credentialsRef: channel.credentials_ref,
+          organizationId: channel.organization_id,
+        })
+      : null;
+
+    if (!token) {
+      status = "error";
+      error = "Токен Telegram-бота не настроен для канала.";
+    } else {
+      const me = await this.runTelegramGetMe(token);
+      if (me.ok) {
+        status = "connected";
+        if (me.username) {
+          config.bot_username = me.username;
+        }
+        if (me.id !== undefined) {
+          config.bot_id = me.id;
+        }
+      } else {
+        status = "error";
+        error = me.description ?? "Telegram getMe отклонён.";
+      }
+    }
+
+    await this.persistChannelCheck(channel, { status, checkedAt, config });
+
+    return {
+      accepted: true,
+      channel_id: channel.id,
+      status,
+      checked_at: checkedAt,
+      ...(error ? { error } : {}),
+    };
+  }
+
+  private async runTelegramGetMe(
+    token: string,
+  ): Promise<{ ok: boolean; username?: string; id?: number | string; description?: string }> {
+    const result = await this.resilience.execute(async () => {
+      const response = await this.fetchImpl(`${this.telegramApiBaseUrl}/bot${token}/getMe`, {
+        method: "GET",
+        headers: { accept: "application/json" },
+      });
+      const body = (await readJsonSafe(response)) as {
+        ok?: boolean;
+        description?: string;
+        result?: { username?: string; id?: number | string };
+      };
+      return { httpOk: response.ok, body };
+    });
+
+    if (!result.ok) {
+      return { ok: false, description: "Не удалось обратиться к Telegram Bot API." };
+    }
+
+    const { httpOk, body } = result.value;
+    if (!httpOk || body?.ok !== true) {
+      return { ok: false, description: body?.description ?? "Telegram getMe отклонён." };
+    }
+
+    return { ok: true, username: body.result?.username, id: body.result?.id };
+  }
+
+  private async persistChannelCheck(
+    channel: ChannelFacade,
+    { status, checkedAt, config }: { status: ChannelStatus; checkedAt: string; config: Record<string, unknown> },
+  ): Promise<void> {
+    await this.requireDatabase().withTenant(channel.organization_id, (client) =>
+      client.query(
+        `
+          UPDATE channels
+          SET status = $3, last_check_at = $4::timestamptz, config = $5::jsonb, updated_at = $4::timestamptz
+          WHERE id = $1 AND organization_id = $2
+        `,
+        [channel.id, channel.organization_id, status, checkedAt, JSON.stringify(config)],
+      ),
+    );
+  }
+
+  private async getChannel(channelId: string, organizationId?: string): Promise<ChannelFacade> {
+    const channel = await this.findChannel(channelId, organizationId);
     if (!channel) {
       throwChannelNotFound();
     }
@@ -335,13 +580,27 @@ export class IntegrationGatewayFacade {
     return channel;
   }
 
-  private findChannel(channelId: string, organizationId?: string): ChannelFacade | null {
-    const channel = this.channels.get(channelId);
-    if (!channel || (organizationId && channel.organization_id !== organizationId)) {
+  private async findChannel(
+    channelId: string,
+    organizationId?: string,
+  ): Promise<ChannelFacade | null> {
+    if (!organizationId) {
       return null;
     }
 
-    return channel;
+    const result = await this.requireDatabase().withTenant(organizationId, (client) =>
+      client.query<ChannelRow>(
+        `
+          SELECT id, organization_id, channel_type, name, status,
+                 credentials_ref, config, last_check_at, created_at, updated_at
+          FROM channels
+          WHERE id = $1 AND organization_id = $2
+        `,
+        [channelId, organizationId],
+      ),
+    );
+
+    return result.rowCount && result.rowCount > 0 ? mapRowToFacade(result.rows[0]) : null;
   }
 
   private async getUpstreamChannelCapabilities(
@@ -370,12 +629,7 @@ export class IntegrationGatewayFacade {
     throwChannelNotFound();
   }
 
-  private async testUpstreamChannel(channel: ChannelFacade): Promise<{
-    accepted: true;
-    channel_id: string;
-    status: ChannelStatus;
-    checked_at: string;
-  }> {
+  private async testUpstreamChannel(channel: ChannelFacade): Promise<ChannelTestResultFacade> {
     const result = await this.resilience.execute(async () => {
       if (this.upstream?.testChannel) {
         return this.upstream.testChannel(channel);
@@ -392,14 +646,8 @@ export class IntegrationGatewayFacade {
         ? result.value.checked_at
         : this.clock();
     const status = result.ok ? result.value.status : ("error" as const);
-    const updatedChannel = {
-      ...channel,
-      last_check_at: checkedAt,
-      status,
-      updated_at: checkedAt,
-    };
 
-    this.channels.set(channel.id, updatedChannel);
+    await this.persistChannelCheck(channel, { status, checkedAt, config: channel.config });
 
     return {
       accepted: true,
@@ -407,6 +655,54 @@ export class IntegrationGatewayFacade {
       checked_at: checkedAt,
       status,
     };
+  }
+
+  private requireDatabase(): ChannelDatabasePort {
+    if (!this.database) {
+      throw new Error("IntegrationGatewayFacade requires a database for channel persistence");
+    }
+
+    return this.database;
+  }
+
+  private requireChannelSecrets(): ChannelSecretPort {
+    if (!this.channelSecrets) {
+      throw new Error("IntegrationGatewayFacade requires a channel secret store for token handling");
+    }
+
+    return this.channelSecrets;
+  }
+}
+
+function mapRowToFacade(row: ChannelRow): ChannelFacade {
+  return {
+    id: row.id,
+    organization_id: row.organization_id,
+    channel_type: row.channel_type,
+    name: row.name,
+    status: row.status,
+    ...(row.credentials_ref ? { credentials_ref: row.credentials_ref } : {}),
+    config: row.config ?? {},
+    ...(row.last_check_at ? { last_check_at: toIso(row.last_check_at) } : {}),
+    created_at: toIso(row.created_at),
+    updated_at: toIso(row.updated_at),
+  };
+}
+
+function toIso(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
+async function readJsonSafe(response: { text(): Promise<string> }): Promise<unknown> {
+  const text = await response.text();
+  if (text.trim() === "") {
+    return {};
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { raw: text };
   }
 }
 

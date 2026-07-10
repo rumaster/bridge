@@ -243,13 +243,21 @@ export const handlers = [
 
     const createdAt = "2026-07-03T10:20:00.000Z";
     const channelType = body.channel_type ?? "web_chat";
+    const channelId = `channel-${channelType.replace("_", "-")}-created-${nextChannelNumber++}`;
+    const organizationId = body.organization_id ?? mockOrganization.id;
+    // Токен (credentials) шифруется на бэкенде и не возвращается; мок хранит только
+    // сгенерированную ссылку credentials_ref. credentials_ref из тела — как есть.
+    const token = body.credentials?.trim();
+    const credentialsRef = token
+      ? `secret://${channelType}/${organizationId}/${channelId}`
+      : body.credentials_ref?.trim();
     const channel: Channel = {
-      id: `channel-${channelType.replace("_", "-")}-created-${nextChannelNumber++}`,
-      organization_id: body.organization_id ?? mockOrganization.id,
+      id: channelId,
+      organization_id: organizationId,
       channel_type: channelType,
       name: body.name?.trim() ?? "",
       status: "connected",
-      ...(body.credentials_ref?.trim() ? { credentials_ref: body.credentials_ref.trim() } : {}),
+      ...(credentialsRef ? { credentials_ref: credentialsRef } : {}),
       config: body.config ?? {},
       last_check_at: createdAt,
       created_at: createdAt,

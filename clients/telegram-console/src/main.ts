@@ -1,5 +1,8 @@
 import { createTelegramConsoleBackendApiClient } from "./backend-api-client.js";
 import { createTelegramConsoleRouter } from "./handler-router.js";
+import { createTelegramConsoleNotificationDispatcher } from "./notification-dispatcher.js";
+import { createTelegramConsoleNotificationServer } from "./notification-server.js";
+import { createTelegramConsoleSessionStore } from "./session-store.js";
 import { createTelegramLongPollingRunner } from "./long-polling-runner.js";
 import { createMockTelegramApiAdapter } from "./mock-telegram-api.js";
 import { createTelegramBotApiAdapter } from "./telegram-bot-api.js";
@@ -30,9 +33,13 @@ async function runProductionPolling() {
     token,
     apiBaseUrl: process.env.TELEGRAM_API_BASE_URL ?? "https://api.telegram.org",
   });
+  // Общий session-store для роутера и диспетчера уведомлений (G-8): диспетчер
+  // резолвит chat_id менеджера по его сессии, привязанной через /start.
+  const sessionStore = createTelegramConsoleSessionStore();
   const router = createTelegramConsoleRouter({
     telegramApi,
     backendApi,
+    sessionStore,
     loginCode: process.env.TELEGRAM_CONSOLE_LOGIN_CODE || null,
     workspaceBaseUrl:
       process.env.MANAGER_WORKSPACE_PUBLIC_URL ??
@@ -45,13 +52,33 @@ async function runProductionPolling() {
     pollTimeoutSeconds: Number(process.env.TELEGRAM_CONSOLE_POLL_TIMEOUT_SECONDS ?? 30),
   });
 
+  // Приёмник проактивных карточек от SVC-NOTIF (G-8): включается заданием
+  // TELEGRAM_CONSOLE_NOTIFICATIONS_PORT.
+  const notificationServer = startNotificationServer({ router, sessionStore });
+
   const stop = () => {
     runner.stop();
+    notificationServer?.close();
   };
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
 
   await runner.run();
+}
+
+function startNotificationServer({ router, sessionStore }) {
+  const port = Number.parseInt(process.env.TELEGRAM_CONSOLE_NOTIFICATIONS_PORT ?? "", 10);
+  if (!Number.isInteger(port) || port <= 0) {
+    return null;
+  }
+
+  const dispatcher = createTelegramConsoleNotificationDispatcher({ router, sessionStore });
+  const server = createTelegramConsoleNotificationServer({ dispatcher });
+  const host = process.env.TELEGRAM_CONSOLE_NOTIFICATIONS_HOST ?? "0.0.0.0";
+  server.listen(port, host, () => {
+    console.log(`telegram-console notification intake listening on http://${host}:${port}`);
+  });
+  return server;
 }
 
 async function runMockDemo() {

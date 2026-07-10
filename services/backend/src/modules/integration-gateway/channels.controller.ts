@@ -38,7 +38,7 @@ export class ChannelsController {
   @ApiOkResponse({ type: ChannelResponseDto, isArray: true })
   listChannels(
     @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: string | string[] | undefined,
-  ): ChannelResponseDto[] {
+  ): Promise<ChannelResponseDto[]> {
     return this.integrationGateway.listChannels(getRequiredOrganizationId(organizationIdHeader));
   }
 
@@ -46,13 +46,14 @@ export class ChannelsController {
   @Version("1")
   @ApiOperation({ summary: "Connect an omnichannel adapter" })
   @ApiCreatedResponse({ type: ConnectChannelResponseDto })
-  connectChannel(@Body() dto: ConnectChannelRequestDto): ConnectChannelResponseDto {
+  async connectChannel(@Body() dto: ConnectChannelRequestDto): Promise<ConnectChannelResponseDto> {
     return {
-      channel: this.integrationGateway.connectChannel({
+      channel: await this.integrationGateway.connectChannel({
         organization_id: dto.organization_id,
         channel_type: dto.channel_type,
         name: dto.name,
         credentials_ref: dto.credentials_ref,
+        credentials: dto.credentials,
         config: dto.config,
       }),
     };

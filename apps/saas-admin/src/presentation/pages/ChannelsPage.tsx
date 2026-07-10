@@ -28,6 +28,7 @@ interface ChannelFormState {
   channelType: ConnectableChannelType;
   name: string;
   credentialsRef: string;
+  credentials: string;
   configValue: string;
 }
 
@@ -37,14 +38,22 @@ const emptyChannelForm: ChannelFormState = {
   channelType: "web_chat",
   name: "",
   credentialsRef: "",
+  credentials: "",
   configValue: ""
 };
+
+// Telegram-токен из @BotFather: <bot_id>:<секрет>.
+const TELEGRAM_TOKEN_PATTERN = /^\d+:[A-Za-z0-9_-]{30,}$/;
 
 interface ChannelConnector {
   type: ConnectableChannelType;
   label: string;
   heading: string;
   icon: LucideIcon;
+  // "token" — бизнес вводит plaintext-секрет (шифруется на бэкенде);
+  // "ref" — вводится ссылка credentials_ref на внешний секрет-менеджер.
+  secretKind: "token" | "ref";
+  secretLabel: string;
   credentialsPlaceholder: string;
   configKey: string;
   configLabel: string;
@@ -58,6 +67,8 @@ const channelConnectors = [
     label: "Web Chat",
     heading: "Подключение Web Chat",
     icon: MessageCircle,
+    secretKind: "ref",
+    secretLabel: "credentials_ref",
     credentialsPlaceholder: "secret://web-chat/org-demo/main",
     configKey: "widget_origin",
     configLabel: "Widget origin",
@@ -69,7 +80,9 @@ const channelConnectors = [
     label: "Telegram",
     heading: "Подключение Telegram",
     icon: Send,
-    credentialsPlaceholder: "secret://telegram/org-demo/support-bot",
+    secretKind: "token",
+    secretLabel: "Токен бота",
+    credentialsPlaceholder: "123456789:AA…токен из @BotFather",
     configKey: "bot_username",
     configLabel: "Bot username",
     configPlaceholder: "bridge_support_bot",
@@ -80,6 +93,8 @@ const channelConnectors = [
     label: "MAX",
     heading: "Подключение MAX",
     icon: Bot,
+    secretKind: "ref",
+    secretLabel: "credentials_ref",
     credentialsPlaceholder: "secret://max/org-demo/support-bot",
     configKey: "endpoint",
     configLabel: "Endpoint",
@@ -91,6 +106,8 @@ const channelConnectors = [
     label: "Email",
     heading: "Подключение Email",
     icon: Mail,
+    secretKind: "ref",
+    secretLabel: "credentials_ref",
     credentialsPlaceholder: "secret://email/org-demo/support",
     configKey: "from_email",
     configLabel: "From email",
@@ -188,8 +205,20 @@ export default function ChannelsPage() {
   }
 
   function updateChannelType(channelType: ConnectableChannelType) {
-    setForm((current) => ({ ...current, channelType, configValue: "" }));
-    setFieldErrors((current) => ({ ...current, channelType: undefined, configValue: undefined }));
+    setForm((current) => ({
+      ...current,
+      channelType,
+      credentialsRef: "",
+      credentials: "",
+      configValue: ""
+    }));
+    setFieldErrors((current) => ({
+      ...current,
+      channelType: undefined,
+      credentialsRef: undefined,
+      credentials: undefined,
+      configValue: undefined
+    }));
     setSuccess(null);
   }
 
@@ -214,11 +243,17 @@ export default function ChannelsPage() {
 
     try {
       const connector = getChannelConnector(form.channelType);
+      const secret =
+        connector.secretKind === "token"
+          ? { credentials: form.credentials.trim() }
+          : form.credentialsRef.trim()
+            ? { credentials_ref: form.credentialsRef.trim() }
+            : {};
       const response = await api.channels.createChannel({
         organization_id: session.organization.id,
         channel_type: connector.type,
         name: form.name.trim(),
-        ...(form.credentialsRef.trim() ? { credentials_ref: form.credentialsRef.trim() } : {}),
+        ...secret,
         config: buildChannelConfig(connector, form.configValue)
       });
       const descriptor = await api.channels.getCapabilities(response.channel.id);
@@ -226,7 +261,11 @@ export default function ChannelsPage() {
       setChannels((current) => [...current, response.channel]);
       setCapabilities((current) => ({ ...current, [response.channel.id]: descriptor }));
       setForm(emptyChannelForm);
-      setSuccess(`${connector.label} подключен через credentials_ref`);
+      setSuccess(
+        connector.secretKind === "token"
+          ? `${connector.label} подключён — токен сохранён, проверьте подключение`
+          : `${connector.label} подключён через credentials_ref`
+      );
     } catch (error) {
       const problem = getProblemDetails(error);
       setFieldErrors(toChannelFieldErrors(problem));
@@ -311,7 +350,11 @@ export default function ChannelsPage() {
             <div className="panel-heading-row">
               <div>
                 <h2>{selectedConnector.heading}</h2>
-                <p>Секреты не вводятся как значения; хранится только ссылка credentials_ref.</p>
+                <p>
+                  {selectedConnector.secretKind === "token"
+                    ? "Токен бота организации шифруется на бэкенде и не хранится в открытом виде."
+                    : "Секреты не вводятся как значения; хранится только ссылка credentials_ref."}
+                </p>
               </div>
               <Button disabled={saving} type="submit">
                 <Plus aria-hidden="true" size={16} />
@@ -353,14 +396,27 @@ export default function ChannelsPage() {
                 onChange={(event) => updateField("name", event.currentTarget.value)}
                 value={form.name}
               />
-              <TextInput
-                error={fieldErrors.credentialsRef}
-                id="channel-credentials-ref"
-                label="credentials_ref"
-                onChange={(event) => updateField("credentialsRef", event.currentTarget.value)}
-                placeholder={selectedConnector.credentialsPlaceholder}
-                value={form.credentialsRef}
-              />
+              {selectedConnector.secretKind === "token" ? (
+                <TextInput
+                  autoComplete="off"
+                  error={fieldErrors.credentials}
+                  id="channel-credentials-token"
+                  label={selectedConnector.secretLabel}
+                  onChange={(event) => updateField("credentials", event.currentTarget.value)}
+                  placeholder={selectedConnector.credentialsPlaceholder}
+                  type="password"
+                  value={form.credentials}
+                />
+              ) : (
+                <TextInput
+                  error={fieldErrors.credentialsRef}
+                  id="channel-credentials-ref"
+                  label={selectedConnector.secretLabel}
+                  onChange={(event) => updateField("credentialsRef", event.currentTarget.value)}
+                  placeholder={selectedConnector.credentialsPlaceholder}
+                  value={form.credentialsRef}
+                />
+              )}
               <TextInput
                 error={fieldErrors.configValue}
                 id={`channel-config-${selectedConnector.configKey}`}
@@ -523,7 +579,14 @@ function validateChannelForm(form: ChannelFormState): ChannelFieldErrors {
     errors.name = "Название канала обязательно.";
   }
 
-  if (form.credentialsRef.trim() && !form.credentialsRef.trim().startsWith("secret://")) {
+  if (connector.secretKind === "token") {
+    const token = form.credentials.trim();
+    if (!token) {
+      errors.credentials = `${connector.secretLabel} обязателен.`;
+    } else if (!TELEGRAM_TOKEN_PATTERN.test(token)) {
+      errors.credentials = "Формат токена: <bot_id>:<секрет> из @BotFather.";
+    }
+  } else if (form.credentialsRef.trim() && !form.credentialsRef.trim().startsWith("secret://")) {
     errors.credentialsRef = "credentials_ref должен быть ссылкой secret://.";
   }
 
@@ -619,6 +682,10 @@ function toChannelFieldErrors(problem: ProblemDetails | null): ChannelFieldError
 
     if (error.field === "credentials_ref") {
       errors.credentialsRef = error.message;
+    }
+
+    if (error.field === "credentials") {
+      errors.credentials = error.message;
     }
 
     if (error.field === "config") {

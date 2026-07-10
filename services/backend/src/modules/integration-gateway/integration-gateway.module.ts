@@ -1,6 +1,9 @@
 import { Module } from "@nestjs/common";
 
+import { PgDatabase } from "../../common/database/database.service";
+import { ChannelSecretService } from "../../common/secrets/channel-secret.service";
 import { ChannelsController, ChannelTestController } from "./channels.controller";
+import { InternalChannelSecretController } from "./internal-channels.controller";
 import { IntegrationGatewayFacade } from "./integration-gateway.facade";
 import {
   INTEGRATION_GATEWAY_UPSTREAM_CLIENT,
@@ -9,7 +12,7 @@ import {
 } from "./integration-gateway.upstream";
 
 @Module({
-  controllers: [ChannelsController, ChannelTestController],
+  controllers: [ChannelsController, ChannelTestController, InternalChannelSecretController],
   exports: [IntegrationGatewayFacade],
   providers: [
     {
@@ -17,10 +20,16 @@ import {
       useFactory: () => createIntegrationGatewayHttpUpstreamClientFromEnv(),
     },
     {
-      inject: [INTEGRATION_GATEWAY_UPSTREAM_CLIENT],
+      inject: [PgDatabase, ChannelSecretService, INTEGRATION_GATEWAY_UPSTREAM_CLIENT],
       provide: IntegrationGatewayFacade,
-      useFactory: (upstream: IntegrationGatewayUpstreamClient | null) =>
+      useFactory: (
+        database: PgDatabase,
+        channelSecrets: ChannelSecretService,
+        upstream: IntegrationGatewayUpstreamClient | null,
+      ) =>
         new IntegrationGatewayFacade({
+          channelSecrets,
+          database,
           upstream,
         }),
     },

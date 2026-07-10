@@ -8,6 +8,7 @@ import { createWebChatAdapter } from "./adapters/web-chat/web-chat-adapter.js";
 import { createWhatsAppAdapter } from "./adapters/whatsapp/whatsapp-adapter.js";
 import { createIntegrationPlatformServer } from "./server.js";
 import {
+  createBackendChannelSecretClient,
   createBackendDeliveryClient,
   createAdapterDeliveryChannel,
   createBackoffPolicy,
@@ -15,7 +16,14 @@ import {
   createDeliveryEngine,
   createMockExternalChannel,
   createRealChannelClientsFromEnv,
+  createResolvingTelegramClient,
 } from "./delivery/index.js";
+import {
+  createBackendChannelsClient,
+  createIngressPublisher,
+  createTelegramInboundDriver,
+  createTelegramUpdatesClient,
+} from "./inbound/index.js";
 
 const port = Number.parseInt(process.env.PORT ?? "3005", 10);
 const host = process.env.HOST ?? "0.0.0.0";
@@ -32,12 +40,24 @@ const deliveryQueueMaxSize = envInt("DELIVERY_QUEUE_MAX_SIZE", 1024);
 const deliveryQueueMaxAttempts = envInt("DELIVERY_QUEUE_MAX_ATTEMPTS", 10);
 const deliveryQueueRetryDelayMs = envInt("DELIVERY_QUEUE_RETRY_DELAY_MS", 1000);
 const channelClients = createRealChannelClientsFromEnv();
+const telegramApiBaseUrl = process.env.TELEGRAM_API_BASE_URL?.trim() || "https://api.telegram.org";
+// Per-org Telegram-доставка (Этап T2): токен бота организации резолвится по
+// organization_id доставки через backend S2S (/internal/channels/secret) с TTL,
+// а не берётся из единого env TELEGRAM_BOT_TOKEN.
+const channelSecretClient = createBackendChannelSecretClient({
+  baseUrl: backendBaseUrl,
+  ttlMs: envInt("CHANNEL_SECRET_CACHE_TTL_MS", 60_000),
+});
+const telegramDeliveryClient = createResolvingTelegramClient({
+  resolveToken: (input) => channelSecretClient.resolveToken(input),
+  baseUrl: telegramApiBaseUrl,
+});
 
 const adapter = createMockAdapter({ coreIngressUrl });
 const webChatAdapter = createWebChatAdapter({ coreIngressUrl });
 const adapters = {
   telegram: createTelegramAdapter({
-    channelClient: channelClients.telegram,
+    channelClient: telegramDeliveryClient,
     coreIngressUrl,
   }),
   email: createEmailAdapter({
@@ -52,19 +72,28 @@ const adapters = {
   }),
   whatsapp: createWhatsAppAdapter({ coreIngressUrl }),
 };
+// Mock-fallback доставки (CP-2, Этап T6, задача 5): по умолчанию включён для
+// dev/CI (неподключённые каналы «доставляются» в mock, без внешних вызовов). В
+// боевом профиле `DELIVERY_ALLOW_MOCK_FALLBACK=false` его снимает — неизвестный
+// канал завершается ошибкой `adapter_missing`, а не тихим mock-успехом. Telegram
+// на fallback НЕ опирается ни при каком профиле: адаптер зарегистрирован всегда и
+// доставляет per-org токеном (T2).
+const allowMockFallback =
+  (process.env.DELIVERY_ALLOW_MOCK_FALLBACK ?? "true").toLowerCase() !== "false";
 const deliveryChannel = createAdapterDeliveryChannel({
-  adapters: Object.fromEntries(
-    Object.entries({
-      email: adapters.email,
-      max: adapters.max,
-      telegram: adapters.telegram,
-    }).filter(([channelType]) => channelClients[channelType]),
-  ),
-  fallbackChannel: createMockExternalChannel(),
+  adapters: {
+    // Telegram доставляется всегда: токен per-org резолвится на лету.
+    telegram: adapters.telegram,
+    // Email/MAX — через реальный клиент только при заданном env-шлюзе.
+    ...(channelClients.email ? { email: adapters.email } : {}),
+    ...(channelClients.max ? { max: adapters.max } : {}),
+  },
+  fallbackChannel: allowMockFallback ? createMockExternalChannel() : undefined,
 });
 // Массовая доставка через адаптеры: rate limiting на канал, ретраи с бэкоффом
-// и идемпотентность. Telegram/Email/MAX при наличии env уходят через реальные
-// клиенты, остальные каналы и локальный CI сохраняют mock fallback.
+// и идемпотентность. Telegram уходит per-org токеном (T2); Email/MAX — через
+// env-шлюзы; остальные каналы и локальный CI сохраняют mock fallback (если не
+// отключён DELIVERY_ALLOW_MOCK_FALLBACK).
 const deliveryEngine = createDeliveryEngine({
   channel: deliveryChannel,
   backendClient: createBackendDeliveryClient({ baseUrl: backendBaseUrl }),
@@ -107,12 +136,54 @@ const server = createIntegrationPlatformServer({
   deliveryDispatchMode: "async",
 });
 
+// Входящий драйвер Telegram (Этап T3): getUpdates long-poll на каждый
+// подключённый telegram-канал организации. Реестр каналов берётся из backend
+// (S2S), токен резолвится тем же secret-клиентом, что и egress (T2).
+//
+// Публикация приёма (Этап T5): апдейт нормализуется telegram-адаптером в
+// C2.IngressMessage и публикуется либо напрямую в CORE_INGRESS_URL, либо — для
+// клиентов РФ (канал помечен config.region==="RF" / config.route_via_edge) и при
+// заданном EDGE_INGRESS_URL — через Edge (RF-first буфер → туннель → ядро).
+const telegramInboundEnabled =
+  (process.env.TELEGRAM_INBOUND_ENABLED ?? "true").toLowerCase() !== "false";
+const edgeIngressUrl = process.env.EDGE_INGRESS_URL?.trim() || null;
+const ingressPublisher = createIngressPublisher({ coreIngressUrl, edgeIngressUrl });
+const inboundDriver = telegramInboundEnabled
+  ? createTelegramInboundDriver({
+      listChannels: (input) =>
+        createBackendChannelsClient({ baseUrl: backendBaseUrl }).listChannels(input),
+      resolveToken: (input) => channelSecretClient.resolveToken(input),
+      publishIncoming: (payload, channel) => {
+        const ingress = adapters.telegram.buildIngress(payload);
+        const routeViaEdge = ingressPublisher.edgeAvailable() && isRfEdgeChannel(channel);
+        return ingressPublisher.publish(ingress, { routeViaEdge });
+      },
+      createUpdatesClient: ({ token }) =>
+        createTelegramUpdatesClient({ token, baseUrl: telegramApiBaseUrl }),
+      pollTimeoutSeconds: envInt("TELEGRAM_INBOUND_POLL_TIMEOUT_SECONDS", 30),
+    })
+  : null;
+
+/** Клиент РФ: входящее приземляется RF-first через Edge (ТЗ §7.13/§7.14). */
+function isRfEdgeChannel(channel) {
+  const config = channel?.config ?? {};
+  return config.route_via_edge === true || config.region === "RF";
+}
+
 server.listen(port, host, () => {
   console.log(`integration-platform listening on http://${host}:${port}`);
+  if (inboundDriver) {
+    inboundDriver
+      .start({ refreshIntervalMs: envInt("TELEGRAM_INBOUND_REFRESH_INTERVAL_MS", 30_000) })
+      .catch((error) => {
+        console.error("telegram inbound driver failed to start", error);
+      });
+  }
 });
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => {
+    inboundDriver?.stop();
     server.close(() => {
       process.exit(0);
     });

@@ -26,6 +26,18 @@ export class ConnectChannelRequestDto {
   credentials_ref?: string;
 
   @ApiPropertyOptional({
+    description:
+      "Plaintext-секрет канала (например токен Telegram-бота из @BotFather). " +
+      "Только в теле запроса: шифруется в channels.credentials_envelope и никогда " +
+      "не возвращается в ответе. Для Telegram обязателен, формат <bot_id>:<token>.",
+    example: "123456789:AA-bot-token-from-botfather",
+  })
+  @IsString()
+  @MaxLength(4096)
+  @IsOptional()
+  credentials?: string;
+
+  @ApiPropertyOptional({
     additionalProperties: true,
     example: { widget_origin: "https://example.test" },
     type: Object,

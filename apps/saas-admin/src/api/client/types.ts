@@ -135,6 +135,8 @@ export interface ConnectChannelRequest {
   channel_type: ConnectableChannelType;
   name: string;
   credentials_ref?: string;
+  /** Plaintext-секрет канала (например токен Telegram-бота). Шифруется на бэкенде, не возвращается. */
+  credentials?: string;
   config?: Record<string, unknown>;
 }
 
