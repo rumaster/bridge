@@ -61,6 +61,78 @@ describe("Manager Workspace API client tenant scope", () => {
     ]);
     expect(requestedPaths).toEqual(["/api/v1/conversations", "/api/v1/clients"]);
   });
+
+  it("preserves the email channel and nests the reply subject into content (E5)", async () => {
+    let sentBody: any;
+    const api = createManagerWorkspaceApiClient({
+      baseUrl: "/api/v1",
+      fetcher: async (url, init) => {
+        const path = new URL(String(url), "http://localhost").pathname;
+        if (path === "/api/v1/messages") {
+          sentBody = JSON.parse(String(init?.body));
+        }
+        return new Response(
+          JSON.stringify({
+            id: "30000000-0000-4000-8000-000000000601",
+            conversationId: "conv-1",
+            channel: "email",
+            direction: "outbound",
+            senderType: "manager",
+            content: { text: "Ответ", subject: "Re: заявка" },
+            status: "routed",
+            createdAt: "2026-07-11T10:00:00.000Z"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+    });
+
+    const message = await api.messages.create({
+      conversationId: "conv-1",
+      content: "Ответ",
+      idempotencyKey: "idem-1",
+      subject: "Re: заявка"
+    });
+
+    // Email не приводится к web_chat.
+    expect(message.channel).toBe("email");
+    // Тема ушла внутрь content как объект {text, subject}.
+    expect(sentBody).toEqual({
+      conversationId: "conv-1",
+      idempotencyKey: "idem-1",
+      content: { text: "Ответ", subject: "Re: заявка" }
+    });
+  });
+
+  it("keeps content as a plain string when no subject is provided", async () => {
+    let sentBody: any;
+    const api = createManagerWorkspaceApiClient({
+      baseUrl: "/api/v1",
+      fetcher: async (url, init) => {
+        const path = new URL(String(url), "http://localhost").pathname;
+        if (path === "/api/v1/messages") {
+          sentBody = JSON.parse(String(init?.body));
+        }
+        return new Response(
+          JSON.stringify({
+            id: "30000000-0000-4000-8000-000000000601",
+            conversationId: "conv-1",
+            channel: "telegram",
+            direction: "outbound",
+            senderType: "manager",
+            content: "Ответ",
+            status: "routed",
+            createdAt: "2026-07-11T10:00:00.000Z"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+    });
+
+    await api.messages.create({ conversationId: "conv-1", content: "Ответ", idempotencyKey: "idem-2" });
+
+    expect(sentBody.content).toBe("Ответ");
+  });
 });
 
 function responseForPath(url: string) {

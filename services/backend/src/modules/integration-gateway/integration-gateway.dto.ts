@@ -1,8 +1,86 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsIn, IsObject, IsOptional, IsString, MaxLength } from "class-validator";
+import { Type } from "class-transformer";
+import {
+  IsBoolean,
+  IsEmail,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from "class-validator";
 
 const CHANNEL_TYPES = ["web_chat", "telegram", "email", "sms", "vk", "max", "whatsapp"] as const;
 type ChannelType = (typeof CHANNEL_TYPES)[number];
+
+/** Креды одного почтового сервера (IMAP приём либо SMTP отправка), Этап E0. */
+export class EmailEndpointCredentialsDto {
+  @ApiProperty({ example: "imap.example.com" })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(255)
+  host!: string;
+
+  @ApiProperty({ example: 993 })
+  @IsInt()
+  @Min(1)
+  @Max(65535)
+  port!: number;
+
+  @ApiProperty({ example: true, description: "Использовать TLS/SSL при подключении." })
+  @IsBoolean()
+  tls!: boolean;
+
+  @ApiProperty({ example: "support@example.com" })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(320)
+  username!: string;
+
+  @ApiProperty({
+    description:
+      "Пароль/секрет почтового сервера. Только в теле запроса: шифруется в " +
+      "channels.credentials_envelope и никогда не возвращается в ответе.",
+    example: "app-specific-password",
+  })
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(1024)
+  password!: string;
+}
+
+/**
+ * Структурные креды email-канала: IMAP (приём) + SMTP (отправка) + адрес
+ * отправителя. Сериализуются и шифруются как единый секрет канала (Этап E0
+ * плана docs/plan/email-channel-production.md).
+ */
+export class EmailChannelCredentialsDto {
+  @ApiProperty({ type: EmailEndpointCredentialsDto })
+  @ValidateNested()
+  @Type(() => EmailEndpointCredentialsDto)
+  imap!: EmailEndpointCredentialsDto;
+
+  @ApiProperty({ type: EmailEndpointCredentialsDto })
+  @ValidateNested()
+  @Type(() => EmailEndpointCredentialsDto)
+  smtp!: EmailEndpointCredentialsDto;
+
+  @ApiProperty({ example: "support@example.com" })
+  @IsEmail()
+  @MaxLength(320)
+  from_email!: string;
+
+  @ApiPropertyOptional({ example: "Служба поддержки Example" })
+  @IsString()
+  @MaxLength(255)
+  @IsOptional()
+  from_name?: string;
+}
 
 export class ConnectChannelRequestDto {
   @ApiProperty({ example: "org-1" })
@@ -38,10 +116,60 @@ export class ConnectChannelRequestDto {
   credentials?: string;
 
   @ApiPropertyOptional({
+    type: EmailChannelCredentialsDto,
+    description:
+      "Структурные креды email-канала (IMAP + SMTP). Только для channel_type=email; " +
+      "шифруются в channels.credentials_envelope и не возвращаются в ответе.",
+  })
+  @ValidateNested()
+  @Type(() => EmailChannelCredentialsDto)
+  @IsOptional()
+  email_credentials?: EmailChannelCredentialsDto;
+
+  @ApiPropertyOptional({
     additionalProperties: true,
     example: { widget_origin: "https://example.test" },
     type: Object,
   })
+  @IsObject()
+  @IsOptional()
+  config?: Record<string, unknown>;
+}
+
+/**
+ * Обновление подключённого канала и ротация его секрета (PUT /v1/channels/:id,
+ * Этап E0). Все поля опциональны: передаются только изменяемые. Секрет
+ * (`credentials` для токен-каналов либо `email_credentials`) перешифровывается
+ * заново; ответ никогда не содержит plaintext-секрета.
+ */
+export class UpdateChannelRequestDto {
+  @ApiPropertyOptional({ example: "Telegram Support" })
+  @IsString()
+  @MaxLength(120)
+  @IsOptional()
+  name?: string;
+
+  @ApiPropertyOptional({
+    description:
+      "Новый plaintext-секрет токен-канала (например Telegram-бот). Только в теле " +
+      "запроса: перешифровывается и не возвращается в ответе.",
+    example: "123456789:AA-new-bot-token",
+  })
+  @IsString()
+  @MaxLength(4096)
+  @IsOptional()
+  credentials?: string;
+
+  @ApiPropertyOptional({
+    type: EmailChannelCredentialsDto,
+    description: "Новые структурные креды email-канала (IMAP + SMTP).",
+  })
+  @ValidateNested()
+  @Type(() => EmailChannelCredentialsDto)
+  @IsOptional()
+  email_credentials?: EmailChannelCredentialsDto;
+
+  @ApiPropertyOptional({ additionalProperties: true, type: Object })
   @IsObject()
   @IsOptional()
   config?: Record<string, unknown>;

@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bridge.local/contracts/json-schema/c9-edge-control-ack.schema.json",
+  "title": "C9 Edge→App control acknowledgement",
+  "x-contract-id": "C9.EdgeControlAck",
+  "x-owner": "SVC-EDGE",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "control_id",
+    "accepted",
+    "duplicate",
+    "status",
+    "received_at"
+  ],
+  "properties": {
+    "contract": {
+      "const": "C9.EdgeControlAck"
+    },
+    "version": {
+      "const": "1.0.0"
+    },
+    "control_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "accepted": {
+      "type": "boolean"
+    },
+    "duplicate": {
+      "type": "boolean"
+    },
+    "status": {
+      "type": "string",
+      "minLength": 1
+    },
+    "detail": {
+      "type": "string"
+    },
+    "external_message_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "received_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

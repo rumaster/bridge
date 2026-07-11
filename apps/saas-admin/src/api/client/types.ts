@@ -130,6 +130,23 @@ export interface Channel {
   error_log?: ChannelErrorLogItem[];
 }
 
+/** Креды одного почтового сервера (IMAP приём либо SMTP отправка), Этап E1. */
+export interface EmailEndpointCredentials {
+  host: string;
+  port: number;
+  tls: boolean;
+  username: string;
+  password: string;
+}
+
+/** Структурные креды email-канала (IMAP + SMTP + отправитель), Этап E1. */
+export interface EmailChannelCredentials {
+  imap: EmailEndpointCredentials;
+  smtp: EmailEndpointCredentials;
+  from_email: string;
+  from_name?: string;
+}
+
 export interface ConnectChannelRequest {
   organization_id: string;
   channel_type: ConnectableChannelType;
@@ -137,6 +154,8 @@ export interface ConnectChannelRequest {
   credentials_ref?: string;
   /** Plaintext-секрет канала (например токен Telegram-бота). Шифруется на бэкенде, не возвращается. */
   credentials?: string;
+  /** Структурные креды email-канала (IMAP + SMTP). Только для channel_type=email; шифруются на бэкенде. */
+  email_credentials?: EmailChannelCredentials;
   config?: Record<string, unknown>;
 }
 

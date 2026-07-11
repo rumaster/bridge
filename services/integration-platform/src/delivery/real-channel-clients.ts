@@ -126,9 +126,16 @@ export function createMaxHttpGatewayClient({
   });
 }
 
+/**
+ * Реальные клиенты доставки каналов из env. Email здесь НЕ собирается: по
+ * решению 1 (docs/plan/email-channel-production.md) email — Edge-owned, исходящая
+ * почта отправляется по SMTP на Edge Gateway (Этап E4), а не через app-side
+ * HTTP-шлюз SVC-INT. `createEmailHttpGatewayClient` сохранён как generic-клиент
+ * для возможных сторонних email-over-HTTP провайдеров (§4.2), но в основной
+ * email-канал не подключён.
+ */
 export function createRealChannelClientsFromEnv(env: NodeJS.ProcessEnv = process.env) {
   const telegramToken = env.TELEGRAM_BOT_TOKEN?.trim();
-  const emailUrl = env.EMAIL_DELIVERY_URL?.trim();
   const maxUrl = env.MAX_DELIVERY_URL?.trim();
 
   return {
@@ -137,14 +144,6 @@ export function createRealChannelClientsFromEnv(env: NodeJS.ProcessEnv = process
           telegram: createTelegramBotApiClient({
             baseUrl: env.TELEGRAM_API_BASE_URL?.trim() || "https://api.telegram.org",
             token: telegramToken,
-          }),
-        }
-      : {}),
-    ...(emailUrl
-      ? {
-          email: createEmailHttpGatewayClient({
-            token: env.EMAIL_DELIVERY_TOKEN?.trim(),
-            url: emailUrl,
           }),
         }
       : {}),

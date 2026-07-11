@@ -41,6 +41,11 @@ const MESSAGE_WINDOWING_THRESHOLD = 80;
 const MESSAGE_ROW_ESTIMATE_PX = 88;
 const MESSAGE_WINDOW_OVERSCAN = 8;
 const MESSAGE_VIEWPORT_FALLBACK_HEIGHT_PX = 520;
+const CHANNEL_LABELS: Record<string, string> = {
+  web_chat: "web chat",
+  telegram: "telegram",
+  email: "email"
+};
 
 export default function DialogPage() {
   const { conversationId = "" } = useParams();
@@ -51,6 +56,7 @@ export default function DialogPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [client, setClient] = useState<ClientProfile | null>(null);
   const [draft, setDraft] = useState("");
+  const [subject, setSubject] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -107,6 +113,7 @@ export default function DialogPage() {
           setConversation(nextConversation);
           setMessages(nextMessages);
           setClient(nextClient);
+          setSubject("");
           setTypingClientIds([]);
           seenMessageIdsRef.current = new Set(nextMessages.map((message) => message.id));
           setError(null);
@@ -124,7 +131,15 @@ export default function DialogPage() {
     };
   }, [loadDialog]);
 
-  const channelLabel = useMemo(() => conversation?.channel.replace("_", " ") ?? "mock", [conversation]);
+  const isEmail = conversation?.channel === "email";
+  const channelLabel = useMemo(
+    () => (conversation ? CHANNEL_LABELS[conversation.channel] ?? conversation.channel : "mock"),
+    [conversation]
+  );
+  const recipientEmail = useMemo(
+    () => client?.endpoints.find((endpoint) => endpoint.channel === "email")?.externalId,
+    [client]
+  );
   const latestClientMessage = useMemo(
     () => [...messages].reverse().find((message) => message.senderType === "client")?.content ?? "",
     [messages]
@@ -177,6 +192,7 @@ export default function DialogPage() {
       return;
     }
 
+    const emailSubject = conversation.channel === "email" ? subject.trim() || undefined : undefined;
     const startedAt = startClientNfrMeasurement();
     const idempotencyKey = createIdempotencyKey(conversation.id);
     const optimisticMessage: Message = {
@@ -199,10 +215,12 @@ export default function DialogPage() {
       const createdMessage = await api.messages.create({
         conversationId: conversation.id,
         content,
-        idempotencyKey
+        idempotencyKey,
+        ...(emailSubject ? { subject: emailSubject } : {})
       });
 
       seenMessageIdsRef.current.add(createdMessage.id);
+      setSubject("");
       setMessages((current) => reconcileMessage(current, optimisticMessage.id, createdMessage));
       setConversation((current) =>
         current
@@ -281,7 +299,10 @@ export default function DialogPage() {
       <div className="page-heading">
         <Badge tone="neutral">C3.messages · C3.clients · C7 · C4</Badge>
         <h1>Диалог</h1>
-        <p>{client ? client.displayName : "Загрузка клиента"} · {channelLabel}</p>
+        <p>
+          {client ? client.displayName : "Загрузка клиента"} · {channelLabel}
+          {isEmail && recipientEmail ? ` · ${recipientEmail}` : ""}
+        </p>
         <div className="realtime-meta">
           <Badge tone={connectionStatus === "connected" ? "success" : connectionStatus === "reconnecting" ? "warning" : "neutral"}>
             C7 {connectionStatus}
@@ -297,6 +318,18 @@ export default function DialogPage() {
           <VirtualizedMessageList messages={messages} />
 
           <form className="reply-form" onSubmit={handleSend}>
+            {isEmail ? (
+              <label className="text-input reply-subject" htmlFor="manager-reply-subject">
+                <span>Тема письма</span>
+                <input
+                  id="manager-reply-subject"
+                  onChange={(event) => setSubject(event.target.value)}
+                  placeholder="Тема ответа клиенту"
+                  type="text"
+                  value={subject}
+                />
+              </label>
+            ) : null}
             <label className="text-input reply-input" htmlFor="manager-reply">
               <span>Ответ менеджера</span>
               <textarea

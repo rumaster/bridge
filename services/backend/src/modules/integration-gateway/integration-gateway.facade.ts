@@ -1,10 +1,20 @@
 import { randomUUID } from "node:crypto";
 
-import { Inject, Injectable, NotFoundException, Optional } from "@nestjs/common";
+import {
+  BadRequestException,
+  Inject,
+  Injectable,
+  NotFoundException,
+  Optional,
+} from "@nestjs/common";
 
 import { FacadeResilience, type FacadeResilienceOptions } from "../../common/resilience/resilience";
 import type { PgDatabase } from "../../common/database/database.service";
 import type { ChannelSecretEnvelope } from "../../common/secrets/channel-secret.store";
+import {
+  type EmailChannelCredentials,
+  serializeEmailChannelCredentials,
+} from "../../common/secrets/email-channel-credentials";
 import type { FacadeStatusDto } from "../ai-integration/ai-integration.facade";
 import type { IntegrationGatewayUpstreamClient } from "./integration-gateway.upstream";
 
@@ -61,6 +71,19 @@ export interface ConnectChannelRequest {
   credentials_ref?: string;
   /** Plaintext-секрет канала (например токен Telegram-бота). Шифруется, не возвращается. */
   credentials?: string;
+  /** Структурные креды email-канала (IMAP + SMTP). Только для channel_type=email. */
+  email_credentials?: EmailChannelCredentials;
+  config?: Record<string, unknown>;
+}
+
+export interface UpdateChannelRequest {
+  channel_id: string;
+  organization_id: string;
+  name?: string;
+  /** Новый plaintext-секрет токен-канала. Перешифровывается, не возвращается. */
+  credentials?: string;
+  /** Новые структурные креды email-канала (IMAP + SMTP). */
+  email_credentials?: EmailChannelCredentials;
   config?: Record<string, unknown>;
 }
 
@@ -390,7 +413,11 @@ export class IntegrationGatewayFacade {
     const timestamp = this.clock();
     const channelType = request.channel_type;
     const channelId = randomUUID();
-    const plaintext = request.credentials?.trim();
+    const plaintext = this.resolveSecretPlaintext({
+      channelType,
+      credentials: request.credentials,
+      emailCredentials: request.email_credentials,
+    });
 
     let credentialsRef = request.credentials_ref?.trim() || null;
     let envelope: ChannelSecretEnvelope | null = null;
@@ -433,6 +460,78 @@ export class IntegrationGatewayFacade {
     );
 
     return mapRowToFacade(inserted.rows[0]);
+  }
+
+  /**
+   * Обновляет канал и (опционально) ротирует его секрет (PUT /v1/channels/:id,
+   * Этап E0). Изменяемые поля — `name`, `config`; секрет (`credentials` для
+   * токен-каналов либо структурные `email_credentials`) перешифровывается заново
+   * в `credentials_envelope`. Plaintext-секрет никогда не возвращается. Канал не
+   * найден → 404.
+   */
+  async updateChannel(request: UpdateChannelRequest): Promise<ChannelFacade> {
+    const existing = await this.getChannel(request.channel_id, request.organization_id);
+    const timestamp = this.clock();
+    const name = request.name?.trim() || existing.name;
+    const config = request.config ?? existing.config;
+
+    const plaintext = this.resolveSecretPlaintext({
+      channelType: existing.channel_type,
+      credentials: request.credentials,
+      emailCredentials: request.email_credentials,
+    });
+
+    if (plaintext) {
+      const secrets = this.requireChannelSecrets();
+      const credentialsRef =
+        existing.credentials_ref ??
+        secrets.buildCredentialsRef({
+          channelType: existing.channel_type,
+          organizationId: existing.organization_id,
+          label: existing.id,
+        });
+      const envelope = secrets.encrypt(plaintext);
+
+      const updated = await this.requireDatabase().withTenant(request.organization_id, (client) =>
+        client.query<ChannelRow>(
+          `
+            UPDATE channels
+            SET name = $3, config = $4::jsonb,
+                credentials_ref = $5, credentials_envelope = $6::jsonb,
+                updated_at = $7::timestamptz
+            WHERE id = $1 AND organization_id = $2
+            RETURNING id, organization_id, channel_type, name, status,
+                      credentials_ref, config, last_check_at, created_at, updated_at
+          `,
+          [
+            request.channel_id,
+            request.organization_id,
+            name,
+            JSON.stringify(config),
+            credentialsRef,
+            JSON.stringify(envelope),
+            timestamp,
+          ],
+        ),
+      );
+
+      return mapRowToFacade(updated.rows[0]);
+    }
+
+    const updated = await this.requireDatabase().withTenant(request.organization_id, (client) =>
+      client.query<ChannelRow>(
+        `
+          UPDATE channels
+          SET name = $3, config = $4::jsonb, updated_at = $5::timestamptz
+          WHERE id = $1 AND organization_id = $2
+          RETURNING id, organization_id, channel_type, name, status,
+                    credentials_ref, config, last_check_at, created_at, updated_at
+        `,
+        [request.channel_id, request.organization_id, name, JSON.stringify(config), timestamp],
+      ),
+    );
+
+    return mapRowToFacade(updated.rows[0]);
   }
 
   async getChannelCapabilities(
@@ -655,6 +754,32 @@ export class IntegrationGatewayFacade {
       checked_at: checkedAt,
       status,
     };
+  }
+
+  /**
+   * Единый резолв plaintext-секрета для connect/update: структурные
+   * `email_credentials` (только для channel_type=email) сериализуются в JSON,
+   * иначе берётся токен-строка `credentials`. Возвращает undefined, если секрет
+   * не передан (обновление без ротации).
+   */
+  private resolveSecretPlaintext(input: {
+    channelType: ChannelType;
+    credentials?: string;
+    emailCredentials?: EmailChannelCredentials;
+  }): string | undefined {
+    if (input.emailCredentials) {
+      if (input.channelType !== "email") {
+        throw new BadRequestException({
+          code: "CHANNEL_CREDENTIALS_MISMATCH",
+          description: "email_credentials is only valid for channel_type=email.",
+          humanMessage: "Структурные email-креды допустимы только для канала email.",
+        });
+      }
+
+      return serializeEmailChannelCredentials(input.emailCredentials);
+    }
+
+    return input.credentials?.trim() || undefined;
   }
 
   private requireDatabase(): ChannelDatabasePort {

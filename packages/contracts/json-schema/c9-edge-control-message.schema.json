@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://bridge.local/contracts/json-schema/c9-edge-control-message.schema.json",
+  "title": "C9 App→Edge control message",
+  "x-contract-id": "C9.EdgeControlMessage",
+  "x-owner": "SVC-EDGE",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "control_id",
+    "type",
+    "organization_id",
+    "payload",
+    "issued_at"
+  ],
+  "properties": {
+    "contract": {
+      "const": "C9.EdgeControlMessage"
+    },
+    "version": {
+      "const": "1.0.0"
+    },
+    "control_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "type": {
+      "enum": ["channel_credentials_sync", "egress_dispatch"]
+    },
+    "organization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "issued_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

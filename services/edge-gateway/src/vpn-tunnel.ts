@@ -112,7 +112,11 @@ function normalizeAad(aad) {
   return Buffer.from(JSON.stringify(ordered), "utf8");
 }
 
-/** Запечатывает JSON в конверт [ver|iv|tag|ct] под сеансовым ключом. */
+/**
+ * Запечатывает JSON в конверт [ver|iv|tag|ct] под сеансовым ключом.
+ * Экспортируется как {@link sealTunnelFrame} для control-plane (Этап E2),
+ * который переиспользует ту же mTLS+AES-256-GCM сессию для App→Edge кадров.
+ */
 function seal(sessionKey, plaintextObject, aad, ivFactory) {
   const iv = ivFactory();
   const cipher = createCipheriv(ALGORITHM, sessionKey, iv);
@@ -533,3 +537,9 @@ export function createVpnTunnelEdgeClient({
 
   return client;
 }
+
+// Примитивы кадра туннеля для control-plane (Этап E2): control-канал App→Edge
+// переиспользует сеансовый ключ и формат кадра data-plane, а не заводит свою
+// криптографию. IV_BYTES экспортируется, чтобы транспорт генерировал корректный IV.
+export { seal as sealTunnelFrame, open as openTunnelFrame };
+export const TUNNEL_FRAME_IV_BYTES = IV_BYTES;

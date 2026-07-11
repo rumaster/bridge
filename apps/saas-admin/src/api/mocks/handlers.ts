@@ -248,9 +248,12 @@ export const handlers = [
     // Токен (credentials) шифруется на бэкенде и не возвращается; мок хранит только
     // сгенерированную ссылку credentials_ref. credentials_ref из тела — как есть.
     const token = body.credentials?.trim();
-    const credentialsRef = token
-      ? `secret://${channelType}/${organizationId}/${channelId}`
-      : body.credentials_ref?.trim();
+    // Токен ИЛИ структурные email-креды шифруются на бэкенде под сгенерированный
+    // credentials_ref; в теле как есть — только внешний credentials_ref.
+    const credentialsRef =
+      token || body.email_credentials
+        ? `secret://${channelType}/${organizationId}/${channelId}`
+        : body.credentials_ref?.trim();
     const channel: Channel = {
       id: channelId,
       organization_id: organizationId,

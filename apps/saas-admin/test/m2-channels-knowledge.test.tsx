@@ -111,17 +111,6 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
       secretValue: "secret://max/org-demo/support-bot",
       expectedSecret: { credentials_ref: "secret://max/org-demo/support-bot" },
       name: "MAX Support"
-    },
-    {
-      channelLabel: "Email",
-      channelType: "email",
-      config: { from_email: "support@example.test" },
-      configLabel: "From email",
-      configValue: "support@example.test",
-      secretLabel: "credentials_ref",
-      secretValue: "secret://email/org-demo/support",
-      expectedSecret: { credentials_ref: "secret://email/org-demo/support" },
-      name: "Email Support"
     }
   ] as const)(
     "connects $channelLabel from the channels page",
@@ -159,6 +148,66 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
       );
     }
   );
+
+  it("connects Email with structured IMAP/SMTP credentials from the channels page (E1)", async () => {
+    const api = createMockSaasAdminApiClient();
+    const createChannel = vi.spyOn(api.channels, "createChannel");
+    const { user } = renderRoute("/channels", { api, realtime: createMockC7RealtimeClient([]) });
+
+    await screen.findByRole("heading", { name: "Каналы связи" });
+    await user.click(screen.getByRole("radio", { name: "Email" }));
+    await user.type(screen.getByLabelText("Название канала"), "Email Support");
+
+    await user.type(screen.getByLabelText("IMAP хост"), "imap.example.com");
+    await user.clear(screen.getByLabelText("IMAP порт"));
+    await user.type(screen.getByLabelText("IMAP порт"), "993");
+    await user.type(screen.getByLabelText("IMAP логин"), "support@example.com");
+    await user.type(screen.getByLabelText("IMAP пароль"), "imap-secret");
+
+    await user.type(screen.getByLabelText("SMTP хост"), "smtp.example.com");
+    await user.clear(screen.getByLabelText("SMTP порт"));
+    await user.type(screen.getByLabelText("SMTP порт"), "587");
+    await user.type(screen.getByLabelText("SMTP логин"), "support@example.com");
+    await user.type(screen.getByLabelText("SMTP пароль"), "smtp-secret");
+
+    await user.type(screen.getByLabelText("From email"), "support@example.com");
+    await user.type(screen.getByLabelText("Имя отправителя"), "Служба поддержки");
+
+    await user.click(screen.getByRole("button", { name: "Подключить канал" }));
+
+    expect(await screen.findByRole("article", { name: /Email Support/ })).toBeInTheDocument();
+    expect(createChannel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organization_id: mockSession.organization.id,
+        channel_type: "email",
+        name: "Email Support",
+        email_credentials: {
+          imap: { host: "imap.example.com", port: 993, tls: true, username: "support@example.com", password: "imap-secret" },
+          smtp: { host: "smtp.example.com", port: 587, tls: true, username: "support@example.com", password: "smtp-secret" },
+          from_email: "support@example.com",
+          from_name: "Служба поддержки"
+        },
+        config: {}
+      })
+    );
+    // Секрет не вводится как credentials_ref и не показывается после сохранения.
+    expect(createChannel.mock.calls[0][0]).not.toHaveProperty("credentials_ref");
+  });
+
+  it("validates required IMAP/SMTP fields before connecting Email (E1)", async () => {
+    const api = createMockSaasAdminApiClient();
+    const createChannel = vi.spyOn(api.channels, "createChannel");
+    const { user } = renderRoute("/channels", { api, realtime: createMockC7RealtimeClient([]) });
+
+    await screen.findByRole("heading", { name: "Каналы связи" });
+    await user.click(screen.getByRole("radio", { name: "Email" }));
+    await user.type(screen.getByLabelText("Название канала"), "Email Support");
+    await user.click(screen.getByRole("button", { name: "Подключить канал" }));
+
+    expect(await screen.findByText("IMAP хост обязателен.")).toBeInTheDocument();
+    expect(screen.getByText("From email должен быть адресом email.")).toBeInTheDocument();
+    expect(createChannel).not.toHaveBeenCalled();
+  });
 
   it("uploads, updates, reindexes and deletes Knowledge Base documents", async () => {
     const api = createMockSaasAdminApiClient();

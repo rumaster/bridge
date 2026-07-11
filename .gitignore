@@ -10,3 +10,4 @@ ci-logs/
 !.env.rf.example
 .DS_Store
 npm-debug.log*
+.idea/

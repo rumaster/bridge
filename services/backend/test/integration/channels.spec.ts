@@ -11,6 +11,12 @@ const ADMIN_ID = "30000000-0000-4000-8000-000000000201";
 const ADMIN_TOKEN = "brs_channels_admin";
 const TELEGRAM_TOKEN = "123456789:AA-real-telegram-bot-token-value";
 const SECRET_KEY_HEX = "33".repeat(32);
+const EMAIL_CREDENTIALS = {
+  imap: { host: "imap.example.com", port: 993, tls: true, username: "support@example.com", password: "imap-secret" },
+  smtp: { host: "smtp.example.com", port: 587, tls: true, username: "support@example.com", password: "smtp-secret" },
+  from_email: "support@example.com",
+  from_name: "Служба поддержки",
+};
 
 describe("C3.channels M2 omnichannel API", () => {
   let app: INestApplication;
@@ -281,6 +287,138 @@ describe("C3.channels M2 omnichannel API", () => {
         });
     },
   );
+
+  it("connects email with structured IMAP/SMTP credentials, storing them as one encrypted secret (E0)", async () => {
+    const createResponse = await request(app.getHttpServer())
+      .post("/api/v1/channels")
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
+      .send({
+        organization_id: ORG_ID,
+        channel_type: "email",
+        name: "Email Support",
+        email_credentials: EMAIL_CREDENTIALS,
+        config: {},
+      })
+      .expect(201);
+
+    const channel = createResponse.body.channel;
+    // Секрет не возвращается ни в каком виде; сервер сгенерировал credentials_ref.
+    expect(channel).not.toHaveProperty("email_credentials");
+    expect(channel).not.toHaveProperty("credentials");
+    expect(channel).not.toHaveProperty("credentials_envelope");
+    expect(channel.credentials_ref).toEqual(expect.stringContaining(`secret://email/${ORG_ID}/`));
+
+    // S2S-резолв возвращает расшифрованный структурный секрет (round-trip хранилища).
+    const secret = await request(app.getHttpServer())
+      .get(`/internal/channels/secret?organization_id=${ORG_ID}&channel_type=email`)
+      .expect(200);
+    const stored = JSON.parse(secret.body.token);
+    expect(stored).toMatchObject({
+      kind: "email_channel_credentials",
+      imap: { host: "imap.example.com", port: 993, tls: true },
+      smtp: { host: "smtp.example.com", port: 587 },
+      from_email: "support@example.com",
+    });
+    expect(stored.imap.password).toBe("imap-secret");
+  });
+
+  it("rejects email_credentials for a non-email channel type (E0)", async () => {
+    await request(app.getHttpServer())
+      .post("/api/v1/channels")
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
+      .send({
+        organization_id: ORG_ID,
+        channel_type: "telegram",
+        name: "Wrong Email Creds",
+        email_credentials: EMAIL_CREDENTIALS,
+      })
+      .expect(400)
+      .expect(({ body }) => {
+        expect(body.code).toBe("CHANNEL_CREDENTIALS_MISMATCH");
+      });
+  });
+
+  it("updates name/config via PUT without touching the stored secret (E0)", async () => {
+    const created = await request(app.getHttpServer())
+      .post("/api/v1/channels")
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
+      .send({
+        organization_id: ORG_ID,
+        channel_type: "telegram",
+        name: "Telegram Before",
+        credentials: TELEGRAM_TOKEN,
+      })
+      .expect(201);
+    const channelId = created.body.channel.id;
+
+    await request(app.getHttpServer())
+      .put(`/api/v1/channels/${channelId}`)
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
+      .send({ name: "Telegram After", config: { note: "renamed" } })
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.channel.name).toBe("Telegram After");
+        expect(body.channel.config).toMatchObject({ note: "renamed" });
+        expect(body.channel.credentials_ref).toBe(created.body.channel.credentials_ref);
+        expect(body.channel).not.toHaveProperty("credentials");
+      });
+
+    // Токен не тронут ротацией.
+    await request(app.getHttpServer())
+      .get(`/internal/channels/secret?organization_id=${ORG_ID}&channel_type=telegram`)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.token).toBe(TELEGRAM_TOKEN);
+      });
+  });
+
+  it("rotates email credentials via PUT (E0)", async () => {
+    const created = await request(app.getHttpServer())
+      .post("/api/v1/channels")
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
+      .send({
+        organization_id: ORG_ID,
+        channel_type: "email",
+        name: "Email Rotate",
+        email_credentials: EMAIL_CREDENTIALS,
+      })
+      .expect(201);
+    const channelId = created.body.channel.id;
+
+    await request(app.getHttpServer())
+      .put(`/api/v1/channels/${channelId}`)
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
+      .send({
+        email_credentials: {
+          ...EMAIL_CREDENTIALS,
+          smtp: { ...EMAIL_CREDENTIALS.smtp, password: "rotated-smtp-secret" },
+        },
+      })
+      .expect(200);
+
+    const secret = await request(app.getHttpServer())
+      .get(`/internal/channels/secret?organization_id=${ORG_ID}&channel_type=email`)
+      .expect(200);
+    expect(JSON.parse(secret.body.token).smtp.password).toBe("rotated-smtp-secret");
+  });
+
+  it("returns 404 when updating a channel that does not exist (E0)", async () => {
+    await request(app.getHttpServer())
+      .put("/api/v1/channels/30000000-0000-4000-8000-0000000009ff")
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
+      .send({ name: "Ghost" })
+      .expect(404)
+      .expect(({ body }) => {
+        expect(body.code).toBe("CHANNEL_NOT_FOUND");
+      });
+  });
 });
 
 function telegramResponse(body: Record<string, unknown>, status = 200) {
@@ -356,6 +494,37 @@ function runSql(channels: Map<string, StoredChannelRow>, text: string, values: r
       updated_at: ts,
     };
     channels.set(id, row);
+    return { rowCount: 1, rows: [selectProjection(row)] };
+  }
+
+  // updateChannel (PUT /v1/channels/:id): SET name = ..., RETURNING projection.
+  if (text.includes("UPDATE channels") && text.includes("SET name")) {
+    const [id, org] = values as [string, string];
+    const row = channels.get(id);
+    if (!row || row.organization_id !== org) {
+      return { rowCount: 0, rows: [] };
+    }
+    if (text.includes("credentials_envelope")) {
+      const [, , name, config, ref, envelope, ts] = values as [
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+        string,
+      ];
+      row.name = name;
+      row.config = JSON.parse(config);
+      row.credentials_ref = ref;
+      row.credentials_envelope = envelope ? JSON.parse(envelope) : null;
+      row.updated_at = ts;
+    } else {
+      const [, , name, config, ts] = values as [string, string, string, string, string];
+      row.name = name;
+      row.config = JSON.parse(config);
+      row.updated_at = ts;
+    }
     return { rowCount: 1, rows: [selectProjection(row)] };
   }
 

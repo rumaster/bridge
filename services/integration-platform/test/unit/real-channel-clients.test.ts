@@ -101,15 +101,16 @@ describe("real channel delivery clients", () => {
     assert.equal(maxResult.external_message_id, "2");
   });
 
-  it("builds only configured real clients from environment", () => {
+  it("builds only configured real clients from environment (email is Edge-owned, not built here)", () => {
     const clients = createRealChannelClientsFromEnv({
       EMAIL_DELIVERY_URL: "https://email-gateway.test/deliver",
       MAX_DELIVERY_URL: "",
       TELEGRAM_BOT_TOKEN: "telegram-token",
-    } as NodeJS.ProcessEnv);
+    } as NodeJS.ProcessEnv) as { telegram?: unknown; email?: unknown; max?: unknown };
 
-    assert.equal(typeof clients.telegram?.deliver, "function");
-    assert.equal(typeof clients.email?.deliver, "function");
+    assert.equal(typeof (clients.telegram as { deliver?: unknown })?.deliver, "function");
+    // Email не собирается SVC-INT: доставка почты по SMTP на Edge (Этап E4).
+    assert.equal(clients.email, undefined);
     assert.equal(clients.max, undefined);
   });
 });

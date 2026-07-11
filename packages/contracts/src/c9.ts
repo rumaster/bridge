@@ -5,7 +5,16 @@ import { validateJsonSchema } from "./c4.js";
 
 export const C9_CONTRACT = "C9.EdgeTunnelMessage";
 export const C9_ACK_CONTRACT = "C9.EdgeTunnelAck";
+export const C9_CONTROL_CONTRACT = "C9.EdgeControlMessage";
+export const C9_CONTROL_ACK_CONTRACT = "C9.EdgeControlAck";
 export const C9_VERSION = "1.0.0";
+
+/** Направления App→Edge control-plane (Этап E2 плана email-channel-production). */
+export const C9_CONTROL_TYPES = Object.freeze([
+  "channel_credentials_sync",
+  "egress_dispatch",
+] as const);
+export type C9ControlType = (typeof C9_CONTROL_TYPES)[number];
 
 export const C9_EDGE_TUNNEL_MESSAGE_SCHEMA = Object.freeze(
   JSON.parse(
@@ -20,6 +29,24 @@ export const C9_EDGE_TUNNEL_ACK_SCHEMA = Object.freeze(
   JSON.parse(
     readFileSync(
       new URL("../json-schema/c9-edge-tunnel-ack.schema.json", import.meta.url),
+      "utf8",
+    ),
+  ),
+);
+
+export const C9_EDGE_CONTROL_MESSAGE_SCHEMA = Object.freeze(
+  JSON.parse(
+    readFileSync(
+      new URL("../json-schema/c9-edge-control-message.schema.json", import.meta.url),
+      "utf8",
+    ),
+  ),
+);
+
+export const C9_EDGE_CONTROL_ACK_SCHEMA = Object.freeze(
+  JSON.parse(
+    readFileSync(
+      new URL("../json-schema/c9-edge-control-ack.schema.json", import.meta.url),
       "utf8",
     ),
   ),
@@ -117,6 +144,88 @@ export function validateEdgeTunnelMessage(message) {
 
 export function validateEdgeTunnelAck(ack) {
   return validateJsonSchema(ack, C9_EDGE_TUNNEL_ACK_SCHEMA);
+}
+
+/**
+ * App→Edge control-сообщение (Этап E2). Несёт по защищённому туннелю
+ * управляющие операции, которых нет в data-plane (Edge→App):
+ *   - `channel_credentials_sync` — доставка структурных кред email-канала на Edge
+ *     (payload: `{ channel_id, channel_type, credentials }`);
+ *   - `egress_dispatch` — задание Edge отправить исходящее (payload несёт
+ *     `message_id` и данные доставки).
+ * `control_id` — сквозной ключ идемпотентности: повтор после переподключения
+ * дедуплицируется Edge по нему.
+ */
+export function createEdgeControlMessage({
+  type,
+  organizationId,
+  controlId,
+  payload,
+  issuedAt = new Date().toISOString(),
+}) {
+  return {
+    contract: C9_CONTROL_CONTRACT,
+    version: C9_VERSION,
+    control_id: controlId,
+    type,
+    organization_id: organizationId,
+    payload,
+    issued_at: issuedAt,
+  };
+}
+
+export function createEdgeControlAck({
+  controlId,
+  accepted = true,
+  duplicate = false,
+  status,
+  detail = undefined,
+  externalMessageId = undefined,
+  receivedAt = new Date().toISOString(),
+}) {
+  return {
+    contract: C9_CONTROL_ACK_CONTRACT,
+    version: C9_VERSION,
+    control_id: controlId,
+    accepted,
+    duplicate,
+    status,
+    ...(detail ? { detail } : {}),
+    ...(externalMessageId ? { external_message_id: externalMessageId } : {}),
+    received_at: receivedAt,
+  };
+}
+
+export function validateEdgeControlMessage(message) {
+  const schemaValidation = validateJsonSchema(message, C9_EDGE_CONTROL_MESSAGE_SCHEMA);
+  const errors = [...schemaValidation.errors];
+
+  if (!isRecord(message) || !isRecord(message.payload)) {
+    return { valid: errors.length === 0, errors };
+  }
+
+  const payload = message.payload;
+  if (message.type === "channel_credentials_sync") {
+    if (typeof payload.channel_type !== "string" || payload.channel_type.trim() === "") {
+      errors.push("payload.channel_type is required for channel_credentials_sync");
+    }
+    if (!isRecord(payload.credentials)) {
+      errors.push("payload.credentials must be an object for channel_credentials_sync");
+    }
+  } else if (message.type === "egress_dispatch") {
+    if (typeof payload.message_id !== "string" || payload.message_id.trim() === "") {
+      errors.push("payload.message_id is required for egress_dispatch");
+    }
+    if (typeof payload.channel_type !== "string" || payload.channel_type.trim() === "") {
+      errors.push("payload.channel_type is required for egress_dispatch");
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+export function validateEdgeControlAck(ack) {
+  return validateJsonSchema(ack, C9_EDGE_CONTROL_ACK_SCHEMA);
 }
 
 function isRecord(value) {

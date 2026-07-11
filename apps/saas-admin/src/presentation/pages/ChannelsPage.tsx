@@ -18,6 +18,7 @@ import type {
   ChannelCapabilityDescriptor,
   ChannelStatus,
   ConnectableChannelType,
+  EmailChannelCredentials,
   ProblemDetails
 } from "../../api/client/types";
 import { useC7RealtimeClient, useSaasAdminApi } from "../../state/admin";
@@ -30,20 +31,51 @@ interface ChannelFormState {
   credentialsRef: string;
   credentials: string;
   configValue: string;
+  // Структурные email-креды (Этап E1): IMAP приём + SMTP отправка. Порты — строкой
+  // в форме, парсятся в число при отправке.
+  imapHost: string;
+  imapPort: string;
+  imapTls: boolean;
+  imapUsername: string;
+  imapPassword: string;
+  smtpHost: string;
+  smtpPort: string;
+  smtpTls: boolean;
+  smtpUsername: string;
+  smtpPassword: string;
+  fromEmail: string;
+  fromName: string;
 }
 
 type ChannelFieldErrors = Partial<Record<keyof ChannelFormState, string>>;
+
+const emptyEmailCredentials = {
+  imapHost: "",
+  imapPort: "993",
+  imapTls: true,
+  imapUsername: "",
+  imapPassword: "",
+  smtpHost: "",
+  smtpPort: "587",
+  smtpTls: true,
+  smtpUsername: "",
+  smtpPassword: "",
+  fromEmail: "",
+  fromName: ""
+} as const;
 
 const emptyChannelForm: ChannelFormState = {
   channelType: "web_chat",
   name: "",
   credentialsRef: "",
   credentials: "",
-  configValue: ""
+  configValue: "",
+  ...emptyEmailCredentials
 };
 
 // Telegram-токен из @BotFather: <bot_id>:<секрет>.
 const TELEGRAM_TOKEN_PATTERN = /^\d+:[A-Za-z0-9_-]{30,}$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface ChannelConnector {
   type: ConnectableChannelType;
@@ -51,8 +83,9 @@ interface ChannelConnector {
   heading: string;
   icon: LucideIcon;
   // "token" — бизнес вводит plaintext-секрет (шифруется на бэкенде);
-  // "ref" — вводится ссылка credentials_ref на внешний секрет-менеджер.
-  secretKind: "token" | "ref";
+  // "ref" — вводится ссылка credentials_ref на внешний секрет-менеджер;
+  // "email" — структурные креды IMAP/SMTP (Этап E1).
+  secretKind: "token" | "ref" | "email";
   secretLabel: string;
   credentialsPlaceholder: string;
   configKey: string;
@@ -106,9 +139,9 @@ const channelConnectors = [
     label: "Email",
     heading: "Подключение Email",
     icon: Mail,
-    secretKind: "ref",
-    secretLabel: "credentials_ref",
-    credentialsPlaceholder: "secret://email/org-demo/support",
+    secretKind: "email",
+    secretLabel: "Креды IMAP/SMTP",
+    credentialsPlaceholder: "",
     configKey: "from_email",
     configLabel: "From email",
     configPlaceholder: "support@example.test",
@@ -210,15 +243,10 @@ export default function ChannelsPage() {
       channelType,
       credentialsRef: "",
       credentials: "",
-      configValue: ""
+      configValue: "",
+      ...emptyEmailCredentials
     }));
-    setFieldErrors((current) => ({
-      ...current,
-      channelType: undefined,
-      credentialsRef: undefined,
-      credentials: undefined,
-      configValue: undefined
-    }));
+    setFieldErrors({});
     setSuccess(null);
   }
 
@@ -246,15 +274,17 @@ export default function ChannelsPage() {
       const secret =
         connector.secretKind === "token"
           ? { credentials: form.credentials.trim() }
-          : form.credentialsRef.trim()
-            ? { credentials_ref: form.credentialsRef.trim() }
-            : {};
+          : connector.secretKind === "email"
+            ? { email_credentials: buildEmailCredentials(form) }
+            : form.credentialsRef.trim()
+              ? { credentials_ref: form.credentialsRef.trim() }
+              : {};
       const response = await api.channels.createChannel({
         organization_id: session.organization.id,
         channel_type: connector.type,
         name: form.name.trim(),
         ...secret,
-        config: buildChannelConfig(connector, form.configValue)
+        config: connector.secretKind === "email" ? {} : buildChannelConfig(connector, form.configValue)
       });
       const descriptor = await api.channels.getCapabilities(response.channel.id);
 
@@ -264,7 +294,9 @@ export default function ChannelsPage() {
       setSuccess(
         connector.secretKind === "token"
           ? `${connector.label} подключён — токен сохранён, проверьте подключение`
-          : `${connector.label} подключён через credentials_ref`
+          : connector.secretKind === "email"
+            ? `${connector.label} подключён — креды IMAP/SMTP сохранены, проверьте подключение`
+            : `${connector.label} подключён через credentials_ref`
       );
     } catch (error) {
       const problem = getProblemDetails(error);
@@ -353,7 +385,9 @@ export default function ChannelsPage() {
                 <p>
                   {selectedConnector.secretKind === "token"
                     ? "Токен бота организации шифруется на бэкенде и не хранится в открытом виде."
-                    : "Секреты не вводятся как значения; хранится только ссылка credentials_ref."}
+                    : selectedConnector.secretKind === "email"
+                      ? "Креды IMAP/SMTP шифруются на бэкенде; пароли не отображаются после сохранения."
+                      : "Секреты не вводятся как значения; хранится только ссылка credentials_ref."}
                 </p>
               </div>
               <Button disabled={saving} type="submit">
@@ -407,6 +441,8 @@ export default function ChannelsPage() {
                   type="password"
                   value={form.credentials}
                 />
+              ) : selectedConnector.secretKind === "email" ? (
+                <EmailCredentialsFields errors={fieldErrors} form={form} onChange={updateField} />
               ) : (
                 <TextInput
                   error={fieldErrors.credentialsRef}
@@ -417,14 +453,16 @@ export default function ChannelsPage() {
                   value={form.credentialsRef}
                 />
               )}
-              <TextInput
-                error={fieldErrors.configValue}
-                id={`channel-config-${selectedConnector.configKey}`}
-                label={selectedConnector.configLabel}
-                onChange={(event) => updateField("configValue", event.currentTarget.value)}
-                placeholder={selectedConnector.configPlaceholder}
-                value={form.configValue}
-              />
+              {selectedConnector.secretKind === "email" ? null : (
+                <TextInput
+                  error={fieldErrors.configValue}
+                  id={`channel-config-${selectedConnector.configKey}`}
+                  label={selectedConnector.configLabel}
+                  onChange={(event) => updateField("configValue", event.currentTarget.value)}
+                  placeholder={selectedConnector.configPlaceholder}
+                  value={form.configValue}
+                />
+              )}
             </div>
           </Panel>
 
@@ -525,6 +563,190 @@ function ChannelCard({ capabilities, channel, onTest, testing, testMessage }: Ch
   );
 }
 
+interface EmailCredentialsFieldsProps {
+  form: ChannelFormState;
+  errors: ChannelFieldErrors;
+  onChange: <TKey extends keyof ChannelFormState>(field: TKey, value: ChannelFormState[TKey]) => void;
+}
+
+/** Структурная форма email-кред: IMAP (приём) + SMTP (отправка) + отправитель (E1). */
+function EmailCredentialsFields({ form, errors, onChange }: EmailCredentialsFieldsProps) {
+  return (
+    <div className="email-credentials-form">
+      <fieldset className="email-credentials">
+        <legend>IMAP (приём)</legend>
+        <TextInput
+          error={errors.imapHost}
+          id="email-imap-host"
+          label="IMAP хост"
+          onChange={(event) => onChange("imapHost", event.currentTarget.value)}
+          placeholder="imap.example.com"
+          value={form.imapHost}
+        />
+        <TextInput
+          error={errors.imapPort}
+          id="email-imap-port"
+          label="IMAP порт"
+          onChange={(event) => onChange("imapPort", event.currentTarget.value)}
+          placeholder="993"
+          type="number"
+          value={form.imapPort}
+        />
+        <label className="checkbox-field">
+          <input
+            aria-label="IMAP: использовать TLS"
+            checked={form.imapTls}
+            onChange={(event) => onChange("imapTls", event.currentTarget.checked)}
+            type="checkbox"
+          />
+          <span>Использовать TLS</span>
+        </label>
+        <TextInput
+          error={errors.imapUsername}
+          id="email-imap-username"
+          label="IMAP логин"
+          onChange={(event) => onChange("imapUsername", event.currentTarget.value)}
+          placeholder="support@example.com"
+          value={form.imapUsername}
+        />
+        <TextInput
+          autoComplete="off"
+          error={errors.imapPassword}
+          id="email-imap-password"
+          label="IMAP пароль"
+          onChange={(event) => onChange("imapPassword", event.currentTarget.value)}
+          type="password"
+          value={form.imapPassword}
+        />
+      </fieldset>
+      <fieldset className="email-credentials">
+        <legend>SMTP (отправка)</legend>
+        <TextInput
+          error={errors.smtpHost}
+          id="email-smtp-host"
+          label="SMTP хост"
+          onChange={(event) => onChange("smtpHost", event.currentTarget.value)}
+          placeholder="smtp.example.com"
+          value={form.smtpHost}
+        />
+        <TextInput
+          error={errors.smtpPort}
+          id="email-smtp-port"
+          label="SMTP порт"
+          onChange={(event) => onChange("smtpPort", event.currentTarget.value)}
+          placeholder="587"
+          type="number"
+          value={form.smtpPort}
+        />
+        <label className="checkbox-field">
+          <input
+            aria-label="SMTP: использовать TLS"
+            checked={form.smtpTls}
+            onChange={(event) => onChange("smtpTls", event.currentTarget.checked)}
+            type="checkbox"
+          />
+          <span>Использовать TLS</span>
+        </label>
+        <TextInput
+          error={errors.smtpUsername}
+          id="email-smtp-username"
+          label="SMTP логин"
+          onChange={(event) => onChange("smtpUsername", event.currentTarget.value)}
+          placeholder="support@example.com"
+          value={form.smtpUsername}
+        />
+        <TextInput
+          autoComplete="off"
+          error={errors.smtpPassword}
+          id="email-smtp-password"
+          label="SMTP пароль"
+          onChange={(event) => onChange("smtpPassword", event.currentTarget.value)}
+          type="password"
+          value={form.smtpPassword}
+        />
+      </fieldset>
+      <TextInput
+        error={errors.fromEmail}
+        id="email-from-email"
+        label="From email"
+        onChange={(event) => onChange("fromEmail", event.currentTarget.value)}
+        placeholder="support@example.com"
+        value={form.fromEmail}
+      />
+      <TextInput
+        error={errors.fromName}
+        id="email-from-name"
+        label="Имя отправителя"
+        onChange={(event) => onChange("fromName", event.currentTarget.value)}
+        placeholder="Служба поддержки"
+        value={form.fromName}
+      />
+    </div>
+  );
+}
+
+function buildEmailCredentials(form: ChannelFormState): EmailChannelCredentials {
+  const fromName = form.fromName.trim();
+
+  return {
+    imap: {
+      host: form.imapHost.trim(),
+      port: Number(form.imapPort),
+      tls: form.imapTls,
+      username: form.imapUsername.trim(),
+      password: form.imapPassword
+    },
+    smtp: {
+      host: form.smtpHost.trim(),
+      port: Number(form.smtpPort),
+      tls: form.smtpTls,
+      username: form.smtpUsername.trim(),
+      password: form.smtpPassword
+    },
+    from_email: form.fromEmail.trim(),
+    ...(fromName ? { from_name: fromName } : {})
+  };
+}
+
+function validateEmailCredentials(form: ChannelFormState): ChannelFieldErrors {
+  const errors: ChannelFieldErrors = {};
+
+  if (!form.imapHost.trim()) {
+    errors.imapHost = "IMAP хост обязателен.";
+  }
+  if (!isValidPort(form.imapPort)) {
+    errors.imapPort = "IMAP порт: число 1–65535.";
+  }
+  if (!form.imapUsername.trim()) {
+    errors.imapUsername = "IMAP логин обязателен.";
+  }
+  if (!form.imapPassword) {
+    errors.imapPassword = "IMAP пароль обязателен.";
+  }
+  if (!form.smtpHost.trim()) {
+    errors.smtpHost = "SMTP хост обязателен.";
+  }
+  if (!isValidPort(form.smtpPort)) {
+    errors.smtpPort = "SMTP порт: число 1–65535.";
+  }
+  if (!form.smtpUsername.trim()) {
+    errors.smtpUsername = "SMTP логин обязателен.";
+  }
+  if (!form.smtpPassword) {
+    errors.smtpPassword = "SMTP пароль обязателен.";
+  }
+  if (!EMAIL_PATTERN.test(form.fromEmail.trim())) {
+    errors.fromEmail = "From email должен быть адресом email.";
+  }
+
+  return errors;
+}
+
+function isValidPort(value: string): boolean {
+  const port = Number(value);
+  return Number.isInteger(port) && port >= 1 && port <= 65535;
+}
+
 async function loadCapabilities(api: ReturnType<typeof useSaasAdminApi>, channels: Channel[]) {
   const entries = await Promise.all(
     channels.map(async (channel) => {
@@ -586,6 +808,8 @@ function validateChannelForm(form: ChannelFormState): ChannelFieldErrors {
     } else if (!TELEGRAM_TOKEN_PATTERN.test(token)) {
       errors.credentials = "Формат токена: <bot_id>:<секрет> из @BotFather.";
     }
+  } else if (connector.secretKind === "email") {
+    Object.assign(errors, validateEmailCredentials(form));
   } else if (form.credentialsRef.trim() && !form.credentialsRef.trim().startsWith("secret://")) {
     errors.credentialsRef = "credentials_ref должен быть ссылкой secret://.";
   }

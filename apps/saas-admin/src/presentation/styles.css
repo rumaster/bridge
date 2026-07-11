@@ -418,8 +418,48 @@ textarea {
 
 .form-grid .text-input:has(textarea),
 .form-grid .channel-type-selector,
+.form-grid .email-credentials-form,
 .checkbox-grid {
   grid-column: 1 / -1;
+}
+
+.email-credentials-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.email-credentials {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid #d7deea;
+  border-radius: 10px;
+}
+
+.email-credentials legend {
+  padding: 0 6px;
+  color: #344256;
+  font-weight: 800;
+}
+
+.email-credentials-form > .text-input {
+  grid-column: 1 / -1;
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #344256;
+  font-weight: 600;
+}
+
+.checkbox-field input {
+  width: 16px;
+  height: 16px;
 }
 
 .channel-type-selector {

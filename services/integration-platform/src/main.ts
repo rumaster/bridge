@@ -60,10 +60,9 @@ const adapters = {
     channelClient: telegramDeliveryClient,
     coreIngressUrl,
   }),
-  email: createEmailAdapter({
-    channelClient: channelClients.email,
-    coreIngressUrl,
-  }),
+  // Email — Edge-owned (SMTP на Edge, Этап E4): адаптер оставлен только для C6
+  // capability/нормализации, но SVC-INT его НЕ диспетчеризует (нет channelClient).
+  email: createEmailAdapter({ coreIngressUrl }),
   sms: createSmsAdapter({ coreIngressUrl }),
   vk: createVkAdapter({ coreIngressUrl }),
   max: createMaxAdapter({
@@ -84,8 +83,9 @@ const deliveryChannel = createAdapterDeliveryChannel({
   adapters: {
     // Telegram доставляется всегда: токен per-org резолвится на лету.
     telegram: adapters.telegram,
-    // Email/MAX — через реальный клиент только при заданном env-шлюзе.
-    ...(channelClients.email ? { email: adapters.email } : {}),
+    // MAX — через реальный клиент только при заданном env-шлюзе.
+    // Email здесь НЕ регистрируется: исходящая почта уходит по SMTP на Edge
+    // (Этап E4), минуя SVC-INT-диспетчер и mock-fallback (F1).
     ...(channelClients.max ? { max: adapters.max } : {}),
   },
   fallbackChannel: allowMockFallback ? createMockExternalChannel() : undefined,

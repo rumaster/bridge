@@ -6,6 +6,7 @@ import {
   HttpCode,
   Param,
   Post,
+  Put,
   UseGuards,
   Version,
 } from "@nestjs/common";
@@ -22,6 +23,7 @@ import {
   ChannelResponseDto,
   ConnectChannelRequestDto,
   ConnectChannelResponseDto,
+  UpdateChannelRequestDto,
 } from "./integration-gateway.dto";
 import { IntegrationGatewayFacade } from "./integration-gateway.facade";
 
@@ -54,6 +56,28 @@ export class ChannelsController {
         name: dto.name,
         credentials_ref: dto.credentials_ref,
         credentials: dto.credentials,
+        email_credentials: dto.email_credentials,
+        config: dto.config,
+      }),
+    };
+  }
+
+  @Put(":id")
+  @Version("1")
+  @ApiOperation({ summary: "Update a channel and rotate its credentials" })
+  @ApiOkResponse({ type: ConnectChannelResponseDto })
+  async updateChannel(
+    @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: string | string[] | undefined,
+    @Param("id") channelId: string,
+    @Body() dto: UpdateChannelRequestDto,
+  ): Promise<ConnectChannelResponseDto> {
+    return {
+      channel: await this.integrationGateway.updateChannel({
+        channel_id: channelId,
+        organization_id: getRequiredOrganizationId(organizationIdHeader),
+        name: dto.name,
+        credentials: dto.credentials,
+        email_credentials: dto.email_credentials,
         config: dto.config,
       }),
     };

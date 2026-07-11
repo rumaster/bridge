@@ -34,7 +34,7 @@ const DEFAULT_BASE_URL = "/api/v1";
 const TENANT_HEADER = "x-organization-id";
 const UUID_V4_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const CHANNELS = ["web_chat", "telegram"] as const satisfies readonly Channel[];
+const CHANNELS = ["web_chat", "telegram", "email"] as const satisfies readonly Channel[];
 const CLIENT_PRESENCE_STATUSES = ["online", "offline"] as const satisfies readonly ClientPresenceStatus[];
 const CONVERSATION_STATUSES = ["open", "pending", "closed"] as const satisfies readonly ConversationStatus[];
 const MESSAGE_DIRECTIONS = ["inbound", "outbound"] as const satisfies readonly MessageDirection[];
@@ -84,7 +84,7 @@ export function createManagerWorkspaceApiClient(
       create: (request: SendMessageRequest) =>
         requestJson<MessageApiResponse>("/messages", {
           method: "POST",
-          body: JSON.stringify(request)
+          body: JSON.stringify(toCreateMessageBody(request))
         }).then(normalizeMessage),
       get: (messageId: string) => requestJson<MessageApiResponse>(`/messages/${messageId}`).then(normalizeMessage)
     },
@@ -141,6 +141,25 @@ type NotificationApiResponse = Partial<NotificationItem> & {
 };
 type NotificationApiListResponse = NotificationApiResponse[] | PaginatedApiResponse<NotificationApiResponse>;
 type NotificationReadApiResponse = NotificationApiResponse | { notification: NotificationApiResponse };
+
+/**
+ * Тело POST /messages. Тему email кладём в content как объект `{text, subject}`
+ * (ядро принимает content объектом; egress читает `content.subject`, Этап E4),
+ * поэтому не-email отправки остаются `content: string` без изменения поведения.
+ */
+function toCreateMessageBody(request: SendMessageRequest): {
+  conversationId: string;
+  idempotencyKey: string;
+  content: string | { text: string; subject: string };
+} {
+  const subject = request.subject?.trim();
+
+  return {
+    conversationId: request.conversationId,
+    idempotencyKey: request.idempotencyKey,
+    content: subject ? { text: request.content, subject } : request.content
+  };
+}
 
 function readTenantHeaders(): HeadersInit {
   const organizationId = readStoredOrganizationId();

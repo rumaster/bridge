@@ -554,14 +554,29 @@ export interface C2EgressDelivery {
     channel_id: string;
     channel_type: string;
     conversation_ref: string;
+    /** Реальный внешний адрес получателя (endpoint.external_id): email, chat_id и т.п. */
+    recipient_ref: string;
     direction: string;
     content: Record<string, unknown>;
+    /** Тема письма (email); из content.subject. Этап E4. */
+    subject?: string;
+    /** Явный From (переопределяет адрес из кред канала на Edge). Этап E4. */
+    from?: string;
+    /** Threading email: Message-ID письма, на которое отвечаем. Этап E4. */
+    in_reply_to?: string;
+    /** Threading email: цепочка Message-ID. Этап E4. */
+    references?: string[];
   };
 }
 
 /**
  * Строит конверт C2.EgressDelivery из сохранённого исходящего сообщения и его
  * endpoint-а. Портирован из `buildC2EgressDelivery` (communication-core-m1).
+ *
+ * Этап E4 (G-7): добавлен `recipient_ref` = `endpoint.external_id` (реальный
+ * адрес получателя, а не UUID диалога — до этого адаптеры откатывались на
+ * `conversation_ref`), а также email-поля `subject`/`from`/`in_reply_to`/
+ * `references` из `content` (заполняются продюсером — напр. manager UI, Этап E5).
  */
 export function buildC2EgressDelivery(
   message: EgressMessageContext,
@@ -575,6 +590,7 @@ export function buildC2EgressDelivery(
     metadata.conversation_ref ?? message.conversation_id,
   );
   const channelType = endpoint.channel ?? message.channel;
+  const content = message.content ?? {};
 
   return {
     contract: C2_EGRESS_CONTRACT,
@@ -587,8 +603,13 @@ export function buildC2EgressDelivery(
       channel_id: channelId,
       channel_type: channelType,
       conversation_ref: conversationRef,
+      recipient_ref: String(endpoint.external_id ?? conversationRef),
       direction: MESSAGE_DIRECTION.OUTBOUND,
-      content: { ...message.content, type: message.type },
+      content: { ...content, type: message.type },
+      ...(isNonBlankString(content.subject) ? { subject: content.subject } : {}),
+      ...(isNonBlankString(content.from) ? { from: content.from } : {}),
+      ...(isNonBlankString(content.in_reply_to) ? { in_reply_to: content.in_reply_to } : {}),
+      ...(Array.isArray(content.references) ? { references: content.references as string[] } : {}),
     },
   };
 }

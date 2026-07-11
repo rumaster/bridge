@@ -34,7 +34,7 @@ export type ConversationStatus = "open" | "pending" | "closed";
 export type MessageDirection = "inbound" | "outbound";
 export type MessageStatus = "received" | "routed" | "sent" | "delivered" | "failed";
 export type MessageSenderType = "client" | "manager" | "system";
-export type Channel = "web_chat" | "telegram";
+export type Channel = "web_chat" | "telegram" | "email";
 export type ClientPresenceStatus = "online" | "offline";
 
 export interface Conversation {
@@ -71,6 +71,8 @@ export interface SendMessageRequest {
   conversationId: string;
   content: string;
   idempotencyKey: string;
+  /** Тема письма (только для email-диалогов); уходит в content.subject. Этап E5. */
+  subject?: string;
 }
 
 export interface CommunicationEndpoint {
