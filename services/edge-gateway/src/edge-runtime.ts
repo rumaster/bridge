@@ -150,6 +150,8 @@ export async function createEdgeGatewayRuntimeFromEnv(
       edgeCluster: cluster,
       wsChannel,
       now: options.now,
+      vpnTunnel: tunnel,
+      liveness: livenessLink,
     }),
     cluster,
     tunnel,

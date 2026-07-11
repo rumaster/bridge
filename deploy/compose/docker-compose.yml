@@ -294,6 +294,9 @@ services:
       AWG_PEER_PUBLIC_KEY: ${AWG_CLIENT_PUBLIC_KEY:-}
       AWG_PEER_PRESHARED_KEY: ${AWG_PRESHARED_KEY:-}
       AWG_PEER_ALLOWED_IPS: ${AWG_CLIENT_ADDRESS_CIDR:-10.7.0.2/32}
+      # Prometheus-экспортер awg (Этап 3): скрейпится в сети compose по адресу
+      # ноды (общий namespace) — edge-vpn-app:${AWG_METRICS_PORT}.
+      AWG_METRICS_PORT: ${AWG_METRICS_PORT:-9586}
       # S1/S2/H1–H4 — общий профиль обфускации, ОБЯЗАН совпадать с awg-client.
       # Jc/Jmin/Jmax на сервере не задаём (junk шлёт только клиент, §2 плана;
       # amneziawg-go отвергает Jc=0 — находка Этапа 0).

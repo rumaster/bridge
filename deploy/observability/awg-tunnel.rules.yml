@@ -1,0 +1,83 @@
+# Prometheus alerting rules — AmneziaWG VPN Tunnel (issue #257, Этап 3, Q10).
+#
+# Источники метрик:
+#   - edge-gateway  /metrics  (порт 3000/3060): liveness, буфер, метрики
+#     VPN-клиента и EdgeCluster (deploy/docker/edge-gateway).
+#   - awg-экспортер :9586 (в namespace ноды): свежесть хендшейка, rx/tx
+#     (deploy/docker/awg/awg-metrics.sh).
+#
+# Интеграция в конкретный алертинг — по месту (Q10). Диагностика срабатываний —
+# docs/runbooks/awg-tunnel.md (различение «DPI-блокировка vs обычный сбой»).
+groups:
+  - name: awg-tunnel
+    rules:
+      - alert: AwgTunnelDown
+        expr: edge_tunnel_liveness_up == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: svc-edge
+        annotations:
+          summary: "AmneziaWG-туннель down (Edge не достаёт App)"
+          description: >
+            Активная liveness-проба туннельного IP App-стороны неуспешна ≥2 мин.
+            Edge перешёл на буферизацию (RF-first, §7.9). Runbook:
+            docs/runbooks/awg-tunnel.md.
+
+      - alert: AwgTunnelHandshakeStale
+        expr: awg_peer_handshake_age_seconds > 180
+        for: 3m
+        labels:
+          severity: warning
+          service: svc-edge
+        annotations:
+          summary: "Хендшейк AmneziaWG устарел (>180с)"
+          description: >
+            Последний хендшейк с пиром старше 3×keepalive. Возможен разрыв UDP
+            или DPI-блокировка. См. runbook.
+
+      - alert: AwgTunnelNeverHandshaked
+        expr: awg_peer_handshake_age_seconds == -1
+        for: 3m
+        labels:
+          severity: critical
+          service: svc-edge
+        annotations:
+          summary: "AmneziaWG-хендшейк не состоялся ни разу"
+          description: >
+            Пир не выполнил хендшейк. Частые причины: неверный ключ/PSK/H1–H4,
+            недоступный UDP-эндпоинт, DPI-блокировка на старте. См. runbook.
+
+      - alert: EdgeChannelDegraded
+        expr: increase(edge_cluster_channel_down_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: svc-edge
+        annotations:
+          summary: "Канал Edge→App деградировал (channel-down)"
+          description: >
+            EdgeCluster фиксирует разрывы канала за последние 5 мин. Проверьте
+            туннель и backpressure App-стороны.
+
+      - alert: EdgeBufferBacklog
+        expr: edge_buffer_pending > 100
+        for: 10m
+        labels:
+          severity: warning
+          service: svc-edge
+        annotations:
+          summary: "RF-буфер Edge растёт (>100 pending 10 мин)"
+          description: >
+            Накопление недосланных сообщений — туннель длительно недоступен либо
+            App не успевает принимать. Риск исчерпания буфера/TTL (§7.9, §25.11).
+
+      - alert: AwgExporterDown
+        expr: up{job=~"awg-tunnel|edge-gateway"} == 0
+        for: 3m
+        labels:
+          severity: warning
+          service: svc-edge
+        annotations:
+          summary: "Скрейп метрик туннеля недоступен"
+          description: "Prometheus не собирает метрики edge-gateway/awg-экспортера."

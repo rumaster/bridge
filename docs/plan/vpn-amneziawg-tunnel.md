@@ -3,7 +3,7 @@ title: План реализации — настоящий сетевой VPN T
 service: Edge & WebSocket Gateway (SVC-EDGE) / VPN Tunnel Service
 service_id: SVC-EDGE
 version: 0.2
-status: Решения зафиксированы / готов к M0 (Этап 0 PoC)
+status: Этапы 0–3 выполнены (PoC → контейнеризация → единый слой+liveness → наблюдаемость); Этап 4 (MVP2) — опционально
 language: ru-RU
 based_on: docs/MessengerBridge_TZ.md (v1.1) §4.21, §7.8, §7.9, §7.14, §25.4, §25.11
 issue: https://github.com/rumaster/bridge/issues/257
@@ -485,6 +485,32 @@ capability-gated CI-job `awg-poc` в [`.github/workflows/ci.yml`](../../.github/
 - **Тесты.** e2e — участие в наборе ТЗ §26.6 поверх реального туннеля.
 - **DoD.** Метрики доступны, алерты работают, runbook описывает различение
   DPI/сбоя.
+
+#### Итоги Этапа 3 (выполнено ✅)
+
+- **Метрики.** `edge-gateway` `/metrics` расширен
+  ([`edge-metrics.ts`](../../services/edge-gateway/src/edge-metrics.ts)):
+  `edge_tunnel_liveness_up` (§5.4), `edge_tunnel_*` (VPN-клиент),
+  `edge_cluster_*` (RF-конвейер), `edge_buffer_pending`. Со стороны awg-контейнера
+  — экспортер [`awg-metrics.sh`](../../deploy/docker/awg/awg-metrics.sh) (socat,
+  `AWG_METRICS_PORT`): `awg_up`, `awg_peer_handshake_age_seconds`, rx/tx.
+- **Алерты.** Правила Prometheus
+  [`deploy/observability/awg-tunnel.rules.yml`](../../deploy/observability/awg-tunnel.rules.yml):
+  `AwgTunnelDown`, `AwgTunnelHandshakeStale`, `AwgTunnelNeverHandshaked`,
+  `EdgeChannelDegraded`, `EdgeBufferBacklog`, `AwgExporterDown` + scrape-конфиг
+  ([README](../../deploy/observability/README.md)). Интеграция в конкретный
+  алертинг — по месту (Q10).
+- **Runbook.** [`docs/runbooks/awg-tunnel.md`](../runbooks/awg-tunnel.md) —
+  дерево решений и эвристика **DPI-блокировка vs обычный сбой** (tx растёт /
+  rx≈0 избирательно по AWG-UDP при живом IP-уровне ⇒ DPI; симметричный отказ с
+  явной причиной ⇒ сбой), действия по причинам, проверка восстановления.
+- **Тесты.** unit — рендер Prometheus-метрик
+  ([`edge-metrics.test.ts`](../../services/edge-gateway/test/unit/edge-metrics.test.ts));
+  edge-gateway: **84 pass**. e2e поверх реального туннеля — на стенде.
+- **Проверено на стенде:** `edge-gateway:PORT/metrics` и awg-экспортер `:9586`
+  отдают метрики (`edge_tunnel_liveness_up 1`, `awg_peer_handshake_age_seconds`,
+  rx/tx); при разрыве (стоп `awg-server`) `edge_tunnel_liveness_up` → `0`
+  (условие `AwgTunnelDown`), при восстановлении → `1` (алерт снят).
 
 ### Этап 4 (опционально, MVP2) — упрощение и/или модуль ядра (L)
 - **Задачи.** По решению MVP2: переход к «голому» потоку вместо RPC-обёртки;

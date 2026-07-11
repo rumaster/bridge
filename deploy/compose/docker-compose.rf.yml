@@ -131,6 +131,9 @@ services:
       # host.docker.internal:51820, в проде — публичный DNS App-кластера.
       AWG_ENDPOINT: ${AWG_ENDPOINT:-host.docker.internal:51820}
       AWG_PERSISTENT_KEEPALIVE: ${AWG_PERSISTENT_KEEPALIVE:-25}
+      # Prometheus-экспортер awg (Этап 3): скрейпится по адресу ноды (общий
+      # namespace) — edge-gateway:${AWG_METRICS_PORT}.
+      AWG_METRICS_PORT: ${AWG_METRICS_PORT:-9586}
       # Обфускация — значима на клиенте-инициаторе (§2 плана).
       AWG_JC: ${AWG_JC:-6}
       AWG_JMIN: ${AWG_JMIN:-40}

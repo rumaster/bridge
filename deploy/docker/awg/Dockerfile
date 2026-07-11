@@ -35,14 +35,16 @@ RUN make -C src WITH_WGQUICK=yes \
 FROM alpine:3.20
 # iproute2 (`ip`), iptables (MSS clamping/Q8), bash (awg-quick), tcpdump
 # (проверка DPI-профиля — «случайный UDP», DoD Этапа 0).
-RUN apk add --no-cache bash iproute2 iptables ip6tables tcpdump \
+# socat — минимальный HTTP-listener для awg Prometheus-экспортера (Этап 3).
+RUN apk add --no-cache bash iproute2 iptables ip6tables tcpdump socat \
     && mkdir -p /var/run/amneziawg /etc/amnezia/amneziawg
 COPY --from=awg-go   /out/amneziawg-go        /usr/bin/amneziawg-go
 COPY --from=awg-tools /out/usr/bin/awg        /usr/bin/awg
 COPY --from=awg-tools /out/usr/bin/awg-quick  /usr/bin/awg-quick
 COPY deploy/docker/awg/entrypoint.sh   /usr/local/bin/entrypoint.sh
 COPY deploy/docker/awg/healthcheck.sh  /usr/local/bin/healthcheck.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/healthcheck.sh
+COPY deploy/docker/awg/awg-metrics.sh  /usr/local/bin/awg-metrics.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/healthcheck.sh /usr/local/bin/awg-metrics.sh
 
 # awg-quick запускает userspace-реализацию по имени из этой переменной.
 ENV WG_QUICK_USERSPACE_IMPLEMENTATION=amneziawg-go \

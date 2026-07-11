@@ -94,6 +94,16 @@ fi
 awg show "${IFACE}" || true
 echo "awg-entrypoint: ${IFACE} поднят, туннель активен"
 
+# Prometheus-экспортер awg (Этап 3): свежесть хендшейка, rx/tx, число пиров.
+# Слушает в namespace контейнера; в туннельном деплое namespace общий с нодой,
+# поэтому метрики скрейпятся по её адресу. Включается AWG_METRICS_PORT.
+if [ -n "${AWG_METRICS_PORT:-}" ]; then
+  echo "awg-entrypoint: awg-экспортер на :${AWG_METRICS_PORT}"
+  AWG_INTERFACE="${IFACE}" socat -T5 \
+    "TCP-LISTEN:${AWG_METRICS_PORT},fork,reuseaddr" \
+    "SYSTEM:/usr/local/bin/awg-metrics.sh" &
+fi
+
 # Supervisor авто-восстановления (§5.4, Этап 2): периодически проверяет, что
 # интерфейс жив (иначе переподнимает), и пере-резолвит DNS публичного эндпоинта
 # (awg сам резолвит host:port) — на случай смены IP App-стороны/роуминга.
