@@ -1,8 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
+  IsDefined,
   IsIn,
   IsInt,
-  IsObject,
   IsOptional,
   IsString,
   IsUUID,
@@ -23,9 +23,13 @@ export class CreateMessageDto {
   @IsUUID("4")
   conversationId!: string;
 
-  @ApiProperty({ example: "00000000-0000-4000-8000-000000000401" })
+  // Опционально: если не задан, ядро само резолвит endpoint диалога (по последнему
+  // сообщению / первому endpoint-у клиента). Позволяет клиентам-«ответчикам» слать
+  // только conversationId, не зная DB-идентификатора endpoint-а.
+  @ApiPropertyOptional({ example: "00000000-0000-4000-8000-000000000401" })
   @IsUUID("4")
-  endpointId!: string;
+  @IsOptional()
+  endpointId?: string;
 
   @ApiPropertyOptional({ example: "web_chat" })
   @IsString()
@@ -60,9 +64,11 @@ export class CreateMessageDto {
   @IsOptional()
   type?: string;
 
+  // Принимаем и объект (`{text}`), и строку (легаси-клиенты шлют текст строкой) —
+  // ядро нормализует строку в `{text}`.
   @ApiProperty({ example: { text: "Hello" }, type: Object })
-  @IsObject()
-  content!: Record<string, unknown>;
+  @IsDefined()
+  content!: Record<string, unknown> | string;
 
   @ApiPropertyOptional({
     enum: ["received", "routed", "sent", "delivered", "failed"],
@@ -71,6 +77,14 @@ export class CreateMessageDto {
   @IsIn(["received", "routed", "sent", "delivered", "failed"])
   @IsOptional()
   status?: "delivered" | "failed" | "received" | "routed" | "sent";
+
+  // Толерантность к легаси-клиентам (manager-workspace), которые кладут ключ
+  // идемпотентности в тело, а не в заголовок. Значение здесь игнорируется
+  // (ключ читается из заголовка); поле нужно лишь чтобы whitelist не отверг запрос.
+  @ApiPropertyOptional()
+  @IsString()
+  @IsOptional()
+  idempotencyKey?: string;
 }
 
 export class ConversationResponseDto {

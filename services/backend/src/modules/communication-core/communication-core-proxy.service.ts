@@ -166,11 +166,23 @@ export class CommunicationCoreProxyService {
   ): Promise<MessageResponseDto> {
     const message = await this.database.withTenant(organizationId, async (client) => {
       await this.requireConversation(client, organizationId, payload.conversationId);
-      const endpoint = await this.requireEndpoint(client, organizationId, payload.endpointId);
-      await this.lockEndpointPartition(client, organizationId, payload.endpointId);
+      // endpointId опционален: если клиент (manager-workspace) его не прислал —
+      // резолвим endpoint диалога сами (по последнему сообщению / endpoint-у клиента).
+      const endpointId =
+        payload.endpointId ??
+        (await this.resolveConversationReplyEndpoint(
+          client,
+          organizationId,
+          payload.conversationId,
+        ));
+      const endpoint = await this.requireEndpoint(client, organizationId, endpointId);
+      await this.lockEndpointPartition(client, organizationId, endpointId);
       const sequenceNumber =
         payload.sequenceNumber ??
-        (await this.nextSequenceNumber(client, organizationId, payload.endpointId));
+        (await this.nextSequenceNumber(client, organizationId, endpointId));
+      // content принимаем строкой или объектом; строку нормализуем в {text}.
+      const content =
+        typeof payload.content === "string" ? { text: payload.content } : payload.content;
       const messageId =
         payload.id ??
         (context.idempotencyKey && isUuidV4(context.idempotencyKey)
@@ -213,13 +225,13 @@ export class CommunicationCoreProxyService {
           messageId,
           organizationId,
           payload.conversationId,
-          payload.endpointId,
+          endpointId,
           payload.channel ?? endpoint.channel,
           payload.direction ?? "outbound",
           payload.senderType ?? "manager",
           sequenceNumber,
           payload.type ?? "text",
-          JSON.stringify(payload.content),
+          JSON.stringify(content),
           payload.status ?? "routed",
         ],
       );
@@ -646,6 +658,53 @@ export class CommunicationCoreProxyService {
     }
 
     return result.rows[0];
+  }
+
+  /**
+   * Резолвит целевой endpoint диалога для ответа, когда клиент не прислал
+   * endpointId. Берёт endpoint последнего сообщения диалога (туда и отвечаем),
+   * иначе — первый endpoint клиента этого диалога.
+   */
+  private async resolveConversationReplyEndpoint(
+    queryable: Queryable,
+    organizationId: string,
+    conversationId: string,
+  ): Promise<string> {
+    const latest = await queryable.query<{ endpoint_id: string }>(
+      `
+        SELECT endpoint_id
+        FROM messages
+        WHERE organization_id = $1 AND conversation_id = $2
+        ORDER BY created_at DESC, sequence_number DESC
+        LIMIT 1
+      `,
+      [organizationId, conversationId],
+    );
+    if (latest.rowCount && latest.rows[0].endpoint_id) {
+      return latest.rows[0].endpoint_id;
+    }
+
+    const clientEndpoint = await queryable.query<{ id: string }>(
+      `
+        SELECT ce.id
+        FROM communication_endpoints ce
+        JOIN conversations c
+          ON c.client_id = ce.client_id AND c.organization_id = ce.organization_id
+        WHERE c.organization_id = $1 AND c.id = $2
+        ORDER BY ce.created_at ASC
+        LIMIT 1
+      `,
+      [organizationId, conversationId],
+    );
+    if (clientEndpoint.rowCount && clientEndpoint.rows[0].id) {
+      return clientEndpoint.rows[0].id;
+    }
+
+    throw new BadRequestException({
+      code: "ENDPOINT_REQUIRED",
+      description: "Could not resolve a target endpoint for the conversation.",
+      humanMessage: "Не удалось определить получателя ответа для диалога.",
+    });
   }
 
   private async nextSequenceNumber(

@@ -3001,11 +3001,13 @@
               "failed"
             ],
             "example": "routed"
+          },
+          "idempotencyKey": {
+            "type": "string"
           }
         },
         "required": [
           "conversationId",
-          "endpointId",
           "content"
         ]
       },

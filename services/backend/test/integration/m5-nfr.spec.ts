@@ -162,12 +162,13 @@ function createCoreProbe(): Pick<
     ): Promise<MessageResponseDto> {
       return {
         channel: "web_chat",
-        content: payload.content,
+        content:
+          typeof payload.content === "string" ? { text: payload.content } : payload.content,
         conversationId: payload.conversationId,
         createdAt: "2026-07-04T10:00:00.000Z",
         deliveredAt: null,
         direction: "outbound",
-        endpointId: payload.endpointId,
+        endpointId: payload.endpointId ?? "00000000-0000-4000-8000-000000000401",
         id: payload.id ?? MESSAGE_ID,
         organizationId,
         senderType: "manager",
