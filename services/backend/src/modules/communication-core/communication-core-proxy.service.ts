@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 
 import { PgDatabase } from "../../common/database/database.service";
 import type { Queryable } from "../../common/database/database.service";
@@ -8,6 +8,7 @@ import { isUuidV4 } from "../../common/request-context";
 import { AuditService } from "../audit/audit.service";
 import { mapClientEndpoint, mapClientIdentityLink } from "../client/client.dto";
 import { C7RealtimeEventPublisher } from "./c7-realtime-event.publisher";
+import { InternalMessagingService } from "./internal-messaging.service";
 import type {
   AddClientEndpointDto,
   ClientEndpointResponseDto,
@@ -47,10 +48,13 @@ interface CreateIdentityLinkParams {
 
 @Injectable()
 export class CommunicationCoreProxyService {
+  private readonly logger = new Logger(CommunicationCoreProxyService.name);
+
   constructor(
     private readonly database: PgDatabase,
     private readonly audit: AuditService,
     private readonly realtime: C7RealtimeEventPublisher,
+    private readonly messaging: InternalMessagingService,
   ) {}
 
   async listConversations(
@@ -241,6 +245,33 @@ export class CommunicationCoreProxyService {
       return mapMessage(result.rows[0]);
     });
     await this.realtime.publishMessageCreated(message);
+
+    // Доставка ответа во внешний канал (egress). Раньше createMessage только
+    // сохранял сообщение (routed) и публиковал C7, но НЕ инициировал доставку —
+    // из-за чего ответ менеджера не доходил до клиента. Триггерим handoffEgress
+    // после коммита (best-effort, идемпотентно по message_id). Рассылки идут
+    // отдельным путём (deliverBroadcast) — пропускаем.
+    if (
+      message.direction === "outbound" &&
+      message.status === "routed" &&
+      message.senderType !== "broadcast"
+    ) {
+      try {
+        const handoff = await this.messaging.handoffEgress({
+          organization_id: organizationId,
+          message_id: message.id,
+          adapter: message.channel,
+        });
+        message.status = handoff.status;
+      } catch (error) {
+        this.logger.warn(
+          `egress handoff failed for message ${message.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+
     return message;
   }
 
