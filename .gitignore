@@ -8,5 +8,6 @@ ci-logs/
 .env.*
 !.env.example
 !.env.rf.example
+!.env.awg-poc.example
 .DS_Store
 npm-debug.log*

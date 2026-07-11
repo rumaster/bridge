@@ -360,6 +360,33 @@ AWG_H1=  AWG_H2=  AWG_H3=  AWG_H4=       # = Edge-стороне
   трафика — случайный UDP; кадр 2 МБ проходит без залипаний; работоспособность
   integration на `ubuntu-latest` подтверждена.
 
+#### Итоги Этапа 0 (выполнено ✅)
+
+Артефакты: [`deploy/compose/awg-poc/`](../../deploy/compose/awg-poc/) (стенд, пробы
+C9, скрипты), [`deploy/docker/awg/`](../../deploy/docker/awg/) (образ
+`amneziawg-go` + `amneziawg-tools`), [`deploy/docker/awg-c9-probe/`](../../deploy/docker/awg-c9-probe/),
+capability-gated CI-job `awg-poc` в [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml).
+
+Проверено эмпирически на Linux-стенде (Ubuntu 6.8, userspace `amneziawg-go`):
+
+- **DoD закрыт полностью.** C9 (обычный кадр и «большой» ~1.3 МБ content →
+  RPC-кадр ~1.85 МБ под лимитом 2 МБ) прошёл Edge→App по туннельному IP
+  `10.7.0.1` и подтверждён C9-ack; `awg show` — свежий хендшейк, 1.76 MiB через
+  `awg0`; `tcpdump` на публичном эндпоинте — **только UDP** (длины 96/240/288),
+  без TLS/WSS-сигнатур, обфускация активна (`jc:6`, кастомные `h1–h4`).
+- **Найдено и снято (техническая неопределённость):**
+  1. `amneziawg-go` (master) требует **Go ≥ 1.25** — базовый образ поднят.
+  2. `amneziawg-go` **отвергает `Jc=0`** (`awg setconf` → `Invalid argument`):
+     junk требует `Jc ≥ 1`. Вывод — на **сервере junk-группу опускаем целиком**
+     (только `S1/S2/H1–H4`), junk значим лишь на клиенте. Закреплено в
+     `entrypoint.sh` (junk эмитится только при `Jc ≥ 1`).
+  3. Ядро хоста имеет kernel-модуль AWG, но в контейнере тип устройства
+     недоступен → корректный **фолбэк в userspace** (подтверждает Q1).
+  4. `MTU=1380` + локальная терминация C9 на `awg0`: PMTU black hole не
+     возникает, MSS clamping для PoC не нужен (доступен флагом `AWG_CLAMP_MSS`).
+- **Изменённые контракты/код прод-пути — нет** (Этап 0 не трогает `edge-gateway`;
+  прикладной криптослой снимается на Этапе 2).
+
 ### Этап 1 — Контейнеризация awg-client / awg-server (M)
 - **Задачи.** `deploy/docker/awg-client/` и `deploy/docker/awg-server/`
   (базовый образ с `amneziawg-go` + `amneziawg-tools`); **энтрипойнт рендерит

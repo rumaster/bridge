@@ -1,0 +1,120 @@
+# PoC Этапа 0 (issue #257, docs/plan/vpn-amneziawg-tunnel.md §8): два amneziawg-go
+# (awg-client ↔ awg-server) + прогон C9 «текущим кодом» через ТУННЕЛЬНЫЕ IP.
+#
+# Топология: node-контейнеры C9 разделяют network namespace с awg-контейнерами
+# (network_mode: service:awg-*), поэтому их TCP-RPC к 10.7.0.1 идёт по awg0 —
+# ВНУТРИ зашифрованного L3-туннеля. Наружу (в compose-сети) торчит только
+# обфусцированный UDP 51820 между awg-client и awg-server.
+#
+#   awg-server (10.7.0.1) ── UDP/obfs ── awg-client (10.7.0.2)
+#        └ c9-app (:3049)                      └ c9-probe → tcp://10.7.0.1:3049
+#
+# Запуск: deploy/compose/awg-poc/run-poc.sh  (генерирует .env.awg-poc и стартует).
+
+name: bridge-awg-poc
+
+services:
+  # --- App-сторона (за рубежом): терминатор туннеля ---
+  awg-server:
+    build:
+      context: ../../..
+      dockerfile: deploy/docker/awg/Dockerfile
+      args:
+        AWG_GO_REF: ${AWG_GO_REF:-master}
+        AWG_TOOLS_REF: ${AWG_TOOLS_REF:-master}
+    cap_add: [NET_ADMIN]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      AWG_INTERFACE: awg0
+      AWG_ADDRESS: 10.7.0.1/24
+      AWG_LISTEN_PORT: "51820"
+      AWG_MTU: ${AWG_MTU:-1380}
+      AWG_PRIVATE_KEY: ${AWG_SERVER_PRIVATE_KEY:?запустите gen-keys.sh}
+      AWG_PEER_PUBLIC_KEY: ${AWG_CLIENT_PUBLIC_KEY:?запустите gen-keys.sh}
+      AWG_PEER_PRESHARED_KEY: ${AWG_PRESHARED_KEY:?запустите gen-keys.sh}
+      AWG_PEER_ALLOWED_IPS: 10.7.0.2/32
+      # H1–H4/S1/S2 — общий профиль обфускации, ОБЯЗАН совпадать с awg-client.
+      # Jc/Jmin/Jmax НЕ задаём: сервер не шлёт junk (§2 плана), а amneziawg-go
+      # отвергает Jc=0 (Invalid argument) — требует Jc>=1, если junk задан. Это
+      # находка Этапа 0: junk-параметры на сервере опускаются целиком.
+      AWG_S1: ${AWG_S1:-0}
+      AWG_S2: ${AWG_S2:-0}
+      AWG_H1: ${AWG_H1:?запустите gen-keys.sh}
+      AWG_H2: ${AWG_H2:?запустите gen-keys.sh}
+      AWG_H3: ${AWG_H3:?запустите gen-keys.sh}
+      AWG_H4: ${AWG_H4:?запустите gen-keys.sh}
+
+  c9-app:
+    build:
+      context: ../../..
+      dockerfile: deploy/docker/awg-c9-probe/Dockerfile
+    # Живёт в network namespace awg-server → слушает на туннельном IP 10.7.0.1.
+    network_mode: "service:awg-server"
+    command: ["node", "--import", "tsx", "deploy/compose/awg-poc/c9-app.ts"]
+    environment:
+      C9_APP_HOST: 0.0.0.0
+      C9_APP_PORT: "3049"
+      EDGE_VPN_APP_ID: ${EDGE_VPN_APP_ID:-app-core}
+      EDGE_VPN_APP_CERT: ${EDGE_VPN_APP_CERT:?запустите gen-keys.sh}
+      EDGE_VPN_TRUSTED_EDGE_CERTS: ${EDGE_VPN_EDGE_CERT:?запустите gen-keys.sh}
+      EDGE_VPN_SESSION_KEY: ${EDGE_VPN_SESSION_KEY:?запустите gen-keys.sh}
+    depends_on:
+      awg-server:
+        condition: service_healthy
+
+  # --- Edge-сторона (РФ): инициатор туннеля ---
+  awg-client:
+    build:
+      context: ../../..
+      dockerfile: deploy/docker/awg/Dockerfile
+      args:
+        AWG_GO_REF: ${AWG_GO_REF:-master}
+        AWG_TOOLS_REF: ${AWG_TOOLS_REF:-master}
+    cap_add: [NET_ADMIN]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      AWG_INTERFACE: awg0
+      AWG_ADDRESS: 10.7.0.2/24
+      AWG_MTU: ${AWG_MTU:-1380}
+      AWG_PRIVATE_KEY: ${AWG_CLIENT_PRIVATE_KEY:?запустите gen-keys.sh}
+      AWG_PEER_PUBLIC_KEY: ${AWG_SERVER_PUBLIC_KEY:?запустите gen-keys.sh}
+      AWG_PEER_PRESHARED_KEY: ${AWG_PRESHARED_KEY:?запустите gen-keys.sh}
+      AWG_PEER_ALLOWED_IPS: 10.7.0.1/32
+      AWG_ENDPOINT: awg-server:51820
+      AWG_PERSISTENT_KEEPALIVE: "25"
+      # Обфускация — значима на клиенте-инициаторе (§2 плана).
+      AWG_JC: ${AWG_JC:-6}
+      AWG_JMIN: ${AWG_JMIN:-40}
+      AWG_JMAX: ${AWG_JMAX:-70}
+      AWG_S1: ${AWG_S1:-0}
+      AWG_S2: ${AWG_S2:-0}
+      AWG_H1: ${AWG_H1:?запустите gen-keys.sh}
+      AWG_H2: ${AWG_H2:?запустите gen-keys.sh}
+      AWG_H3: ${AWG_H3:?запустите gen-keys.sh}
+      AWG_H4: ${AWG_H4:?запустите gen-keys.sh}
+    depends_on:
+      awg-server:
+        condition: service_healthy
+
+  c9-probe:
+    build:
+      context: ../../..
+      dockerfile: deploy/docker/awg-c9-probe/Dockerfile
+    # Живёт в network namespace awg-client → 10.7.0.1 достижим по awg0.
+    network_mode: "service:awg-client"
+    command: ["node", "--import", "tsx", "deploy/compose/awg-poc/c9-probe.ts"]
+    environment:
+      EDGE_VPN_APP_TCP_URL: tcp://10.7.0.1:3049
+      EDGE_VPN_EDGE_ID: ${EDGE_VPN_EDGE_ID:-edge-rf}
+      EDGE_VPN_EDGE_CERT: ${EDGE_VPN_EDGE_CERT:?запустите gen-keys.sh}
+      EDGE_VPN_TRUSTED_APP_CERTS: ${EDGE_VPN_APP_CERT:?запустите gen-keys.sh}
+      EDGE_VPN_SESSION_KEY: ${EDGE_VPN_SESSION_KEY:?запустите gen-keys.sh}
+      C9_PROBE_CONTENT_BYTES: ${C9_PROBE_CONTENT_BYTES:-1300000}
+      C9_PROBE_CONNECT_TIMEOUT_MS: ${C9_PROBE_CONNECT_TIMEOUT_MS:-60000}
+    depends_on:
+      awg-client:
+        condition: service_healthy
+      c9-app:
+        condition: service_started

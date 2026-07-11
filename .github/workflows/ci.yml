@@ -112,3 +112,24 @@ jobs:
         run: npm ci
       - name: Run e2e placeholder
         run: npm run test:e2e
+
+  # AmneziaWG PoC Этапа 0 (issue #257): реальный userspace-туннель + прогон C9
+  # через туннельные IP. Capability-gated (Q7) — при отсутствии /dev/net/tun
+  # шаг помечается SKIPPED, а не падает. ubuntu-latest предоставляет TUN.
+  awg-poc:
+    name: awg-poc (integration)
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Ensure /dev/net/tun
+        run: |
+          if [ ! -c /dev/net/tun ]; then
+            sudo mkdir -p /dev/net
+            sudo mknod /dev/net/tun c 10 200 || true
+            sudo chmod 600 /dev/net/tun || true
+          fi
+          ls -l /dev/net/tun || true
+      - name: Run AmneziaWG PoC (C9 через туннель, кадр 2 МБ)
+        run: bash deploy/compose/awg-poc/run-poc.sh
