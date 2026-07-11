@@ -23,6 +23,7 @@ import type { PoolClient } from "pg";
 import { PgDatabase } from "../../common/database/database.service";
 import type { Queryable } from "../../common/database/database.service";
 import { AuditService } from "../audit/audit.service";
+import { C7RealtimeEventPublisher } from "./c7-realtime-event.publisher";
 import {
   assertMessageStatusTransition,
   MESSAGE_DIRECTION,
@@ -164,6 +165,7 @@ export class InternalMessagingService {
     private readonly audit: AuditService,
     private readonly adapterFailures: AdapterFailureCoordinator,
     private readonly loadProbe: CommunicationCoreLoadProbeService,
+    private readonly realtime: C7RealtimeEventPublisher,
   ) {}
 
   private now(): string {
@@ -285,10 +287,54 @@ export class InternalMessagingService {
       });
       this.loadProbe.recordIngress(result, finish());
 
+      // G-7 (Этап T4): live-пуш входящего менеджеру через C7 Redis Stream.
+      // Публикуем ПОСЛЕ коммита транзакции и только для не-дубликата — повтор
+      // апдейта (идемпотентный acceptIngress) не должен породить второе
+      // realtime-событие. Публикация best-effort: её сбой не влияет на приём
+      // (без Redis — no-op, см. C7RealtimeEventPublisher).
+      if (!result.duplicate) {
+        await this.publishIngressCreated(ingress, result);
+      }
+
       return result;
     } catch (error) {
       this.loadProbe.recordIngressFailure(finish());
       throw error;
+    }
+  }
+
+  /**
+   * Публикует C7 `message.created` для принятого входящего сообщения. Конверт
+   * собирается из нормализованного ingress + результата вставки (без доп.
+   * запроса). Любая ошибка публикации подавляется — realtime не критичен для
+   * приёма сообщения.
+   */
+  private async publishIngressCreated(
+    ingress: NormalizedIngress,
+    result: IngressAcceptResult,
+  ): Promise<void> {
+    try {
+      await this.realtime.publishMessageCreated({
+        id: result.message_id,
+        organizationId: result.organization_id,
+        conversationId: result.conversation_id,
+        endpointId: result.endpoint_id,
+        channel: ingress.channel,
+        direction: MESSAGE_DIRECTION.INBOUND,
+        senderType: "client",
+        sequenceNumber: result.sequence_number,
+        type: ingress.message.type,
+        content: ingress.message.content,
+        status: result.status,
+        createdAt: result.received_at,
+        deliveredAt: null,
+      });
+    } catch (error) {
+      this.logger.warn(
+        `C7 publish on ingress failed for ${result.message_id}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
     }
   }
 

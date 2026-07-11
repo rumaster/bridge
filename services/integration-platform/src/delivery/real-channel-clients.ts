@@ -51,6 +51,55 @@ export function createTelegramBotApiClient({
   };
 }
 
+export interface ResolvingTelegramClientOptions {
+  resolveToken: (input: { organizationId?: string; channelType?: string }) => Promise<string | null>;
+  baseUrl?: string;
+  fetchImpl?: typeof globalThis.fetch;
+  channelType?: string;
+}
+
+/**
+ * Telegram-клиент доставки с резолвом токена per-organization (Этап T2).
+ *
+ * Токен бота определяется по `organization_id` доставки через переданный
+ * `resolveToken` (backend S2S), а не берётся из общего env. Реальный Bot API
+ * клиент кэшируется по токену. Если токен не настроен — доставка завершается
+ * НЕповторяемой ошибкой (`failed`), а не «тихим noop».
+ */
+export function createResolvingTelegramClient({
+  resolveToken,
+  baseUrl = "https://api.telegram.org",
+  fetchImpl = globalThis.fetch,
+  channelType = "telegram",
+}: ResolvingTelegramClientOptions) {
+  const clientsByToken = new Map<string, ReturnType<typeof createTelegramBotApiClient>>();
+
+  return {
+    async deliver(delivery: any, options: any = {}) {
+      const organizationId = delivery?.organization_id;
+      const token = await resolveToken({
+        organizationId,
+        channelType: delivery?.channel_type ?? channelType,
+      });
+
+      if (!token) {
+        throw new ChannelDeliveryError(
+          `No Telegram bot token configured for organization ${organizationId ?? "?"}`,
+          { retryable: false, category: "missing_channel_secret" },
+        );
+      }
+
+      let client = clientsByToken.get(token);
+      if (!client) {
+        client = createTelegramBotApiClient({ baseUrl, fetchImpl, token });
+        clientsByToken.set(token, client);
+      }
+
+      return client.deliver(delivery, options);
+    },
+  };
+}
+
 export function createEmailHttpGatewayClient({
   fetchImpl = globalThis.fetch,
   token,

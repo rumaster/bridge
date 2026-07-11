@@ -81,8 +81,19 @@ export function validateEdgeTunnelMessage(message) {
     };
   }
 
-  const payloadValidation = validateCanonicalMessage(message.payload);
-  errors.push(...payloadValidation.errors.map((error) => `payload.${error}`));
+  // C9-туннель несёт либо канонический C1, либо конверт C2.IngressMessage: входящее из
+  // SVC-INT (у него нет БД для резолва endpoint/conversation — их назначает ядро в
+  // acceptIngress). Для C2-конверта глубокую канон-валидацию пропускаем — он
+  // валидируется на приёме ядром (normalizeIngressEnvelope), а транспорт лишь не
+  // должен его отвергать.
+  const isC2Ingress =
+    isRecord(message.payload) &&
+    message.payload.contract === "C2.IngressMessage" &&
+    isRecord(message.payload.message);
+  if (!isC2Ingress) {
+    const payloadValidation = validateCanonicalMessage(message.payload);
+    errors.push(...payloadValidation.errors.map((error) => `payload.${error}`));
+  }
 
   if (isRecord(message.payload)) {
     if (message.payload.endpoint_id !== message.endpoint_id) {

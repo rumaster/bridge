@@ -15,10 +15,25 @@ import { createNotificationCreatedEvent } from "../../../packages/contracts/src/
  * dispatched_at, event? }.
  */
 
-export function createDefaultChannelAdapters({ now = () => new Date().toISOString() } = {}) {
+export function createDefaultChannelAdapters({
+  now = () => new Date().toISOString(),
+  telegramForwardUrl = process.env.SVC_TGC_NOTIFICATIONS_URL?.trim() || null,
+  fetchImpl = globalThis.fetch,
+  logger = console,
+}: {
+  now?: () => string;
+  telegramForwardUrl?: string | null;
+  fetchImpl?: typeof globalThis.fetch;
+  logger?: any;
+} = {}) {
   return {
     web: createWebChannelAdapter({ now }),
-    telegram: createTelegramChannelAdapter({ now }),
+    // Telegram-плечо (G-8): при заданном SVC_TGC_NOTIFICATIONS_URL карточка реально
+    // форвардится в SVC-TGC (Telegram Console менеджера); без URL — записывающий
+    // mock для dev/CI (без внешних вызовов), как у остальных провайдеров.
+    telegram: telegramForwardUrl
+      ? createTelegramForwardingChannelAdapter({ url: telegramForwardUrl, now, fetchImpl, logger })
+      : createTelegramChannelAdapter({ now }),
     email: createEmailChannelAdapter({ now }),
     push: createPushChannelAdapter({ now }),
   };
@@ -62,6 +77,103 @@ export function createTelegramChannelAdapter(options = {}) {
     provider: "svc-tgc",
     ...options,
   });
+}
+
+/** Опции {@link createTelegramForwardingChannelAdapter}. */
+export interface TelegramForwardingChannelAdapterOptions {
+  url: string;
+  fetchImpl?: typeof globalThis.fetch;
+  now?: () => string;
+  logger?: any;
+}
+
+/**
+ * Боевое Telegram-плечо SVC-NOTIF (G-8): вместо записи-мока форвардит карточку
+ * уведомления в SVC-TGC (Telegram Console менеджера) по HTTP
+ * `POST {url}/internal/notifications/telegram`. SVC-TGC владеет резолвом chat_id
+ * менеджера (по привязанной сессии) и фактической отправкой карточки.
+ *
+ * Конвейер доставки SVC-NOTIF синхронный (`deliver` возвращает запись, а не
+ * Promise), поэтому запись о передаче формируется сразу (handoff = «принято
+ * telegram-плечом»), а реальный HTTP-вызов идёт фоном (best-effort): его сбой не
+ * блокирует остальные каналы (web/email/push) и не роняет приём события.
+ * Результаты форварда доступны через `getForwardResults()`, а `drain()` дожидается
+ * незавершённых вызовов (детерминизм в тестах).
+ */
+export function createTelegramForwardingChannelAdapter({
+  url,
+  fetchImpl = globalThis.fetch,
+  now = () => new Date().toISOString(),
+  logger = console,
+}: TelegramForwardingChannelAdapterOptions) {
+  if (typeof url !== "string" || url.trim() === "") {
+    throw new TypeError("createTelegramForwardingChannelAdapter requires a target url");
+  }
+  const apiBase = url.replace(/\/+$/, "");
+  const dispatches = [];
+  const forwardResults = [];
+  const pending = new Set<Promise<unknown>>();
+
+  return {
+    channel: "telegram",
+    deliver({ notification }) {
+      const record = {
+        channel: "telegram",
+        status: "sent",
+        provider: "svc-tgc",
+        provider_ref: `telegram:${notification.id}`,
+        dispatched_at: now(),
+        forwarded_to: apiBase,
+      };
+      dispatches.push({
+        notification_id: notification.id,
+        organization_id: notification.organization_id,
+        recipient_user_id: notification.recipient_user_id,
+        category: notification.category,
+        ...record,
+      });
+
+      const task = forwardTelegramNotification({ apiBase, fetchImpl, notification })
+        .then((result) => {
+          forwardResults.push({ notification_id: notification.id, ok: true, ...result });
+        })
+        .catch((error) => {
+          const message = error instanceof Error ? error.message : String(error);
+          forwardResults.push({ notification_id: notification.id, ok: false, error: message });
+          logger?.warn?.("SVC-TGC telegram notification forward failed", {
+            notification_id: notification.id,
+            error: message,
+          });
+        })
+        .finally(() => {
+          pending.delete(task);
+        });
+      pending.add(task);
+
+      return record;
+    },
+    getDispatches() {
+      return dispatches.map((dispatch) => ({ ...dispatch }));
+    },
+    getForwardResults() {
+      return forwardResults.map((result) => ({ ...result }));
+    },
+    async drain() {
+      await Promise.allSettled([...pending]);
+    },
+  };
+}
+
+async function forwardTelegramNotification({ apiBase, fetchImpl, notification }) {
+  const response = await fetchImpl(`${apiBase}/internal/notifications/telegram`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify({ notification }),
+  });
+  if (!response.ok) {
+    throw new Error(`SVC-TGC returned HTTP ${response.status}`);
+  }
+  return { status: response.status };
 }
 
 export function createEmailChannelAdapter(options = {}) {

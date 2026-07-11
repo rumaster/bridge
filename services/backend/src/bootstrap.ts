@@ -41,6 +41,8 @@ export function configureBackendApp(
       { path: "internal/delivery/attempts", method: RequestMethod.POST },
       { path: "internal/edge/tunnel/messages", method: RequestMethod.POST },
       { path: "internal/broadcast/deliveries", method: RequestMethod.POST },
+      { path: "internal/channels/secret", method: RequestMethod.GET },
+      { path: "internal/channels", method: RequestMethod.GET },
     ],
   });
   app.enableVersioning({

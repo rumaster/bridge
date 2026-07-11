@@ -9,6 +9,7 @@ import { InMemoryIdempotencyStore } from "./common/idempotency/idempotency.store
 import { RedisInfrastructureModule } from "./common/redis/redis.module";
 import { RequestIdMiddleware } from "./common/request-id.middleware";
 import { RequestLoggingInterceptor } from "./common/request-logging.interceptor";
+import { SecretsModule } from "./common/secrets/secrets.module";
 import { createValidationPipe } from "./common/validation.pipe";
 import { AiIntegrationModule } from "./modules/ai-integration/ai-integration.module";
 import { BackendApiModule } from "./modules/backend-api/backend-api.module";
@@ -32,6 +33,7 @@ import { WorkflowModule } from "./modules/workflow/workflow.module";
   imports: [
     DatabaseModule,
     RedisInfrastructureModule,
+    SecretsModule,
     AuthModule,
     HealthModule,
     IntegrationGatewayModule,

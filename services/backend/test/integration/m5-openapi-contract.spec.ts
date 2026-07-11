@@ -66,6 +66,8 @@ describe("SVC-API M5 OpenAPI contract", () => {
     // backend-core OpenAPI (тесты byte-for-byte и versioned-routes это подтверждают).
     expect(unversionedExpressOperations(app)).toEqual([
       "GET /health",
+      "GET /internal/channels",
+      "GET /internal/channels/secret",
       "GET /metrics",
       "POST /internal/broadcast/deliveries",
       "POST /internal/delivery/attempts",

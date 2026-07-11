@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 
 import { PgDatabase } from "../../common/database/database.service";
 import type { Queryable } from "../../common/database/database.service";
@@ -8,6 +8,7 @@ import { isUuidV4 } from "../../common/request-context";
 import { AuditService } from "../audit/audit.service";
 import { mapClientEndpoint, mapClientIdentityLink } from "../client/client.dto";
 import { C7RealtimeEventPublisher } from "./c7-realtime-event.publisher";
+import { InternalMessagingService } from "./internal-messaging.service";
 import type {
   AddClientEndpointDto,
   ClientEndpointResponseDto,
@@ -47,10 +48,13 @@ interface CreateIdentityLinkParams {
 
 @Injectable()
 export class CommunicationCoreProxyService {
+  private readonly logger = new Logger(CommunicationCoreProxyService.name);
+
   constructor(
     private readonly database: PgDatabase,
     private readonly audit: AuditService,
     private readonly realtime: C7RealtimeEventPublisher,
+    private readonly messaging: InternalMessagingService,
   ) {}
 
   async listConversations(
@@ -162,11 +166,23 @@ export class CommunicationCoreProxyService {
   ): Promise<MessageResponseDto> {
     const message = await this.database.withTenant(organizationId, async (client) => {
       await this.requireConversation(client, organizationId, payload.conversationId);
-      const endpoint = await this.requireEndpoint(client, organizationId, payload.endpointId);
-      await this.lockEndpointPartition(client, organizationId, payload.endpointId);
+      // endpointId опционален: если клиент (manager-workspace) его не прислал —
+      // резолвим endpoint диалога сами (по последнему сообщению / endpoint-у клиента).
+      const endpointId =
+        payload.endpointId ??
+        (await this.resolveConversationReplyEndpoint(
+          client,
+          organizationId,
+          payload.conversationId,
+        ));
+      const endpoint = await this.requireEndpoint(client, organizationId, endpointId);
+      await this.lockEndpointPartition(client, organizationId, endpointId);
       const sequenceNumber =
         payload.sequenceNumber ??
-        (await this.nextSequenceNumber(client, organizationId, payload.endpointId));
+        (await this.nextSequenceNumber(client, organizationId, endpointId));
+      // content принимаем строкой или объектом; строку нормализуем в {text}.
+      const content =
+        typeof payload.content === "string" ? { text: payload.content } : payload.content;
       const messageId =
         payload.id ??
         (context.idempotencyKey && isUuidV4(context.idempotencyKey)
@@ -209,13 +225,13 @@ export class CommunicationCoreProxyService {
           messageId,
           organizationId,
           payload.conversationId,
-          payload.endpointId,
+          endpointId,
           payload.channel ?? endpoint.channel,
           payload.direction ?? "outbound",
           payload.senderType ?? "manager",
           sequenceNumber,
           payload.type ?? "text",
-          JSON.stringify(payload.content),
+          JSON.stringify(content),
           payload.status ?? "routed",
         ],
       );
@@ -241,6 +257,33 @@ export class CommunicationCoreProxyService {
       return mapMessage(result.rows[0]);
     });
     await this.realtime.publishMessageCreated(message);
+
+    // Доставка ответа во внешний канал (egress). Раньше createMessage только
+    // сохранял сообщение (routed) и публиковал C7, но НЕ инициировал доставку —
+    // из-за чего ответ менеджера не доходил до клиента. Триггерим handoffEgress
+    // после коммита (best-effort, идемпотентно по message_id). Рассылки идут
+    // отдельным путём (deliverBroadcast) — пропускаем.
+    if (
+      message.direction === "outbound" &&
+      message.status === "routed" &&
+      message.senderType !== "broadcast"
+    ) {
+      try {
+        const handoff = await this.messaging.handoffEgress({
+          organization_id: organizationId,
+          message_id: message.id,
+          adapter: message.channel,
+        });
+        message.status = handoff.status;
+      } catch (error) {
+        this.logger.warn(
+          `egress handoff failed for message ${message.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    }
+
     return message;
   }
 
@@ -615,6 +658,53 @@ export class CommunicationCoreProxyService {
     }
 
     return result.rows[0];
+  }
+
+  /**
+   * Резолвит целевой endpoint диалога для ответа, когда клиент не прислал
+   * endpointId. Берёт endpoint последнего сообщения диалога (туда и отвечаем),
+   * иначе — первый endpoint клиента этого диалога.
+   */
+  private async resolveConversationReplyEndpoint(
+    queryable: Queryable,
+    organizationId: string,
+    conversationId: string,
+  ): Promise<string> {
+    const latest = await queryable.query<{ endpoint_id: string }>(
+      `
+        SELECT endpoint_id
+        FROM messages
+        WHERE organization_id = $1 AND conversation_id = $2
+        ORDER BY created_at DESC, sequence_number DESC
+        LIMIT 1
+      `,
+      [organizationId, conversationId],
+    );
+    if (latest.rowCount && latest.rows[0].endpoint_id) {
+      return latest.rows[0].endpoint_id;
+    }
+
+    const clientEndpoint = await queryable.query<{ id: string }>(
+      `
+        SELECT ce.id
+        FROM communication_endpoints ce
+        JOIN conversations c
+          ON c.client_id = ce.client_id AND c.organization_id = ce.organization_id
+        WHERE c.organization_id = $1 AND c.id = $2
+        ORDER BY ce.created_at ASC
+        LIMIT 1
+      `,
+      [organizationId, conversationId],
+    );
+    if (clientEndpoint.rowCount && clientEndpoint.rows[0].id) {
+      return clientEndpoint.rows[0].id;
+    }
+
+    throw new BadRequestException({
+      code: "ENDPOINT_REQUIRED",
+      description: "Could not resolve a target endpoint for the conversation.",
+      humanMessage: "Не удалось определить получателя ответа для диалога.",
+    });
   }
 
   private async nextSequenceNumber(

@@ -3001,11 +3001,13 @@
               "failed"
             ],
             "example": "routed"
+          },
+          "idempotencyKey": {
+            "type": "string"
           }
         },
         "required": [
           "conversationId",
-          "endpointId",
           "content"
         ]
       },
@@ -3105,6 +3107,11 @@
           "credentials_ref": {
             "type": "string",
             "example": "secret://telegram/org-1/main"
+          },
+          "credentials": {
+            "type": "string",
+            "description": "Plaintext-секрет канала (например токен Telegram-бота из @BotFather). Только в теле запроса: шифруется в channels.credentials_envelope и никогда не возвращается в ответе. Для Telegram обязателен, формат <bot_id>:<token>.",
+            "example": "123456789:AA-bot-token-from-botfather"
           },
           "config": {
             "type": "object",

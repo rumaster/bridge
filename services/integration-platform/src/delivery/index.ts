@@ -13,8 +13,10 @@ export {
   createEmailHttpGatewayClient,
   createMaxHttpGatewayClient,
   createRealChannelClientsFromEnv,
+  createResolvingTelegramClient,
   createTelegramBotApiClient,
 } from "./real-channel-clients.js";
+export { createBackendChannelSecretClient } from "./backend-channel-secret-client.js";
 export { createDeliveryEngine } from "./delivery-engine.js";
 export {
   BulkheadFullError,

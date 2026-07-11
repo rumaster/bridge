@@ -63,19 +63,29 @@ export function createM2ChannelAdapter({
       return this.publishIncomingMessage(payload);
     },
 
-    async publishIncomingMessage(payload) {
-      if (typeof coreIngressUrl !== "string" || coreIngressUrl.trim() === "") {
-        throw new Error("coreIngressUrl is required to publish C2 Ingress");
-      }
-
+    /**
+     * Нормализует сырой апдейт в конверт C2.IngressMessage БЕЗ отправки. Позволяет
+     * вызывающему коду (напр. входящему драйверу T3/T5) выбрать маршрут публикации
+     * (напрямую в ядро или через Edge). Бросает TypeError, если апдейт не пригоден
+     * для приёма (нет текста/вложений и т.п.).
+     */
+    buildIngress(payload) {
       const message = normalizeM2IncomingMessage({ spec, payload, now });
-      const ingress = {
+      return {
         contract: "C2.IngressMessage",
         version: C2_VERSION,
         idempotency_key: message.message_id,
         received_at: now(),
         message,
       };
+    },
+
+    async publishIncomingMessage(payload) {
+      if (typeof coreIngressUrl !== "string" || coreIngressUrl.trim() === "") {
+        throw new Error("coreIngressUrl is required to publish C2 Ingress");
+      }
+
+      const ingress = this.buildIngress(payload);
 
       const response = await fetchImpl(coreIngressUrl, {
         method: "POST",

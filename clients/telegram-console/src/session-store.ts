@@ -20,6 +20,31 @@ export function createTelegramConsoleSessionStore({ now = () => new Date().toISO
       return session ? clone(session) : null;
     },
 
+    /**
+     * Обратный резолв «менеджер (user_id) → chat_id» (G-8): нужен, чтобы SVC-TGC
+     * доставил проактивную карточку уведомления в приватный чат менеджера с ботом
+     * консоли по его пользователю. Возвращает chat_id первой активной сессии
+     * этого пользователя (число, если ключ числовой) или null.
+     */
+    findChatIdByUserId(userId) {
+      if (userId === undefined || userId === null || String(userId) === "") {
+        return null;
+      }
+      const target = String(userId);
+      const timestamp = now();
+      for (const [chatId, session] of sessionsByChatId.entries()) {
+        if (isSessionEnded(session, timestamp)) {
+          continue;
+        }
+        const sessionUserId =
+          session?.user?.id ?? session?.user?.user_id ?? session?.user_id ?? session?.session?.user?.id;
+        if (sessionUserId !== undefined && String(sessionUserId) === target) {
+          return /^-?\d+$/.test(chatId) ? Number(chatId) : chatId;
+        }
+      }
+      return null;
+    },
+
     setActiveConversation(chatId, conversationId) {
       activeConversationsByChatId.set(String(chatId), {
         conversation_id: conversationId,
