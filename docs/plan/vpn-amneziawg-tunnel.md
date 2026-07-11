@@ -400,6 +400,38 @@ capability-gated CI-job `awg-poc` в [`.github/workflows/ci.yml`](../../.github/
 - **DoD.** Туннель поднимается из `AWG_*`-конфигурации, C9 идёт внутри него,
   healthcheck зелёный.
 
+#### Итоги Этапа 1 (выполнено ✅)
+
+Туннель вписан в **боевые** compose-файлы под профилем `tunnel` (стеки
+поднимаются и без него — обратная совместимость):
+
+- **App** ([`docker-compose.yml`](../../deploy/compose/docker-compose.yml)):
+  сервис `awg-server` c `network_mode: "service:edge-vpn-app"` — `awg0` (10.7.0.1)
+  поднимается **внутри** namespace ноды, наружу опубликован только UDP
+  `AWG_LISTEN_PORT`. Нода сохраняет свою идентичность/DNS.
+- **Edge** ([`docker-compose.rf.yml`](../../deploy/compose/docker-compose.rf.yml)):
+  сервис `awg-client` c `network_mode: "service:edge-gateway"`; `EDGE_VPN_APP_TCP_URL`
+  перенастроен на туннельный IP `tcp://10.7.0.1:3049`.
+- Единый образ [`deploy/docker/awg`](../../deploy/docker/awg/) для обеих ролей
+  (роль — через `AWG_*`; отдельные `awg-client`/`awg-server` Dockerfile'ы не
+  дублируем). Ключи/PSK/H1–H4 — [`deploy/compose/awg-keygen.sh`](../../deploy/compose/awg-keygen.sh)
+  (раскладка на `.env.awg.app` / `.env.awg.rf`, оба в `.gitignore`).
+
+Проверено на стенде (два раздельных compose-стека на одном хосте, эндпоинт через
+`host.docker.internal:host-gateway`):
+
+- **Туннель поднялся из `AWG_*`**, `awg show`: `latest handshake: Now`, keepalive,
+  профиль обфускации (`jc:6`, кастомные `h1–h4`); **healthcheck обеих сторон
+  зелёный**.
+- **Ping туннельного IP** `10.7.0.1` из namespace `edge-gateway` — 0% потерь.
+- **C9 идёт внутри туннеля**: проба Этапа 0 из namespace `edge-gateway` →
+  `tcp://10.7.0.1:3049` доставила обычный и ~1.3 МБ кадр с зелёным C9-ack;
+  отдельно подтверждено, что C9 доходит и до **реального** `edge-vpn-app`
+  (C9-handshake + deliver прошли через туннель; синтетический payload далее даёт
+  бизнес-500 в backend — это ниже по потоку от туннеля, не транспорт).
+- Ключ развёртывания: `--profile tunnel` + доп. `--env-file .env.awg.{app,rf}`.
+  Руководство — [`deploy/compose/awg-tunnel.md`](../../deploy/compose/awg-tunnel.md).
+
 ### Этап 2 — Единый слой + контроль соединения (M)
 - **Задачи.** Снять прикладной криптослой (Q2): отключить/удалить `seal`/`open`,
   HKDF-вывод ключа и сверку отпечатков в `vpn-tunnel.ts`, сохранив RPC-плоскость

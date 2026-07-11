@@ -83,9 +83,59 @@ services:
       EDGE_VPN_APP_WSS_CLIENT_TLS_CERT: ${EDGE_VPN_APP_WSS_CLIENT_TLS_CERT:-}
     ports:
       - "${EDGE_GATEWAY_PORT:-3000}:${EDGE_GATEWAY_PORT:-3000}"
+    # Резолв публичного UDP-эндпоинта App-стороны на одном хосте (стенд): позволяет
+    # AWG_ENDPOINT=host.docker.internal:51820. В проде AWG_ENDPOINT — публичный
+    # DNS/IP App-кластера, и этот alias не используется.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       migrate-rf:
         condition: service_completed_successfully
+
+  # AmneziaWG-инициатор Edge-стороны (issue #257, Этап 1). Поднимает awg0
+  # (10.7.0.2) внутри network namespace edge-gateway: нода сохраняет свою
+  # идентичность/порт 3000, а исходящий C9 на туннельный IP App-стороны
+  # (EDGE_VPN_APP_TCP_URL=tcp://10.7.0.1:3049) идёт ВНУТРИ туннеля. Здесь живёт
+  # обфускация Jc/S*/I* (§2 плана). Профиль tunnel — чтобы Edge поднимался и без
+  # туннеля (тогда EDGE_VPN_APP_TCP_URL указывает на App по сети, как раньше).
+  awg-client:
+    profiles: ["tunnel"]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/awg/Dockerfile
+      args:
+        AWG_GO_REF: ${AWG_GO_REF:-master}
+        AWG_TOOLS_REF: ${AWG_TOOLS_REF:-master}
+    restart: unless-stopped
+    network_mode: "service:edge-gateway"
+    cap_add: [NET_ADMIN]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      AWG_INTERFACE: awg0
+      AWG_ADDRESS: ${AWG_CLIENT_ADDRESS:-10.7.0.2/24}
+      AWG_MTU: ${AWG_MTU:-1380}
+      AWG_PRIVATE_KEY: ${AWG_CLIENT_PRIVATE_KEY:-}
+      AWG_PEER_PUBLIC_KEY: ${AWG_SERVER_PUBLIC_KEY:-}
+      AWG_PEER_PRESHARED_KEY: ${AWG_PRESHARED_KEY:-}
+      AWG_PEER_ALLOWED_IPS: ${AWG_SERVER_ADDRESS_CIDR:-10.7.0.1/32}
+      # Публичный UDP-эндпоинт App-стороны (awg-server). На стенде —
+      # host.docker.internal:51820, в проде — публичный DNS App-кластера.
+      AWG_ENDPOINT: ${AWG_ENDPOINT:-host.docker.internal:51820}
+      AWG_PERSISTENT_KEEPALIVE: ${AWG_PERSISTENT_KEEPALIVE:-25}
+      # Обфускация — значима на клиенте-инициаторе (§2 плана).
+      AWG_JC: ${AWG_JC:-6}
+      AWG_JMIN: ${AWG_JMIN:-40}
+      AWG_JMAX: ${AWG_JMAX:-70}
+      AWG_S1: ${AWG_S1:-0}
+      AWG_S2: ${AWG_S2:-0}
+      AWG_H1: ${AWG_H1:-}
+      AWG_H2: ${AWG_H2:-}
+      AWG_H3: ${AWG_H3:-}
+      AWG_H4: ${AWG_H4:-}
+    depends_on:
+      edge-gateway:
+        condition: service_started
 
 volumes:
   bridge-edge-postgres-data:
