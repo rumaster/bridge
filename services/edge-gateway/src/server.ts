@@ -6,6 +6,7 @@ import {
   C7_RECONNECT_SEMANTICS,
   C7_WS_PATH,
 } from "../../../packages/contracts/src/c7.js";
+import { renderEdgeMetrics } from "./edge-metrics.js";
 import {
   EdgeTunnelMockValidationError,
   createMockEdgeTunnel,
@@ -24,6 +25,8 @@ export interface CreateEdgeGatewayServerOptions {
   tunnel?: any;
   wsChannel?: any;
   edgeCluster?: any;
+  vpnTunnel?: any;
+  liveness?: { isUp(): boolean; lastProbeAt(): number | null } | null;
   mode?: string;
   now?: () => string;
 }
@@ -33,6 +36,8 @@ export function createEdgeGatewayServer({
   tunnel = createMockEdgeTunnel({ core }),
   wsChannel = createMockWebSocketChannel(),
   edgeCluster,
+  vpnTunnel,
+  liveness,
   mode = "m0-mock",
   now = () => new Date().toISOString(),
 }: CreateEdgeGatewayServerOptions = {}) {
@@ -56,14 +61,25 @@ export function createEdgeGatewayServer({
       }
 
       if (request.method === "GET" && path === "/metrics") {
+        let pending = null;
+        if (edgeCluster && typeof edgeCluster.pendingCount === "function") {
+          try {
+            pending = await edgeCluster.pendingCount();
+          } catch {
+            pending = null;
+          }
+        }
         sendText(
           response,
           200,
-          renderMetrics(
-            edgeTunnel.getMetrics(),
-            webSocketChannel.getMetrics(),
-            edgeCluster?.getMetrics?.(),
-          ),
+          renderEdgeMetrics({
+            tunnelMock: edgeTunnel.getMetrics?.(),
+            ws: webSocketChannel.getMetrics?.(),
+            cluster: edgeCluster?.getMetrics?.(),
+            vpnTunnel: vpnTunnel?.getMetrics?.(),
+            liveness,
+            pending,
+          }),
         );
         return;
       }
@@ -288,42 +304,6 @@ function problem(status, title, detail, errors) {
     detail,
     errors,
   };
-}
-
-function renderMetrics(tunnelMetrics, wsMetrics, edgeMetrics = null) {
-  const lines = [
-    "# HELP edge_gateway_mock_tunnel_forwarded_total C9 tunnel messages forwarded by the Edge mock.",
-    "# TYPE edge_gateway_mock_tunnel_forwarded_total counter",
-    `edge_gateway_mock_tunnel_forwarded_total ${tunnelMetrics.forwarded_total}`,
-    "# HELP edge_gateway_mock_tunnel_duplicate_total C9 duplicate idempotency keys skipped by the Edge mock.",
-    "# TYPE edge_gateway_mock_tunnel_duplicate_total counter",
-    `edge_gateway_mock_tunnel_duplicate_total ${tunnelMetrics.duplicate_total}`,
-    "# HELP edge_gateway_mock_tunnel_rejected_total Invalid C9 tunnel messages rejected by the Edge mock.",
-    "# TYPE edge_gateway_mock_tunnel_rejected_total counter",
-    `edge_gateway_mock_tunnel_rejected_total ${tunnelMetrics.rejected_total}`,
-    "# HELP edge_gateway_mock_ws_connection_total C7 mock WebSocket connections accepted.",
-    "# TYPE edge_gateway_mock_ws_connection_total counter",
-    `edge_gateway_mock_ws_connection_total ${wsMetrics.connection_total}`,
-    "# HELP edge_gateway_mock_ws_event_published_total C7 mock events published.",
-    "# TYPE edge_gateway_mock_ws_event_published_total counter",
-    `edge_gateway_mock_ws_event_published_total ${wsMetrics.event_published_total}`,
-  ];
-
-  if (edgeMetrics) {
-    lines.push(
-      "# HELP edge_gateway_edge_ingested_total RF Edge messages accepted by production EdgeCluster.",
-      "# TYPE edge_gateway_edge_ingested_total counter",
-      `edge_gateway_edge_ingested_total ${edgeMetrics.ingested_total ?? 0}`,
-      "# HELP edge_gateway_edge_fixed_in_rf_total RF-first buffer writes completed before forwarding.",
-      "# TYPE edge_gateway_edge_fixed_in_rf_total counter",
-      `edge_gateway_edge_fixed_in_rf_total ${edgeMetrics.fixed_in_rf_total ?? 0}`,
-      "# HELP edge_gateway_edge_forwarded_total RF Edge messages forwarded through VPN Tunnel.",
-      "# TYPE edge_gateway_edge_forwarded_total counter",
-      `edge_gateway_edge_forwarded_total ${edgeMetrics.forwarded_total ?? 0}`,
-    );
-  }
-
-  return `${lines.join("\n")}\n`;
 }
 
 function encodeWebSocketTextFrame(text) {

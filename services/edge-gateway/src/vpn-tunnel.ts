@@ -194,7 +194,7 @@ export function createVpnLink({ up = true } = {}) {
  */
 export interface VpnTunnelIdentity {
   id: string;
-  certificate: string;
+  certificate?: string;
 }
 
 export interface VpnTunnelClientHello {
@@ -207,6 +207,7 @@ export interface VpnTunnelDeliverOptions {
   sessionId?: string;
   frame?: any;
   aad?: any;
+  message?: any;
 }
 
 export interface CreateVpnTunnelAppEndpointOptions {
@@ -218,6 +219,7 @@ export interface CreateVpnTunnelAppEndpointOptions {
   capacity?: number;
   link?: ReturnType<typeof createVpnLink>;
   nonceFactory?: () => Buffer;
+  appCrypto?: boolean;
 }
 
 export function createVpnTunnelAppEndpoint({
@@ -229,15 +231,25 @@ export function createVpnTunnelAppEndpoint({
   capacity = Number.POSITIVE_INFINITY,
   link = createVpnLink(),
   nonceFactory = () => randomBytes(16),
+  // appCrypto=false — единый слой (Q2): конфиденциальность и взаимную
+  // аутентификацию обеспечивает AmneziaWG-туннель, прикладной AES-GCM/mTLS
+  // снят. RPC-плоскость доставки C9 (handshake/deliver) сохраняется без крипто
+  // (Q4) — она несёт ack/backpressure/дедуп-сигналы. По умолчанию true
+  // (обратная совместимость: mock/дев-режим без реального туннеля).
+  appCrypto = true,
 }: CreateVpnTunnelAppEndpointOptions = {}) {
-  if (!identity?.id || !identity?.certificate) {
-    throw new VpnTunnelError("App endpoint identity {id, certificate} is required");
+  if (!identity?.id || (appCrypto && !identity?.certificate)) {
+    throw new VpnTunnelError(
+      appCrypto
+        ? "App endpoint identity {id, certificate} is required"
+        : "App endpoint identity {id} is required",
+    );
   }
   if (typeof handle !== "function") {
     throw new VpnTunnelError("handle(tunnelMessage) is required");
   }
-  const secret = normalizeSecret(sessionSecret);
-  const verifyPeer = makeTrustVerifier(trustedCertificates, authenticatePeer);
+  const secret = appCrypto ? normalizeSecret(sessionSecret) : null;
+  const verifyPeer = appCrypto ? makeTrustVerifier(trustedCertificates, authenticatePeer) : null;
   const sessions = new Map();
   let paused = false;
   let inFlight = 0;
@@ -261,6 +273,15 @@ export function createVpnTunnelAppEndpoint({
         metrics.channel_down_total += 1;
         throw new VpnTunnelChannelDownError("VPN tunnel channel is down during handshake");
       }
+      if (!appCrypto) {
+        // Единый слой: аутентификация и шифрование — на AmneziaWG. Здесь лишь
+        // устанавливаем сессию доставки C9 (routing + дедуп), без mTLS и ключа.
+        const serverNonce = nonceFactory();
+        const sessionId = `${identity.id}:${clientHello.clientId ?? "edge"}:${serverNonce.toString("hex").slice(0, 12)}`;
+        sessions.set(sessionId, { sessionKey: null, seen: new Map() });
+        metrics.handshake_total += 1;
+        return { sessionId, serverId: identity.id };
+      }
       // Проверяем клиентский сертификат Edge (серверная сторона mTLS).
       if (!clientHello.certificate || !verifyPeer(clientHello.certificate, clientHello)) {
         metrics.handshake_rejected_total += 1;
@@ -283,8 +304,8 @@ export function createVpnTunnelAppEndpoint({
       };
     },
 
-    /** Приём запечатанного C9-кадра: расшифровка, валидация, обработка, ack. */
-    async deliver({ sessionId, frame, aad }: VpnTunnelDeliverOptions = {}) {
+    /** Приём C9-кадра: (рас)шифровка при appCrypto, валидация, обработка, ack. */
+    async deliver({ sessionId, frame, aad, message }: VpnTunnelDeliverOptions = {}) {
       if (!link.isUp()) {
         metrics.channel_down_total += 1;
         throw new VpnTunnelChannelDownError("VPN tunnel channel is down");
@@ -299,7 +320,8 @@ export function createVpnTunnelAppEndpoint({
         throw new VpnTunnelBackpressureError("App endpoint is at capacity (backpressure)");
       }
 
-      const tunnelMessage = open(session.sessionKey, frame, aad);
+      // Единый слой: C9 идёт открытым внутри зашифрованного туннеля (Q2/Q4).
+      const tunnelMessage = appCrypto ? open(session.sessionKey, frame, aad) : message;
 
       const validation = validateEdgeTunnelMessage(tunnelMessage);
       if (!validation.valid) {
@@ -366,6 +388,7 @@ export interface CreateVpnTunnelEdgeClientOptions {
   nonceFactory?: () => Buffer;
   ivFactory?: () => Buffer;
   clientId?: string;
+  appCrypto?: boolean;
 }
 
 export function createVpnTunnelEdgeClient({
@@ -380,15 +403,22 @@ export function createVpnTunnelEdgeClient({
   nonceFactory = () => randomBytes(16),
   ivFactory = () => randomBytes(IV_BYTES),
   clientId = "edge",
+  // См. createVpnTunnelAppEndpoint: appCrypto=false — единый слой (Q2), крипто
+  // делегировано AmneziaWG. Обе стороны должны совпадать по appCrypto.
+  appCrypto = true,
 }: CreateVpnTunnelEdgeClientOptions = {}) {
-  if (!identity?.id || !identity?.certificate) {
-    throw new VpnTunnelError("Edge client identity {id, certificate} is required");
+  if (!identity?.id || (appCrypto && !identity?.certificate)) {
+    throw new VpnTunnelError(
+      appCrypto
+        ? "Edge client identity {id, certificate} is required"
+        : "Edge client identity {id} is required",
+    );
   }
   if (!server || typeof server.handshake !== "function" || typeof server.deliver !== "function") {
     throw new VpnTunnelError("server (App endpoint) is required");
   }
-  const secret = normalizeSecret(sessionSecret);
-  const verifyPeer = makeTrustVerifier(trustedCertificates, verifyServer);
+  const secret = appCrypto ? normalizeSecret(sessionSecret) : null;
+  const verifyPeer = appCrypto ? makeTrustVerifier(trustedCertificates, verifyServer) : null;
 
   let session = null; // { sessionId, sessionKey, serverId }
   const metrics = {
@@ -424,6 +454,19 @@ export function createVpnTunnelEdgeClient({
   }
 
   function finishEstablish(clientNonce, serverHello) {
+    if (!appCrypto) {
+      // Единый слой: сессия без mTLS/ключа (доверие — на ключах WG туннеля).
+      if (!serverHello?.sessionId) {
+        metrics.handshake_failed_total += 1;
+        throw new VpnTunnelError("App server did not establish a tunnel session");
+      }
+      session = {
+        sessionId: serverHello.sessionId,
+        sessionKey: null,
+        serverId: serverHello.serverId,
+      };
+      return;
+    }
     // Проверяем серверный сертификат App (клиентская сторона mTLS).
     if (!serverHello?.certificate || !verifyPeer(serverHello.certificate, serverHello)) {
       metrics.handshake_failed_total += 1;
@@ -484,9 +527,12 @@ export function createVpnTunnelEdgeClient({
         sequence_number: tunnelMessage.sequence_number,
         idempotency_key: tunnelMessage.idempotency_key,
       };
-      const frame = seal(session.sessionKey, tunnelMessage, aad, ivFactory);
+      // Единый слой: без seal — C9 идёт открытым внутри туннеля (Q2/Q4).
+      const deliverArgs = appCrypto
+        ? { sessionId: session.sessionId, frame: seal(session.sessionKey, tunnelMessage, aad, ivFactory), aad }
+        : { sessionId: session.sessionId, message: tunnelMessage, aad };
       try {
-        const ack = await server.deliver({ sessionId: session.sessionId, frame, aad });
+        const ack = await server.deliver(deliverArgs);
         metrics.sent_total += 1;
         return ack;
       } catch (error) {

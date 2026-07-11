@@ -808,6 +808,11 @@ Broadcast через ядро, Edge + VPN Tunnel и Notification в Web/Telegram
 контрактов v1 (веха M5, точка согласования CP-9) — в документе
 [parallel-stage-6-prompts.md](./parallel-stage-6-prompts.md).
 
+Исследование и план перехода **VPN Tunnel Service** (ТЗ §7.8) с нынешней
+прикладной модели защищённого канала на **настоящий сетевой VPN на протоколе
+AmneziaWG** (обход DPI) — в документе
+[vpn-amneziawg-tunnel.md](./vpn-amneziawg-tunnel.md).
+
 | Сервис | План | Точки согласования |
 |--------|------|--------------------|
 | Data Platform | [01-data-platform.md](./services/01-data-platform.md) | все (поставщик схемы) |

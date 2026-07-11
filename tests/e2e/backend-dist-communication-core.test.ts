@@ -126,6 +126,14 @@ test(
       assert.equal(messages.status, 200);
       assert.equal(messages.body.items.some((item) => item.id === PUBLIC_INGRESS_MESSAGE), true);
 
+      // После Fix 1 (#256) POST /api/v1/messages не просто сохраняет ответ
+      // менеджера как `routed`, но и сам инициирует egress-доставку во внешний
+      // канал: статус переходит routed→sent, а C2.EgressDelivery идемпотентно
+      // уходит в integration-platform (INTEGRATION_EGRESS_URL). Отдельный вызов
+      // /internal/egress/messages на уже доставленном сообщении теперь был бы
+      // недопустимым переходом sent→sent; этот эндпоинт покрыт integration-тестом
+      // internal-messaging.spec.ts, а здесь проверяем сквозную авто-доставку
+      // ответа через dist/main.js.
       const outbound = await postJson(
         `http://127.0.0.1:${port}/api/v1/messages`,
         {
@@ -138,15 +146,7 @@ test(
       );
       assert.equal(outbound.status, 201);
       assert.equal(outbound.body.id, PUBLIC_OUTBOUND_MESSAGE);
-      assert.equal(outbound.body.status, "routed");
-
-      const egress = await postJson(
-        `http://127.0.0.1:${port}/internal/egress/messages`,
-        { organization_id: ORG, message_id: PUBLIC_OUTBOUND_MESSAGE, adapter: "web-chat" },
-      );
-      assert.equal(egress.status, 202);
-      assert.equal(egress.body.status, "sent");
-      assert.equal(egress.body.forwarded, true);
+      assert.equal(outbound.body.status, "sent");
       assert.equal(egressDeliveries.length, 1);
       assert.equal(egressDeliveries[0].contract, "C2.EgressDelivery");
       assert.equal(egressDeliveries[0].message.message_id, PUBLIC_OUTBOUND_MESSAGE);

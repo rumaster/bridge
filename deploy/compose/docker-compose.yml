@@ -246,6 +246,9 @@ services:
       EDGE_VPN_APP_ID: ${EDGE_VPN_APP_ID:-app-core}
       EDGE_VPN_APP_CERT: ${EDGE_VPN_APP_CERT:?укажите EDGE_VPN_APP_CERT в .env}
       EDGE_VPN_TRUSTED_EDGE_CERTS: ${EDGE_VPN_TRUSTED_EDGE_CERTS:?укажите EDGE_VPN_TRUSTED_EDGE_CERTS в .env}
+      # Единый слой (Этап 2, Q2): off — прикладной AES-GCM/mTLS снят, защиту даёт
+      # AmneziaWG. Туннельный деплой ставит off (см. .env.awg.app). Дефолт on.
+      EDGE_VPN_APP_CRYPTO: ${EDGE_VPN_APP_CRYPTO:-on}
       EDGE_VPN_APP_CAPACITY: ${EDGE_VPN_APP_CAPACITY:-1024}
       EDGE_VPN_APP_TCP_TLS_KEY: ${EDGE_VPN_APP_TCP_TLS_KEY:-}
       EDGE_VPN_APP_TCP_TLS_CERT: ${EDGE_VPN_APP_TCP_TLS_CERT:-}
@@ -256,8 +259,55 @@ services:
     ports:
       - "${EDGE_VPN_APP_TCP_PORT:-3049}:${EDGE_VPN_APP_TCP_PORT:-3049}"
       - "${EDGE_VPN_APP_WSS_PORT:-3050}:${EDGE_VPN_APP_WSS_PORT:-3050}"
+      # Публичный UDP-эндпоинт AmneziaWG-туннеля (issue #257, Этап 1). Слушает
+      # awg-server, разделяющий network namespace edge-vpn-app. Когда профиль
+      # tunnel выключен — порт опубликован, но никто не слушает (безвредно).
+      - "${AWG_LISTEN_PORT:-51820}:${AWG_LISTEN_PORT:-51820}/udp"
     depends_on:
       backend:
+        condition: service_started
+
+  # AmneziaWG-терминатор App-стороны (issue #257, Этап 1). Поднимает awg0
+  # (10.7.0.1) внутри network namespace edge-vpn-app: нода сохраняет свою
+  # идентичность/DNS, а C9-RPC на 10.7.0.1:3049 идёт ВНУТРИ туннеля. Единый
+  # образ deploy/docker/awg (роль задаётся переменными AWG_*). Профиль tunnel —
+  # чтобы App-кластер поднимался и без туннеля.
+  awg-server:
+    profiles: ["tunnel"]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/awg/Dockerfile
+      args:
+        AWG_GO_REF: ${AWG_GO_REF:-master}
+        AWG_TOOLS_REF: ${AWG_TOOLS_REF:-master}
+    restart: unless-stopped
+    network_mode: "service:edge-vpn-app"
+    cap_add: [NET_ADMIN]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    environment:
+      AWG_INTERFACE: awg0
+      AWG_ADDRESS: ${AWG_SERVER_ADDRESS:-10.7.0.1/24}
+      AWG_LISTEN_PORT: ${AWG_LISTEN_PORT:-51820}
+      AWG_MTU: ${AWG_MTU:-1380}
+      AWG_PRIVATE_KEY: ${AWG_SERVER_PRIVATE_KEY:-}
+      AWG_PEER_PUBLIC_KEY: ${AWG_CLIENT_PUBLIC_KEY:-}
+      AWG_PEER_PRESHARED_KEY: ${AWG_PRESHARED_KEY:-}
+      AWG_PEER_ALLOWED_IPS: ${AWG_CLIENT_ADDRESS_CIDR:-10.7.0.2/32}
+      # Prometheus-экспортер awg (Этап 3): скрейпится в сети compose по адресу
+      # ноды (общий namespace) — edge-vpn-app:${AWG_METRICS_PORT}.
+      AWG_METRICS_PORT: ${AWG_METRICS_PORT:-9586}
+      # S1/S2/H1–H4 — общий профиль обфускации, ОБЯЗАН совпадать с awg-client.
+      # Jc/Jmin/Jmax на сервере не задаём (junk шлёт только клиент, §2 плана;
+      # amneziawg-go отвергает Jc=0 — находка Этапа 0).
+      AWG_S1: ${AWG_S1:-0}
+      AWG_S2: ${AWG_S2:-0}
+      AWG_H1: ${AWG_H1:-}
+      AWG_H2: ${AWG_H2:-}
+      AWG_H3: ${AWG_H3:-}
+      AWG_H4: ${AWG_H4:-}
+    depends_on:
+      edge-vpn-app:
         condition: service_started
 
   fbp-engine:
