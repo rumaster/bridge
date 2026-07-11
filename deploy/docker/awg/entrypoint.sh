@@ -94,6 +94,24 @@ fi
 awg show "${IFACE}" || true
 echo "awg-entrypoint: ${IFACE} поднят, туннель активен"
 
+# Supervisor авто-восстановления (§5.4, Этап 2): периодически проверяет, что
+# интерфейс жив (иначе переподнимает), и пере-резолвит DNS публичного эндпоинта
+# (awg сам резолвит host:port) — на случай смены IP App-стороны/роуминга.
+supervise() {
+  local interval="${AWG_SUPERVISE_INTERVAL:-15}"
+  while true; do
+    sleep "${interval}" || return 0
+    if ! awg show "${IFACE}" >/dev/null 2>&1; then
+      echo "awg-entrypoint: ${IFACE} пропал — переподнимаю" >&2
+      awg-quick up "${CONF}" || true
+      continue
+    fi
+    if [ -n "${AWG_ENDPOINT:-}" ] && [ -n "${AWG_PEER_PUBLIC_KEY:-}" ]; then
+      awg set "${IFACE}" peer "${AWG_PEER_PUBLIC_KEY}" endpoint "${AWG_ENDPOINT}" 2>/dev/null || true
+    fi
+  done
+}
+
 # Держим namespace живым; выходим по сигналу (trap сделает awg-quick down).
-sleep infinity &
+supervise &
 wait $!

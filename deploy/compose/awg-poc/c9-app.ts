@@ -10,13 +10,16 @@ import { createVpnTunnelAppEndpoint } from "../../../services/edge-gateway/src/v
 const host = process.env.C9_APP_HOST ?? "0.0.0.0";
 const port = Number(process.env.C9_APP_PORT ?? 3049);
 
+// appCrypto=off — единый слой (Этап 2): крипто делегировано AmneziaWG.
+const appCrypto = process.env.EDGE_VPN_APP_CRYPTO !== "off";
 const endpoint = createVpnTunnelAppEndpoint({
   identity: {
     id: process.env.EDGE_VPN_APP_ID ?? "app-core",
-    certificate: requireEnv("EDGE_VPN_APP_CERT"),
+    certificate: appCrypto ? requireEnv("EDGE_VPN_APP_CERT") : (process.env.EDGE_VPN_APP_ID ?? "app-core"),
   },
-  trustedCertificates: parseList(requireEnv("EDGE_VPN_TRUSTED_EDGE_CERTS")),
-  sessionSecret: requireEnv("EDGE_VPN_SESSION_KEY"),
+  trustedCertificates: appCrypto ? parseList(requireEnv("EDGE_VPN_TRUSTED_EDGE_CERTS")) : [],
+  sessionSecret: appCrypto ? requireEnv("EDGE_VPN_SESSION_KEY") : undefined,
+  appCrypto,
   handle(tunnelMessage: any) {
     const bytes = Buffer.byteLength(JSON.stringify(tunnelMessage), "utf8");
     console.log(

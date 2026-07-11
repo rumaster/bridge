@@ -290,3 +290,100 @@ describe("VPN Tunnel Service — защищённый канал Edge↔App (§7
     assert.ok(resolveVpnSessionSecret({ EDGE_VPN_SESSION_KEY: SESSION_SECRET }).length >= 16);
   });
 });
+
+/**
+ * Единый слой (Этап 2, Q2): appCrypto=false — прикладной AES-GCM/mTLS снят,
+ * защиту канала даёт AmneziaWG. RPC-плоскость доставки C9 (handshake/deliver)
+ * сохраняется без крипто (Q4): ack/backpressure/channel-down/авто-восстановление.
+ */
+describe("VPN Tunnel Service — единый слой без прикладного крипто (Q2, Q4)", () => {
+  function buildPlainPair({ capacity, link = createVpnLink() }: any = {}) {
+    const accepted = [];
+    const app = createVpnTunnelAppEndpoint({
+      identity: { id: "app-core" },
+      appCrypto: false,
+      capacity,
+      link,
+      handle: (tunnel) => {
+        accepted.push(tunnel);
+        return { accepted: true, duplicate: false, message_id: tunnel.payload.id };
+      },
+    });
+    const client = createVpnTunnelEdgeClient({
+      identity: { id: "edge-rf" },
+      server: app,
+      appCrypto: false,
+      link,
+    });
+    return { app, client, accepted, link };
+  }
+
+  it("доставляет C9 с ack без mTLS и без сеансового ключа", async () => {
+    const { client, accepted } = buildPlainPair();
+    await client.connectAsync();
+    assert.equal(client.isConnected(), true);
+
+    const ack = await client.send(tunnelMessage({ id: MSG[1], seq: 1 }));
+    assert.equal(ack.accepted, true);
+    assert.equal(ack.message_id, MSG[1]);
+    assert.equal(accepted[0].payload.content.text, "секрет РФ 1");
+  });
+
+  it("по проводу идёт ОТКРЫТЫЙ C9 (шифрует туннель, а не приложение)", async () => {
+    const { app, client } = buildPlainPair();
+    await client.connectAsync();
+
+    let captured;
+    const realDeliver = app.deliver.bind(app);
+    app.deliver = async (args) => {
+      captured = args;
+      return realDeliver(args);
+    };
+
+    await client.send(tunnelMessage({ id: MSG[1], seq: 1 }));
+    assert.equal(captured.frame, undefined, "нет зашифрованного кадра");
+    assert.equal(captured.message.payload.content.text, "секрет РФ 1", "C9 идёт открытым");
+  });
+
+  it("сохраняет backpressure по ёмкости (Q4)", async () => {
+    let release;
+    const gate = new Promise((resolve) => {
+      release = resolve;
+    });
+    const app = createVpnTunnelAppEndpoint({
+      identity: { id: "app-core" },
+      appCrypto: false,
+      capacity: 1,
+      handle: async () => {
+        await gate;
+        return { accepted: true };
+      },
+    });
+    const client = createVpnTunnelEdgeClient({
+      identity: { id: "edge-rf" },
+      server: app,
+      appCrypto: false,
+      link: app.link,
+    });
+    await client.connectAsync();
+
+    const inflight = client.send(tunnelMessage({ id: MSG[1], seq: 1 }));
+    await assert.rejects(
+      () => client.send(tunnelMessage({ id: MSG[2], seq: 2 })),
+      VpnTunnelBackpressureError,
+    );
+    release();
+    assert.equal((await inflight).accepted, true);
+  });
+
+  it("сохраняет channel-down при разрыве link (Q4)", async () => {
+    const { client, link } = buildPlainPair();
+    await client.connectAsync();
+    link.cut();
+    await assert.rejects(
+      () => client.send(tunnelMessage({ id: MSG[1], seq: 1 })),
+      VpnTunnelChannelDownError,
+    );
+    assert.equal(client.isConnected(), false);
+  });
+});

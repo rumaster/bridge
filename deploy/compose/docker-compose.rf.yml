@@ -72,6 +72,14 @@ services:
       EDGE_VPN_TRUSTED_APP_CERTS: ${EDGE_VPN_TRUSTED_APP_CERTS:?укажите EDGE_VPN_TRUSTED_APP_CERTS в .env.rf}
       EDGE_VPN_APP_TCP_URL: ${EDGE_VPN_APP_TCP_URL:?укажите EDGE_VPN_APP_TCP_URL в .env.rf}
       EDGE_VPN_APP_WSS_URL: ${EDGE_VPN_APP_WSS_URL:-}
+      # Единый слой (Этап 2, Q2): off снимает прикладной AES-GCM/mTLS (защита — на
+      # AmneziaWG). Проактивный liveness (§5.4): on включает активную TCP-пробу
+      # туннельного IP App-стороны как триггер «буферизация ↔ дренаж». Туннельный
+      # деплой ставит off/on (см. .env.awg.rf); дефолты сохраняют прежнее поведение.
+      EDGE_VPN_APP_CRYPTO: ${EDGE_VPN_APP_CRYPTO:-on}
+      EDGE_VPN_TUNNEL_LIVENESS: ${EDGE_VPN_TUNNEL_LIVENESS:-off}
+      EDGE_VPN_LIVENESS_INTERVAL_MS: ${EDGE_VPN_LIVENESS_INTERVAL_MS:-5000}
+      EDGE_VPN_LIVENESS_TIMEOUT_MS: ${EDGE_VPN_LIVENESS_TIMEOUT_MS:-2000}
       EDGE_VPN_TIMEOUT_MS: ${EDGE_VPN_TIMEOUT_MS:-5000}
       EDGE_VPN_BACKOFF_MS: ${EDGE_VPN_BACKOFF_MS:-100,500,1000,2500,5000}
       EDGE_BUFFER_TTL_MS: ${EDGE_BUFFER_TTL_MS:-3600000}

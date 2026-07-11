@@ -60,6 +60,8 @@ AWG_H1=${H1}
 AWG_H2=${H2}
 AWG_H3=${H3}
 AWG_H4=${H4}
+# Единый слой (Этап 2, Q2): прикладной AES-GCM/mTLS снят, защита — на AmneziaWG.
+EDGE_VPN_APP_CRYPTO=off
 EOF
 
 cat >"${RF_ENV}" <<EOF
@@ -83,6 +85,9 @@ AWG_H3=${H3}
 AWG_H4=${H4}
 # C9-адрес назначения перенастроен на туннельный IP App-стороны (Этап 1).
 EDGE_VPN_APP_TCP_URL=tcp://10.7.0.1:3049
+# Единый слой (Этап 2, Q2) + проактивный liveness по туннельному IP (§5.4).
+EDGE_VPN_APP_CRYPTO=off
+EDGE_VPN_TUNNEL_LIVENESS=on
 EOF
 
 echo "awg-keygen: записаны ${APP_ENV} и ${RF_ENV} (общие PSK/H1–H4, endpoint=${AWG_ENDPOINT})"

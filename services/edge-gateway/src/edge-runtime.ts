@@ -1,3 +1,4 @@
+import { createLivenessLink, createTcpLivenessProbe } from "./awg-liveness.js";
 import { createC7RedisStreamBridge } from "./c7-redis-stream-bridge.js";
 import { createEdgeCluster } from "./edge-cluster.js";
 import { createPostgresEdgeMessageBufferStore } from "./edge-message-buffer.js";
@@ -74,9 +75,19 @@ export async function createEdgeGatewayRuntimeFromEnv(
     ? { store: options.bufferStore, close: async () => {} }
     : await createPostgresBufferStore(env.DATABASE_URL);
   const remoteServer = createRemoteVpnServerFromEnv(env);
-  const sessionSecret = resolveVpnSessionSecret(env);
-  const edgeCertificate = requiredEnv(env, "EDGE_VPN_EDGE_CERT");
-  const trustedAppCertificates = parseList(requiredEnv(env, "EDGE_VPN_TRUSTED_APP_CERTS"));
+  // Единый слой (Q2): при EDGE_VPN_APP_CRYPTO=off прикладной AES-GCM/mTLS снят —
+  // защиту канала даёт AmneziaWG. По умолчанию on (обратная совместимость).
+  const appCrypto = env.EDGE_VPN_APP_CRYPTO !== "off";
+  const edgeCertificate = appCrypto
+    ? requiredEnv(env, "EDGE_VPN_EDGE_CERT")
+    : (env.EDGE_VPN_EDGE_ID ?? "edge-rf");
+  const sessionSecret = appCrypto ? resolveVpnSessionSecret(env) : undefined;
+  const trustedAppCertificates = appCrypto
+    ? parseList(requiredEnv(env, "EDGE_VPN_TRUSTED_APP_CERTS"))
+    : [];
+  // Проактивный liveness (§5.4): активная TCP-проба туннельного IP App-стороны
+  // питает link edge-клиента → триггер «буферизация ↔ дренаж» в edge-cluster.
+  const livenessLink = createLivenessLinkFromEnv(env);
   const tunnel =
     options.tunnel ??
     createVpnTunnelEdgeClient({
@@ -89,7 +100,12 @@ export async function createEdgeGatewayRuntimeFromEnv(
       sessionSecret,
       clientId: env.EDGE_VPN_CLIENT_ID ?? "edge-rf",
       backoff: parseBackoff(env.EDGE_VPN_BACKOFF_MS),
+      appCrypto,
+      ...(livenessLink ? { link: livenessLink } : {}),
     });
+  if (!options.tunnel) {
+    livenessLink?.start();
+  }
   const cluster = createEdgeCluster({
     cipher,
     tunnel,
@@ -141,10 +157,37 @@ export async function createEdgeGatewayRuntimeFromEnv(
       if (drainTimer) {
         clearInterval(drainTimer);
       }
+      livenessLink?.stop();
       await c7StreamBridge?.stop();
       await buffer.close();
     },
   };
+}
+
+/**
+ * Активная TCP-проба туннельного IP App-стороны (§5.4) как link edge-клиента.
+ * Включается EDGE_VPN_TUNNEL_LIVENESS=on; хост/порт берём из EDGE_VPN_APP_TCP_URL
+ * (в туннельном деплое — tcp://10.7.0.1:3049).
+ */
+function createLivenessLinkFromEnv(env: Record<string, string | undefined>) {
+  if ((env.EDGE_VPN_TUNNEL_LIVENESS ?? "off").trim().toLowerCase() !== "on") {
+    return null;
+  }
+  const url = env.EDGE_VPN_APP_TCP_URL;
+  if (!url) {
+    return null;
+  }
+  const parsed = new URL(url);
+  const probe = createTcpLivenessProbe({
+    host: parsed.hostname,
+    port: Number(parsed.port || 3049),
+    timeoutMs: numberEnv(env.EDGE_VPN_LIVENESS_TIMEOUT_MS, 2_000),
+  });
+  return createLivenessLink({
+    probe,
+    intervalMs: numberEnv(env.EDGE_VPN_LIVENESS_INTERVAL_MS, 5_000),
+    initialUp: true,
+  });
 }
 
 export async function startEdgeGatewayFromEnv(
@@ -199,19 +242,24 @@ export function createBackendEdgeTunnelHandler({
 }
 
 async function startAppVpnRuntime(env: Record<string, string | undefined>) {
+  // Единый слой (Q2): при EDGE_VPN_APP_CRYPTO=off прикладной AES-GCM/mTLS снят.
+  const appCrypto = env.EDGE_VPN_APP_CRYPTO !== "off";
   const endpoint = createVpnTunnelAppEndpoint({
     identity: {
       id: env.EDGE_VPN_APP_ID ?? "app-core",
-      certificate: requiredEnv(env, "EDGE_VPN_APP_CERT"),
+      certificate: appCrypto
+        ? requiredEnv(env, "EDGE_VPN_APP_CERT")
+        : (env.EDGE_VPN_APP_ID ?? "app-core"),
     },
-    trustedCertificates: parseList(requiredEnv(env, "EDGE_VPN_TRUSTED_EDGE_CERTS")),
-    sessionSecret: resolveVpnSessionSecret(env),
+    trustedCertificates: appCrypto ? parseList(requiredEnv(env, "EDGE_VPN_TRUSTED_EDGE_CERTS")) : [],
+    sessionSecret: appCrypto ? resolveVpnSessionSecret(env) : undefined,
     capacity: numberEnv(env.EDGE_VPN_APP_CAPACITY, Number.POSITIVE_INFINITY),
     handle: createBackendEdgeTunnelHandler({
       backendUrl:
         env.EDGE_VPN_BACKEND_C9_URL ??
         "http://backend:3000/internal/edge/tunnel/messages",
     }),
+    appCrypto,
   });
   const servers: any[] = [];
   const tcpPort = numberEnv(env.EDGE_VPN_APP_TCP_PORT, 3049);

@@ -447,6 +447,36 @@ capability-gated CI-job `awg-poc` в [`.github/workflows/ci.yml`](../../.github/
 - **DoD.** Единый слой; разрыв реального туннеля даёт то же поведение §7.9, что и
   нынешний мок-разрыв: без потерь, порядок и дедуп сохранены.
 
+#### Итоги Этапа 2 (выполнено ✅)
+
+- **Единый слой (Q2/Q4).** Флаг `appCrypto` в
+  [`vpn-tunnel.ts`](../../services/edge-gateway/src/vpn-tunnel.ts): при `false`
+  прикладной AES-GCM (`seal`/`open`), HKDF-ключ и сверка сертификатов (mTLS)
+  **сняты** — защиту даёт AmneziaWG; RPC-плоскость доставки C9
+  (`handshake`/`deliver`) **сохранена без крипто** (ack/backpressure/дедуп).
+  Дефолт `true` — обратная совместимость (mock/дев без туннеля). Включается
+  `EDGE_VPN_APP_CRYPTO=off` (туннельный деплой ставит off).
+- **Liveness (§5.4).** Модуль
+  [`awg-liveness.ts`](../../services/edge-gateway/src/awg-liveness.ts):
+  `interpretHandshakeFreshness` (свежесть хендшейка → up/down),
+  `createTcpLivenessProbe` (активная проба туннельного IP App-стороны),
+  `createLivenessLink` (питает `link` edge-клиента). Заведён в
+  [`edge-runtime.ts`](../../services/edge-gateway/src/edge-runtime.ts) как триггер
+  «буферизация ↔ дренаж» (`EDGE_VPN_TUNNEL_LIVENESS=on`) — переиспользует всю
+  машинерию `edge-cluster.ts` без её изменения.
+- **Supervisor.** В [`entrypoint.sh`](../../deploy/docker/awg/entrypoint.sh):
+  авто-переподнятие `awg0` при пропаже + периодический пере-резолв DNS
+  `AWG_ENDPOINT` (роуминг/смена IP App-стороны).
+- **Тесты.** unit — свежесть хендшейка → up/down, флип liveness-link, семантика
+  единого слоя (открытый C9 по проводу, backpressure, channel-down); прежние
+  крипто/mTLS-тесты остаются зелёными (дефолт `appCrypto=on`). CP-7
+  contract/e2e — без потерь/дублей — зелёные. Всего edge-gateway: **75 pass**.
+- **Проверено на стенде (единый слой на боевых стеках):** C9 в едином слое прошёл
+  через реальный туннель с зелёным ack; **разрыв** (стоп `awg-server`) →
+  liveness-проба `DOWN` (буферизация) → **восстановление** (старт) → `UP`
+  (дренаж), хендшейк восстановлен за ~4с. C9 доходит и до реального
+  `edge-vpn-app` (единый слой).
+
 ### Этап 3 — Эксплуатация и наблюдаемость (M)
 - **Задачи.** Экспонировать метрики туннеля (свежесть хендшейка, rx/tx, состояние
   буфера, опц. packet loss/RTT), интеграция в алертинг — по месту (Q10); алерты

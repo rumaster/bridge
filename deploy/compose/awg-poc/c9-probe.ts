@@ -18,15 +18,18 @@ const remote = createVpnTunnelTcpRemoteServer({
   url,
   timeoutMs: Number(process.env.EDGE_VPN_TIMEOUT_MS ?? 30_000),
 });
+// appCrypto=off — единый слой (Этап 2): крипто делегировано AmneziaWG.
+const appCrypto = process.env.EDGE_VPN_APP_CRYPTO !== "off";
 const client = createVpnTunnelEdgeClient({
   identity: {
     id: process.env.EDGE_VPN_EDGE_ID ?? "edge-rf",
-    certificate: requireEnv("EDGE_VPN_EDGE_CERT"),
+    certificate: appCrypto ? requireEnv("EDGE_VPN_EDGE_CERT") : (process.env.EDGE_VPN_EDGE_ID ?? "edge-rf"),
   },
   server: remote,
-  trustedCertificates: parseList(requireEnv("EDGE_VPN_TRUSTED_APP_CERTS")),
-  sessionSecret: requireEnv("EDGE_VPN_SESSION_KEY"),
+  trustedCertificates: appCrypto ? parseList(requireEnv("EDGE_VPN_TRUSTED_APP_CERTS")) : [],
+  sessionSecret: appCrypto ? requireEnv("EDGE_VPN_SESSION_KEY") : undefined,
   clientId: process.env.EDGE_VPN_CLIENT_ID ?? "edge-rf",
+  appCrypto,
 });
 
 async function main() {
