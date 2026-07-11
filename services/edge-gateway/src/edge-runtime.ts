@@ -112,6 +112,21 @@ export async function createEdgeGatewayRuntimeFromEnv(
     : null;
   c7StreamBridge?.start();
 
+  // Поддержание VPN-туннеля и дренаж RF-буфера: подключаем туннель на старте и
+  // периодически досылаем накопленное (cluster.drain() = ensureConnected + flush).
+  // Без этого не-backlog ingest уходит в буфер как "disconnected" и не форвардится
+  // (туннель подключается только внутри drain()).
+  const drainIntervalMs = numberEnv(env.EDGE_DRAIN_INTERVAL_MS, 5000);
+  let drainTimer;
+  if (drainIntervalMs > 0 && typeof cluster.drain === "function") {
+    const runDrain = () => {
+      void cluster.drain().catch(() => {});
+    };
+    runDrain();
+    drainTimer = setInterval(runDrain, drainIntervalMs);
+    drainTimer.unref?.();
+  }
+
   return {
     mode,
     server: createEdgeGatewayServer({
@@ -123,6 +138,9 @@ export async function createEdgeGatewayRuntimeFromEnv(
     cluster,
     tunnel,
     close: async () => {
+      if (drainTimer) {
+        clearInterval(drainTimer);
+      }
       await c7StreamBridge?.stop();
       await buffer.close();
     },
