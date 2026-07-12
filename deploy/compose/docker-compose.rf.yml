@@ -192,6 +192,10 @@ services:
       PERMIT_DOCKER: ${MAIL_PERMIT_DOCKER:-connected-networks}
       POSTMASTER_ADDRESS: ${MAIL_POSTMASTER:-postmaster@bridge.local}
       LOG_LEVEL: ${MAIL_LOG_LEVEL:-info}
+      # Ротация внутренних логов почтовика (Этап M4). Значения docker-mailserver:
+      # daily|weekly|monthly; LOGROTATE_COUNT — сколько ротаций хранить.
+      LOGROTATE_INTERVAL: ${MAIL_LOGROTATE_INTERVAL:-weekly}
+      LOGROTATE_COUNT: ${MAIL_LOGROTATE_COUNT:-4}
       ONE_DIR: 1
     volumes:
       - bridge-mail-data:/var/mail

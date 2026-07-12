@@ -1,0 +1,25 @@
+# Anti-abuse / rate-limit переопределения Postfix для docker-mailserver (Этап M4).
+#
+# Скопируйте в deploy/mail/config/postfix-main.cf (bind-конфиг) — docker-mailserver
+# подхватит эти строки как переопределения main.cf при старте/перезапуске:
+#   cp deploy/mail/postfix-main.cf.example deploy/mail/config/postfix-main.cf
+#   docker restart <mailserver>
+#
+# Значения — консервативный базовый уровень против превращения услуги в спам-релей.
+# Лимиты anvil — ПОКЛИЕНТНЫЕ (по IP). Точные per-user/per-organization лимиты
+# отправки требуют policy-сервиса (postfwd/policyd) — отдельный шаг (услуга пока
+# без боевой исходящей доставки, Этап M3 отложен).
+
+# Максимальный размер письма (25 MiB).
+message_size_limit = 26214400
+
+# Окно для anvil-счётчиков.
+anvil_rate_time_unit = 60s
+# Не более N подключений с одного клиента за окно.
+smtpd_client_connection_rate_limit = 30
+# Не более N писем с одного клиента за окно.
+smtpd_client_message_rate_limit = 100
+# Не более N получателей с одного клиента за окно.
+smtpd_client_recipient_rate_limit = 200
+# Одновременных подключений с одного клиента.
+smtpd_client_connection_count_limit = 20

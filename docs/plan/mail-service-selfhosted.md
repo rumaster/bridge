@@ -352,7 +352,24 @@ e2e-сценарий email проходит на настоящих сокета
 внешние сервисы (Gmail/Yandex) в «Входящие», а не в спам; SPF/DKIM/DMARC
 проходят (`dmarc=pass`).
 
-### M4 — Эксплуатация
+### M4 — Эксплуатация — ✅ РЕАЛИЗОВАН
+
+> **Статус: реализовано и проверено на стенде.** Что сделано:
+> - **Бэкап/восстановление** — [`deploy/mail/backup.sh`](../../deploy/mail/backup.sh):
+>   named-volumes (`bridge-mail-data`/`bridge-mail-state`) + bind-конфиг (аккаунты,
+>   DKIM, квоты) в один архив; `restore <archive>`. Проверено: архив создаётся
+>   (data/state/config, включая opendkim-ключи).
+> - **Мониторинг** — [`deploy/mail/status.sh`](../../deploy/mail/status.sh):
+>   очередь Postfix, `deferred`, кол-во ящиков, заполнение `/var/mail`, квоты
+>   (`doveadm quota`), последние отказы доставки; `exit 1` при превышении порогов
+>   (`MAIL_QUEUE_WARN`/`MAIL_DISK_WARN_PCT`) — для cron/алертов. Проверено на стенде.
+> - **Ротация логов** — `MAIL_LOGROTATE_INTERVAL`/`MAIL_LOGROTATE_COUNT` в compose
+>   (docker-mailserver `LOGROTATE_*`).
+> - **Лимиты отправки (anti-abuse)** — шаблон
+>   [`deploy/mail/postfix-main.cf.example`](../../deploy/mail/postfix-main.cf.example)
+>   (поклиентные anvil-лимиты + размер письма); точные per-user/per-org лимиты
+>   (postfwd) и suspend по злоупотреблению — отдельный шаг (услуга без боевой
+>   исходящей доставки, M3 отложен).
 
 - Бэкап volume `bridge-mail-data` (ящики) и `bridge-mail-state`; регламент
   восстановления.

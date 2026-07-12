@@ -99,7 +99,44 @@ node --import tsx scripts/mail-provision.ts add support \
 >   node:20.20.2-bookworm-slim npx --yes tsx@4.19.2 scripts/mail-provision.ts <args>
 > ```
 
-## Стадии M3–M5
+## M3 — Deliverability (DNS/DKIM)
 
-DKIM/SPF/DMARC, deliverability, эксплуатация, продуктивизация — см. план.
-M1/M2 намеренно без внешней доставки (внутри docker-сети, self-signed TLS).
+DKIM-ключ и DNS-записи (MX/SPF/DKIM/DMARC + PTR) — см.
+[`dns-records.md`](./dns-records.md). Боевая доставка отложена (на стенде
+исходящий порт 25 заблокирован, PTR некорректен) — детали и чек-лист там же.
+
+## M4 — Эксплуатация
+
+Скрипты запускаются на хосте с docker (Node не нужен).
+
+**Бэкап/восстановление** ([`backup.sh`](./backup.sh)) — named-volumes (ящики,
+состояние) + конфиг (аккаунты, DKIM, квоты) в один архив:
+
+```bash
+deploy/mail/backup.sh backup                 # → /var/backups/bridge-mail/mail-backup-<ts>.tar.gz
+deploy/mail/backup.sh backup --out /srv/bk   # свой каталог
+deploy/mail/backup.sh restore <archive>      # затем: docker restart <mailserver>
+```
+> Архив содержит секреты (хеши паролей, приватный DKIM) — храните защищённо.
+
+**Мониторинг** ([`status.sh`](./status.sh)) — очередь Postfix, отказы доставки,
+кол-во ящиков, заполнение диска, квоты; `exit 1` при превышении порогов (для cron):
+
+```bash
+deploy/mail/status.sh                                   # сводка + exit-код
+MAIL_QUEUE_WARN=100 MAIL_DISK_WARN_PCT=90 deploy/mail/status.sh
+# cron-алерт (пример): */10 * * * * deploy/mail/status.sh || mail-alert ...
+# ежедневный бэкап:     15 3 * * *   deploy/mail/backup.sh backup
+```
+
+**Ротация логов** — `MAIL_LOGROTATE_INTERVAL` (daily|weekly|monthly, default weekly)
+и `MAIL_LOGROTATE_COUNT` в `.env.rf` (применяется при пересоздании почтовика).
+
+**Лимиты отправки (anti-abuse)** — шаблон
+[`postfix-main.cf.example`](./postfix-main.cf.example): скопируйте в
+`config/postfix-main.cf` и перезапустите почтовик. Базовые поклиентные anvil-лимиты;
+точные per-user/per-org лимиты требуют policy-сервиса (postfwd) — отдельный шаг.
+
+## M5 — Продуктивизация
+
+Заказ ящика из админки, автопровижн, тариф — см. план.
