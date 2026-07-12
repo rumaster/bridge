@@ -662,6 +662,31 @@ app-side HTTP-шлюзу для email; `health`/статус канала не �
    нужно убедиться, что это не конкурирует за пропускную способность/
    backpressure-лимиты с основным RF-first входящим потоком (Этап E2,
    совместно с существующими метриками `edge-cluster.ts`).
+6. **Робастность egress: ложный `failed` на cold-start SMTP (открыто).**
+   Реализованное backend-плечо `handoffEgress → egress_dispatch`
+   ([`internal-messaging.service.ts`](../../services/backend/src/modules/communication-core/internal-messaging.service.ts),
+   `forwardEgressToEdgeControl`; коммит `e65de03`) **синхронно** ждёт ack Edge,
+   а Edge-intake отвечает только ПОСЛЕ фактической SMTP-отправки. Первое письмо
+   после старта Edge — «холодное» (nodemailer создаёт транспорт и поднимает
+   TCP+STARTTLS+AUTH), задержка превышает таймаут обёртки `deliverWithAdapterFailure`
+   («M5 dependency timed out») → сообщение помечается `failed`, **хотя письмо
+   реально уходит и клиент его получает** (подтверждено на стенде: тёплый
+   транспорт — ~250 мс, `sent`). Причины: (а) связанность backend со всем внешним
+   SMTP в одном вызове; (б) у `fetch` в `forwardEgressToEdgeControl` нет своего
+   таймаута; (в) cold-start транспорта.
+   - **Лёгкий фикс (быстро, без редизайна):** явный `AbortController`-таймаут у
+     `fetch` (~15–20 с, независимый от M5-обёртки); прогрев транспорта на Edge
+     (`transporter.verify()` при `channel_credentials_sync`); ретрай с
+     идемпотентностью по `control_id` (повтор возвращает дедуплицированный `sent`).
+   - **Правильная цель (async-ack, симметрия с входящим RF-first):** Edge
+     подтверждает **приём** мгновенно (`queued`), SMTP-отправка — в фоне,
+     терминальный статус приезжает обратным колбэком через существующий
+     `recordDeliveryAttempt` (`POST /internal/delivery/attempts`). Требует
+     разрешить переход `sent → failed` в машине статусов C1 **или** ввести
+     промежуточный статус `dispatched`/`queued`. Снимает зависимость backend от
+     скорости/доступности SMTP и даёт настоящий `delivered` vs `sent`.
+   - **Статус:** не реализовано (осознанно отложено). Рекомендация — сначала
+     лёгкий фикс (прогрев + таймаут), затем async-ack как целевой.
 
 ---
 
