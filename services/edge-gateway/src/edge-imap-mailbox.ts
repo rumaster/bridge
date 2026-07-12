@@ -62,6 +62,12 @@ export interface CreateImapMailboxOptions {
   mailbox?: string;
   /** Максимум писем за один poll: остаток догоняется на следующем поллинге. */
   fetchLimit?: number;
+  /**
+   * false — принимать самоподписанный серверный TLS-сертификат (M1: почтовик
+   * self-signed внутри docker-сети). Игнорируется, если задан свой clientFactory.
+   * Дефолт — строгая проверка.
+   */
+  tlsRejectUnauthorized?: boolean;
   logger?: {
     warn?: (...args: unknown[]) => void;
     error?: (...args: unknown[]) => void;
@@ -75,12 +81,17 @@ const DEFAULT_FETCH_LIMIT = 50;
 export function createImapMailbox(
   { credentials }: CreateImapMailboxInput,
   {
-    clientFactory = defaultImapClientFactory,
+    clientFactory,
     mailbox = DEFAULT_MAILBOX,
     fetchLimit = DEFAULT_FETCH_LIMIT,
+    tlsRejectUnauthorized = true,
   }: CreateImapMailboxOptions = {},
 ): EdgeMailbox {
   const imap = extractImapEndpoint(credentials);
+  const makeClient =
+    clientFactory ??
+    ((config: ImapClientConfig) =>
+      defaultImapClientFactory(config, { rejectUnauthorized: tlsRejectUnauthorized }));
 
   let client: EdgeImapClient | null = null;
   // Базовый UID на момент первого подключения (см. заголовок модуля).
@@ -90,7 +101,7 @@ export function createImapMailbox(
     if (client && client.usable !== false) {
       return client;
     }
-    const created = clientFactory({
+    const created = makeClient({
       host: imap.host,
       port: imap.port ?? 993,
       secure: imap.tls ?? true,
@@ -227,12 +238,18 @@ function stripAngleBrackets(value?: string | false | null): string | undefined {
   return trimmed === "" ? undefined : trimmed;
 }
 
-function defaultImapClientFactory(config: ImapClientConfig): EdgeImapClient {
+function defaultImapClientFactory(
+  config: ImapClientConfig,
+  options: { rejectUnauthorized?: boolean } = {},
+): EdgeImapClient {
   return new ImapFlow({
     host: config.host,
     port: config.port,
     secure: config.secure,
     auth: config.auth,
     logger: false,
+    ...(options.rejectUnauthorized === false
+      ? { tls: { rejectUnauthorized: false } }
+      : {}),
   }) as unknown as EdgeImapClient;
 }

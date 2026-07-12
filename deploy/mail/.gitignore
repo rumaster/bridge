@@ -1,0 +1,5 @@
+# Состояние/конфиг почтовика генерируется docker-mailserver в рантайме и содержит
+# секреты (пароли ящиков в postfix-accounts.cf, приватные ключи DKIM). Не коммитим.
+config/*
+!config/.gitkeep
+opendkim/

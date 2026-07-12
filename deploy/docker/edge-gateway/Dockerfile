@@ -10,7 +10,16 @@ FROM node:20.20.2-alpine
 WORKDIR /repo
 
 # tsx выполняет TypeScript-исходники сервиса напрямую, без шага сборки.
-RUN npm install --no-save --no-package-lock tsx@^4.19.2 pg@^8.22.0
+# imapflow/mailparser/nodemailer — рантайм edge-owned email-драйверов (Этап M1,
+# docs/plan/mail-service-selfhosted.md): edge-channel-drivers статически их
+# импортирует, поэтому пакеты обязаны присутствовать в образе (Dockerfile ставит
+# рантайм-зависимости явно, без npm ci по package.json).
+RUN npm install --no-save --no-package-lock \
+  tsx@^4.19.2 \
+  pg@^8.22.0 \
+  imapflow@^1.4.7 \
+  mailparser@^3.9.14 \
+  nodemailer@^6.9.16
 COPY packages/contracts ./packages/contracts
 COPY services/edge-gateway ./services/edge-gateway
 WORKDIR /repo/services/edge-gateway

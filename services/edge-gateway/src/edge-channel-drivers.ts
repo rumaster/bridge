@@ -1,7 +1,11 @@
 import { createEdgeControlPlane, type EdgeControlPlaneCipher } from "./edge-control-plane.js";
+import { createEdgeEmailInboundDriver } from "./edge-email-inbound-driver.js";
+import { createEdgeEmailSender } from "./edge-email-sender.js";
 import { createEdgeMaxInboundDriver } from "./edge-max-inbound-driver.js";
 import { createEdgeMaxSender } from "./edge-max-sender.js";
 import { createEdgeMaxUpdatesClient } from "./edge-max-updates-client.js";
+import { createImapMailbox } from "./edge-imap-mailbox.js";
+import { createNodemailerTransport } from "./edge-smtp-transport.js";
 
 /**
  * Сборка edge-owned канальных драйверов для рантайма Edge Gateway (Этап M5 плана
@@ -18,9 +22,13 @@ import { createEdgeMaxUpdatesClient } from "./edge-max-updates-client.js";
  * App-стороны (`channel_credentials_sync`). RF-first, деградацию и дренаж
  * обеспечивает `EdgeCluster` (буфер + туннель).
  *
- * Email подключается сюда же по идентичной схеме (драйвер/ingress/креды уже есть,
- * `imapflow`), как только появится его боевой SMTP-транспорт (nodemailer, MP-12);
- * поэтому модуль назван канально-нейтрально.
+ * Email подключён здесь же по идентичной схеме (Этап M1 плана
+ * `docs/plan/mail-service-selfhosted.md`): входящее — `EdgeEmailInboundDriver`
+ * (IMAP poll через `createImapMailbox`/`imapflow`) → RF-first `cluster.ingest`;
+ * исходящее — `EdgeEmailSender` с боевым nodemailer-транспортом
+ * (`createNodemailerTransport`), инжектится в control-plane под `egress_dispatch`
+ * с `channel_type != "max"`. Реестр email-каналов и креды — тоже из control-plane
+ * (creds-sync App→Edge), как у MAX.
  */
 
 export interface EdgeCluster {
@@ -55,8 +63,38 @@ export function createEdgeChannelRuntime({
   // Исходящее MAX (M4): sender инжектится в control-plane для egress_dispatch.
   const maxSender = createEdgeMaxSender({ baseUrl: maxApiBaseUrl, fetchImpl, now });
 
-  // Control-plane: кэш кред + реестр каналов из creds-sync + роутинг egress.
-  const controlPlane = createEdgeControlPlane({ cipher, maxSender, now });
+  // M1: self-signed TLS почтовика внутри docker-сети принимается при
+  // EMAIL_TLS_REJECT_UNAUTHORIZED=0 (дефолт — строгая проверка для боевых кред).
+  const emailTlsRejectUnauthorized = (env.EMAIL_TLS_REJECT_UNAUTHORIZED ?? "1").trim() !== "0";
+
+  // Исходящее email (Этап E4/M1): боевой nodemailer SMTP-транспорт за сеамом
+  // createTransport; инжектится в control-plane для egress_dispatch (email).
+  const emailSender = createEdgeEmailSender({
+    createTransport: ({ smtp }) =>
+      createNodemailerTransport({ smtp }, { rejectUnauthorized: emailTlsRejectUnauthorized }),
+    now,
+  });
+
+  // Control-plane: кэш кред + реестр каналов из creds-sync + роутинг egress
+  // (channel_type="max" → maxSender, иначе → emailSender).
+  const controlPlane = createEdgeControlPlane({ cipher, maxSender, emailSender, now });
+
+  // Входящее email (Этап E3/M1): реестр каналов/креды — из control-plane; приём
+  // по IMAP (poll по курсору UID) через боевой createImapMailbox; RF-first в кластер.
+  const emailDriver = createEdgeEmailInboundDriver({
+    listChannels: async ({ channelType }) => controlPlane.listChannels({ channelType }),
+    resolveCredentials: ({ organizationId }) => controlPlane.getEmailCredentials(organizationId),
+    createMailbox: ({ credentials, channel }) =>
+      createImapMailbox(
+        { credentials, channel },
+        { tlsRejectUnauthorized: emailTlsRejectUnauthorized, logger },
+      ),
+    ingest: (body) => cluster.ingest(body),
+    pollIntervalMs: numberEnv(env.EMAIL_INBOUND_POLL_INTERVAL_MS, 15_000),
+    retryDelayMs: numberEnv(env.EMAIL_INBOUND_RETRY_DELAY_MS, 5_000),
+    now,
+    logger,
+  });
 
   // Входящее MAX (M4): реестр/токен — из control-plane; приём — RF-first в кластер.
   const maxDriver = createEdgeMaxInboundDriver({
@@ -80,23 +118,31 @@ export function createEdgeChannelRuntime({
     controlPlane,
     maxDriver,
     maxSender,
+    emailDriver,
+    emailSender,
 
     async start(): Promise<void> {
       await maxDriver.start({
         refreshIntervalMs: numberEnv(env.MAX_INBOUND_REFRESH_INTERVAL_MS, 30_000),
       });
-      logger?.info?.("Edge channel runtime started (MAX)", {});
+      await emailDriver.start({
+        refreshIntervalMs: numberEnv(env.EMAIL_INBOUND_REFRESH_INTERVAL_MS, 30_000),
+      });
+      logger?.info?.("Edge channel runtime started (MAX + email)", {});
     },
 
     stop(): void {
       maxDriver.stop();
+      emailDriver.stop();
     },
 
     getMetrics() {
       return {
         max_driver: maxDriver.getMetrics(),
+        email_driver: emailDriver.getMetrics(),
         control_plane: controlPlane.getMetrics(),
         max_sender: maxSender.getMetrics(),
+        email_sender: emailSender.getMetrics(),
       };
     },
   };
