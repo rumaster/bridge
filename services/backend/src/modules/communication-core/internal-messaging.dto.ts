@@ -603,7 +603,16 @@ export function buildC2EgressDelivery(
       channel_id: channelId,
       channel_type: channelType,
       conversation_ref: conversationRef,
-      recipient_ref: String(endpoint.external_id ?? conversationRef),
+      // Для email recipient_ref — реальный адрес получателя (metadata.sender_ref),
+      // а НЕ композитный endpoint.external_id (`channelId:address`): иначе SMTP на
+      // Edge получит невалидного получателя. Прочие каналы — прежний external_id.
+      recipient_ref: String(
+        (channelType === "email" && isNonBlankString(metadata.sender_ref)
+          ? metadata.sender_ref
+          : undefined) ??
+          endpoint.external_id ??
+          conversationRef,
+      ),
       direction: MESSAGE_DIRECTION.OUTBOUND,
       content: { ...content, type: message.type },
       ...(isNonBlankString(content.subject) ? { subject: content.subject } : {}),

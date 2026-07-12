@@ -104,6 +104,12 @@ services:
       # URL, по которому backend пересылает исходящие сообщения (C2.EgressDelivery)
       # в integration-platform. Пусто — статус фиксируется только в БД (см. .env.example).
       INTEGRATION_EGRESS_URL: ${INTEGRATION_EGRESS_URL:-http://integration-platform:3005/internal/delivery/dispatch}
+      # Edge-owned email: при заданном URL исходящие email-сообщения backend
+      # диспетчеризует на Edge Gateway control-plane (C9.egress_dispatch → SMTP на
+      # Edge), а НЕ в integration-platform. Пусто — email идёт прежним путём.
+      # На стенде Edge в отдельном RF-кластере → через host-порт edge-gateway.
+      EDGE_CONTROL_URL: ${EDGE_CONTROL_URL:-}
+      EDGE_CONTROL_TOKEN: ${EDGE_CONTROL_TOKEN:-}
     ports:
       - "${BACKEND_PORT:-3000}:${BACKEND_PORT:-3000}"
     depends_on:

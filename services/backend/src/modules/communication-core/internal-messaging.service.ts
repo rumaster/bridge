@@ -707,6 +707,18 @@ export class InternalMessagingService {
    * принимается локально: статус фиксируется только в БД для dev/test-режима.
    */
   private async forwardEgressDelivery(delivery: C2EgressDelivery): Promise<AdapterDeliveryOutcome> {
+    // Email — edge-owned канал: исходящее уходит на Edge Gateway через App→Edge
+    // control-plane (C9.EdgeControlMessage type=egress_dispatch), где живёт боевой
+    // SMTP-клиент (Этапы E2/E6, docs/plan/email-channel-production.md). При заданном
+    // EDGE_CONTROL_URL email больше НЕ идёт в integration-platform по HTTP-шлюзу.
+    // Прочие каналы — прежний путь INTEGRATION_EGRESS_URL (ниже), без изменений.
+    if (delivery.message.channel_type === "email") {
+      const edgeControlUrl = process.env.EDGE_CONTROL_URL;
+      if (edgeControlUrl && edgeControlUrl.trim() !== "") {
+        return this.forwardEgressToEdgeControl(delivery, edgeControlUrl.trim());
+      }
+    }
+
     const url = process.env.INTEGRATION_EGRESS_URL;
     if (!url || url.trim() === "") {
       return { accepted: true, error: null, forwarded: false };
@@ -734,6 +746,76 @@ export class InternalMessagingService {
       this.logger.warn(
         `Не удалось переслать egress-доставку в integration-platform: ${String(error)}`,
       );
+      return {
+        accepted: false,
+        error: error instanceof Error ? error.message : String(error),
+        forwarded: false,
+      };
+    }
+  }
+
+  /**
+   * Диспетчеризует исходящее email-сообщение на Edge Gateway через App→Edge
+   * control-plane (C9.EdgeControlMessage type=egress_dispatch). Edge резолвит
+   * SMTP-креды организации из своего кэша (channel_credentials_sync) и отправляет
+   * письмо боевым nodemailer-транспортом. Идемпотентность — по control_id
+   * (`egress-<message_id>`): повтор доставки не создаёт второе письмо (сверх того
+   * Edge детерминирует Message-ID по message_id). C9-конверт собран литералом,
+   * чтобы не тянуть в backend пакет контрактов (см. json-schema-validator.ts).
+   */
+  private async forwardEgressToEdgeControl(
+    delivery: C2EgressDelivery,
+    edgeControlUrl: string,
+  ): Promise<AdapterDeliveryOutcome> {
+    const m = delivery.message;
+    const content = (m.content ?? {}) as { text?: unknown };
+    const controlMessage = {
+      contract: "C9.EdgeControlMessage",
+      version: "1.0.0",
+      control_id: `egress-${m.message_id}`,
+      type: "egress_dispatch",
+      organization_id: m.organization_id,
+      issued_at: this.now(),
+      payload: {
+        message_id: m.message_id,
+        channel_id: m.channel_id,
+        channel_type: m.channel_type,
+        recipient_ref: m.recipient_ref,
+        text: typeof content.text === "string" ? content.text : "",
+        ...(m.from ? { from: m.from } : {}),
+        ...(m.subject ? { subject: m.subject } : {}),
+        ...(m.in_reply_to ? { in_reply_to: m.in_reply_to } : {}),
+        ...(m.references && m.references.length > 0 ? { references: m.references } : {}),
+      },
+    };
+
+    const token = process.env.EDGE_CONTROL_TOKEN;
+    try {
+      const response = await fetch(edgeControlUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(token && token.trim() !== "" ? { authorization: `Bearer ${token.trim()}` } : {}),
+        },
+        body: JSON.stringify(controlMessage),
+      });
+      const ack = (await response.json().catch(() => ({}))) as { status?: string; detail?: string };
+      if (!response.ok) {
+        this.logger.warn(
+          `Edge отклонил egress email HTTP ${response.status} (${m.message_id})`,
+        );
+        return { accepted: false, error: `edge returned HTTP ${response.status}`, forwarded: false };
+      }
+      if (ack.status === "sent") {
+        return { accepted: true, error: null, forwarded: true };
+      }
+      return {
+        accepted: false,
+        error: ack.detail ?? `edge egress status ${ack.status ?? "unknown"}`,
+        forwarded: false,
+      };
+    } catch (error) {
+      this.logger.warn(`Не удалось диспетчеризовать email-egress на Edge: ${String(error)}`);
       return {
         accepted: false,
         error: error instanceof Error ? error.message : String(error),
