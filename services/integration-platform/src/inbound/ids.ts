@@ -33,6 +33,17 @@ export function stableTelegramMessageId(channelId: string, updateId: number | st
 }
 
 /**
+ * Стабильный UUID входящего MAX-сообщения (Этап M3,
+ * docs/plan/max-channel-production.md): детерминирован по каналу и `mid`
+ * (id сообщения MAX Bot API), поэтому переопрос того же сообщения (переигранный
+ * marker) даёт тот же `message_id` и не двоит запись (идемпотентность
+ * acceptIngress по message.id). Читаемый `mid` сохраняется в `external_message_id`.
+ */
+export function stableMaxMessageId(channelId: string, messageRef: number | string): string {
+  return uuidFromText(`max-message:${channelId}:${messageRef}`);
+}
+
+/**
  * Стабильный UUID edge-endpoint (ключ партиционирования/секвенирования Edge).
  * Edge tunnel требует UUID `endpoint_id`; он не обязан совпадать с DB-endpoint
  * ядра (ядро повторно резолвит endpoint по `channel_id`+`sender_ref` из C2), но

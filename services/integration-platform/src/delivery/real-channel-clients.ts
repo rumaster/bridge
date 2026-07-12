@@ -113,17 +113,108 @@ export function createEmailHttpGatewayClient({
   });
 }
 
-export function createMaxHttpGatewayClient({
+export interface MaxBotApiClientOptions {
+  baseUrl?: string;
+  fetchImpl?: typeof globalThis.fetch;
+  token: string;
+}
+
+/**
+ * Реальный клиент MAX Bot API (Этап M2, docs/plan/max-channel-production.md,
+ * закрывает MG-3). Отправка: `POST {base}/messages?access_token=<token>&chat_id=<id>`
+ * с телом `{ text, attachments }` (контракт наследует TamTam Bot API). Ответ —
+ * `{ message: { body: { mid } } }`; `mid` возвращается как `external_message_id`.
+ * Токен передаётся в query по контракту провайдера; URL не логируется.
+ */
+export function createMaxBotApiClient({
+  baseUrl = "https://botapi.max.ru",
   fetchImpl = globalThis.fetch,
   token,
-  url,
-}: HttpChannelClientOptions) {
-  return createGenericHttpChannelClient({
-    fetchImpl,
-    provider: "max",
-    token,
-    url,
-  });
+}: MaxBotApiClientOptions) {
+  const apiBase = baseUrl.replace(/\/+$/, "");
+
+  return {
+    async deliver(delivery: any, options: any = {}) {
+      const { signal } = options;
+      const payload = delivery.external_payload ?? {};
+      const chatId = firstNonEmptyString(payload.chat_id, delivery.recipient_ref);
+      const url =
+        `${apiBase}/messages?access_token=${encodeURIComponent(token)}` +
+        (chatId ? `&chat_id=${encodeURIComponent(chatId)}` : "");
+      const response = await fetchImpl(url, {
+        body: JSON.stringify(toMaxRequestBody(payload)),
+        headers: {
+          "content-type": "application/json",
+          "x-idempotency-key": delivery.idempotency_key,
+        },
+        method: "POST",
+        signal,
+      });
+      const body = await readProviderJson(response);
+      if (!response.ok) {
+        throw providerError("MAX Bot API rejected delivery", response, body);
+      }
+
+      return {
+        external_message_id: firstNonEmptyString(
+          body?.message?.body?.mid,
+          body?.message?.mid,
+          body?.mid,
+          body?.external_message_id,
+          `${chatId}:${delivery.idempotency_key}`,
+        ),
+        provider: "max",
+        provider_response: body?.message ?? body,
+      };
+    },
+  };
+}
+
+export interface ResolvingMaxClientOptions {
+  resolveToken: (input: { organizationId?: string; channelType?: string }) => Promise<string | null>;
+  baseUrl?: string;
+  fetchImpl?: typeof globalThis.fetch;
+  channelType?: string;
+}
+
+/**
+ * MAX-клиент доставки с резолвом токена per-organization (Этап M2, симметрично
+ * {@link createResolvingTelegramClient}, закрывает MG-4). Токен бота определяется
+ * по `organization_id` доставки через `resolveToken` (backend S2S), реальный клиент
+ * кэшируется по токену. Нет токена → НЕповторяемая ошибка (`failed`), не «тихий noop».
+ */
+export function createResolvingMaxClient({
+  resolveToken,
+  baseUrl = "https://botapi.max.ru",
+  fetchImpl = globalThis.fetch,
+  channelType = "max",
+}: ResolvingMaxClientOptions) {
+  const clientsByToken = new Map<string, ReturnType<typeof createMaxBotApiClient>>();
+
+  return {
+    async deliver(delivery: any, options: any = {}) {
+      const organizationId = delivery?.organization_id;
+      const token = await resolveToken({
+        organizationId,
+        channelType: delivery?.channel_type ?? channelType,
+      });
+
+      if (!token) {
+        throw new ChannelDeliveryError(
+          `No MAX bot token configured for organization ${organizationId ?? "?"}`,
+          { retryable: false, category: "missing_channel_secret" },
+        );
+      }
+
+      let client = clientsByToken.get(token);
+      if (!client) {
+        client = createMaxBotApiClient({ baseUrl, fetchImpl, token });
+        clientsByToken.set(token, client);
+      }
+
+      return client.deliver(delivery, options);
+    },
+  };
 }
 
 /**
@@ -132,11 +223,12 @@ export function createMaxHttpGatewayClient({
  * почта отправляется по SMTP на Edge Gateway (Этап E4), а не через app-side
  * HTTP-шлюз SVC-INT. `createEmailHttpGatewayClient` сохранён как generic-клиент
  * для возможных сторонних email-over-HTTP провайдеров (§4.2), но в основной
- * email-канал не подключён.
+ * email-канал не подключён. MAX здесь также НЕ собирается: с Этапа M2 исходящая
+ * доставка MAX идёт реальным Bot API по per-organization токену
+ * ({@link createResolvingMaxClient}), а не глобальным env-шлюзом.
  */
 export function createRealChannelClientsFromEnv(env: NodeJS.ProcessEnv = process.env) {
   const telegramToken = env.TELEGRAM_BOT_TOKEN?.trim();
-  const maxUrl = env.MAX_DELIVERY_URL?.trim();
 
   return {
     ...(telegramToken
@@ -144,14 +236,6 @@ export function createRealChannelClientsFromEnv(env: NodeJS.ProcessEnv = process
           telegram: createTelegramBotApiClient({
             baseUrl: env.TELEGRAM_API_BASE_URL?.trim() || "https://api.telegram.org",
             token: telegramToken,
-          }),
-        }
-      : {}),
-    ...(maxUrl
-      ? {
-          max: createMaxHttpGatewayClient({
-            token: env.MAX_ACCESS_TOKEN?.trim() || env.MAX_BOT_TOKEN?.trim(),
-            url: maxUrl,
           }),
         }
       : {}),
@@ -216,6 +300,19 @@ function toTelegramRequestBody(method, payload) {
     chat_id: payload.chat_id,
     [mediaField]: payload.media,
   };
+}
+
+/**
+ * Тело запроса MAX Bot API `POST /messages`: `chat_id` уходит в query, в теле —
+ * `text` и (при наличии) `attachments`. Идемпотентность — заголовком
+ * `x-idempotency-key` (дедуп на уровне движка доставки), не в теле.
+ */
+function toMaxRequestBody(payload) {
+  const body: { text: string; attachments?: unknown[] } = { text: payload.text ?? "" };
+  if (Array.isArray(payload.attachments) && payload.attachments.length > 0) {
+    body.attachments = payload.attachments;
+  }
+  return body;
 }
 
 async function readProviderJson(response) {

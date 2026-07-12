@@ -8,6 +8,7 @@ import {
 const fixedNow = () => "2026-07-03T09:00:00.000Z";
 const ORG_ID = "org-1";
 const TELEGRAM_TOKEN = "123456789:AA-real-telegram-bot-token-value";
+const MAX_TOKEN = "max-real-bot-access-token-abcdef0123456789";
 
 function createFacade(overrides: Partial<IntegrationGatewayFacadeOptions> = {}) {
   return new IntegrationGatewayFacade({
@@ -169,9 +170,96 @@ describe("IntegrationGatewayFacade", () => {
     expect(result.status).toBe("error");
     expect(result.error).toContain("Токен");
   });
+
+  it("шифрует токен MAX-бота, генерирует credentials_ref и не возвращает секрет (M1)", async () => {
+    const secrets = createSecretStub();
+    const facade = createFacade({ channelSecrets: secrets });
+
+    const channel = await facade.connectChannel({
+      organization_id: ORG_ID,
+      channel_type: "max",
+      name: "MAX Support",
+      credentials: MAX_TOKEN,
+      config: {},
+    });
+
+    expect(channel).not.toHaveProperty("credentials");
+    expect(channel.credentials_ref).toBe(`secret://max/${ORG_ID}/${channel.id}`);
+    expect(channel.status).toBe("connected");
+    expect(secrets.storedPlaintextFor(channel.credentials_ref!)).toBe(MAX_TOKEN);
+  });
+
+  it(":test для MAX дёргает /me, ставит connected и сохраняет bot_username (M1)", async () => {
+    const fetchImpl = jest.fn(async () =>
+      maxResponse({ user_id: 7001, name: "MAX Support Bot", username: "max_support_bot" }),
+    );
+    const facade = createFacade({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    const channel = await facade.connectChannel({
+      organization_id: ORG_ID,
+      channel_type: "max",
+      name: "MAX Support",
+      credentials: MAX_TOKEN,
+    });
+
+    const result = await facade.testChannel(channel.id, ORG_ID);
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      expect.stringContaining(`/me?access_token=${MAX_TOKEN}`),
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(result).toMatchObject({ accepted: true, channel_id: channel.id, status: "connected" });
+    expect(result.error).toBeUndefined();
+
+    const [stored] = await facade.listChannels(ORG_ID);
+    expect(stored.config).toMatchObject({ bot_username: "max_support_bot", bot_id: 7001 });
+  });
+
+  it(":test для MAX помечает канал error, если /me отклонён (M1)", async () => {
+    const fetchImpl = jest.fn(async () => maxResponse({ code: "unauthorized", message: "Invalid token" }, 401));
+    const facade = createFacade({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    const channel = await facade.connectChannel({
+      organization_id: ORG_ID,
+      channel_type: "max",
+      name: "Broken MAX",
+      credentials: MAX_TOKEN,
+    });
+
+    const result = await facade.testChannel(channel.id, ORG_ID);
+
+    expect(result.status).toBe("error");
+    expect(result.error).toContain("Invalid token");
+  });
+
+  it(":test для MAX без сохранённого токена помечает канал error (M1)", async () => {
+    const facade = createFacade();
+
+    const channel = await facade.connectChannel({
+      organization_id: ORG_ID,
+      channel_type: "max",
+      name: "Refless MAX",
+      credentials_ref: "secret://max/org-1/external",
+    });
+
+    const result = await facade.testChannel(channel.id, ORG_ID);
+
+    expect(result.status).toBe("error");
+    expect(result.error).toContain("Токен");
+  });
 });
 
 function telegramResponse(body: Record<string, unknown>, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    async text() {
+      return JSON.stringify(body);
+    },
+  };
+}
+
+function maxResponse(body: Record<string, unknown>, status = 200) {
   return {
     ok: status >= 200 && status < 300,
     status,

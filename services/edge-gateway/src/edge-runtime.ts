@@ -1,5 +1,6 @@
 import { createLivenessLink, createTcpLivenessProbe } from "./awg-liveness.js";
 import { createC7RedisStreamBridge } from "./c7-redis-stream-bridge.js";
+import { createEdgeChannelRuntime } from "./edge-channel-drivers.js";
 import { createEdgeCluster } from "./edge-cluster.js";
 import { createPostgresEdgeMessageBufferStore } from "./edge-message-buffer.js";
 import { createMockWebSocketChannel } from "./mock-ws-channel.js";
@@ -114,6 +115,20 @@ export async function createEdgeGatewayRuntimeFromEnv(
     bufferTtlMs: numberEnv(env.EDGE_BUFFER_TTL_MS, undefined),
     region: env.EDGE_REGION ?? "RF",
   });
+  // Edge-owned канальные драйверы (Этап M5): бот MAX работает на Edge — приём
+  // getUpdates → RF-first `cluster.ingest`, отправка через MAX Bot API; реестр
+  // каналов и токены — из control-plane (creds-sync App→Edge). За гейтом
+  // EDGE_CHANNEL_DRIVERS=on (по умолчанию off — не менять поведение живого edge,
+  // пока App-сторона не начнёт синхронизировать креды каналов).
+  const channelRuntime =
+    (env.EDGE_CHANNEL_DRIVERS ?? "off").trim().toLowerCase() === "on"
+      ? createEdgeChannelRuntime({
+          cluster,
+          cipher: createRfPayloadCipher({ key: resolveRfPayloadKey(env) }),
+          env,
+          now: options.now,
+        })
+      : null;
   const wsChannel = options.wsChannel ?? createMockWebSocketChannel();
   const c7StreamClient = await createC7StreamClientFromEnv(env, options.c7StreamClient);
   const c7StreamBridge = c7StreamClient
@@ -143,6 +158,12 @@ export async function createEdgeGatewayRuntimeFromEnv(
     drainTimer.unref?.();
   }
 
+  if (channelRuntime) {
+    channelRuntime.start().catch((error) => {
+      console.error("edge channel runtime failed to start", error);
+    });
+  }
+
   return {
     mode,
     server: createEdgeGatewayServer({
@@ -152,6 +173,7 @@ export async function createEdgeGatewayRuntimeFromEnv(
       now: options.now,
       vpnTunnel: tunnel,
       liveness: livenessLink,
+      controlPlane: channelRuntime?.controlPlane,
     }),
     cluster,
     tunnel,
@@ -159,6 +181,7 @@ export async function createEdgeGatewayRuntimeFromEnv(
       if (drainTimer) {
         clearInterval(drainTimer);
       }
+      channelRuntime?.stop();
       livenessLink?.stop();
       await c7StreamBridge?.stop();
       await buffer.close();

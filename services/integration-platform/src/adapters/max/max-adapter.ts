@@ -61,6 +61,7 @@ export function isMaxEgressDelivery(delivery) {
 function normalizeIncomingPayload(payload) {
   const message = payload?.message ?? payload ?? {};
   const sender = message.sender ?? message.from ?? {};
+  const recipient = message.recipient ?? {};
   const body = message.body ?? {};
 
   return {
@@ -68,13 +69,35 @@ function normalizeIncomingPayload(payload) {
     channelId: payload?.channel_id,
     messageId: payload?.message_id,
     idempotencyKey: payload?.idempotency_key,
-    externalMessageId: firstNonEmptyString(payload?.external_message_id, message.id),
-    conversationRef: firstNonEmptyString(payload?.conversation_ref, message.chat_id, message.dialog_id),
+    // Реальный MAX Bot API (Этап M3): id сообщения — `message.body.mid`, чат —
+    // `message.recipient.chat_id`, время — `message.timestamp` (epoch ms). Плоские
+    // `message.id`/`message.chat_id`/`message.created_at` сохранены для обратной
+    // совместимости и упрощённых payload.
+    externalMessageId: firstNonEmptyString(payload?.external_message_id, body.mid, message.id),
+    conversationRef: firstNonEmptyString(
+      payload?.conversation_ref,
+      recipient.chat_id,
+      message.chat_id,
+      message.dialog_id,
+    ),
     senderRef: firstNonEmptyString(payload?.sender_ref, sender.user_id, sender.id),
     text: firstNonEmptyString(payload?.text, body.text, message.text),
-    attachments: normalizeMaxAttachments(message.attachments ?? payload?.attachments ?? []),
-    occurredAt: message.created_at ?? payload?.occurred_at,
+    attachments: normalizeMaxAttachments(
+      body.attachments ?? message.attachments ?? payload?.attachments ?? [],
+    ),
+    occurredAt:
+      normalizeMaxTimestamp(message.timestamp ?? payload?.timestamp) ??
+      message.created_at ??
+      payload?.occurred_at,
   };
+}
+
+/** MAX-таймстамп — epoch ms; конвертируем в ISO-строку (как telegram date → ISO). */
+function normalizeMaxTimestamp(value) {
+  if (!Number.isFinite(value)) {
+    return undefined;
+  }
+  return new Date(value).toISOString();
 }
 
 function normalizeMaxAttachments(attachments) {

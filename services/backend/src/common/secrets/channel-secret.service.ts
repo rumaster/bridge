@@ -55,8 +55,15 @@ export class ChannelSecretService {
   /**
    * Каноническая ссылка на секрет канала:
    * `secret://<channel_type>/<organization_id>/<label>` (для Telegram —
-   * `secret://telegram/<organization_id>/main`). В таблице `channels` хранится
-   * только эта ссылка (`credentials_ref`), сам токен — в `credentials_envelope`.
+   * `secret://telegram/<organization_id>/main`; для MAX —
+   * `secret://max/<organization_id>/<label>`, Этап M0 плана
+   * `docs/plan/max-channel-production.md`). В таблице `channels` хранится только
+   * эта ссылка (`credentials_ref`), сам токен — в `credentials_envelope`.
+   *
+   * Механизм канал-агностичен: любой строковый секрет (токен бота Telegram/MAX,
+   * ключ провайдера) шифруется и резолвится одинаково. Состав секрета MAX (MVP) —
+   * только токен бота (getUpdates long-poll, Этап M3); при webhook-варианте состав
+   * расширяется webhook-secret (решение фиксируется в M3).
    */
   buildCredentialsRef({
     channelType,

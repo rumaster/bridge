@@ -3,7 +3,10 @@ import { describe, it } from "node:test";
 
 import { ChannelDeliveryError } from "../../src/delivery/errors.js";
 import { createBackendChannelSecretClient } from "../../src/delivery/backend-channel-secret-client.js";
-import { createResolvingTelegramClient } from "../../src/delivery/real-channel-clients.js";
+import {
+  createResolvingMaxClient,
+  createResolvingTelegramClient,
+} from "../../src/delivery/real-channel-clients.js";
 
 const ORG_A = "11111111-1111-1111-1111-111111111111";
 const ORG_B = "22222222-2222-2222-2222-222222222222";
@@ -93,6 +96,44 @@ describe("resolving telegram delivery client (T2)", () => {
   });
 });
 
+describe("resolving MAX delivery client (M2)", () => {
+  it("delivers via the organization-specific bot token", async () => {
+    const tokensByOrg: Record<string, string> = { [ORG_A]: "max-A", [ORG_B]: "max-B" };
+    const maxCalls: string[] = [];
+    const client = createResolvingMaxClient({
+      baseUrl: "https://max.test",
+      resolveToken: async ({ organizationId }) => tokensByOrg[organizationId ?? ""] ?? null,
+      fetchImpl: async (url) => {
+        maxCalls.push(String(url));
+        return new Response(JSON.stringify({ message: { body: { mid: "mid-1" } } }), { status: 200 });
+      },
+    });
+
+    await client.deliver(maxDelivery({ organizationId: ORG_A, idempotencyKey: "m-a" }));
+    await client.deliver(maxDelivery({ organizationId: ORG_B, idempotencyKey: "m-b" }));
+
+    assert.equal(maxCalls[0], "https://max.test/messages?access_token=max-A&chat_id=chat-1");
+    assert.equal(maxCalls[1], "https://max.test/messages?access_token=max-B&chat_id=chat-1");
+  });
+
+  it("fails non-retryably when the organization has no token", async () => {
+    const client = createResolvingMaxClient({
+      resolveToken: async () => null,
+      fetchImpl: async () => {
+        throw new Error("MAX must not be called without a token");
+      },
+    });
+
+    await assert.rejects(
+      () => client.deliver(maxDelivery({ organizationId: ORG_A, idempotencyKey: "m-a" })),
+      (error: unknown) =>
+        error instanceof ChannelDeliveryError &&
+        error.retryable === false &&
+        error.category === "missing_channel_secret",
+    );
+  });
+});
+
 function telegramDelivery({
   organizationId,
   idempotencyKey,
@@ -108,5 +149,23 @@ function telegramDelivery({
     type: "text",
     text: "hello",
     external_payload: { method: "sendMessage", chat_id: "chat-1", text: "hello" },
+  };
+}
+
+function maxDelivery({
+  organizationId,
+  idempotencyKey,
+}: {
+  organizationId: string;
+  idempotencyKey: string;
+}) {
+  return {
+    idempotency_key: idempotencyKey,
+    organization_id: organizationId,
+    channel_type: "max",
+    recipient_ref: "chat-1",
+    type: "text",
+    text: "hello",
+    external_payload: { chat_id: "chat-1", text: "hello" },
   };
 }

@@ -26,6 +26,8 @@ export interface CreateEdgeGatewayServerOptions {
   wsChannel?: any;
   edgeCluster?: any;
   vpnTunnel?: any;
+  /** Control-plane App→Edge (creds-sync + egress_dispatch), Этап M5. */
+  controlPlane?: { handle(message: unknown): Promise<any> };
   liveness?: { isUp(): boolean; lastProbeAt(): number | null } | null;
   mode?: string;
   now?: () => string;
@@ -37,6 +39,7 @@ export function createEdgeGatewayServer({
   wsChannel = createMockWebSocketChannel(),
   edgeCluster,
   vpnTunnel,
+  controlPlane,
   liveness,
   mode = "m0-mock",
   now = () => new Date().toISOString(),
@@ -111,6 +114,23 @@ export function createEdgeGatewayServer({
         const payload = await readJson(request);
         const result = await edgeCluster.ingest(payload);
         sendJson(response, 202, result);
+        return;
+      }
+
+      // App→Edge control-канал (Этап M5): creds-sync + egress_dispatch. Активен
+      // только когда рантайм собрал канальные драйверы (передан controlPlane).
+      if (controlPlane && request.method === "POST" && path === "/internal/edge/control/messages") {
+        const payload = await readJson(request);
+        try {
+          const ack = await controlPlane.handle(payload);
+          sendJson(response, 202, ack);
+        } catch (error) {
+          sendJson(
+            response,
+            400,
+            problem(400, "Control message rejected", (error as Error).message, []),
+          );
+        }
         return;
       }
 

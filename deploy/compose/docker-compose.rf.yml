@@ -83,6 +83,13 @@ services:
       EDGE_VPN_TIMEOUT_MS: ${EDGE_VPN_TIMEOUT_MS:-5000}
       EDGE_VPN_BACKOFF_MS: ${EDGE_VPN_BACKOFF_MS:-100,500,1000,2500,5000}
       EDGE_BUFFER_TTL_MS: ${EDGE_BUFFER_TTL_MS:-3600000}
+      # Канал MAX на Edge (edge-owned, docs/plan/max-channel-production.md).
+      # EDGE_CHANNEL_DRIVERS=on поднимает control-plane + входящий MAX-драйвер на
+      # Edge (Этап M5); off (по умолчанию) — поведение edge не меняется.
+      EDGE_CHANNEL_DRIVERS: ${EDGE_CHANNEL_DRIVERS:-off}
+      MAX_API_BASE_URL: ${MAX_API_BASE_URL:-https://botapi.max.ru}
+      MAX_INBOUND_POLL_TIMEOUT_SECONDS: ${MAX_INBOUND_POLL_TIMEOUT_SECONDS:-30}
+      MAX_INBOUND_REFRESH_INTERVAL_MS: ${MAX_INBOUND_REFRESH_INTERVAL_MS:-30000}
       EDGE_VPN_APP_TCP_CLIENT_TLS_CA: ${EDGE_VPN_APP_TCP_CLIENT_TLS_CA:-}
       EDGE_VPN_APP_TCP_CLIENT_TLS_KEY: ${EDGE_VPN_APP_TCP_CLIENT_TLS_KEY:-}
       EDGE_VPN_APP_TCP_CLIENT_TLS_CERT: ${EDGE_VPN_APP_TCP_CLIENT_TLS_CERT:-}

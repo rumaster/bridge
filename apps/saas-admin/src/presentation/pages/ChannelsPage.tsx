@@ -75,6 +75,8 @@ const emptyChannelForm: ChannelFormState = {
 
 // Telegram-токен из @BotFather: <bot_id>:<секрет>.
 const TELEGRAM_TOKEN_PATTERN = /^\d+:[A-Za-z0-9_-]{30,}$/;
+// Токен доступа бота MAX (наследие TamTam) — непрозрачная строка ≥20 символов.
+const MAX_TOKEN_PATTERN = /^[A-Za-z0-9_.-]{20,}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 interface ChannelConnector {
@@ -88,6 +90,10 @@ interface ChannelConnector {
   secretKind: "token" | "ref" | "email";
   secretLabel: string;
   credentialsPlaceholder: string;
+  // Клиентская валидация plaintext-токена (для secretKind="token"): паттерн формата
+  // и подсказка в ошибке. У каждого канала свой формат токена.
+  tokenPattern?: RegExp;
+  tokenHint?: string;
   configKey: string;
   configLabel: string;
   configPlaceholder: string;
@@ -116,6 +122,8 @@ const channelConnectors = [
     secretKind: "token",
     secretLabel: "Токен бота",
     credentialsPlaceholder: "123456789:AA…токен из @BotFather",
+    tokenPattern: TELEGRAM_TOKEN_PATTERN,
+    tokenHint: "Формат токена: <bot_id>:<секрет> из @BotFather.",
     configKey: "bot_username",
     configLabel: "Bot username",
     configPlaceholder: "bridge_support_bot",
@@ -126,12 +134,14 @@ const channelConnectors = [
     label: "MAX",
     heading: "Подключение MAX",
     icon: Bot,
-    secretKind: "ref",
-    secretLabel: "credentials_ref",
-    credentialsPlaceholder: "secret://max/org-demo/support-bot",
-    configKey: "endpoint",
-    configLabel: "Endpoint",
-    configPlaceholder: "max-support-bot",
+    secretKind: "token",
+    secretLabel: "Токен бота",
+    credentialsPlaceholder: "токен доступа бота MAX",
+    tokenPattern: MAX_TOKEN_PATTERN,
+    tokenHint: "Формат токена: строка доступа бота MAX (не короче 20 символов).",
+    configKey: "bot_username",
+    configLabel: "Bot username",
+    configPlaceholder: "max_support_bot",
     configKind: "text"
   },
   {
@@ -805,8 +815,8 @@ function validateChannelForm(form: ChannelFormState): ChannelFieldErrors {
     const token = form.credentials.trim();
     if (!token) {
       errors.credentials = `${connector.secretLabel} обязателен.`;
-    } else if (!TELEGRAM_TOKEN_PATTERN.test(token)) {
-      errors.credentials = "Формат токена: <bot_id>:<секрет> из @BotFather.";
+    } else if (connector.tokenPattern && !connector.tokenPattern.test(token)) {
+      errors.credentials = connector.tokenHint ?? "Неверный формат токена.";
     }
   } else if (connector.secretKind === "email") {
     Object.assign(errors, validateEmailCredentials(form));

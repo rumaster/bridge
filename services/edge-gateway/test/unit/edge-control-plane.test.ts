@@ -135,3 +135,86 @@ describe("edge control plane", () => {
     );
   });
 });
+
+const MAX_CREDENTIALS = { token: "max-bot-token-org-1" };
+
+function maxCredentialsSync(controlId: string, organizationId = "org-1") {
+  return createEdgeControlMessage({
+    type: "channel_credentials_sync",
+    organizationId,
+    controlId,
+    issuedAt: "2026-07-12T10:00:00.000Z",
+    payload: { channel_id: "chan-max", channel_type: "max", credentials: MAX_CREDENTIALS },
+  });
+}
+
+function maxEgressDispatch(controlId: string, organizationId = "org-1") {
+  return createEdgeControlMessage({
+    type: "egress_dispatch",
+    organizationId,
+    controlId,
+    issuedAt: "2026-07-12T10:00:01.000Z",
+    payload: {
+      message_id: "reply-max-1",
+      channel_id: "chan-max",
+      channel_type: "max",
+      recipient_ref: "chat-max-1",
+      text: "Ответ в MAX",
+    },
+  });
+}
+
+describe("edge control plane — MAX channel (M4)", () => {
+  it("keeps email and MAX credentials separate for the same org (no collision)", async () => {
+    const plane = createEdgeControlPlane({ cipher: createRfPayloadCipher({ key: CACHE_KEY }) });
+
+    await plane.handle(credentialsSync("ctl-email"));
+    await plane.handle(maxCredentialsSync("ctl-max"));
+
+    assert.deepEqual(plane.getChannelCredentials("org-1", "email"), EMAIL_CREDENTIALS);
+    assert.deepEqual(plane.getChannelCredentials("org-1", "max"), MAX_CREDENTIALS);
+    // Обратно-совместимый алиас продолжает отдавать именно email-креды.
+    assert.deepEqual(plane.getEmailCredentials("org-1"), EMAIL_CREDENTIALS);
+    assert.equal(plane.hasCredentials("org-1", "max"), true);
+    assert.equal(plane.hasCredentials("org-1", "sms"), false);
+  });
+
+  it("routes MAX egress to the maxSender with the org's MAX credentials", async () => {
+    const maxSent: any[] = [];
+    const emailSent: any[] = [];
+    const plane = createEdgeControlPlane({
+      cipher: createRfPayloadCipher({ key: CACHE_KEY }),
+      emailSender: {
+        async send(delivery) {
+          emailSent.push(delivery);
+          return { external_message_id: "smtp-1" };
+        },
+      },
+      maxSender: {
+        async send(delivery) {
+          maxSent.push(delivery);
+          return { external_message_id: "max-out-1" };
+        },
+      },
+    });
+
+    await plane.handle(maxCredentialsSync("ctl-max-creds"));
+    const ack = await plane.handle(maxEgressDispatch("ctl-max-egress"));
+
+    assert.equal(ack.status, "sent");
+    assert.equal(ack.external_message_id, "max-out-1");
+    assert.equal(maxSent.length, 1);
+    assert.equal(emailSent.length, 0, "email sender must not receive a MAX dispatch");
+    assert.equal(maxSent[0].recipient_ref, "chat-max-1");
+    assert.deepEqual(maxSent[0].credentials, MAX_CREDENTIALS);
+  });
+
+  it("reports failed when no MAX sender is configured", async () => {
+    const plane = createEdgeControlPlane({ cipher: createRfPayloadCipher({ key: CACHE_KEY }) });
+
+    const ack = await plane.handle(maxEgressDispatch("ctl-max-egress"));
+
+    assert.equal(ack.status, "failed");
+    assert.match(ack.detail ?? "", /No MAX sender/);
+  });
+});

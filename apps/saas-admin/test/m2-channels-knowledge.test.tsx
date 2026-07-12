@@ -104,12 +104,12 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
     {
       channelLabel: "MAX",
       channelType: "max",
-      config: { endpoint: "max-support-bot" },
-      configLabel: "Endpoint",
-      configValue: "max-support-bot",
-      secretLabel: "credentials_ref",
-      secretValue: "secret://max/org-demo/support-bot",
-      expectedSecret: { credentials_ref: "secret://max/org-demo/support-bot" },
+      config: { bot_username: "max_support_bot" },
+      configLabel: "Bot username",
+      configValue: "max_support_bot",
+      secretLabel: "Токен бота",
+      secretValue: "max-real-bot-access-token-abcdef0123456789",
+      expectedSecret: { credentials: "max-real-bot-access-token-abcdef0123456789" },
       name: "MAX Support"
     }
   ] as const)(

@@ -40,3 +40,21 @@ export function stableEmailMessageId(channelId: string, messageIdHeader: string)
 export function stableEmailEndpointId(channelId: string, senderRef: string): string {
   return uuidFromText(`email-endpoint:${channelId}:${senderRef}`);
 }
+
+/**
+ * Стабильный UUID входящего MAX-сообщения на Edge (Этап M4,
+ * docs/plan/max-channel-production.md): детерминирован по каналу и `mid`
+ * (id сообщения MAX Bot API). Переопрос того же сообщения (переигранный marker)
+ * даёт тот же `message_id` — ядро (идемпотентно по `message.id`) и RF-буфер Edge
+ * (дедуп по `idempotency_key`) не создают дублей. Идентичен app-side
+ * `stableMaxMessageId` (SVC-INT `inbound/ids.ts`): один и тот же `mid` даёт один
+ * UUID независимо от пути (app/edge) — идемпотентность сохраняется при миграции.
+ */
+export function stableMaxMessageId(channelId: string, messageRef: number | string): string {
+  return uuidFromText(`max-message:${channelId}:${messageRef}`);
+}
+
+/** Стабильный UUID edge-endpoint MAX-клиента (ключ партиционирования Edge). */
+export function stableMaxEndpointId(channelId: string, senderRef: string): string {
+  return uuidFromText(`max-endpoint:${channelId}:${senderRef}`);
+}

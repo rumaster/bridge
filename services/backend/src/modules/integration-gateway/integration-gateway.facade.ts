@@ -148,6 +148,7 @@ export interface IntegrationGatewayFacadeOptions {
   channelSecrets?: ChannelSecretPort | null;
   fetchImpl?: typeof globalThis.fetch;
   telegramApiBaseUrl?: string;
+  maxApiBaseUrl?: string;
 }
 
 interface ChannelRow {
@@ -281,6 +282,7 @@ export class IntegrationGatewayFacade {
   private readonly channelSecrets: ChannelSecretPort | null;
   private readonly fetchImpl: typeof globalThis.fetch;
   private readonly telegramApiBaseUrl: string;
+  private readonly maxApiBaseUrl: string;
 
   constructor(
     @Optional()
@@ -296,6 +298,13 @@ export class IntegrationGatewayFacade {
       options.telegramApiBaseUrl ??
       process.env.TELEGRAM_API_BASE_URL ??
       "https://api.telegram.org"
+    ).replace(/\/+$/, "");
+    // Хост MAX Bot API (Этап M1, docs/plan/max-channel-production.md). Пустой env
+    // → дефолт botapi.max.ru (наследие TamTam Bot API); переопределяется для
+    // self-hosted прокси/эмулятора и при уточнении спецификации MAX Bot API.
+    this.maxApiBaseUrl = (
+      (options.maxApiBaseUrl ?? process.env.MAX_API_BASE_URL ?? "").trim() ||
+      "https://botapi.max.ru"
     ).replace(/\/+$/, "");
     this.resilience =
       options.resilience instanceof FacadeResilience
@@ -564,6 +573,10 @@ export class IntegrationGatewayFacade {
       return this.testTelegramChannel(channel);
     }
 
+    if (channel.channel_type === "max") {
+      return this.testMaxChannel(channel);
+    }
+
     if (this.upstream) {
       return this.testUpstreamChannel(channel);
     }
@@ -652,6 +665,92 @@ export class IntegrationGatewayFacade {
     }
 
     return { ok: true, username: body.result?.username, id: body.result?.id };
+  }
+
+  /**
+   * Реальная проверка канала MAX (Этап M1, docs/plan/max-channel-production.md,
+   * закрывает MG-2). Резолвит токен бота из `credentials_envelope` и вызывает
+   * `GET /me` MAX Bot API: `ok` → `connected` + сохранение `bot_id`/`bot_username`
+   * в `config`, иначе `error` с причиной. Симметрично {@link testTelegramChannel}.
+   */
+  private async testMaxChannel(channel: ChannelFacade): Promise<ChannelTestResultFacade> {
+    const checkedAt = this.clock();
+    const config = { ...channel.config };
+    let status: ChannelStatus;
+    let error: string | undefined;
+
+    const token = channel.credentials_ref
+      ? await this.requireChannelSecrets().resolveChannelSecret({
+          credentialsRef: channel.credentials_ref,
+          organizationId: channel.organization_id,
+        })
+      : null;
+
+    if (!token) {
+      status = "error";
+      error = "Токен бота MAX не настроен для канала.";
+    } else {
+      const me = await this.runMaxGetMe(token);
+      if (me.ok) {
+        status = "connected";
+        if (me.username) {
+          config.bot_username = me.username;
+        }
+        if (me.id !== undefined) {
+          config.bot_id = me.id;
+        }
+      } else {
+        status = "error";
+        error = me.description ?? "MAX /me отклонён.";
+      }
+    }
+
+    await this.persistChannelCheck(channel, { status, checkedAt, config });
+
+    return {
+      accepted: true,
+      channel_id: channel.id,
+      status,
+      checked_at: checkedAt,
+      ...(error ? { error } : {}),
+    };
+  }
+
+  /**
+   * Вызов `GET {MAX_API_BASE_URL}/me?access_token=<token>` MAX Bot API (наследие
+   * TamTam): успех — тело `{ user_id, name, username }`. Токен передаётся в
+   * query-параметре по контракту провайдера; URL не логируется.
+   */
+  private async runMaxGetMe(
+    token: string,
+  ): Promise<{ ok: boolean; username?: string; id?: number | string; description?: string }> {
+    const result = await this.resilience.execute(async () => {
+      const url = `${this.maxApiBaseUrl}/me?access_token=${encodeURIComponent(token)}`;
+      const response = await this.fetchImpl(url, {
+        method: "GET",
+        headers: { accept: "application/json" },
+      });
+      const body = (await readJsonSafe(response)) as {
+        user_id?: number | string;
+        name?: string;
+        username?: string;
+        code?: string;
+        message?: string;
+        description?: string;
+      };
+      return { httpOk: response.ok, body };
+    });
+
+    if (!result.ok) {
+      return { ok: false, description: "Не удалось обратиться к MAX Bot API." };
+    }
+
+    const { httpOk, body } = result.value;
+    if (!httpOk || body?.user_id === undefined) {
+      return { ok: false, description: body?.message ?? body?.description ?? "MAX /me отклонён." };
+    }
+
+    return { ok: true, username: body.username ?? body.name, id: body.user_id };
   }
 
   private async persistChannelCheck(

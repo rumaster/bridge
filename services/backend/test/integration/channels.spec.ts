@@ -10,6 +10,7 @@ const ORG_ID = "30000000-0000-4000-8000-000000000101";
 const ADMIN_ID = "30000000-0000-4000-8000-000000000201";
 const ADMIN_TOKEN = "brs_channels_admin";
 const TELEGRAM_TOKEN = "123456789:AA-real-telegram-bot-token-value";
+const MAX_TOKEN = "max-real-bot-access-token-abcdef0123456789";
 const SECRET_KEY_HEX = "33".repeat(32);
 const EMAIL_CREDENTIALS = {
   imap: { host: "imap.example.com", port: 993, tls: true, username: "support@example.com", password: "imap-secret" },
@@ -32,6 +33,10 @@ describe("C3.channels M2 omnichannel API", () => {
       const url = String(input);
       if (url.includes("/getMe")) {
         return telegramResponse({ ok: true, result: { username: "bridge_support_bot", id: 42 } });
+      }
+      // MAX Bot API GET /me заглушка (Этап M1): реальный MAX Bot API не вызывается.
+      if (url.includes("/me")) {
+        return maxResponse({ user_id: 7001, name: "MAX Support Bot", username: "max_support_bot" });
       }
       return telegramResponse({ ok: false, description: "unexpected call" }, 404);
     }) as unknown as typeof globalThis.fetch;
@@ -165,6 +170,92 @@ describe("C3.channels M2 omnichannel API", () => {
       });
   });
 
+  it("connects MAX with a bot token, stores only credentials_ref, and validates via /me (M1)", async () => {
+    const createResponse = await request(app.getHttpServer())
+      .post("/api/v1/channels")
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
+      .send({
+        organization_id: ORG_ID,
+        channel_type: "max",
+        name: "MAX Support",
+        credentials: MAX_TOKEN,
+        config: {},
+      })
+      .expect(201);
+
+    const channel = createResponse.body.channel;
+    // Токен не возвращается; сервер сгенерировал credentials_ref secret://max/...
+    expect(channel).not.toHaveProperty("token");
+    expect(channel).not.toHaveProperty("credentials");
+    expect(channel.credentials_ref).toEqual(expect.stringContaining(`secret://max/${ORG_ID}/`));
+    expect(channel.status).toBe("connected");
+
+    const channelId = channel.id;
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/channels/${channelId}/capabilities`)
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.channel_type).toBe("max");
+        expect(body.capabilities.text.supported).toBe(true);
+        expect(body.capabilities.typing_indicator.supported).toBe(true);
+        expect(body.capabilities.read_receipt.supported).toBe(false);
+      });
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/channels/${channelId}:test`)
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
+      .send({})
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.accepted).toBe(true);
+        expect(body.status).toBe("connected");
+      });
+
+    await request(app.getHttpServer())
+      .get("/api/v1/channels")
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
+      .expect(200)
+      .expect(({ body }) => {
+        const stored = body.find((item: { id: string }) => item.id === channelId);
+        expect(stored.config).toMatchObject({ bot_username: "max_support_bot", bot_id: 7001 });
+        expect(stored).not.toHaveProperty("credentials_envelope");
+      });
+  });
+
+  it("marks a MAX channel as error when :test has no stored token (M1)", async () => {
+    const createResponse = await request(app.getHttpServer())
+      .post("/api/v1/channels")
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
+      .send({
+        organization_id: ORG_ID,
+        channel_type: "max",
+        name: "MAX Refless",
+        credentials_ref: "secret://max/tenant-a/external",
+        config: {},
+      })
+      .expect(201);
+
+    const channelId = createResponse.body.channel.id;
+
+    await request(app.getHttpServer())
+      .post(`/api/v1/channels/${channelId}:test`)
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
+      .send({})
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.status).toBe("error");
+        expect(body.error).toContain("Токен");
+      });
+  });
+
   it("resolves the org's Telegram delivery token over the internal S2S endpoint (T2)", async () => {
     await request(app.getHttpServer())
       .post("/api/v1/channels")
@@ -233,7 +324,6 @@ describe("C3.channels M2 omnichannel API", () => {
     ["email", "secret://email/tenant-a/support", false, false],
     ["sms", "secret://sms/tenant-a/main", false, false],
     ["vk", "secret://vk/tenant-a/main", true, false],
-    ["max", "secret://max/tenant-a/main", true, false],
     ["whatsapp", "secret://whatsapp/tenant-a/main", false, true],
   ] as const)(
     "connects %s, keeps only credentials_ref, tests connection, and returns C6",
@@ -422,6 +512,16 @@ describe("C3.channels M2 omnichannel API", () => {
 });
 
 function telegramResponse(body: Record<string, unknown>, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    async text() {
+      return JSON.stringify(body);
+    },
+  } as unknown as Response;
+}
+
+function maxResponse(body: Record<string, unknown>, status = 200) {
   return {
     ok: status >= 200 && status < 300,
     status,

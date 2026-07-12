@@ -11,6 +11,9 @@ const ORG_ID = "30000000-0000-4000-8000-000000000101";
 const CHANNEL_ID = "40000000-0000-4000-8000-000000000201";
 const CREDENTIALS_REF = `secret://telegram/${ORG_ID}/main`;
 const BOT_TOKEN = "123456789:AA-real-telegram-bot-token-value-xyz";
+const MAX_CHANNEL_ID = "40000000-0000-4000-8000-000000000202";
+const MAX_CREDENTIALS_REF = `secret://max/${ORG_ID}/support`;
+const MAX_BOT_TOKEN = "max-real-bot-token-value-abc";
 
 describe("ChannelSecretService (DR-03, Этап T0)", () => {
   let previousKey: string | undefined;
@@ -59,6 +62,39 @@ describe("ChannelSecretService (DR-03, Этап T0)", () => {
         label: "  support  ",
       }),
     ).toBe(`secret://telegram/${ORG_ID}/support`);
+    // MAX использует тот же канал-агностичный формат (Этап M0, MG-11).
+    expect(
+      service.buildCredentialsRef({
+        channelType: "max",
+        organizationId: ORG_ID,
+        label: "support",
+      }),
+    ).toBe(MAX_CREDENTIALS_REF);
+  });
+
+  it("шифрует и разрешает секрет канала MAX тем же механизмом, что Telegram (M0)", async () => {
+    const stub = createChannelsDatabaseStub();
+    const service = await createService(stub);
+
+    const envelope = await service.putChannelSecret({
+      channelId: MAX_CHANNEL_ID,
+      organizationId: ORG_ID,
+      plaintext: MAX_BOT_TOKEN,
+    });
+
+    expect(envelope.alg).toBe("AES-256-GCM");
+    const serialized = JSON.stringify(stub.rows.get(MAX_CHANNEL_ID)?.credentials_envelope);
+    expect(serialized).not.toContain(MAX_BOT_TOKEN);
+    expect(serialized).not.toContain("token");
+
+    const resolved = await service.resolveChannelSecret({
+      credentialsRef: MAX_CREDENTIALS_REF,
+      organizationId: ORG_ID,
+    });
+    expect(resolved).toBe(MAX_BOT_TOKEN);
+
+    // Доступ к channels шёл только как platform operator (RLS-эмуляция стаба).
+    expect(stub.nonOperatorCalls).toBe(0);
   });
 
   it("шифрует и разрешает секрет канала через RLS-контекст platform operator", async () => {
@@ -105,6 +141,10 @@ function createChannelsDatabaseStub() {
     [
       CHANNEL_ID,
       { organization_id: ORG_ID, credentials_ref: CREDENTIALS_REF, credentials_envelope: null },
+    ],
+    [
+      MAX_CHANNEL_ID,
+      { organization_id: ORG_ID, credentials_ref: MAX_CREDENTIALS_REF, credentials_envelope: null },
     ],
   ]);
   const stub = {

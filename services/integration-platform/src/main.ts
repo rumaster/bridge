@@ -15,12 +15,14 @@ import {
   createChannelRateLimiter,
   createDeliveryEngine,
   createMockExternalChannel,
-  createRealChannelClientsFromEnv,
+  createResolvingMaxClient,
   createResolvingTelegramClient,
 } from "./delivery/index.js";
 import {
   createBackendChannelsClient,
   createIngressPublisher,
+  createMaxInboundDriver,
+  createMaxUpdatesClient,
   createTelegramInboundDriver,
   createTelegramUpdatesClient,
 } from "./inbound/index.js";
@@ -39,8 +41,8 @@ const deliveryQueueConcurrency = envInt("DELIVERY_QUEUE_CONCURRENCY", 4);
 const deliveryQueueMaxSize = envInt("DELIVERY_QUEUE_MAX_SIZE", 1024);
 const deliveryQueueMaxAttempts = envInt("DELIVERY_QUEUE_MAX_ATTEMPTS", 10);
 const deliveryQueueRetryDelayMs = envInt("DELIVERY_QUEUE_RETRY_DELAY_MS", 1000);
-const channelClients = createRealChannelClientsFromEnv();
 const telegramApiBaseUrl = process.env.TELEGRAM_API_BASE_URL?.trim() || "https://api.telegram.org";
+const maxApiBaseUrl = process.env.MAX_API_BASE_URL?.trim() || "https://botapi.max.ru";
 // Per-org Telegram-доставка (Этап T2): токен бота организации резолвится по
 // organization_id доставки через backend S2S (/internal/channels/secret) с TTL,
 // а не берётся из единого env TELEGRAM_BOT_TOKEN.
@@ -51,6 +53,12 @@ const channelSecretClient = createBackendChannelSecretClient({
 const telegramDeliveryClient = createResolvingTelegramClient({
   resolveToken: (input) => channelSecretClient.resolveToken(input),
   baseUrl: telegramApiBaseUrl,
+});
+// Per-org MAX-доставка (Этап M2): реальный MAX Bot API, токен бота организации
+// резолвится тем же backend S2S secret-клиентом, что и Telegram (не глобальный env).
+const maxDeliveryClient = createResolvingMaxClient({
+  resolveToken: (input) => channelSecretClient.resolveToken(input),
+  baseUrl: maxApiBaseUrl,
 });
 
 const adapter = createMockAdapter({ coreIngressUrl });
@@ -66,7 +74,7 @@ const adapters = {
   sms: createSmsAdapter({ coreIngressUrl }),
   vk: createVkAdapter({ coreIngressUrl }),
   max: createMaxAdapter({
-    channelClient: channelClients.max,
+    channelClient: maxDeliveryClient,
     coreIngressUrl,
   }),
   whatsapp: createWhatsAppAdapter({ coreIngressUrl }),
@@ -81,18 +89,17 @@ const allowMockFallback =
   (process.env.DELIVERY_ALLOW_MOCK_FALLBACK ?? "true").toLowerCase() !== "false";
 const deliveryChannel = createAdapterDeliveryChannel({
   adapters: {
-    // Telegram доставляется всегда: токен per-org резолвится на лету.
+    // Telegram и MAX доставляются всегда: токен per-org резолвится на лету
+    // (T2/M2). Email здесь НЕ регистрируется: исходящая почта уходит по SMTP на
+    // Edge (Этап E4), минуя SVC-INT-диспетчер и mock-fallback (F1).
     telegram: adapters.telegram,
-    // MAX — через реальный клиент только при заданном env-шлюзе.
-    // Email здесь НЕ регистрируется: исходящая почта уходит по SMTP на Edge
-    // (Этап E4), минуя SVC-INT-диспетчер и mock-fallback (F1).
-    ...(channelClients.max ? { max: adapters.max } : {}),
+    max: adapters.max,
   },
   fallbackChannel: allowMockFallback ? createMockExternalChannel() : undefined,
 });
 // Массовая доставка через адаптеры: rate limiting на канал, ретраи с бэкоффом
-// и идемпотентность. Telegram уходит per-org токеном (T2); Email/MAX — через
-// env-шлюзы; остальные каналы и локальный CI сохраняют mock fallback (если не
+// и идемпотентность. Telegram (T2) и MAX (M2) уходят per-org токеном реальными
+// Bot API; остальные каналы и локальный CI сохраняют mock fallback (если не
 // отключён DELIVERY_ALLOW_MOCK_FALLBACK).
 const deliveryEngine = createDeliveryEngine({
   channel: deliveryChannel,
@@ -170,6 +177,26 @@ function isRfEdgeChannel(channel) {
   return config.route_via_edge === true || config.region === "RF";
 }
 
+// Входящий драйвер MAX (Этап M3): getUpdates long-poll (marker-курсор) на каждый
+// подключённый max-канал организации. Реестр каналов и резолв токена — те же
+// backend S2S-механизмы, что у Telegram/egress. App-side публикация — напрямую в
+// ядро (routeViaEdge=false); RF-first через Edge — Этап M4/M5 (edge-owned MAX).
+const maxInboundEnabled =
+  (process.env.MAX_INBOUND_ENABLED ?? "true").toLowerCase() !== "false";
+const maxInboundDriver = maxInboundEnabled
+  ? createMaxInboundDriver({
+      listChannels: (input) =>
+        createBackendChannelsClient({ baseUrl: backendBaseUrl }).listChannels(input),
+      resolveToken: (input) => channelSecretClient.resolveToken(input),
+      publishIncoming: (payload) => {
+        const ingress = adapters.max.buildIngress(payload);
+        return ingressPublisher.publish(ingress, { routeViaEdge: false });
+      },
+      createUpdatesClient: ({ token }) => createMaxUpdatesClient({ token, baseUrl: maxApiBaseUrl }),
+      pollTimeoutSeconds: envInt("MAX_INBOUND_POLL_TIMEOUT_SECONDS", 30),
+    })
+  : null;
+
 server.listen(port, host, () => {
   console.log(`integration-platform listening on http://${host}:${port}`);
   if (inboundDriver) {
@@ -179,11 +206,19 @@ server.listen(port, host, () => {
         console.error("telegram inbound driver failed to start", error);
       });
   }
+  if (maxInboundDriver) {
+    maxInboundDriver
+      .start({ refreshIntervalMs: envInt("MAX_INBOUND_REFRESH_INTERVAL_MS", 30_000) })
+      .catch((error) => {
+        console.error("max inbound driver failed to start", error);
+      });
+  }
 });
 
 for (const signal of ["SIGINT", "SIGTERM"]) {
   process.on(signal, () => {
     inboundDriver?.stop();
+    maxInboundDriver?.stop();
     server.close(() => {
       process.exit(0);
     });

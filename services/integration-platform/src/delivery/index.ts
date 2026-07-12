@@ -11,8 +11,9 @@ export {
 export { createMockExternalChannel } from "./mock-external-channel.js";
 export {
   createEmailHttpGatewayClient,
-  createMaxHttpGatewayClient,
+  createMaxBotApiClient,
   createRealChannelClientsFromEnv,
+  createResolvingMaxClient,
   createResolvingTelegramClient,
   createTelegramBotApiClient,
 } from "./real-channel-clients.js";
