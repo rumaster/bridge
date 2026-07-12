@@ -271,9 +271,26 @@ email-плана): подключить реальные сетевые клие
 e2e-сценарий email проходит на настоящих сокетах внутри docker-сети, без выхода
 в интернет.
 
-### M2 — Провижининг ящиков и связка с каналом Email
+### M2 — Провижининг ящиков и связка с каналом Email — ✅ РЕАЛИЗОВАН
 
 Делает почтовик управляемым из процесса Bridge, но ещё без внешней доставки.
+
+> **Статус: реализовано и проверено на стенде.** Что сделано:
+> - [`scripts/mail-provision.ts`](../../scripts/mail-provision.ts) — CLI-обёртка
+>   над `setup` внутри контейнера почтовика: `add`/`password`(rotate)/`del`/
+>   `list`/`quota`. Генерация строгого пароля, адрес без `@` дополняется
+>   `MAIL_DOMAIN`, вывод `email_credentials` (human/`--json`).
+> - Опциональный `--connect` → `POST /api/v1/channels` (сессия администратора,
+>   как ручное добавление): собирает `email_credentials` (E0/E1) и подключает
+>   канал; секрет — write-only (envelope AES-256-GCM).
+> - Проверено на стенде (`lissac-games.online`): `add`→`list`→`password`
+>   (новый пароль проходит `doveadm auth`, старый — нет)→`del`; `--connect`
+>   создал канал `email/connected` с `credentials_envelope`. Инструкция и запуск
+>   без Node на хосте (одноразовый node-контейнер) — в
+>   [`deploy/mail/README.md`](../../deploy/mail/README.md).
+> - Соглашение об адресах: общий `MAIL_DOMAIN` + локальная часть/`--org`;
+>   мультидомен (домен-на-организацию) остаётся опцией M3/M5 (провижининг
+>   `setup config domain`).
 
 - `scripts/mail-provision.ts` — обёртка над CLI `docker-mailserver` (`setup
   email add/del/update`, квоты) для программного создания ящика на организацию.

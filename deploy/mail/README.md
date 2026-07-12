@@ -55,7 +55,51 @@ docker compose --env-file .env.rf -f deploy/compose/docker-compose.rf.yml \
 > появляются при `SSL_TYPE` (Этап M3). Поэтому в M1 проверка идёт по 143 c
 > `MAIL_IMAP_TLS=0` (STARTTLS) и `EMAIL_TLS_REJECT_UNAUTHORIZED=0` (self-signed).
 
-## Стадии M2–M5
+## M2 — Провижининг ящиков (`scripts/mail-provision.ts`)
 
-Провижининг ящиков на организацию, DKIM/SPF/DMARC, deliverability, продуктивизация
-— см. план. M1 намеренно без внешней доставки (внутри docker-сети, self-signed TLS).
+Программное управление ящиками почтовика и (опционально) авто-подключение
+email-канала организации. Скрипт запускается там, где доступен `docker` и
+контейнер почтовика.
+
+```bash
+# MAIL_DOMAIN и MAILSERVER_CONTAINER задаются через env (дефолты — под стенд)
+node --import tsx scripts/mail-provision.ts add support            # создать support@$MAIL_DOMAIN (пароль сгенерируется)
+node --import tsx scripts/mail-provision.ts add support --json     # + машинный вывод email_credentials
+node --import tsx scripts/mail-provision.ts password support       # ротировать пароль
+node --import tsx scripts/mail-provision.ts list
+node --import tsx scripts/mail-provision.ts del support
+node --import tsx scripts/mail-provision.ts quota support 512M
+```
+
+Соглашение об адресах: аргумент без `@` дополняется до `<localpart>@$MAIL_DOMAIN`.
+Ящик-на-организацию — `--org <uuid>` (нужен и для авто-подключения канала).
+
+**Авто-подключение канала** (опционально, требует сессии администратора — как и
+ручное добавление на `:8081/channels`):
+
+```bash
+node --import tsx scripts/mail-provision.ts add support \
+  --connect --backend http://backend:3000 \
+  --org <organization-uuid> --token <session-token> --name "Email support"
+```
+
+Скрипт создаёт ящик, собирает `email_credentials` (IMAP/SMTP host/port/tls/логин/
+пароль + from_email) и POST'ит `POST /api/v1/channels` — канал появляется как
+`email/connected`, секрет хранится write-only (envelope AES-256-GCM), пароль
+показывается один раз.
+
+> **Запуск без Node на хосте.** Если на хосте нет Node, скрипт можно выполнить в
+> одноразовом node-контейнере с проброшенным docker CLI и сокетом:
+> ```bash
+> docker run --rm \
+>   -v /var/run/docker.sock:/var/run/docker.sock \
+>   -v $(command -v docker):/usr/local/bin/docker \
+>   -v "$PWD":/repo -w /repo \
+>   -e MAIL_DOMAIN=$MAIL_DOMAIN -e MAILSERVER_CONTAINER=<container> \
+>   node:20.20.2-bookworm-slim npx --yes tsx@4.19.2 scripts/mail-provision.ts <args>
+> ```
+
+## Стадии M3–M5
+
+DKIM/SPF/DMARC, deliverability, эксплуатация, продуктивизация — см. план.
+M1/M2 намеренно без внешней доставки (внутри docker-сети, self-signed TLS).
