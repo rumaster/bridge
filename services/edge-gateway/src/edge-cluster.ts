@@ -41,6 +41,7 @@ export interface CreateEdgeClusterOptions {
   now?: () => string;
   bufferTtlMs?: number;
   region?: string;
+  logger?: any;
 }
 
 export function createEdgeCluster({
@@ -51,6 +52,7 @@ export function createEdgeCluster({
   now = () => new Date().toISOString(),
   bufferTtlMs = DEFAULT_BUFFER_TTL_MS,
   region = "RF",
+  logger = console,
 }: CreateEdgeClusterOptions = {}) {
   if (!cipher || typeof cipher.encrypt !== "function" || typeof cipher.decrypt !== "function") {
     throw new EdgeClusterError("cipher {encrypt, decrypt} is required (RF payload cipher)");
@@ -71,9 +73,16 @@ export function createEdgeCluster({
     channel_down_total: 0,
     recovery_total: 0,
     expired_skipped_total: 0,
+    expired_alerted_total: 0,
     sequencer_restored_total: 0,
     buffer_pruned_total: 0,
   };
+
+  // idempotency_key протухших сообщений, по которым уже был алерт (edge-trigger,
+  // чтобы не спамить один и тот же lost-message на каждом дренаже). Ограничен по
+  // размеру; после рестарта Edge пуст → outstanding-потери переалертятся один раз.
+  const alertedExpired = new Set<string>();
+  const ALERTED_EXPIRED_LIMIT = 50_000;
 
   function aadFor(record) {
     return {
@@ -150,6 +159,31 @@ export function createEdgeCluster({
       typeof bufferStore.listExpired === "function"
         ? await bufferStore.listExpired({ now: startedAt })
         : [];
+    // Наблюдаемость потерь (§7.14): протухшее непересланное сообщение — это потеря
+    // (TTL превышен, дренаж его уже не заберёт). Логируем КАЖДОЕ ровно один раз
+    // (edge-trigger по idempotency_key), иначе один lost-message спамил бы warn на
+    // каждом дренаже (5с). Строки НЕ удаляем — они нужны для форензики и как якорь
+    // high-water; уборка — сознательно ручная (инвариант «не удалять неподтверждённое»).
+    for (const record of expired) {
+      if (alertedExpired.has(record.idempotency_key)) {
+        continue;
+      }
+      alertedExpired.add(record.idempotency_key);
+      if (alertedExpired.size > ALERTED_EXPIRED_LIMIT) {
+        const oldest = alertedExpired.values().next().value;
+        if (oldest !== undefined) {
+          alertedExpired.delete(oldest);
+        }
+      }
+      metrics.expired_alerted_total += 1;
+      logger?.warn?.("RF-буфер: сообщение протухло не пересланным (потеря, TTL превышен)", {
+        endpoint_id: record.endpoint_id,
+        sequence_number: record.sequence_number,
+        idempotency_key: record.idempotency_key,
+        received_at: record.received_at,
+        ttl: record.ttl,
+      });
+    }
     const pending = await bufferStore.listPendingDrain({ now: startedAt });
     const forwarded = [];
     let interruptedReason;

@@ -390,4 +390,39 @@ describe("Edge Cluster РФ — RF-first конвейер (§7.3/§7.9/§7.10/§
     assert.equal(ok.sequence_number, 4);
     assert.equal(ok.duplicate, false);
   });
+
+  it("логирует протухшее непересланное сообщение ровно один раз (потеря, TTL §7.14)", async () => {
+    let ms = Date.parse("2026-07-04T10:00:00.000Z");
+    const clock = () => new Date(ms).toISOString();
+    const warns: Array<{ msg: string; ctx: any }> = [];
+    const logger = { warn: (msg: string, ctx: any) => warns.push({ msg, ctx }), info() {}, error() {} };
+    const downTunnel = {
+      isConnected: () => false,
+      async ensureConnected() {},
+      async send() {
+        throw new VpnTunnelChannelDownError("down");
+      },
+    };
+    const cluster = createEdgeCluster({
+      cipher: createRfPayloadCipher({ key: CIPHER_KEY }),
+      tunnel: downTunnel,
+      sequencer: createEdgeSequencer(),
+      bufferStore: createInMemoryEdgeMessageBufferStore(),
+      now: clock,
+      bufferTtlMs: 1000, // 1с
+      logger,
+    });
+
+    const result = await cluster.ingest(inbound({ id: IDS[1] })); // туннель down → буфер offline
+    assert.equal(result.forwarded, false);
+    ms += 5000; // перематываем время за TTL
+
+    await cluster.drain(); // протухло → алерт
+    await cluster.drain(); // повтор → без нового алерта (edge-trigger по idempotency_key)
+
+    const lost = warns.filter((w) => /протух/i.test(w.msg));
+    assert.equal(lost.length, 1);
+    assert.equal(lost[0].ctx.idempotency_key, IDS[1]);
+    assert.equal(cluster.getMetrics().expired_alerted_total, 1);
+  });
 });
