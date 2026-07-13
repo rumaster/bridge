@@ -1,98 +1,109 @@
 ---
-title: Реализация приёма входящей почты через Edge Gateway (MP-12, входящее направление)
+title: Приём входящей почты через Edge Gateway — актуализация и остаточный разрыв
 service_id: SVC-EDGE · SVC-API
-status: In progress
+status: Актуализировано 2026-07-13
 language: ru-RU
-based_on: docs/plan/email-channel-production.md
-date: 2026-07-12
+based_on: docs/plan/email-channel-production.md, docs/plan/mail-service-selfhosted.md
+date: 2026-07-13
 ---
 
-# Приём входящей почты через Edge Gateway — план реализации
+# Приём входящей почты через Edge — актуализация (HEAD 277ba0f)
 
-Довести входящее направление email до реально работающего на стенде: письмо
-клиента забирается по IMAP **на RF Edge Gateway**, RF-first приземляется в
-буфере, идёт через VPN-туннель в ядро и попадает в диалог менеджера с каналом
-`email`. Закрывает разрыв «канал создан, но ящик никто не читает».
+> **Важно.** Первоначальный план этого документа (реальный IMAP-клиент → туннельный
+> pull-RPC → wiring драйвера → деплой) **в значительной части реализован** отдельной
+> веткой работ «Bridge Mail» (M1–M5) и правкой egress, но **другим способом**, чем
+> здесь предлагалось (push по HTTP, а не pull по туннелю). Документ переписан под
+> фактическое состояние и единственный оставшийся разрыв.
 
-## Границы
-- **В scope:** входящее (IMAP → RF-буфер → туннель → ядро → менеджер).
-- **Вне scope (отдельный follow-up):** ответ менеджера → SMTP на Edge (E4:
-  `handoffEgress` → `egress_dispatch` → `edge-email-sender`).
+## Что уже сделано (проверено по коду и на стенде)
 
-## Ключевое решение: PULL, а не PUSH
-Вместо server-initiated `channel_credentials_sync` (App→Edge push, требует нового
-направления туннеля — самая рискованная часть E2) Edge **сам вытягивает** список
-каналов и креды новым request/response RPC `email_sync_pull` по уже существующему
-Edge→App направлению. App-сторона отвечает, проксируя в **существующие** S2S
-backend-эндпоинты. Креды на Edge живут только в памяти. Свежесть — по интервалу
-refresh драйвера.
+- **Реальный IMAP-клиент** — [`edge-imap-mailbox.ts`](../../services/edge-gateway/src/edge-imap-mailbox.ts)
+  (`imapflow`, poll по курсору UID, MIME→`RawEmail`, история не импортируется).
+- **Реальный SMTP-транспорт** — [`edge-smtp-transport.ts`](../../services/edge-gateway/src/edge-smtp-transport.ts)
+  (`nodemailer` за сеамом `createTransport`).
+- **Wiring входящего+исходящего драйверов** — [`edge-channel-drivers.ts`](../../services/edge-gateway/src/edge-channel-drivers.ts)
+  (`createEdgeChannelRuntime`), подключён в [`edge-runtime.ts`](../../services/edge-gateway/src/edge-runtime.ts)
+  за гейтом `EDGE_CHANNEL_DRIVERS=on` (на стенде — on). Реестр каналов и креды —
+  из control-plane ([`edge-control-plane.ts`](../../services/edge-gateway/src/edge-control-plane.ts),
+  `listChannels`/`getEmailCredentials`, ключевание по `channel_id`).
+- **Приёмник control-plane на Edge** — `POST /internal/edge/control/messages`
+  ([`server.ts`](../../services/edge-gateway/src/server.ts)) → `controlPlane.handle`
+  (`channel_credentials_sync` → `storeCredentials`; `egress_dispatch` → `dispatchEgress`).
+- **Backend-egress** — [`internal-messaging.service.ts`](../../services/backend/src/modules/communication-core/internal-messaging.service.ts)
+  `forwardEgressToEdgeControl`: для `channel_type=email` POST `egress_dispatch` на
+  `EDGE_CONTROL_URL` (коммит `e65de03`). Транспорт — HTTP, не туннель.
+- **Self-hosted почтовик** — `mailserver` (docker-mailserver) + провижининг
+  ([`mail-provision.ts`](../../scripts/mail-provision.ts)) + заказ из админки (M5).
+- **Стенд:** `EDGE_CHANNEL_DRIVERS=on`, канал «Bridge Mail (support@lissac-games.online)»
+  подключён; сквозной путь подтверждён (3 inbound + 3 outbound email в `messages`).
 
-## Мультиканальность (пункты 1–3, вложены в этапы)
-Юнит изоляции — **канал** (`channels.id`), не организация: у одной организации
-может быть несколько email-ящиков, плюс много организаций. Драйвер
-[`edge-email-inbound-driver.ts`](../../services/edge-gateway/src/edge-email-inbound-driver.ts)
-уже per-channel (свой цикл/курсор/`seen`/ящик, изоляция сбоев, add/remove через
-`refreshChannels`). Закрываем три стыка:
+## Остаточный разрыв — единственный, но блокирующий
 
-- **(1) Ключевание кредов по `channelId`, не по `(org, type)`.** Сейчас
-  `GET /internal/channels/secret` берёт `organization_id + channel_type`, а
-  `resolveChannelDeliveryToken` — `LIMIT 1`: два email-канала одной организации
-  схлопываются в один секрет. Правка backend: резолв секрета **по `channel_id`**
-  (новый параметр эндпоинта + метод фасада по id). Pull-payload отдаёт
-  `credentials: {[channelId]: EmailChannelCredentials}`. → **Этап 2.**
-- **(2) Инвалидация ящика при ротации кредов.** `getMailbox` кэширует
-  `EdgeMailbox` по channelId и не пересоздаёт при смене пароля. Правка: версия
-  кредов (хеш/`updated_at`) → при изменении закрыть и пересоздать ящик. → **Этап 3.**
-- **(3) Долговечность курсора/дедупа.** `cursorUid`/`seen` — в памяти, теряются
-  при рестарте; корректность спасает сквозной `idempotency_key`
-  (`stableEmailMessageId`), но батч перекачивается. Правка (эффективность):
-  персистить per-channel UID-курсор в RF-postgres. → **follow-up** (не блокирует).
+**На стороне backend/App НЕТ публикатора `channel_credentials_sync`.** Креды каналов
+никогда не доходят до Edge в штатной работе — `edge-control-plane.storeCredentials`
+наполняется только вручную скриптом [`verify-full-path.ts`](../../services/edge-gateway/scripts/verify-full-path.ts),
+который играет роль App-стороны. Следствие (проверено на стенде):
 
-Масштабирование ресурсов: poll (не IDLE) на старте; cap параллелизма + jitter
-старта циклов (лимиты провайдера); переиспользование соединения в канале;
-per-channel метрики в лог.
+- лог edge-gateway: `Edge email inbound driver started { channels: 0 }` →
+  входящий IMAP **ничего не поллит**, **менеджер не получает входящих писем**;
+- `egress_dispatch` (ответ менеджера) падает с «No SMTP credentials», т.к. те же
+  креды берутся из того же пустого кэша.
 
-## Этапы
+`edge-control-client.ts`/`edge-control-tunnel.ts` (App-клиент creds-sync) импортируются
+**только тестами**. Реальный сокет VPN-туннеля App→Edge control-плоскости не несёт —
+её роль выполняет прямой HTTP (`EDGE_CONTROL_URL`).
 
-### Этап 1 — Реальный IMAP-клиент (изолированно)
-- Зависимости `edge-gateway`: `imapflow` + `mailparser`.
-- `services/edge-gateway/src/edge-imap-mailbox.ts`: `createImapMailbox({credentials, channel})`
-  → `EdgeMailbox.fetchNew({sinceUid})` → `RawEmail[]` (форма из
-  [`edge-email-ingress.ts`](../../services/edge-gateway/src/edge-email-ingress.ts)).
-  Клиент инъектируется в composition root (тесты — на заглушках).
-- Тест: маппинг MIME→RawEmail на фикстурах.
-- **Гейт (ранний):** из edge-контейнера реальный коннект к `imap.gmail.com:993`
-  (сначала TCP/TLS-достижимость без кредов, затем LOGIN реальными кредами канала).
+## План закрытия (backend-only, малый объём)
 
-### Этап 2 — Туннельный pull-RPC кредов/каналов (по channelId)
-- Новый RPC `email_sync_pull` в
-  [`vpn-transport.ts`](../../services/edge-gateway/src/vpn-transport.ts) (аддитивно
-  к `handshake`/`deliver`). Ответ: `{channels:[{channel_id, organization_id, config}],
-  credentials:{[channelId]: EmailChannelCredentials}}`.
-- App-сторона (`startAppVpnRuntime`): обработчик вызывает backend S2S
-  (`GET /internal/channels?channel_type=email` + секрет **по channel_id**),
-  парсит `parseEmailChannelCredentials`. Env `EDGE_VPN_BACKEND_S2S_URL`.
-- Backend (пункт 1): `GET /internal/channels/secret?channel_id=…` + резолв по id.
-- Edge-сторона: `pullEmailSync()`.
-- Тесты: App-handler с моком fetch; round-trip Edge↔App.
+### Ш1 — Публикация creds-sync при изменении канала (push-on-write) — ✅ РЕАЛИЗОВАНО
 
-### Этап 3 — Wiring драйвера в `edge-runtime` (mode=edge)
-- В `createEdgeGatewayRuntimeFromEnv` после сборки `cluster`: собрать
-  `createEdgeEmailInboundDriver({ listChannels, resolveCredentials, createMailbox,
-  ingest: cluster.ingest })` из pull-кэша; `start()` на буте, `stop()` в `close`.
-- Пункт 2: инвалидация ящика по версии кредов.
-- Env: `EMAIL_INBOUND_ENABLED`, `EMAIL_INBOUND_POLL_INTERVAL_MS`,
-  `EMAIL_INBOUND_REFRESH_INTERVAL_MS`, cap параллелизма, jitter.
-- Тест: письмо → `messages` ядра → канал `email` в manager-workspace.
+> **Статус: реализовано** (backend). `IntegrationGatewayFacade.publishChannelCredentialsSync`
+> ([`integration-gateway.facade.ts`](../../services/backend/src/modules/integration-gateway/integration-gateway.facade.ts))
+> вызывается из `connectChannel` (после INSERT) и `updateChannel` (при ротации email-кред):
+> при заданном `EDGE_CONTROL_URL` POST'ит `C9.EdgeControlMessage{type:channel_credentials_sync,
+> payload:{channel_id, channel_type, credentials:<объект>, config}}` (control_id
+> `creds-<channel_id>-<issued_at>`). Best-effort — недоступность Edge не ломает
+> connect/update. Тесты (jest)
+> [`integration-gateway.facade.spec.ts`](../../services/backend/test/unit/integration-gateway.facade.spec.ts):
+> публикация при подключении email, best-effort при недоступности, no-op без
+> `EDGE_CONTROL_URL`. `tsc` зелёный; facade-спека 13/13.
+>
+> Осталось для полного контура: **Ш2** (bulk-resync после рестарта Edge — сейчас
+> существующие каналы не пере-синхронизируются, пока не будет connect/update) и
+> деплой backend на стенд + сквозная проверка (**Ш3**).
 
-### Этап 4 — Деплой и сквозная проверка
-- Пересобрать `edge-gateway` (RF) + `edge-vpn-app`, пересоздать.
-- Письмо на ящик → подтвердить в БД и UI менеджера; идемпотентность; RF-first.
+Оригинальное описание шага:
+В [`integration-gateway.facade.ts`](../../services/backend/src/modules/integration-gateway/integration-gateway.facade.ts)
+`connectChannel`/`updateChannel` для `channel_type=email`: при заданном
+`EDGE_CONTROL_URL` собрать `C9.EdgeControlMessage {type:"channel_credentials_sync"}`
+и POST на `EDGE_CONTROL_URL` (переиспользовать литерал-конверт и fetch-обвязку из
+`forwardEgressToEdgeControl`). Плейнтекст структурных кред уже в scope перед
+шифрованием (`resolveSecretPlaintext`). Payload — `{channel_id, channel_type,
+organization_id, config, credentials: <объект EmailChannelCredentials>}` (именно
+**объект**, не сериализованная строка — валидатор control-plane и `storeCredentials`
+ждут объект). `control_id` — стабильный (напр. `creds-<channel_id>-<updated_at>`) для
+идемпотентности. Мультиканальность обеспечена: `storeCredentials`/`listChannels`
+ключуют по `channel_id`.
 
-## Риски
-- Достижимость Gmail IMAP из RF-контейнера (egress :993) — проверяется первым.
-- Валидность gmail app-password / включён ли IMAP.
-- RPC-поверхность туннеля — строго аддитивно.
-- Новая зависимость `imapflow` в RF-компоненте.
-- На стенде `EDGE_VPN_APP_CRYPTO=off` — креды по туннелю защищены только
-  AmneziaWG (для стенда ок; для прода — отметить).
+### Ш2 — Bulk-resync (кэш Edge in-memory, теряется при рестарте)
+Push-on-write не покрывает рестарт Edge и «холодный» Edge. Нужен периодический/по-
+событию bulk-push всех `connected` email-каналов: backend берёт список
+(`listActiveChannelsByType("email")`) и per-channel креды и шлёт creds-sync на каждый.
+**Важно:** резолв кред per-channel — сейчас `resolveChannelDeliveryToken(org,type)`
+берёт `LIMIT 1` (схлопывает несколько email-каналов организации). Для bulk-resync
+нужен резолв **по `channel_id`** (расширить facade/эндпоинт) — иначе второй ящик
+организации получит чужие/один креды. (Для Ш1 это не нужно — там креды берутся прямо
+из тела запроса.)
+
+### Ш3 — Верификация на стенде
+После Ш1: подключить/переподключить email-канал → в логах edge-gateway
+`channels: 1`, входящее письмо на `support@…` доходит до `messages`/менеджера **без**
+`verify-full-path.ts`. После Ш2: рестарт edge-gateway → канал восстанавливается в
+реестре сам.
+
+## Вне scope этого разрыва (отдельные вехи)
+- **Боевая deliverability (M3):** порт 25, PTR, публикация DNS, TLS —
+  [`mail-service-selfhosted.md`](./mail-service-selfhosted.md) §M3.
+- **Реальный TCP/TLS-сокет VPN-туннеля (MP-12/MP-22)** и перенос control-plane с
+  прямого HTTP на туннель.
+- **Вложения → `storage_ref`** (S3 отложен).

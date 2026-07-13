@@ -9,6 +9,11 @@ const fixedNow = () => "2026-07-03T09:00:00.000Z";
 const ORG_ID = "org-1";
 const TELEGRAM_TOKEN = "123456789:AA-real-telegram-bot-token-value";
 const MAX_TOKEN = "max-real-bot-access-token-abcdef0123456789";
+const EMAIL_CREDENTIALS = {
+  imap: { host: "mailserver", port: 143, tls: false, username: "support@bridge.local", password: "imap-secret" },
+  smtp: { host: "mailserver", port: 587, tls: false, username: "support@bridge.local", password: "smtp-secret" },
+  from_email: "support@bridge.local",
+};
 
 function createFacade(overrides: Partial<IntegrationGatewayFacadeOptions> = {}) {
   return new IntegrationGatewayFacade({
@@ -246,6 +251,88 @@ describe("IntegrationGatewayFacade", () => {
 
     expect(result.status).toBe("error");
     expect(result.error).toContain("Токен");
+  });
+
+  it("публикует channel_credentials_sync на Edge при подключении email-канала (EDGE_CONTROL_URL)", async () => {
+    const prev = process.env.EDGE_CONTROL_URL;
+    process.env.EDGE_CONTROL_URL = "http://edge.test/internal/edge/control/messages";
+    try {
+      const fetchImpl = jest.fn(async () => ({ ok: true, status: 200 }));
+      const facade = createFacade({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+      const channel = await facade.connectChannel({
+        organization_id: ORG_ID,
+        channel_type: "email",
+        name: "Bridge Mail",
+        email_credentials: EMAIL_CREDENTIALS,
+      });
+
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+      expect(url).toBe("http://edge.test/internal/edge/control/messages");
+      expect(init.method).toBe("POST");
+      const body = JSON.parse(init.body as string);
+      expect(body).toMatchObject({
+        contract: "C9.EdgeControlMessage",
+        type: "channel_credentials_sync",
+        organization_id: ORG_ID,
+        control_id: `creds-${channel.id}-${fixedNow()}`,
+        payload: {
+          channel_id: channel.id,
+          channel_type: "email",
+          credentials: EMAIL_CREDENTIALS,
+        },
+      });
+      // Валидатор control-plane требует credentials объектом, а не строкой.
+      expect(typeof body.payload.credentials).toBe("object");
+    } finally {
+      if (prev === undefined) delete process.env.EDGE_CONTROL_URL;
+      else process.env.EDGE_CONTROL_URL = prev;
+    }
+  });
+
+  it("connect не падает, если Edge-control недоступен (best-effort)", async () => {
+    const prev = process.env.EDGE_CONTROL_URL;
+    process.env.EDGE_CONTROL_URL = "http://edge.test/internal/edge/control/messages";
+    try {
+      const fetchImpl = jest.fn(async () => {
+        throw new Error("ECONNREFUSED");
+      });
+      const facade = createFacade({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+      const channel = await facade.connectChannel({
+        organization_id: ORG_ID,
+        channel_type: "email",
+        name: "Bridge Mail",
+        email_credentials: EMAIL_CREDENTIALS,
+      });
+
+      expect(channel.status).toBe("connected");
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    } finally {
+      if (prev === undefined) delete process.env.EDGE_CONTROL_URL;
+      else process.env.EDGE_CONTROL_URL = prev;
+    }
+  });
+
+  it("не публикует creds-sync без EDGE_CONTROL_URL", async () => {
+    const prev = process.env.EDGE_CONTROL_URL;
+    delete process.env.EDGE_CONTROL_URL;
+    try {
+      const fetchImpl = jest.fn(async () => ({ ok: true, status: 200 }));
+      const facade = createFacade({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+      await facade.connectChannel({
+        organization_id: ORG_ID,
+        channel_type: "email",
+        name: "Bridge Mail",
+        email_credentials: EMAIL_CREDENTIALS,
+      });
+
+      expect(fetchImpl).not.toHaveBeenCalled();
+    } finally {
+      if (prev !== undefined) process.env.EDGE_CONTROL_URL = prev;
+    }
   });
 });
 

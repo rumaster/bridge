@@ -4,6 +4,7 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
   ServiceUnavailableException,
@@ -284,6 +285,7 @@ export class IntegrationGatewayFacade {
   private readonly fetchImpl: typeof globalThis.fetch;
   private readonly telegramApiBaseUrl: string;
   private readonly maxApiBaseUrl: string;
+  private readonly logger = new Logger(IntegrationGatewayFacade.name);
 
   constructor(
     @Optional()
@@ -469,7 +471,20 @@ export class IntegrationGatewayFacade {
         ),
     );
 
-    return mapRowToFacade(inserted.rows[0]);
+    const channel = mapRowToFacade(inserted.rows[0]);
+    // Публикуем структурные email-креды на Edge, чтобы входящий IMAP-драйвер начал
+    // поллить ящик (иначе Edge видит channels: 0). Best-effort — см. метод.
+    if (channelType === "email" && request.email_credentials) {
+      await this.publishChannelCredentialsSync({
+        channelId,
+        organizationId: request.organization_id,
+        channelType,
+        credentials: request.email_credentials,
+        config,
+        issuedAt: timestamp,
+      });
+    }
+    return channel;
   }
 
   /**
@@ -596,7 +611,19 @@ export class IntegrationGatewayFacade {
         ),
       );
 
-      return mapRowToFacade(updated.rows[0]);
+      const channel = mapRowToFacade(updated.rows[0]);
+      // Ротация email-кред → пере-синхронизируем их на Edge (тот же путь, что connect).
+      if (existing.channel_type === "email" && request.email_credentials) {
+        await this.publishChannelCredentialsSync({
+          channelId: existing.id,
+          organizationId: existing.organization_id,
+          channelType: "email",
+          credentials: request.email_credentials,
+          config,
+          issuedAt: timestamp,
+        });
+      }
+      return channel;
     }
 
     const updated = await this.requireDatabase().withTenant(request.organization_id, (client) =>
@@ -951,6 +978,69 @@ export class IntegrationGatewayFacade {
     }
 
     return input.credentials?.trim() || undefined;
+  }
+
+  /**
+   * Публикует структурные email-креды канала на Edge Gateway через App→Edge
+   * control-plane (`C9.EdgeControlMessage` type=`channel_credentials_sync`), тем же
+   * HTTP-путём `EDGE_CONTROL_URL`, что и egress. Edge кладёт креды в in-memory кэш
+   * и регистрирует канал в реестре → входящий IMAP-драйвер начинает поллить ящик
+   * (иначе Edge видит `channels: 0`), а `egress_dispatch` получает SMTP-креды.
+   *
+   * Best-effort: недоступность/отказ Edge НЕ ломает connect/update канала (bulk-resync,
+   * Ш2 плана, довосстановит; кэш Edge — in-memory и теряется при рестарте). `credentials`
+   * идёт **объектом** (валидатор control-plane требует object, не сериализованную строку).
+   * Идемпотентность — `control_id = creds-<channel_id>-<issued_at>`; мультиканальность —
+   * ключевание по `channel_id` (`edge-control-plane.storeCredentials`).
+   */
+  private async publishChannelCredentialsSync(input: {
+    channelId: string;
+    organizationId: string;
+    channelType: ChannelType;
+    credentials: EmailChannelCredentials;
+    config: Record<string, unknown>;
+    issuedAt: string;
+  }): Promise<void> {
+    const edgeControlUrl = process.env.EDGE_CONTROL_URL?.trim();
+    if (!edgeControlUrl) {
+      return;
+    }
+
+    const controlMessage = {
+      contract: "C9.EdgeControlMessage",
+      version: "1.0.0",
+      control_id: `creds-${input.channelId}-${input.issuedAt}`,
+      type: "channel_credentials_sync",
+      organization_id: input.organizationId,
+      issued_at: input.issuedAt,
+      payload: {
+        channel_id: input.channelId,
+        channel_type: input.channelType,
+        credentials: input.credentials,
+        config: input.config,
+      },
+    };
+
+    const token = process.env.EDGE_CONTROL_TOKEN?.trim();
+    try {
+      const response = await this.fetchImpl(edgeControlUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(controlMessage),
+      });
+      if (!response.ok) {
+        this.logger.warn(
+          `Edge отклонил channel_credentials_sync HTTP ${response.status} (канал ${input.channelId})`,
+        );
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Не удалось синхронизировать креды канала на Edge (${input.channelId}): ${String(error)}`,
+      );
+    }
   }
 
   private requireDatabase(): ChannelDatabasePort {
