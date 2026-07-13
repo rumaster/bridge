@@ -3,7 +3,7 @@ title: План доведения канала Web Chat до боевого р�
 service: Web Chat (Frontend) / Backend / Edge Gateway / Integration Platform / SaaS Administration
 service_id: SVC-CHAT · SVC-API · SVC-EDGE · SVC-INT · SVC-ADMIN
 version: 1.0
-status: In progress (W1–W4 done 2026-07-13; W5–W7 planned)
+status: In progress (W1–W5 done 2026-07-13; W6–W7 planned)
 language: ru-RU
 based_on: docs/plan/telegram-channel-production.md, docs/plan/max-channel-production.md, docs/plan/email-channel-production.md, docs/plan/services/13-web-chat.md, docs/plan/mock-to-production-roadmap.md
 date: 2026-07-12
@@ -484,6 +484,37 @@ origin → отказ; rate-limit срабатывает; happy-path с вали
 **Тесты.** Юнит на парсинг org id из URL; e2e (Playwright, по образцу
 [`web-chat.cp7.spec.ts`](../../apps/web-chat/test/e2e/web-chat.cp7.spec.ts)):
 открытие страницы организации → отправка → ответ менеджера.
+
+**Статус реализации W5 (2026-07-13): выполнено.**
+- **org id из URL (задачи 1–2, WG-2).** Чистый разбор
+  [`pageContext.ts`](../../apps/web-chat/src/platform/pageContext.ts)
+  (`/chat/<id>` или `?organization_id=`/`?org=`, плюс `conversation_id`);
+  [`main.tsx`](../../apps/web-chat/src/main.tsx) монтирует виджет с этой
+  организацией, а без неё показывает подсказку (не «дефолтную» организацию —
+  хардкод `DEFAULT_ORGANIZATION_ID` со страницы убран).
+- **Хостируемая страница (задача 2, WG-1).** Сборка разделена на два артефакта:
+  встраиваемый ESM-бандл ([`vite.lib.config.ts`](../../apps/web-chat/vite.lib.config.ts)
+  → `dist/bridge-web-chat.js`) и SPA-страница организации
+  ([`vite.config.ts`](../../apps/web-chat/vite.config.ts) → `dist-page/`, app-режим
+  со SPA history-fallback). `assemble-page-dist` копирует бандл в `dist-page`, так
+  что один контейнер отдаёт и `/chat/<id>`, и `/bridge-web-chat.js`
+  ([Dockerfile](../../deploy/docker/web-chat/Dockerfile)).
+- **Встраивание через атрибут (задача 3).** `bootstrap.tsx` берёт
+  `organization/conversation` из `data-organization-id`/`data-conversation-id`
+  точки монтирования, если не заданы в JS-опциях — встраивание без кода.
+- **Деплой (задача 4).** Контейнер `web-chat` через `vite preview` отдаёт
+  `dist-page` (SPA-fallback → `/chat/<id>`); `edgeBaseUrl` берётся из
+  `VITE_BRIDGE_EDGE_BASE_URL` (dev-дефолт `/api/v1`).
+- **Тесты.** Vitest (локально): `page-context.test` (разбор URL, 6 кейсов),
+  `embed.test` дополнен data-атрибутами; весь набор **50/50**. Playwright:
+  `web-chat.page.spec` (страница `/chat/<id>` → отправка → ответ; без org —
+  подсказка), `web-chat.cp7.spec` переведён на URL с организацией. Сборка
+  проверена локально: оба артефакта + бюджет бандла (195/230 KiB gzip); `vite
+  preview` реально отдаёт `/chat/<id>` (200, SPA-fallback) и `/bridge-web-chat.js`.
+
+> **Связка с W4.** Против боевого ядра страница требует **подключённого** канала
+> `web_chat` (WG-10): орг из URL должна иметь канал с `widget_origin` = origin
+> страницы. В dev с MSW-моками канал не нужен (мок перехватывает REST).
 
 ---
 

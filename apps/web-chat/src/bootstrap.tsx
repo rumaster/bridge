@@ -20,7 +20,7 @@ export async function renderWebChatWidget(
 
   const root = createRoot(element);
   mountedRoots.set(element, root);
-  root.render(<WebChatWidget {...options} />);
+  root.render(<WebChatWidget {...resolveOptionsFromElement(element, options)} />);
 
   return {
     element,
@@ -29,6 +29,31 @@ export async function renderWebChatWidget(
       mountedRoots.delete(element);
     },
   };
+}
+
+/**
+ * Встраивание без JS-опций (W5, WG-2, задача 3): если organization/conversation не
+ * заданы в опциях mount, берём их из data-атрибутов точки монтирования —
+ * `<div data-organization-id="..." data-conversation-id="...">`.
+ */
+export function resolveOptionsFromElement(
+  element: HTMLElement,
+  options: WebChatMountOptions,
+): WebChatMountOptions {
+  const next: WebChatMountOptions = { ...options };
+  if (!next.organizationId) {
+    const organizationId = element.dataset?.organizationId?.trim();
+    if (organizationId) {
+      next.organizationId = organizationId;
+    }
+  }
+  if (!next.conversationId) {
+    const conversationId = element.dataset?.conversationId?.trim();
+    if (conversationId) {
+      next.conversationId = conversationId;
+    }
+  }
+  return next;
 }
 
 function resolveMountTarget(target: HTMLElement | string): HTMLElement {

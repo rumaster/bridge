@@ -1,7 +1,12 @@
-import { resolve } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+/**
+ * Конфиг хостируемой страницы организации Web Chat (W5, app-режим SPA):
+ * `index.html` → `main.tsx`, вывод в `dist-page`. `appType: 'spa'` (по умолчанию)
+ * даёт history-fallback, поэтому `/chat/<organizationId>` отдаёт `index.html`.
+ * Встраиваемый ESM-бандл собирается отдельно (`vite.lib.config.ts`).
+ */
 const backendInternalUrl = process.env.BACKEND_INTERNAL_URL ?? "http://localhost:3000";
 const backendProxy = {
   "/api": {
@@ -20,18 +25,7 @@ export default defineConfig({
     proxy: backendProxy,
   },
   build: {
-    lib: {
-      entry: resolve(__dirname, "src/embed.ts"),
-      formats: ["es"],
-      fileName: () => "bridge-web-chat.js",
-    },
-    cssCodeSplit: true,
+    outDir: "dist-page",
     sourcemap: true,
-    rollupOptions: {
-      output: {
-        chunkFileNames: "bridge-web-chat-[name]-[hash].js",
-        assetFileNames: "bridge-web-chat-[name]-[hash][extname]",
-      },
-    },
   },
 });

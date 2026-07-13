@@ -24,6 +24,29 @@ Chat как первый канал будущего CP-1: вертикальн�
 `mountBridgeWebChat` является ленивым loader API: основной React-код виджета
 загружается через динамический `import()` только при вызове mount.
 
+Организацию можно задать и через data-атрибут точки монтирования (без JS-опций):
+
+```html
+<div id="bridge-web-chat-root"
+     data-organization-id="organization-id"
+     data-conversation-id="conversation-id"></div>
+```
+
+## Хостируемая страница организации (W5)
+
+Помимо встраиваемого компонента, `@bridge/web-chat` даёт **хостируемую страницу
+организации** с ид в URL — `…/chat/<organizationId>` (или `?organization_id=`).
+Страница монтирует тот же виджет, скоупленный на организацию, и служит как стендом
+для встраиваемого компонента, так и «чатом для организаций без сайта». Без
+организации в URL страница показывает подсказку, а не «дефолтную» организацию.
+
+`npm run build` собирает два артефакта:
+- `dist/bridge-web-chat.js` — встраиваемый ESM-бандл (lib-режим,
+  [`vite.lib.config.ts`](./vite.lib.config.ts));
+- `dist-page/` — SPA-страница организации (app-режим, SPA history-fallback), в
+  которую копируется и бандл. Контейнер (`vite preview`) отдаёт `dist-page`: и
+  `/chat/<id>`, и `/bridge-web-chat.js`.
+
 ## M0 scope
 
 - React + Vite + TypeScript приложение в `apps/web-chat`.

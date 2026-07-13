@@ -6,7 +6,8 @@ import { expect, test } from "@playwright/test";
 test("CP-7 «Потеря соединения»: буфер и автопереотправка через Edge", async ({
   page,
 }) => {
-  await page.goto("/");
+  // Организация — из URL (W5, WG-2): страница больше не грузит «дефолтную».
+  await page.goto("/chat/22345678-1234-4234-8234-123456789abc");
 
   const input = page.getByLabel("Сообщение");
   await expect(input).toBeVisible();
