@@ -110,6 +110,53 @@ describe("edge email sender (SMTP egress)", () => {
     await assert.rejects(() => sender.send(delivery({ credentials: null }) as any), EdgeEmailSenderError);
   });
 
+  it("resolves storage_ref to real bytes and attaches them as content", async () => {
+    const { factory, sent } = createFakeTransportFactory();
+    const ref = `edge-attach://org-1/${"a".repeat(64)}`;
+    const bytes = Buffer.from("REAL-ATTACHMENT-BYTES");
+    const resolved: string[] = [];
+    const attachmentStore = {
+      async get(storageRef: string) {
+        resolved.push(storageRef);
+        return storageRef === ref
+          ? { content: bytes, mime: "application/pdf", filename: "store-name.pdf" }
+          : null;
+      },
+    };
+    const sender = createEdgeEmailSender({ createTransport: factory, attachmentStore });
+
+    await sender.send(
+      delivery({
+        attachments: [{ storage_ref: ref, filename: "отчёт.pdf", mime: "application/pdf" }],
+      }) as any,
+    );
+
+    assert.deepEqual(resolved, [ref]);
+    const attachments = sent[0].attachments;
+    assert.equal(attachments.length, 1);
+    assert.equal(attachments[0].filename, "отчёт.pdf");
+    assert.ok(Buffer.isBuffer(attachments[0].content));
+    assert.equal(attachments[0].content.toString(), "REAL-ATTACHMENT-BYTES");
+    assert.equal(attachments[0].contentType, "application/pdf");
+    assert.equal(attachments[0].path, undefined);
+    assert.equal(sender.getMetrics().attachments_resolved_total, 1);
+  });
+
+  it("falls back to storage_ref path when bytes are unresolvable", async () => {
+    const { factory, sent } = createFakeTransportFactory();
+    const ref = `edge-attach://org-1/${"b".repeat(64)}`;
+    // Стор не задан вовсе — прежнее поведение (ссылка `path`), отправка не падает.
+    const sender = createEdgeEmailSender({ createTransport: factory });
+
+    await sender.send(
+      delivery({ attachments: [{ storage_ref: ref, filename: "f.bin" }] }) as any,
+    );
+
+    assert.equal(sent[0].attachments[0].path, ref);
+    assert.equal(sent[0].attachments[0].content, undefined);
+    assert.equal(sender.getMetrics().attachments_unresolved_total, 1);
+  });
+
   it("plugs into the control-plane egress_dispatch and reports sent (end-to-end)", async () => {
     const { factory, sent } = createFakeTransportFactory();
     const sender = createEdgeEmailSender({ createTransport: factory });

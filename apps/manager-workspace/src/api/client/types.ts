@@ -67,12 +67,25 @@ export interface MessageAttachment {
   url: string;
 }
 
+/**
+ * Дескриптор загруженного вложения, возвращаемый `POST /attachments`. Байты уже
+ * лежат на RF-томе Edge; `storageRef` едет в `POST /messages` для egress.
+ */
+export interface UploadedAttachment {
+  storageRef: string;
+  name: string;
+  contentType: string | null;
+  sizeBytes: number;
+}
+
 export interface SendMessageRequest {
   conversationId: string;
   content: string;
   idempotencyKey: string;
   /** Тема письма (только для email-диалогов); уходит в content.subject. Этап E5. */
   subject?: string;
+  /** Вложения ответа (дескрипторы уже загруженных файлов). */
+  attachments?: UploadedAttachment[];
 }
 
 export interface CommunicationEndpoint {
@@ -223,6 +236,8 @@ export interface ManagerWorkspaceApiClient {
   attachments: {
     /** Ленивое скачивание байтов вложения (blob) через backend-прокси к Edge. */
     download: (attachmentId: string) => Promise<Blob>;
+    /** Загрузка файла к ответу (байты → RF-том Edge), возвращает дескриптор. */
+    upload: (file: File) => Promise<UploadedAttachment>;
   };
   clients: {
     list: () => Promise<ClientProfile[]>;

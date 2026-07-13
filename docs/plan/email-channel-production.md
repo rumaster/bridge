@@ -890,14 +890,35 @@ app-side HTTP-шлюзу для email; `health`/статус канала не �
    и/или по удалению сообщения/диалога (сборщик на Edge, учитывая дедуп по
    content-hash — удалять объект только когда на него не ссылается ни одно
    сообщение). Единственный пункт, который влияет на эксплуатацию.
-2. **Исходящие вложения (новая фича, не входила в задачу).** Менеджер прикрепляет
-   файл к ответу клиенту. Сейчас: в
-   [`edge-email-sender.ts`](../../services/edge-gateway/src/edge-email-sender.ts)
-   есть заготовка `mapAttachments`, но она кладёт `storage_ref` как `path` и
-   **не резолвит байты** из `EdgeAttachmentStore`; в manager-workspace нет
-   загрузки файла в ответ, а egress-контракт не несёт вложений. Требует: UI
-   загрузки → поле в `POST /messages`/egress → сохранение байтов (тот же стор) →
-   резолв `storage_ref` в байты при SMTP-отправке на Edge.
+2. ~~**Исходящие вложения (новая фича, не входила в задачу).**~~ **Реализовано
+   (2026-07-13, локально, без стенда).** Менеджер прикрепляет файл к ответу
+   клиенту, письмо уходит по SMTP с реальным вложением. Сквозной путь (симметрично
+   входящему):
+   - **manager-workspace:** в `DialogPage` (email-диалоги) — кнопка «Прикрепить
+     файл» + список выбранных файлов; при отправке байты грузятся `POST
+     /api/v1/attachments` (клиент `attachments.upload`), дескрипторы со
+     `storageRef` кладутся в `POST /messages`
+     ([`http.ts`](../../apps/manager-workspace/src/api/client/http.ts),
+     [`DialogPage.tsx`](../../apps/manager-workspace/src/presentation/pages/DialogPage.tsx)).
+   - **Backend:** `POST /api/v1/attachments`
+     ([`attachment.controller.ts`](../../services/backend/src/modules/communication-core/attachment.controller.ts) +
+     `AttachmentResolverService.store`) проксирует сырые байты на RF-том Edge
+     (`POST /internal/edge/attachments`) и возвращает непрозрачный `storage_ref`
+     (резидентность — байты оседают на RF, backend их не хранит). `createMessage`
+     сохраняет вложения в таблицу `attachments`; egress
+     (`buildC2EgressDelivery`/`egress_dispatch`) несёт `attachments[]` со
+     `storage_ref` на Edge.
+   - **Edge:** `POST /internal/edge/attachments` (`server.ts`) → `EdgeAttachmentStore.put`
+     (дедуп по content-hash, лимит `EMAIL_ATTACHMENT_MAX_BYTES` → 413);
+     `edge-email-sender` резолвит `storage_ref` → реальные байты из
+     `EdgeAttachmentStore` и вкладывает их в nodemailer `content` (а не `path`),
+     с best-effort откатом на ссылку при отсутствии стора/байтов.
+   - **Тесты:** edge node:test (upload-маршрут put→get round-trip + дедуп + 413;
+     sender резолвит байты в `content` / fallback на `path`), backend jest
+     (`AttachmentResolverService.store`, `buildC2EgressDelivery` с вложениями,
+     egress-интеграция прокидывает `storage_ref`), manager vitest (upload с
+     tenant-заголовком + encoded filename, вложения в теле `POST /messages`).
+     Живая e2e на стенде — не прогонялась (техдолг ниже).
 3. **Мелочи UX (низкий приоритет).** Inline-превью изображений в ленте (сейчас
    только кнопка-скачивание); понятная подсказка вместо «ошибка», когда вложение
    было oversized (метаданные есть, байтов нет → резолв отдаёт 404).

@@ -615,6 +615,19 @@ export interface EgressMessageContext {
   content: Record<string, unknown>;
 }
 
+/**
+ * Вложение исходящего письма в egress-контракте (§4.3-bis follow-up п.2). Несёт
+ * непрозрачный `storage_ref` (байты уже загружены менеджером на RF-том Edge), а
+ * Edge-sender резолвит его в реальные байты при SMTP-отправке. Ядро схему ref НЕ
+ * парсит — прокидывает как есть.
+ */
+export interface C2EgressAttachment {
+  storage_ref: string;
+  filename?: string;
+  mime?: string;
+  size?: number;
+}
+
 export interface C2EgressDelivery {
   contract: string;
   version: string;
@@ -638,6 +651,8 @@ export interface C2EgressDelivery {
     in_reply_to?: string;
     /** Threading email: цепочка Message-ID. Этап E4. */
     references?: string[];
+    /** Вложения исходящего письма (резолвятся Edge по storage_ref). */
+    attachments?: C2EgressAttachment[];
   };
 }
 
@@ -653,6 +668,7 @@ export interface C2EgressDelivery {
 export function buildC2EgressDelivery(
   message: EgressMessageContext,
   endpoint: EgressEndpointContext,
+  attachments: C2EgressAttachment[] = [],
 ): C2EgressDelivery {
   const metadata = endpoint.metadata ?? {};
   const channelId = String(
@@ -691,6 +707,7 @@ export function buildC2EgressDelivery(
       ...(isNonBlankString(content.from) ? { from: content.from } : {}),
       ...(isNonBlankString(content.in_reply_to) ? { in_reply_to: content.in_reply_to } : {}),
       ...(Array.isArray(content.references) ? { references: content.references as string[] } : {}),
+      ...(attachments.length > 0 ? { attachments } : {}),
     },
   };
 }

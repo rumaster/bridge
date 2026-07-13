@@ -320,6 +320,57 @@ textarea {
   overflow-wrap: anywhere;
 }
 
+.reply-attachments {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+.reply-attachments-input {
+  display: none;
+}
+
+.attachment-pending-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  width: 100%;
+}
+
+.attachment-pending {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  border: 1px dashed #c8d2df;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.68);
+  font-size: 0.85rem;
+}
+
+.attachment-pending span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.attachment-remove {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border: none;
+  background: transparent;
+  color: #607086;
+  cursor: pointer;
+}
+
+.attachment-remove:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .reply-form {
   display: grid;
   gap: 10px;

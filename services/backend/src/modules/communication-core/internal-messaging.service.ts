@@ -40,6 +40,7 @@ import {
   uuidFromText,
 } from "./internal-messaging.dto";
 import type {
+  C2EgressAttachment,
   C2EgressDelivery,
   DeliveryAttemptBody,
   EgressRequestBody,
@@ -416,6 +417,13 @@ export class InternalMessagingService {
         request.organizationId,
         message.endpoint_id,
       );
+      // Вложения исходящего письма (§4.3-bis follow-up п.2): непрозрачный
+      // storage_ref едет на Edge, где резолвится в реальные байты при SMTP-отправке.
+      const attachments = await this.loadEgressAttachments(
+        client,
+        request.organizationId,
+        message.id,
+      );
       const delivery = buildC2EgressDelivery(
         {
           id: message.id,
@@ -430,6 +438,7 @@ export class InternalMessagingService {
           external_id: endpoint.external_id,
           metadata: endpoint.metadata,
         },
+        attachments,
       );
 
       // Web Chat и другие realtime/direct-каналы: клиент подключён напрямую по
@@ -484,6 +493,44 @@ export class InternalMessagingService {
         error: deliveryResult.error,
         delivery,
         sent_at: occurredAt,
+      };
+    });
+  }
+
+  /**
+   * Загружает вложения исходящего сообщения из таблицы `attachments` для egress
+   * (§4.3-bis follow-up п.2). Отдаёт непрозрачный `storage_ref` + метаданные;
+   * `filename` берётся из `metadata` (как на выдаче). Байты не читаются — их
+   * резолвит Edge при SMTP-отправке.
+   */
+  private async loadEgressAttachments(
+    client: PoolClient,
+    organizationId: string,
+    messageId: string,
+  ): Promise<C2EgressAttachment[]> {
+    const result = await client.query<{
+      storage_ref: string;
+      mime: string | null;
+      size: string | number | null;
+      metadata: Record<string, unknown> | null;
+    }>(
+      `
+        SELECT storage_ref, mime, size, metadata
+        FROM attachments
+        WHERE organization_id = $1 AND message_id = $2
+        ORDER BY created_at ASC
+      `,
+      [organizationId, messageId],
+    );
+
+    return result.rows.map((row) => {
+      const filename = (row.metadata ?? {}).filename;
+      const size = row.size === null ? undefined : Number(row.size);
+      return {
+        storage_ref: row.storage_ref,
+        ...(typeof filename === "string" && filename.trim() !== "" ? { filename } : {}),
+        ...(typeof row.mime === "string" && row.mime.trim() !== "" ? { mime: row.mime } : {}),
+        ...(size !== undefined && Number.isFinite(size) ? { size } : {}),
       };
     });
   }
@@ -867,6 +914,9 @@ export class InternalMessagingService {
         ...(m.subject ? { subject: m.subject } : {}),
         ...(m.in_reply_to ? { in_reply_to: m.in_reply_to } : {}),
         ...(m.references && m.references.length > 0 ? { references: m.references } : {}),
+        // Вложения (§4.3-bis follow-up п.2): storage_ref едет на Edge, там резолвится
+        // в реальные байты (EdgeAttachmentStore) и вкладывается в SMTP-письмо.
+        ...(m.attachments && m.attachments.length > 0 ? { attachments: m.attachments } : {}),
       },
     };
 
