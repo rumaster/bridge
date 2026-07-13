@@ -16,6 +16,8 @@ import type { EdgeSmtpConfig, EdgeSmtpMessage, EdgeSmtpTransport } from "./edge-
 export interface NodemailerLike {
   createTransport(options: unknown): {
     sendMail(message: unknown): Promise<{ messageId?: string }>;
+    /** nodemailer: устанавливает соединение и проверяет AUTH (для прогрева, §4.6). */
+    verify?(): Promise<boolean>;
   };
 }
 
@@ -54,7 +56,9 @@ export function createNodemailerTransport(
   // nodemailer сам поднимает STARTTLS). Явный smtp.tls=true форсирует implicit TLS.
   const secure = port === 465 ? true : smtp.tls === true;
 
-  let transporter: { sendMail(message: unknown): Promise<{ messageId?: string }> } | null = null;
+  let transporter:
+    | { sendMail(message: unknown): Promise<{ messageId?: string }>; verify?(): Promise<boolean> }
+    | null = null;
 
   async function ensureTransporter() {
     if (transporter) {
@@ -72,6 +76,15 @@ export function createNodemailerTransport(
   }
 
   return {
+    // Прогрев (§4.6): поднимает соединение+AUTH заранее, чтобы первый egress не
+    // платил cold-start. Ошибку пробрасывает — best-effort-обёртка живёт в
+    // `edge-email-sender.warmUp` (там ошибка гасится).
+    async verify() {
+      const transport = await ensureTransporter();
+      if (typeof transport.verify === "function") {
+        await transport.verify();
+      }
+    },
     async sendMail(message: EdgeSmtpMessage) {
       const transport = await ensureTransporter();
       const result = await transport.sendMail({

@@ -828,6 +828,13 @@ export class InternalMessagingService {
     };
 
     const token = process.env.EDGE_CONTROL_TOKEN;
+    // Независимый таймаут на сам HTTP-вызов Edge (§4.6): у fetch по умолчанию нет
+    // дедлайна, поэтому при зависшем Edge backend ждал бы до таймаута внешней
+    // обёртки M5. AbortController ограничивает ожидание явно (по умолчанию 15с),
+    // отдельно от обёртки `deliverWithAdapterFailure`.
+    const controller = new AbortController();
+    const timeoutMs = this.edgeControlTimeoutMs();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch(edgeControlUrl, {
         method: "POST",
@@ -836,6 +843,7 @@ export class InternalMessagingService {
           ...(token && token.trim() !== "" ? { authorization: `Bearer ${token.trim()}` } : {}),
         },
         body: JSON.stringify(controlMessage),
+        signal: controller.signal,
       });
       const ack = (await response.json().catch(() => ({}))) as { status?: string; detail?: string };
       if (!response.ok) {
@@ -853,13 +861,27 @@ export class InternalMessagingService {
         forwarded: false,
       };
     } catch (error) {
-      this.logger.warn(`Не удалось диспетчеризовать email-egress на Edge: ${String(error)}`);
-      return {
-        accepted: false,
-        error: error instanceof Error ? error.message : String(error),
-        forwarded: false,
-      };
+      const reason =
+        error instanceof Error && error.name === "AbortError"
+          ? `edge egress timeout after ${timeoutMs}ms`
+          : error instanceof Error
+            ? error.message
+            : String(error);
+      this.logger.warn(`Не удалось диспетчеризовать email-egress на Edge: ${reason}`);
+      return { accepted: false, error: reason, forwarded: false };
+    } finally {
+      clearTimeout(timer);
     }
+  }
+
+  /**
+   * Дедлайн HTTP-вызова Edge control-plane для egress (§4.6). Настраивается
+   * `EDGE_CONTROL_TIMEOUT_MS`; по умолчанию 15с — заведомо больше тёплой
+   * SMTP-отправки (~250мс) и cold-start после прогрева, но конечен.
+   */
+  private edgeControlTimeoutMs(): number {
+    const raw = Number(process.env.EDGE_CONTROL_TIMEOUT_MS);
+    return Number.isFinite(raw) && raw > 0 ? raw : 15_000;
   }
 
   private async deliverWithAdapterFailure(

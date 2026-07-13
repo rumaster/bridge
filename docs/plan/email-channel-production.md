@@ -90,8 +90,10 @@ decisions:
 > доставляется клиенту, но помечается `failed` (холодный nodemailer-транспорт
 > превышает таймаут обёртки `deliverWithAdapterFailure`); ВТОРОЕ (тёплый транспорт)
 > — `sent`. Воспроизведено на стенде (msg #1 `failed`+доставлено, msg #2 `sent`).
-> Рекомендация §4.6 (прогрев `transporter.verify()` при `channel_credentials_sync`
-> + независимый таймаут `fetch`) — не реализована, осознанно отложена.
+> **Лёгкий фикс §4.6 реализован** (прогрев `transporter.verify()` при
+> `channel_credentials_sync` + независимый `AbortController`-таймаут `fetch`,
+> `EDGE_CONTROL_TIMEOUT_MS`) — детали и статус в §4.6; живая ре-верификация
+> cold-start после ре-деплоя — следующим заходом на стенд.
 
 | Этап | Что закрыто | Статус (факт на 2026-07-13) |
 |------|-------------|--------|
@@ -727,8 +729,22 @@ app-side HTTP-шлюзу для email; `health`/статус канала не �
      разрешить переход `sent → failed` в машине статусов C1 **или** ввести
      промежуточный статус `dispatched`/`queued`. Снимает зависимость backend от
      скорости/доступности SMTP и даёт настоящий `delivered` vs `sent`.
-   - **Статус:** не реализовано (осознанно отложено). Рекомендация — сначала
-     лёгкий фикс (прогрев + таймаут), затем async-ack как целевой.
+   - **Статус (2026-07-13): лёгкий фикс реализован.** (а) Прогрев транспорта на
+     Edge — `EdgeEmailSender.warmUp()` вызывает `transporter.verify()` при
+     `channel_credentials_sync` (`edge-control-plane.storeCredentials` →
+     fire-and-forget, best-effort;
+     [`edge-email-sender.ts`](../../services/edge-gateway/src/edge-email-sender.ts),
+     [`edge-smtp-transport.ts`](../../services/edge-gateway/src/edge-smtp-transport.ts),
+     [`edge-control-plane.ts`](../../services/edge-gateway/src/edge-control-plane.ts)):
+     первый резолв кред после старта Edge поднимает соединение заранее, поэтому
+     первый ответ менеджера уже идёт по тёплому транспорту. (б) Независимый
+     `AbortController`-таймаут у `fetch` в `forwardEgressToEdgeControl`
+     (`EDGE_CONTROL_TIMEOUT_MS`, по умолчанию 15с;
+     [`internal-messaging.service.ts`](../../services/backend/src/modules/communication-core/internal-messaging.service.ts)).
+     (в) Идемпотентность повтора — уже даёт дедуп `control_id` на Edge
+     (повтор возвращает `sent`). Тесты: `edge-email-sender.test.ts`,
+     `edge-smtp-transport.test.ts` (warmUp/verify, best-effort, control-plane
+     прогрев). **async-ack** (целевой) — по-прежнему отложен.
 
 ---
 

@@ -13,6 +13,7 @@ import { createNodemailerTransport, type NodemailerLike } from "../../src/edge-s
 function fakeNodemailer() {
   const created: any[] = [];
   const sent: any[] = [];
+  const verified: any[] = [];
   const nodemailer: NodemailerLike = {
     createTransport(options: unknown) {
       created.push(options);
@@ -21,10 +22,14 @@ function fakeNodemailer() {
           sent.push(message);
           return { messageId: "<server-assigned@mailserver>" };
         },
+        async verify() {
+          verified.push(options);
+          return true;
+        },
       };
     },
   };
-  return { nodemailer, created, sent };
+  return { nodemailer, created, sent, verified };
 }
 
 describe("edge nodemailer transport (M1)", () => {
@@ -76,6 +81,22 @@ describe("edge nodemailer transport (M1)", () => {
     assert.equal(created.length, 1, "transport reused across sends");
     assert.equal(created[0].secure, true);
     assert.deepEqual(created[0].tls, { rejectUnauthorized: true }, "strict TLS by default");
+  });
+
+  it("verify() поднимает соединение заранее и переиспользует его при sendMail (прогрев §4.6)", async () => {
+    const { nodemailer, created, sent, verified } = fakeNodemailer();
+    const transport = createNodemailerTransport(
+      { smtp: { host: "mailserver", port: 587, username: "u", password: "p" } },
+      { rejectUnauthorized: false, load: async () => nodemailer },
+    );
+
+    await transport.verify!();
+    assert.equal(created.length, 1, "verify создаёт транспорт (прогрев)");
+    assert.equal(verified.length, 1, "verify вызывает transporter.verify()");
+
+    await transport.sendMail({ from: "u@x.io", to: "c@x.io", subject: "s", text: "t", messageId: "<1@x.io>" });
+    assert.equal(created.length, 1, "отправка переиспользует прогретый транспорт");
+    assert.equal(sent.length, 1);
   });
 
   it("integrates with the edge email sender end-to-end (egress → nodemailer)", async () => {
