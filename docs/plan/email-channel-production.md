@@ -72,16 +72,40 @@ decisions:
 > ничего не поллит (**менеджер не получает входящих**), а `egress_dispatch`
 > падает с «No SMTP credentials». План закрытия —
 > [`email-inbound-edge-implementation.md`](./email-inbound-edge-implementation.md).
+>
+> **Актуализация 2026-07-13 (живая проверка ИСХОДЯЩЕГО на стенде, HEAD `b5d44fe`).**
+> Разрыв выше **закрыт**: publisher `channel_credentials_sync` реализован в
+> [`integration-gateway.facade.ts`](../../services/backend/src/modules/integration-gateway/integration-gateway.facade.ts)
+> (Ш1 — push при connect/update; Ш2 — bulk-resync каждые 60с по `EDGE_CONTROL_URL`).
+> На стенде backend штатно логирует `Email creds resync: 1/1 каналов отправлено на
+> Edge` каждые 60с. **Штатный исходящий путь подтверждён сквозняком без
+> `verify-full-path.ts`:** выпущена admin-сессия → `POST /api/v1/messages`
+> `{content:{text,subject}}` в email-диалог org `…0101` → `handoffEgress` →
+> `egress_dispatch` на Edge → `EdgeEmailSender` (nodemailer SMTP) → `mailserver` →
+> письмо **реально доставлено** в ящик `client@lissac-games.online` (проверено
+> `doveadm`: `To`=реальный адрес клиента, `From: Support <support@…>`,
+> `Subject`=`content.subject`, тело совпало). `messages.status=sent`, ack Edge
+> `status=sent`.
+> **Единственная оговорка — cold-start (§4.6):** ПЕРВОЕ письмо после рестарта Edge
+> доставляется клиенту, но помечается `failed` (холодный nodemailer-транспорт
+> превышает таймаут обёртки `deliverWithAdapterFailure`); ВТОРОЕ (тёплый транспорт)
+> — `sent`. Воспроизведено на стенде (msg #1 `failed`+доставлено, msg #2 `sent`).
+> **Лёгкий фикс §4.6 реализован и подтверждён живьём** (прогрев
+> `transporter.verify()` при `channel_credentials_sync` + независимый
+> `AbortController`-таймаут `fetch`, `EDGE_CONTROL_TIMEOUT_MS`). После ре-деплоя
+> backend+edge (рестарт Edge → холодный транспорт) и первого creds-resync
+> **первое** письмо менеджера ушло `status=sent` и доставлено в ящик `client@`
+> (ранее это же первое-после-рестарта письмо было ложным `failed`). Детали — §4.6.
 
 | Этап | Что закрыто | Статус (факт на 2026-07-13) |
 |------|-------------|--------|
 | **E0** | G-2/G-4 — структурные email-креды, `PUT /channels/:id` | ✅ backend |
 | **E1** | G-1 — UI ввода IMAP/SMTP кред + заказ «Bridge Mail» + реальный `:test` через Edge | ✅ форма + автопровижн (M5) + `channel_test` (реальный IMAP LOGIN + SMTP verify) |
-| **E2** | G-10 — control-plane App→Edge | 🟡 приёмник (`/internal/edge/control/messages`) и egress-паблишер есть; **publisher `channel_credentials_sync` на backend НЕ реализован** |
+| **E2** | G-10 — control-plane App→Edge | ✅ приёмник (`/internal/edge/control/messages`), egress-паблишер и **publisher `channel_credentials_sync` (Ш1 push + Ш2 resync 60с)** — на стенде лог `Email creds resync: 1/1` |
 | **E3** | G-5/G-9 — входящий IMAP-драйвер на Edge (RF-first) | ✅ боевой (`imapflow`), подключён — но инертен без creds-sync |
 | **E4** | G-6/G-7 — SMTP-sender на Edge + поля эгресса | ✅ боевой (`nodemailer`) + egress по HTTP — инертен без creds-sync |
 | **E5** | G-8 — email в manager-workspace (тип, тема) | ✅ frontend |
-| **E6** | F1/F2 — вывод SVC-INT email-пути + сквозная приёмка | 🟡 e2e только через `verify-full-path.ts` (не штатный путь) |
+| **E6** | F1/F2 — вывод SVC-INT email-пути + сквозная приёмка | 🟢 **исходящее — штатный путь подтверждён живьём на стенде без verify-скрипта** (POST /messages → SMTP → ящик клиента, `status=sent`); оговорка cold-start §4.6. Входящее штатно — отдельно |
 
 **Оставшиеся блоки (актуально):**
 1. **Publisher `channel_credentials_sync` на backend — главный разрыв.** При
@@ -738,8 +762,24 @@ app-side HTTP-шлюзу для email; `health`/статус канала не �
      разрешить переход `sent → failed` в машине статусов C1 **или** ввести
      промежуточный статус `dispatched`/`queued`. Снимает зависимость backend от
      скорости/доступности SMTP и даёт настоящий `delivered` vs `sent`.
-   - **Статус:** не реализовано (осознанно отложено). Рекомендация — сначала
-     лёгкий фикс (прогрев + таймаут), затем async-ack как целевой.
+   - **Статус (2026-07-13): лёгкий фикс реализован.** (а) Прогрев транспорта на
+     Edge — `EdgeEmailSender.warmUp()` вызывает `transporter.verify()` при
+     `channel_credentials_sync` (`edge-control-plane.storeCredentials` →
+     fire-and-forget, best-effort;
+     [`edge-email-sender.ts`](../../services/edge-gateway/src/edge-email-sender.ts),
+     [`edge-smtp-transport.ts`](../../services/edge-gateway/src/edge-smtp-transport.ts),
+     [`edge-control-plane.ts`](../../services/edge-gateway/src/edge-control-plane.ts)):
+     первый резолв кред после старта Edge поднимает соединение заранее, поэтому
+     первый ответ менеджера уже идёт по тёплому транспорту. (б) Независимый
+     `AbortController`-таймаут у `fetch` в `forwardEgressToEdgeControl`
+     (`EDGE_CONTROL_TIMEOUT_MS`, по умолчанию 15с;
+     [`internal-messaging.service.ts`](../../services/backend/src/modules/communication-core/internal-messaging.service.ts)).
+     (в) Идемпотентность повтора — уже даёт дедуп `control_id` на Edge
+     (повтор возвращает `sent`). Тесты: `edge-email-sender.test.ts`,
+     `edge-smtp-transport.test.ts` (warmUp/verify, best-effort, control-plane
+     прогрев). **Живая проверка на стенде (2026-07-13):** после ре-деплоя и
+     рестарта Edge первое письмо менеджера ушло `sent` и доставлено (до фикса —
+     ложный `failed`). **async-ack** (целевой) — по-прежнему отложен.
 
 ---
 

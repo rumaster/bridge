@@ -39,6 +39,12 @@ export interface EdgeControlPlaneCipher {
 /** Отправитель исходящего сообщения канала (SMTP для email E4, MAX Bot API M4). */
 export interface EdgeEmailSender {
   send(delivery: EdgeEmailDelivery): Promise<{ external_message_id?: string } | void>;
+  /**
+   * Прогрев SMTP-транспорта по свежесинхронизированным кредам (§4.6): устраняет
+   * cold-start ложный `failed` на первом исходящем после старта Edge. Best-effort,
+   * опционально (инъектируемые в тестах сендеры могут его не иметь).
+   */
+  warmUp?(credentials: unknown): Promise<boolean>;
 }
 
 /** Псевдоним для сеама отправки любого edge-owned канала (email/MAX). */
@@ -158,6 +164,14 @@ export function createEdgeControlPlane({
       });
     }
     metrics.credentials_synced_total += 1;
+
+    // Прогрев SMTP-транспорта (§4.6): как только креды email-канала пришли,
+    // поднимаем соединение заранее — первый ответ менеджера после старта Edge
+    // не платит cold-start и не помечается ложным `failed`. Fire-and-forget:
+    // не блокирует ack и не роняет синхронизацию (warmUp — best-effort внутри).
+    if (channelType === "email" && typeof emailSender?.warmUp === "function") {
+      void Promise.resolve(emailSender.warmUp(message.payload.credentials)).catch(() => {});
+    }
 
     return createEdgeControlAck({
       controlId: message.control_id,

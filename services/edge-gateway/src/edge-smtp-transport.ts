@@ -16,6 +16,11 @@ import type { EdgeSmtpConfig, EdgeSmtpMessage, EdgeSmtpTransport } from "./edge-
 export interface NodemailerLike {
   createTransport(options: unknown): {
     sendMail(message: unknown): Promise<{ messageId?: string }>;
+    /**
+     * nodemailer: устанавливает соединение и проверяет AUTH, не отправляя письма.
+     * Используется и проверкой подключения канала (Этап E1, `channel_test`), и
+     * прогревом транспорта (§4.6) — обе операции вызывают `transporter.verify()`.
+     */
     verify(): Promise<unknown>;
   };
 }
@@ -75,6 +80,15 @@ export function createNodemailerTransport(
   }
 
   return {
+    // Прогрев (§4.6): поднимает соединение+AUTH заранее, чтобы первый egress не
+    // платил cold-start. Ошибку пробрасывает — best-effort-обёртка живёт в
+    // `edge-email-sender.warmUp` (там ошибка гасится).
+    async verify() {
+      const transport = await ensureTransporter();
+      if (typeof transport.verify === "function") {
+        await transport.verify();
+      }
+    },
     async sendMail(message: EdgeSmtpMessage) {
       const transport = await ensureTransporter();
       const result = await transport.sendMail({
@@ -92,11 +106,6 @@ export function createNodemailerTransport(
           : {}),
       });
       return { messageId: result?.messageId };
-    },
-
-    async verify() {
-      const transport = await ensureTransporter();
-      await transport.verify();
     },
   };
 }

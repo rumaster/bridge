@@ -155,4 +155,87 @@ describe("edge email sender (SMTP egress)", () => {
     assert.equal(dupe.duplicate, true);
     assert.equal(sent.length, 1);
   });
+
+  it("warmUp прогревает транспорт через verify() и переиспользует его при отправке (§4.6)", async () => {
+    const created: any[] = [];
+    const verified: any[] = [];
+    const factory = ({ smtp }: any) => {
+      created.push(smtp);
+      return {
+        async sendMail(message: any) {
+          return { messageId: message.messageId };
+        },
+        async verify() {
+          verified.push(smtp);
+        },
+      };
+    };
+    const sender = createEdgeEmailSender({ createTransport: factory });
+
+    const ok = await sender.warmUp(CREDENTIALS);
+    assert.equal(ok, true);
+    assert.equal(created.length, 1);
+    assert.equal(verified.length, 1, "verify() должен подняться заранее (прогрев)");
+    assert.equal(sender.getMetrics().warmed_total, 1);
+
+    // Отправка после прогрева переиспользует тот же (тёплый) транспорт.
+    await sender.send(delivery() as any);
+    assert.equal(created.length, 1, "send переиспользует прогретый транспорт");
+  });
+
+  it("warmUp best-effort: ошибка verify() не пробрасывается, а гасится в false", async () => {
+    const factory = () => ({
+      async sendMail(message: any) {
+        return { messageId: message.messageId };
+      },
+      async verify() {
+        throw new Error("SMTP недоступен");
+      },
+    });
+    const sender = createEdgeEmailSender({ createTransport: factory });
+
+    assert.equal(await sender.warmUp(CREDENTIALS), false);
+    assert.equal(sender.getMetrics().warm_failed_total, 1);
+  });
+
+  it("warmUp — no-op без SMTP-кред (транспорт не создаётся)", async () => {
+    const { factory, created } = createFakeTransportFactory();
+    const sender = createEdgeEmailSender({ createTransport: factory });
+
+    assert.equal(await sender.warmUp(null), false);
+    assert.equal(await sender.warmUp({ from_email: "x@y.z" }), false);
+    assert.equal(created.length, 0);
+  });
+
+  it("control-plane прогревает транспорт при channel_credentials_sync (email), не блокируя ack", async () => {
+    const verified: any[] = [];
+    const factory = ({ smtp }: any) => ({
+      async sendMail(message: any) {
+        return { messageId: message.messageId };
+      },
+      async verify() {
+        verified.push(smtp);
+      },
+    });
+    const sender = createEdgeEmailSender({ createTransport: factory });
+    const plane = createEdgeControlPlane({
+      cipher: createRfPayloadCipher({ key: CACHE_KEY }),
+      emailSender: sender,
+    });
+
+    const ack = await plane.handle(
+      createEdgeControlMessage({
+        type: "channel_credentials_sync",
+        organizationId: "org-1",
+        controlId: "ctl-creds-warm",
+        issuedAt: "2026-07-11T10:00:00.000Z",
+        payload: { channel_id: "chan-1", channel_type: "email", credentials: CREDENTIALS },
+      }),
+    );
+    // Прогрев — fire-and-forget: ack не ждёт verify().
+    assert.equal(ack.status, "stored");
+    // Даём отработать отложенному warmUp.
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(verified.length, 1, "синхронизация email-кред должна прогреть SMTP-транспорт");
+  });
 });

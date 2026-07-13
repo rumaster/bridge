@@ -42,9 +42,13 @@ export interface EdgeSmtpMessage {
 export interface EdgeSmtpTransport {
   sendMail(message: EdgeSmtpMessage): Promise<{ messageId?: string } | void>;
   /**
-   * Проверка доступности SMTP (EHLO + AUTH), не отправляя письма — nodemailer
-   * `transporter.verify()`. Используется проверкой подключения канала (Этап E1,
-   * `channel_test`); необязателен для чисто отправляющих транспортов.
+   * Проверка доступности SMTP (EHLO + AUTH) без отправки письма — nodemailer
+   * `transporter.verify()`. Две роли: (1) проверка подключения канала (Этап E1,
+   * `channel_test`); (2) прогрев транспорта (§4.6) — поднимает TCP+STARTTLS+AUTH
+   * заранее, чтобы первая реальная отправка не платила cold-start (иначе холодный
+   * транспорт превышает таймаут обёртки egress и письмо помечается ложным
+   * `failed`, хотя доставляется). Опционально — инъектируемые в тестах транспорты
+   * могут его не реализовывать.
    */
   verify?(): Promise<void>;
 }
@@ -73,6 +77,7 @@ export function createEdgeEmailSender({
   now = () => new Date().toISOString(),
 }: CreateEdgeEmailSenderOptions): {
   send(delivery: EdgeEmailDelivery): Promise<{ external_message_id: string }>;
+  warmUp(credentials: unknown): Promise<boolean>;
   getMetrics(): Record<string, number>;
 } {
   if (typeof createTransport !== "function") {
@@ -82,7 +87,7 @@ export function createEdgeEmailSender({
   // Транспорты кэшируются per-SMTP-конфиг (по организации), как resolving-клиент
   // Telegram кэширует по токену.
   const transportsByKey = new Map<string, EdgeSmtpTransport>();
-  const metrics = { sent_total: 0, failed_total: 0 };
+  const metrics = { sent_total: 0, failed_total: 0, warmed_total: 0, warm_failed_total: 0 };
 
   function getTransport(smtp: EdgeSmtpConfig): EdgeSmtpTransport {
     const key = `${smtp.host}:${smtp.port}:${smtp.username}`;
@@ -144,6 +149,32 @@ export function createEdgeEmailSender({
         external_message_id:
           firstNonEmpty((result as { messageId?: string }).messageId) ?? messageId,
       };
+    },
+
+    /**
+     * Прогрев SMTP-транспорта организации по синхронизированным кредам (§4.6):
+     * поднимает соединение заранее (`transporter.verify()`), устраняя cold-start
+     * ложный `failed` на первом ответе менеджера после старта Edge. Best-effort —
+     * ошибка прогрева (недоступный SMTP, кривые креды) НЕ роняет синхронизацию:
+     * возвращается `false`, отправка попробуется как обычно при первом egress.
+     */
+    async warmUp(credentials: unknown): Promise<boolean> {
+      const creds = credentials as StructuredEmailCredentials | null | undefined;
+      const smtp = creds?.smtp;
+      if (!smtp?.host) {
+        return false;
+      }
+      try {
+        const transport = getTransport(smtp);
+        if (typeof transport.verify === "function") {
+          await transport.verify();
+        }
+        metrics.warmed_total += 1;
+        return true;
+      } catch {
+        metrics.warm_failed_total += 1;
+        return false;
+      }
     },
 
     getMetrics() {
