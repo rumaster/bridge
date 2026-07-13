@@ -285,6 +285,9 @@ services:
       # Пусто → релей не поднимается, backend остаётся на прямом HTTP (стенд).
       EDGE_VPN_EDGE_CONTROL_URL: ${EDGE_VPN_EDGE_CONTROL_URL:-}
       EDGE_VPN_EDGE_CONTROL_WSS_URL: ${EDGE_VPN_EDGE_CONTROL_WSS_URL:-}
+      # Дедлайн control-RPC (мс). Больше data-plane (5с): egress = реальная SMTP-
+      # отправка, channel_test = IMAP LOGIN + SMTP verify. Дефолт 30с.
+      EDGE_VPN_CONTROL_TIMEOUT_MS: ${EDGE_VPN_CONTROL_TIMEOUT_MS:-30000}
       # HTTP-релей для backend (host-internal, edge-vpn-app:3052). Backend бьёт
       # сюда через EDGE_CONTROL_TUNNEL_URL, релей толкает на Edge по туннелю.
       EDGE_CONTROL_RELAY_HOST: 0.0.0.0

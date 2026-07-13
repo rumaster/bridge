@@ -448,7 +448,12 @@ function maybeStartAppControlRelay(env: Record<string, string | undefined>) {
     return null;
   }
 
-  const timeoutMs = numberEnv(env.EDGE_VPN_TIMEOUT_MS, 5_000);
+  // Control-RPC требует БОЛЬШЕГО дедлайна, чем data-plane (5с): egress_dispatch
+  // выполняет на Edge реальную SMTP-отправку, а channel_test — IMAP LOGIN + SMTP
+  // verify; оба легко превышают 5с (проверено на стенде — channel_test с холодным
+  // IMAP таймаутил на 5с). Отдельный EDGE_VPN_CONTROL_TIMEOUT_MS (дефолт 30с) не
+  // затрагивает data-plane timeout. creds-sync (быстрый кэш) укладывается с запасом.
+  const timeoutMs = numberEnv(env.EDGE_VPN_CONTROL_TIMEOUT_MS, 30_000);
   const primary = createVpnTunnelTcpRemoteServer({
     url: edgeControlUrl,
     timeoutMs,
