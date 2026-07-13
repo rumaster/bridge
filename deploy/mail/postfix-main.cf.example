@@ -41,3 +41,11 @@ smtpd_client_new_tls_session_rate_limit = 60
 # подключения к submission (postconf -P) — deploy/mail/README.md §M4. Подключайте
 # только ПОСЛЕ запуска postfwd, иначе submission начнёт падать в 451 (policy-
 # сервис недоступен).
+
+# --- (Опционально) Ужесточение TLS для исходящего relay (Этап M3) ---
+# docker-mailserver при заданном RELAY_HOST уже включает SASL и STARTTLS. Если
+# relay ТОЛЬКО через транзакционный SMTP (прямой доставки по MX нет), можно
+# потребовать шифрование ко всем исходящим — раскомментируйте:
+#   smtp_tls_security_level = encrypt
+# ВНИМАНИЕ: `encrypt` сломает прямую доставку по MX на серверы без TLS. Если
+# используется и relay, и прямая доставка — оставьте дефолт `may` (оппортунистич.).
