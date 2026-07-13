@@ -276,7 +276,10 @@ export const handlers = [
     const body = (await request.json()) as { local_part?: string; name?: string };
     const localPart = body.local_part?.trim();
     if (!localPart || /[@\s]/.test(localPart)) {
-      return validationProblem(["local_part must be a mailbox name without @ or spaces"], "Invalid mailbox name.");
+      return validationProblem(
+        [{ field: "local_part", message: "local_part must be a mailbox name without @ or spaces" }],
+        "Invalid mailbox name."
+      );
     }
     const createdAt = "2026-07-03T10:30:00.000Z";
     const address = `${localPart}@mail.example.com`;

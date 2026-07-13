@@ -52,8 +52,11 @@ describe("INT <-> CORE C2/C6 contracts", () => {
     assert.equal(descriptor.channel_id, "channel-web");
     assert.deepEqual(Object.keys(descriptor.capabilities), C6_CAPABILITIES);
     assert.equal(descriptor.capabilities.text.supported, true);
-    assert.equal(descriptor.capabilities.image.supported, true);
-    assert.equal(descriptor.capabilities.file.supported, true);
+    // image/file сняты из «supported» в WG-14 (W6, web-chat-adapter): сквозняк
+    // «виджет → ядро → менеджер» вложения не переносит. Дескриптор не должен
+    // заявлять нереализованное — вернуть true, когда появится сквозная доставка.
+    assert.equal(descriptor.capabilities.image.supported, false);
+    assert.equal(descriptor.capabilities.file.supported, false);
     assert.equal(descriptor.capabilities.typing_indicator.supported, true);
     assert.equal(descriptor.capabilities.read_receipt.supported, true);
     assert.equal(descriptor.capabilities.voice.supported, false);

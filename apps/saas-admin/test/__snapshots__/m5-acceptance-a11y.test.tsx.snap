@@ -27,6 +27,10 @@ exports[`SaaS Administration M5 acceptance and accessibility > фиксируе�
     },
     {
       "level": 2,
+      "name": "Bridge Mail — заказать ящик",
+    },
+    {
+      "level": 2,
       "name": "Подключение Web Chat",
     },
     {

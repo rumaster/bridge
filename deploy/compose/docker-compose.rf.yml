@@ -124,6 +124,10 @@ services:
       # backend-прокси. Пусто → вложения приезжают только метаданными.
       EMAIL_ATTACHMENT_STORAGE_DIR: ${EMAIL_ATTACHMENT_STORAGE_DIR:-/var/lib/bridge/attachments}
       EMAIL_ATTACHMENT_MAX_BYTES: ${EMAIL_ATTACHMENT_MAX_BYTES:-26214400}
+      # Retention/GC байтов на RF-томе (§Follow-up п.1): удаление объектов старше
+      # N суток (по mtime). 0 → GC выключен. Дедуп учтён на уровне свипа.
+      EMAIL_ATTACHMENT_TTL_DAYS: ${EMAIL_ATTACHMENT_TTL_DAYS:-0}
+      EMAIL_ATTACHMENT_GC_INTERVAL_MS: ${EMAIL_ATTACHMENT_GC_INTERVAL_MS:-21600000}
       EDGE_VPN_APP_TCP_CLIENT_TLS_CA: ${EDGE_VPN_APP_TCP_CLIENT_TLS_CA:-}
       EDGE_VPN_APP_TCP_CLIENT_TLS_KEY: ${EDGE_VPN_APP_TCP_CLIENT_TLS_KEY:-}
       EDGE_VPN_APP_TCP_CLIENT_TLS_CERT: ${EDGE_VPN_APP_TCP_CLIENT_TLS_CERT:-}
