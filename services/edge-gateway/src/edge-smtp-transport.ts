@@ -16,6 +16,7 @@ import type { EdgeSmtpConfig, EdgeSmtpMessage, EdgeSmtpTransport } from "./edge-
 export interface NodemailerLike {
   createTransport(options: unknown): {
     sendMail(message: unknown): Promise<{ messageId?: string }>;
+    verify(): Promise<unknown>;
   };
 }
 
@@ -54,7 +55,9 @@ export function createNodemailerTransport(
   // nodemailer сам поднимает STARTTLS). Явный smtp.tls=true форсирует implicit TLS.
   const secure = port === 465 ? true : smtp.tls === true;
 
-  let transporter: { sendMail(message: unknown): Promise<{ messageId?: string }> } | null = null;
+  let transporter:
+    | { sendMail(message: unknown): Promise<{ messageId?: string }>; verify(): Promise<unknown> }
+    | null = null;
 
   async function ensureTransporter() {
     if (transporter) {
@@ -89,6 +92,11 @@ export function createNodemailerTransport(
           : {}),
       });
       return { messageId: result?.messageId };
+    },
+
+    async verify() {
+      const transport = await ensureTransporter();
+      await transport.verify();
     },
   };
 }

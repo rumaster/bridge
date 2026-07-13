@@ -76,7 +76,7 @@ decisions:
 | Этап | Что закрыто | Статус (факт на 2026-07-13) |
 |------|-------------|--------|
 | **E0** | G-2/G-4 — структурные email-креды, `PUT /channels/:id` | ✅ backend |
-| **E1** | G-1 — UI ввода IMAP/SMTP кред + заказ «Bridge Mail» | ✅ форма + автопровижн (M5) |
+| **E1** | G-1 — UI ввода IMAP/SMTP кред + заказ «Bridge Mail» + реальный `:test` через Edge | ✅ форма + автопровижн (M5) + `channel_test` (реальный IMAP LOGIN + SMTP verify) |
 | **E2** | G-10 — control-plane App→Edge | 🟡 приёмник (`/internal/edge/control/messages`) и egress-паблишер есть; **publisher `channel_credentials_sync` на backend НЕ реализован** |
 | **E3** | G-5/G-9 — входящий IMAP-драйвер на Edge (RF-first) | ✅ боевой (`imapflow`), подключён — но инертен без creds-sync |
 | **E4** | G-6/G-7 — SMTP-sender на Edge + поля эгресса | ✅ боевой (`nodemailer`) + egress по HTTP — инертен без creds-sync |
@@ -296,7 +296,7 @@ decisions:
 **DoD:** email-креды сохраняются структурным объектом через API на Backend;
 получить обратно **нельзя** (write-only пароль), обновить — можно.
 
-### Этап E1 — UI ввода кред в SaaS Administration — ✅ ВЫПОЛНЕН (форма; реальный `:test` с Edge — с MP-12)
+### Этап E1 — UI ввода кред в SaaS Administration — ✅ ВЫПОЛНЕН (форма + реальный `:test` через Edge)
 
 Закрывает G-1. Роль/страница — по решению 2, без изменений.
 
@@ -322,11 +322,41 @@ decisions:
 >   `credentials_ref`); валидация обязательных полей блокирует отправку. `tsc`
 >   зелёный, регрессий нет (saas-admin 100).
 >
-> Осталось (с боевым Edge, MP-12): реальная проверка `:test` со стороны Edge
-> (IMAP LOGIN / SMTP EHLO+AUTH) — сейчас backend `testChannel` для email
-> возвращает статус обобщённо (реальный getMe есть только у Telegram);
-> опционально — UI-редактирование/ротация кред через `PUT /v1/channels/:id`
-> (endpoint готов в E0).
+> **Реальная проверка `:test` через Edge — реализована.** Добавлен новый тип
+> App→Edge control-сообщения `C9.EdgeControlMessage type=channel_test`
+> ([`c9.ts`](../../packages/contracts/src/c9.ts) + схема, валидатор требует
+> `channel_type`). Backend `testChannel` для email
+> ([`integration-gateway.facade.ts`](../../services/backend/src/modules/integration-gateway/integration-gateway.facade.ts),
+> `testEmailChannel`/`publishChannelTest`) резолвит структурные креды из
+> `credentials_envelope` и шлёт `channel_test` на `EDGE_CONTROL_URL` (тем же
+> HTTP-путём, что creds-sync/egress); Edge
+> ([`edge-control-plane.ts`](../../services/edge-gateway/src/edge-control-plane.ts) →
+> [`edge-channel-tester.ts`](../../services/edge-gateway/src/edge-channel-tester.ts))
+> выполняет **реальный IMAP LOGIN** (`imapflow` connect+logout) и **SMTP verify**
+> (`nodemailer transporter.verify()`, EHLO+AUTH) боевыми клиентами с РФ-стороны и
+> возвращает `connected`/`error`+причину синхронным ack. Креды едут в payload
+> (проверка работает даже до creds-sync); `channel_test` НЕ дедуплицируется по
+> `control_id` (проба всегда свежая). Без `EDGE_CONTROL_URL` backend честно отдаёт
+> `error` с причиной, а не ложный `connected` (проверять негде — по решению 1
+> IMAP/SMTP только на Edge). Невалидные креды (обычный пароль вместо app-password,
+> закрытый порт, неверный хост) теперь дают `error`, а не обобщённый `connected`.
+> Тесты: контракт `channel_test`
+> ([`c9-control-message.test.ts`](../../packages/contracts/test/unit/c9-control-message.test.ts)),
+> тестер ([`edge-channel-tester.test.ts`](../../services/edge-gateway/test/unit/edge-channel-tester.test.ts)),
+> control-plane роутинг/дедуп/креды из payload-или-кэша
+> ([`edge-control-plane.test.ts`](../../services/edge-gateway/test/unit/edge-control-plane.test.ts)),
+> backend `:test` (connected/error/нет кред/нет URL/Edge недоступен) в
+> [`integration-gateway.facade.spec.ts`](../../services/backend/test/unit/integration-gateway.facade.spec.ts)
+> + сквозной через HTTP в
+> [`channels.spec.ts`](../../services/backend/test/integration/channels.spec.ts).
+> `tsc` зелёный; регрессий нет (edge 180, contracts 42, backend facade unit 20 +
+> channels integration 14).
+>
+> Осталось (боевой daemon Edge, MP-12): реальные сетевые IMAP/SMTP-сокеты вместо
+> инъектируемых в тестах фабрик (`channelTester` в
+> [`edge-channel-drivers.ts`](../../services/edge-gateway/src/edge-channel-drivers.ts)
+> уже собран боевыми клиентами — проверяется на стенде). Опционально —
+> UI-редактирование/ротация кред через `PUT /v1/channels/:id` (endpoint готов в E0).
 
 - Форма на `:8081/channels` (`ChannelsPage.tsx`) для коннектора `email`: два
   блока (IMAP, SMTP) с host/port/TLS/username/password, плюс
@@ -353,7 +383,8 @@ decisions:
 > `vpn-tunnel.ts`/`edge-cluster.ts`, боевой TCP/TLS-сокет — веха MP-12). Что
 > сделано:
 > - Контракт `C9.EdgeControlMessage` + `C9.EdgeControlAck` (типы
->   `channel_credentials_sync`/`egress_dispatch`) в
+>   `channel_credentials_sync`/`egress_dispatch`; тип `channel_test` добавлен на
+>   Этапе E1) в
 >   [`c9.ts`](../../packages/contracts/src/c9.ts) + JSON-схемы
 >   [`c9-edge-control-message.schema.json`](../../packages/contracts/json-schema/c9-edge-control-message.schema.json),
 >   [`c9-edge-control-ack.schema.json`](../../packages/contracts/json-schema/c9-edge-control-ack.schema.json);

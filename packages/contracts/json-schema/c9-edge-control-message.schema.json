@@ -27,7 +27,7 @@
       "minLength": 1
     },
     "type": {
-      "enum": ["channel_credentials_sync", "egress_dispatch"]
+      "enum": ["channel_credentials_sync", "egress_dispatch", "channel_test"]
     },
     "organization_id": {
       "type": "string",

@@ -51,6 +51,33 @@ describe("C9 App→Edge control message DTO", () => {
     assert.equal(validateEdgeControlMessage(message).valid, true);
   });
 
+  it("builds and validates a channel_test message", () => {
+    const message = createEdgeControlMessage({
+      type: "channel_test",
+      organizationId: "org-1",
+      controlId: "ctl-test-1",
+      issuedAt: "2026-07-13T10:00:00.000Z",
+      payload: { channel_id: "chan-1", channel_type: "email", credentials: EMAIL_CREDENTIALS },
+    });
+
+    assert.equal(validateEdgeControlMessage(message).valid, true);
+  });
+
+  it("requires channel_type for channel_test", () => {
+    const validation = validateEdgeControlMessage(
+      createEdgeControlMessage({
+        type: "channel_test",
+        organizationId: "org-1",
+        controlId: "ctl-test-2",
+        issuedAt: "2026-07-13T10:00:00.000Z",
+        payload: { credentials: EMAIL_CREDENTIALS },
+      }),
+    );
+
+    assert.equal(validation.valid, false);
+    assert.match(validation.errors.join("\n"), /payload\.channel_type/);
+  });
+
   it("rejects an unknown control type", () => {
     const validation = validateEdgeControlMessage({
       ...createEdgeControlMessage({

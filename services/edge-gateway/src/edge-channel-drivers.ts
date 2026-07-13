@@ -1,10 +1,11 @@
+import { createEdgeEmailTester } from "./edge-channel-tester.js";
 import { createEdgeControlPlane, type EdgeControlPlaneCipher } from "./edge-control-plane.js";
 import { createEdgeEmailInboundDriver } from "./edge-email-inbound-driver.js";
 import { createEdgeEmailSender } from "./edge-email-sender.js";
 import { createEdgeMaxInboundDriver } from "./edge-max-inbound-driver.js";
 import { createEdgeMaxSender } from "./edge-max-sender.js";
 import { createEdgeMaxUpdatesClient } from "./edge-max-updates-client.js";
-import { createImapMailbox } from "./edge-imap-mailbox.js";
+import { createImapMailbox, defaultImapClientFactory } from "./edge-imap-mailbox.js";
 import { createNodemailerTransport } from "./edge-smtp-transport.js";
 
 /**
@@ -75,9 +76,43 @@ export function createEdgeChannelRuntime({
     now,
   });
 
+  // Проверка подключения email-канала (Этап E1): channel_test → реальный IMAP
+  // LOGIN (connect+logout боевого imapflow) + SMTP verify (EHLO+AUTH nodemailer).
+  // Те же боевые клиенты и та же RF-сторона, что приём/отправка.
+  const channelTester = createEdgeEmailTester({
+    probeImap: async (config) => {
+      const client = defaultImapClientFactory(config, {
+        rejectUnauthorized: emailTlsRejectUnauthorized,
+      });
+      await client.connect();
+      try {
+        await client.logout();
+      } catch {
+        try {
+          client.close();
+        } catch {
+          // Логин уже проверен успешно — сбой закрытия соединения не важен.
+        }
+      }
+    },
+    probeSmtp: async ({ smtp }) => {
+      const transport = createNodemailerTransport(
+        { smtp },
+        { rejectUnauthorized: emailTlsRejectUnauthorized },
+      );
+      await transport.verify?.();
+    },
+  });
+
   // Control-plane: кэш кред + реестр каналов из creds-sync + роутинг egress
-  // (channel_type="max" → maxSender, иначе → emailSender).
-  const controlPlane = createEdgeControlPlane({ cipher, maxSender, emailSender, now });
+  // (channel_type="max" → maxSender, иначе → emailSender) + channel_test.
+  const controlPlane = createEdgeControlPlane({
+    cipher,
+    maxSender,
+    emailSender,
+    channelTester,
+    now,
+  });
 
   // Входящее email (Этап E3/M1): реестр каналов/креды — из control-plane; приём
   // по IMAP (poll по курсору UID) через боевой createImapMailbox; RF-first в кластер.

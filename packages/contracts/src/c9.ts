@@ -13,6 +13,10 @@ export const C9_VERSION = "1.0.0";
 export const C9_CONTROL_TYPES = Object.freeze([
   "channel_credentials_sync",
   "egress_dispatch",
+  // Проверка подключения канала «здесь и сейчас» (Этап E1 плана): Edge выполняет
+  // реальный IMAP LOGIN + SMTP verify кредами из payload/кэша и возвращает
+  // connected/error+причину. В отличие от creds-sync/egress не дедуплицируется.
+  "channel_test",
 ] as const);
 export type C9ControlType = (typeof C9_CONTROL_TYPES)[number];
 
@@ -153,8 +157,11 @@ export function validateEdgeTunnelAck(ack) {
  *     (payload: `{ channel_id, channel_type, credentials }`);
  *   - `egress_dispatch` — задание Edge отправить исходящее (payload несёт
  *     `message_id` и данные доставки).
+ *   - `channel_test` — проверка подключения канала: Edge выполняет реальный
+ *     IMAP LOGIN + SMTP verify (payload: `{ channel_id?, channel_type,
+ *     credentials? }`; при отсутствии `credentials` берутся из кэша Edge).
  * `control_id` — сквозной ключ идемпотентности: повтор после переподключения
- * дедуплицируется Edge по нему.
+ * дедуплицируется Edge по нему (кроме `channel_test` — проба всегда свежая).
  */
 export function createEdgeControlMessage({
   type,
@@ -218,6 +225,10 @@ export function validateEdgeControlMessage(message) {
     }
     if (typeof payload.channel_type !== "string" || payload.channel_type.trim() === "") {
       errors.push("payload.channel_type is required for egress_dispatch");
+    }
+  } else if (message.type === "channel_test") {
+    if (typeof payload.channel_type !== "string" || payload.channel_type.trim() === "") {
+      errors.push("payload.channel_type is required for channel_test");
     }
   }
 

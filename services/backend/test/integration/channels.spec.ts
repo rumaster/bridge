@@ -23,16 +23,31 @@ describe("C3.channels M2 omnichannel API", () => {
   let app: INestApplication;
   let previousKey: string | undefined;
   let previousFetch: typeof globalThis.fetch;
+  let previousEdgeControlUrl: string | undefined;
 
   beforeAll(async () => {
     previousKey = process.env.CHANNEL_SECRET_ENCRYPTION_KEY;
     process.env.CHANNEL_SECRET_ENCRYPTION_KEY = SECRET_KEY_HEX;
+    previousEdgeControlUrl = process.env.EDGE_CONTROL_URL;
+    // Проверка email идёт через Edge control-plane (Этап E1) — задаём URL и
+    // заглушаем его ответ ниже; без этого email :test честно отдаёт error.
+    process.env.EDGE_CONTROL_URL = "http://edge.test/internal/edge/control/messages";
     previousFetch = globalThis.fetch;
     // getMe заглушка: реальный Telegram Bot API не вызывается в тесте.
-    globalThis.fetch = (async (input: unknown) => {
+    globalThis.fetch = (async (input: unknown, init?: { body?: unknown }) => {
       const url = String(input);
       if (url.includes("/getMe")) {
         return telegramResponse({ ok: true, result: { username: "bridge_support_bot", id: 42 } });
+      }
+      // Edge control-plane заглушка (Этап E1/E2): channel_test → connected,
+      // channel_credentials_sync → stored. Проверяем ДО `/me` (строка `/messages`
+      // содержит подстроку `/me`).
+      if (url.includes("/internal/edge/control/messages")) {
+        const message = init?.body ? JSON.parse(String(init.body)) : {};
+        if (message.type === "channel_test") {
+          return edgeControlResponse({ status: "connected" });
+        }
+        return edgeControlResponse({ status: "stored" });
       }
       // MAX Bot API GET /me заглушка (Этап M1): реальный MAX Bot API не вызывается.
       if (url.includes("/me")) {
@@ -60,6 +75,11 @@ describe("C3.channels M2 omnichannel API", () => {
       delete process.env.CHANNEL_SECRET_ENCRYPTION_KEY;
     } else {
       process.env.CHANNEL_SECRET_ENCRYPTION_KEY = previousKey;
+    }
+    if (previousEdgeControlUrl === undefined) {
+      delete process.env.EDGE_CONTROL_URL;
+    } else {
+      process.env.EDGE_CONTROL_URL = previousEdgeControlUrl;
     }
   });
 
@@ -320,8 +340,10 @@ describe("C3.channels M2 omnichannel API", () => {
       });
   });
 
+  // email исключён из общей параметризации: с Этапа E1 его :test выполняет
+  // реальную IMAP/SMTP-проверку через Edge (см. отдельный тест ниже), а не
+  // обобщённый connected.
   it.each([
-    ["email", "secret://email/tenant-a/support", false, false],
     ["sms", "secret://sms/tenant-a/main", false, false],
     ["vk", "secret://vk/tenant-a/main", true, false],
     ["whatsapp", "secret://whatsapp/tenant-a/main", false, true],
@@ -411,6 +433,20 @@ describe("C3.channels M2 omnichannel API", () => {
       from_email: "support@example.com",
     });
     expect(stored.imap.password).toBe("imap-secret");
+
+    // :test выполняет реальную проверку через Edge (Этап E1): backend шлёт
+    // channel_test на EDGE_CONTROL_URL, заглушка Edge отвечает connected.
+    await request(app.getHttpServer())
+      .post(`/api/v1/channels/${channel.id}:test`)
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
+      .send({})
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.accepted).toBe(true);
+        expect(body.channel_id).toBe(channel.id);
+        expect(body.status).toBe("connected");
+      });
   });
 
   it("rejects email_credentials for a non-email channel type (E0)", async () => {
@@ -527,6 +563,17 @@ function maxResponse(body: Record<string, unknown>, status = 200) {
     status,
     async text() {
       return JSON.stringify(body);
+    },
+  } as unknown as Response;
+}
+
+/** Заглушка ответа Edge control-plane (C9.EdgeControlAck) на channel_test/creds-sync. */
+function edgeControlResponse(ack: Record<string, unknown>, status = 202) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    async text() {
+      return JSON.stringify({ contract: "C9.EdgeControlAck", accepted: true, duplicate: false, ...ack });
     },
   } as unknown as Response;
 }

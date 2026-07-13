@@ -391,6 +391,155 @@ describe("IntegrationGatewayFacade", () => {
       if (prev !== undefined) process.env.EDGE_CONTROL_URL = prev;
     }
   });
+
+  it(":test для email шлёт channel_test на Edge и ставит connected (E1)", async () => {
+    const prev = process.env.EDGE_CONTROL_URL;
+    delete process.env.EDGE_CONTROL_URL; // без URL — connect не шлёт creds-sync
+    try {
+      const fetchImpl = jest.fn(async () => edgeControlResponse({ status: "connected" }));
+      const facade = createFacade({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+      const channel = await facade.connectChannel({
+        organization_id: ORG_ID,
+        channel_type: "email",
+        name: "Bridge Mail",
+        email_credentials: EMAIL_CREDENTIALS,
+      });
+      expect(fetchImpl).not.toHaveBeenCalled();
+
+      process.env.EDGE_CONTROL_URL = "http://edge.test/internal/edge/control/messages";
+      const result = await facade.testChannel(channel.id, ORG_ID);
+
+      expect(result).toMatchObject({ accepted: true, channel_id: channel.id, status: "connected" });
+      expect(result.error).toBeUndefined();
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+      expect(url).toBe("http://edge.test/internal/edge/control/messages");
+      const body = JSON.parse(init.body as string);
+      expect(body).toMatchObject({
+        contract: "C9.EdgeControlMessage",
+        type: "channel_test",
+        organization_id: ORG_ID,
+        control_id: `test-${channel.id}-${fixedNow()}`,
+        payload: { channel_id: channel.id, channel_type: "email", credentials: { imap: { host: "mailserver" } } },
+      });
+      // Креды едут объектом (Edge проверяет именно их, даже без creds-sync).
+      expect(typeof body.payload.credentials).toBe("object");
+
+      const [stored] = await facade.listChannels(ORG_ID);
+      expect(stored.status).toBe("connected");
+      expect(stored.last_check_at).toBe(fixedNow());
+    } finally {
+      if (prev === undefined) delete process.env.EDGE_CONTROL_URL;
+      else process.env.EDGE_CONTROL_URL = prev;
+    }
+  });
+
+  it(":test для email помечает канал error с причиной от Edge (неверный пароль)", async () => {
+    const prev = process.env.EDGE_CONTROL_URL;
+    delete process.env.EDGE_CONTROL_URL;
+    try {
+      const fetchImpl = jest.fn(async () =>
+        edgeControlResponse({ status: "error", detail: "IMAP: Invalid credentials (Failure)" }),
+      );
+      const facade = createFacade({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+      const channel = await facade.connectChannel({
+        organization_id: ORG_ID,
+        channel_type: "email",
+        name: "Broken Mail",
+        email_credentials: EMAIL_CREDENTIALS,
+      });
+
+      process.env.EDGE_CONTROL_URL = "http://edge.test/internal/edge/control/messages";
+      const result = await facade.testChannel(channel.id, ORG_ID);
+
+      expect(result.status).toBe("error");
+      expect(result.error).toContain("Invalid credentials");
+
+      const [stored] = await facade.listChannels(ORG_ID);
+      expect(stored.status).toBe("error");
+    } finally {
+      if (prev === undefined) delete process.env.EDGE_CONTROL_URL;
+      else process.env.EDGE_CONTROL_URL = prev;
+    }
+  });
+
+  it(":test для email без EDGE_CONTROL_URL — error, а не ложный connected (проверка идёт на Edge)", async () => {
+    const prev = process.env.EDGE_CONTROL_URL;
+    delete process.env.EDGE_CONTROL_URL;
+    try {
+      const fetchImpl = jest.fn(async () => edgeControlResponse({ status: "connected" }));
+      const facade = createFacade({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+      const channel = await facade.connectChannel({
+        organization_id: ORG_ID,
+        channel_type: "email",
+        name: "Bridge Mail",
+        email_credentials: EMAIL_CREDENTIALS,
+      });
+
+      const result = await facade.testChannel(channel.id, ORG_ID);
+
+      expect(result.status).toBe("error");
+      expect(result.error).toContain("EDGE_CONTROL_URL");
+      expect(fetchImpl).not.toHaveBeenCalled();
+    } finally {
+      if (prev !== undefined) process.env.EDGE_CONTROL_URL = prev;
+    }
+  });
+
+  it(":test для email без сохранённых кред помечает канал error", async () => {
+    const prev = process.env.EDGE_CONTROL_URL;
+    process.env.EDGE_CONTROL_URL = "http://edge.test/internal/edge/control/messages";
+    try {
+      const fetchImpl = jest.fn(async () => edgeControlResponse({ status: "connected" }));
+      const facade = createFacade({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+      const channel = await facade.connectChannel({
+        organization_id: ORG_ID,
+        channel_type: "email",
+        name: "Refless Mail",
+        credentials_ref: "secret://email/org-1/external",
+      });
+
+      const result = await facade.testChannel(channel.id, ORG_ID);
+
+      expect(result.status).toBe("error");
+      expect(result.error).toContain("не настроены");
+      expect(fetchImpl).not.toHaveBeenCalled();
+    } finally {
+      if (prev === undefined) delete process.env.EDGE_CONTROL_URL;
+      else process.env.EDGE_CONTROL_URL = prev;
+    }
+  });
+
+  it(":test для email — error, если Edge недоступен (сеть упала)", async () => {
+    const prev = process.env.EDGE_CONTROL_URL;
+    delete process.env.EDGE_CONTROL_URL;
+    try {
+      const fetchImpl = jest.fn(async () => {
+        throw new Error("ECONNREFUSED");
+      });
+      const facade = createFacade({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+      const channel = await facade.connectChannel({
+        organization_id: ORG_ID,
+        channel_type: "email",
+        name: "Bridge Mail",
+        email_credentials: EMAIL_CREDENTIALS,
+      });
+
+      process.env.EDGE_CONTROL_URL = "http://edge.test/internal/edge/control/messages";
+      const result = await facade.testChannel(channel.id, ORG_ID);
+
+      expect(result.status).toBe("error");
+      expect(result.error).toContain("Edge недоступен");
+    } finally {
+      if (prev === undefined) delete process.env.EDGE_CONTROL_URL;
+      else process.env.EDGE_CONTROL_URL = prev;
+    }
+  });
 });
 
 function telegramResponse(body: Record<string, unknown>, status = 200) {
@@ -409,6 +558,17 @@ function maxResponse(body: Record<string, unknown>, status = 200) {
     status,
     async text() {
       return JSON.stringify(body);
+    },
+  };
+}
+
+/** Ответ Edge control-plane (C9.EdgeControlAck) на channel_test — HTTP 202 + ack-тело. */
+function edgeControlResponse(ack: Record<string, unknown>, status = 202) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    async text() {
+      return JSON.stringify({ contract: "C9.EdgeControlAck", accepted: true, duplicate: false, ...ack });
     },
   };
 }

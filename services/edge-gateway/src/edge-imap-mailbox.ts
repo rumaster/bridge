@@ -238,7 +238,7 @@ function stripAngleBrackets(value?: string | false | null): string | undefined {
   return trimmed === "" ? undefined : trimmed;
 }
 
-function defaultImapClientFactory(
+export function defaultImapClientFactory(
   config: ImapClientConfig,
   options: { rejectUnauthorized?: boolean } = {},
 ): EdgeImapClient {

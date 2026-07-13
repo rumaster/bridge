@@ -2,6 +2,7 @@ import {
   createEdgeControlAck,
   validateEdgeControlMessage,
 } from "../../../packages/contracts/src/c9.js";
+import type { EdgeChannelTester } from "./edge-channel-tester.js";
 
 /**
  * Edge-сторона control-plane туннеля Edge↔App (Этап E2 плана
@@ -65,6 +66,8 @@ export interface CreateEdgeControlPlaneOptions {
   emailSender?: EdgeEmailSender;
   /** Отправитель MAX (Этап M4): egress_dispatch с channel_type="max" идёт сюда. */
   maxSender?: EdgeChannelSender;
+  /** Проверка подключения канала (Этап E1): channel_test → реальный IMAP/SMTP-пробинг. */
+  channelTester?: EdgeChannelTester;
   now?: () => string;
   /** Верхняя граница памяти дедупа обработанных control_id (FIFO-вытеснение). */
   maxProcessedIds?: number;
@@ -86,6 +89,7 @@ export function createEdgeControlPlane({
   cipher,
   emailSender,
   maxSender,
+  channelTester,
   now = () => new Date().toISOString(),
   maxProcessedIds = 10_000,
 }: CreateEdgeControlPlaneOptions) {
@@ -111,6 +115,8 @@ export function createEdgeControlPlane({
     credentials_synced_total: 0,
     egress_sent_total: 0,
     egress_failed_total: 0,
+    channel_test_total: 0,
+    channel_test_failed_total: 0,
     duplicate_total: 0,
     rejected_total: 0,
   };
@@ -207,6 +213,67 @@ export function createEdgeControlPlane({
     }
   }
 
+  /**
+   * Проверка подключения канала (Этап E1): выполняет реальный IMAP LOGIN + SMTP
+   * verify инъектированным `channelTester`. Креды берутся из payload (backend
+   * шлёт их вместе с запросом — проверка работает даже до creds-sync), иначе — из
+   * локального кэша. Возвращает ack со `status` `connected`/`error`+detail.
+   * НЕ дедуплицируется (см. `handle`): проверка — всегда свежая проба.
+   */
+  async function dispatchChannelTest(message: any): Promise<ControlAck> {
+    const channelType = message.payload?.channel_type ?? "email";
+    if (!channelTester) {
+      metrics.channel_test_failed_total += 1;
+      return createEdgeControlAck({
+        controlId: message.control_id,
+        accepted: true,
+        status: "error",
+        detail: "No channel tester configured on Edge",
+        receivedAt: now(),
+      }) as ControlAck;
+    }
+
+    const organizationId = message.organization_id;
+    const credentials =
+      isRecord(message.payload) && message.payload.credentials != null
+        ? message.payload.credentials
+        : getChannelCredentials(organizationId, channelType);
+    if (credentials == null) {
+      metrics.channel_test_failed_total += 1;
+      return createEdgeControlAck({
+        controlId: message.control_id,
+        accepted: true,
+        status: "error",
+        detail: "No credentials available for channel test",
+        receivedAt: now(),
+      }) as ControlAck;
+    }
+
+    metrics.channel_test_total += 1;
+    try {
+      const result = await channelTester.test({ credentials, channelType });
+      if (!result.ok) {
+        metrics.channel_test_failed_total += 1;
+      }
+      return createEdgeControlAck({
+        controlId: message.control_id,
+        accepted: true,
+        status: result.ok ? "connected" : "error",
+        ...(result.ok ? {} : { detail: result.detail ?? "Проверка подключения не удалась" }),
+        receivedAt: now(),
+      }) as ControlAck;
+    } catch (error) {
+      metrics.channel_test_failed_total += 1;
+      return createEdgeControlAck({
+        controlId: message.control_id,
+        accepted: true,
+        status: "error",
+        detail: error instanceof Error ? error.message : String(error),
+        receivedAt: now(),
+      }) as ControlAck;
+    }
+  }
+
   /** Разрешённые креды организации по каналу из локального кэша (Этапы E3/E4/M4). */
   function getChannelCredentials(organizationId: string, channelType: string): unknown | null {
     const encrypted = credentialsByKey.get(credentialKey(organizationId, channelType));
@@ -244,6 +311,12 @@ export function createEdgeControlPlane({
         throw new EdgeControlPlaneError(
           `Invalid C9 control message: ${validation.errors.join("; ")}`,
         );
+      }
+
+      // channel_test — проба «здесь и сейчас»: не дедуплицируем и не кэшируем,
+      // повторная проверка всегда выполняется заново (кред могли исправить).
+      if (message.type === "channel_test") {
+        return dispatchChannelTest(message);
       }
 
       const prior = processed.get(message.control_id);
