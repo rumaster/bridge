@@ -719,6 +719,10 @@ export class IntegrationGatewayFacade implements OnApplicationBootstrap, OnModul
       return this.testMaxChannel(channel);
     }
 
+    if (channel.channel_type === "email") {
+      return this.testEmailChannel(channel);
+    }
+
     if (this.upstream) {
       return this.testUpstreamChannel(channel);
     }
@@ -893,6 +897,129 @@ export class IntegrationGatewayFacade implements OnApplicationBootstrap, OnModul
     }
 
     return { ok: true, username: body.username ?? body.name, id: body.user_id };
+  }
+
+  /**
+   * Реальная проверка email-канала (Этап E1, docs/plan/email-channel-production.md).
+   * По решению 1 IMAP/SMTP живут на Edge (РФ-контур), поэтому проверка тоже идёт
+   * через Edge: backend резолвит структурные креды из `credentials_envelope` и шлёт
+   * `C9.EdgeControlMessage type=channel_test` на `EDGE_CONTROL_URL`; Edge выполняет
+   * реальный IMAP LOGIN + SMTP verify **с той стороны, что и приём/отправка**, и
+   * возвращает `connected`/`error`+причину синхронным ack. Так невалидные креды
+   * (обычный пароль вместо app-password, закрытый порт) дают честный `error`, а не
+   * обобщённый `connected`. Без `EDGE_CONTROL_URL` проверка невозможна (её негде
+   * выполнить) → `error` с явной причиной, а не ложный `connected`.
+   */
+  private async testEmailChannel(channel: ChannelFacade): Promise<ChannelTestResultFacade> {
+    const checkedAt = this.clock();
+    let status: ChannelStatus;
+    let error: string | undefined;
+
+    const secret = channel.credentials_ref
+      ? await this.requireChannelSecrets().resolveChannelSecret({
+          credentialsRef: channel.credentials_ref,
+          organizationId: channel.organization_id,
+        })
+      : null;
+
+    const edgeControlUrl = process.env.EDGE_CONTROL_URL?.trim();
+
+    if (!secret) {
+      status = "error";
+      error = "Email-креды не настроены для канала.";
+    } else if (!edgeControlUrl) {
+      status = "error";
+      error =
+        "Проверка email недоступна: EDGE_CONTROL_URL не настроен (IMAP/SMTP проверяются на Edge Gateway).";
+    } else {
+      let credentials: EmailChannelCredentials | null = null;
+      try {
+        credentials = parseEmailChannelCredentials(secret);
+      } catch {
+        status = "error";
+        error = "Сохранённые email-креды имеют неверный формат.";
+      }
+
+      if (credentials) {
+        const probe = await this.publishChannelTest({
+          channelId: channel.id,
+          organizationId: channel.organization_id,
+          channelType: "email",
+          credentials,
+          checkedAt,
+          edgeControlUrl,
+        });
+        status = probe.status;
+        error = probe.error;
+      } else {
+        status = "error";
+      }
+    }
+
+    await this.persistChannelCheck(channel, { status, checkedAt, config: channel.config });
+
+    return {
+      accepted: true,
+      channel_id: channel.id,
+      status,
+      checked_at: checkedAt,
+      ...(error ? { error } : {}),
+    };
+  }
+
+  /**
+   * Отправляет `channel_test` на Edge control-plane и мапит ack в результат.
+   * Креды едут **объектом** в payload (Edge проверит именно их, даже если
+   * creds-sync ещё не дошёл). `control_id = test-<channel_id>-<checkedAt>` —
+   * уникален на вызов (Edge не дедуплицирует channel_test, проба всегда свежая).
+   * Любой сбой связи/отказ Edge → `error` с причиной (а не ложный `connected`).
+   */
+  private async publishChannelTest(input: {
+    channelId: string;
+    organizationId: string;
+    channelType: ChannelType;
+    credentials: EmailChannelCredentials;
+    checkedAt: string;
+    edgeControlUrl: string;
+  }): Promise<{ status: ChannelStatus; error?: string }> {
+    const controlMessage = {
+      contract: "C9.EdgeControlMessage",
+      version: "1.0.0",
+      control_id: `test-${input.channelId}-${input.checkedAt}`,
+      type: "channel_test",
+      organization_id: input.organizationId,
+      issued_at: this.clock(),
+      payload: {
+        channel_id: input.channelId,
+        channel_type: input.channelType,
+        credentials: input.credentials,
+      },
+    };
+
+    const token = process.env.EDGE_CONTROL_TOKEN?.trim();
+    try {
+      const response = await this.fetchImpl(input.edgeControlUrl, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(controlMessage),
+      });
+      const ack = (await readJsonSafe(response)) as { status?: string; detail?: string };
+      if (!response.ok) {
+        return { status: "error", error: `Edge отклонил проверку (HTTP ${response.status}).` };
+      }
+      if (ack.status === "connected") {
+        return { status: "connected" };
+      }
+      return { status: "error", error: ack.detail ?? "Проверка подключения не удалась на Edge." };
+    } catch (error) {
+      return {
+        status: "error",
+        error: `Edge недоступен для проверки: ${error instanceof Error ? error.message : String(error)}`,
+      };
+    }
   }
 
   private async persistChannelCheck(

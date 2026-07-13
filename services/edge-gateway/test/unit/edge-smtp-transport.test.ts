@@ -13,6 +13,7 @@ import { createNodemailerTransport, type NodemailerLike } from "../../src/edge-s
 function fakeNodemailer() {
   const created: any[] = [];
   const sent: any[] = [];
+  let verifyCalls = 0;
   const nodemailer: NodemailerLike = {
     createTransport(options: unknown) {
       created.push(options);
@@ -21,10 +22,14 @@ function fakeNodemailer() {
           sent.push(message);
           return { messageId: "<server-assigned@mailserver>" };
         },
+        async verify() {
+          verifyCalls += 1;
+          return true;
+        },
       };
     },
   };
-  return { nodemailer, created, sent };
+  return { nodemailer, created, sent, verifyCalls: () => verifyCalls };
 }
 
 describe("edge nodemailer transport (M1)", () => {
@@ -76,6 +81,20 @@ describe("edge nodemailer transport (M1)", () => {
     assert.equal(created.length, 1, "transport reused across sends");
     assert.equal(created[0].secure, true);
     assert.deepEqual(created[0].tls, { rejectUnauthorized: true }, "strict TLS by default");
+  });
+
+  it("verify() lazily creates the transport and calls nodemailer verify (channel_test)", async () => {
+    const { nodemailer, created, verifyCalls } = fakeNodemailer();
+    const transport = createNodemailerTransport(
+      { smtp: { host: "mailserver", port: 587, username: "u", password: "p" } },
+      { rejectUnauthorized: false, load: async () => nodemailer },
+    );
+
+    assert.equal(created.length, 0, "transport not created until verify (lazy)");
+    await transport.verify?.();
+    assert.equal(created.length, 1);
+    assert.equal(verifyCalls(), 1);
+    assert.deepEqual(created[0].tls, { rejectUnauthorized: false });
   });
 
   it("integrates with the edge email sender end-to-end (egress → nodemailer)", async () => {

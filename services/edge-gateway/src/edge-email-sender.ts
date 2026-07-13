@@ -41,6 +41,12 @@ export interface EdgeSmtpMessage {
 
 export interface EdgeSmtpTransport {
   sendMail(message: EdgeSmtpMessage): Promise<{ messageId?: string } | void>;
+  /**
+   * Проверка доступности SMTP (EHLO + AUTH), не отправляя письма — nodemailer
+   * `transporter.verify()`. Используется проверкой подключения канала (Этап E1,
+   * `channel_test`); необязателен для чисто отправляющих транспортов.
+   */
+  verify?(): Promise<void>;
 }
 
 export interface CreateEdgeEmailSenderOptions {

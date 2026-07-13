@@ -136,6 +136,129 @@ describe("edge control plane", () => {
   });
 });
 
+function channelTest(controlId: string, payload: Record<string, unknown>, organizationId = "org-1") {
+  return createEdgeControlMessage({
+    type: "channel_test",
+    organizationId,
+    controlId,
+    issuedAt: "2026-07-13T10:00:00.000Z",
+    payload: { channel_type: "email", ...payload },
+  });
+}
+
+describe("edge control plane — channel_test (E1)", () => {
+  it("runs the tester with credentials from the payload and returns connected", async () => {
+    const tested: any[] = [];
+    const plane = createEdgeControlPlane({
+      cipher: createRfPayloadCipher({ key: CACHE_KEY }),
+      channelTester: {
+        async test(input) {
+          tested.push(input);
+          return { ok: true, imap: { ok: true }, smtp: { ok: true } };
+        },
+      },
+    });
+
+    const ack = await plane.handle(
+      channelTest("ctl-test-1", { channel_id: "chan-1", credentials: EMAIL_CREDENTIALS }),
+    );
+
+    assert.equal(ack.status, "connected");
+    assert.equal(ack.accepted, true);
+    assert.equal(ack.detail, undefined);
+    assert.equal(tested.length, 1);
+    assert.deepEqual(tested[0].credentials, EMAIL_CREDENTIALS);
+    assert.equal(tested[0].channelType, "email");
+  });
+
+  it("falls back to cached credentials when the payload omits them", async () => {
+    const tested: any[] = [];
+    const plane = createEdgeControlPlane({
+      cipher: createRfPayloadCipher({ key: CACHE_KEY }),
+      channelTester: {
+        async test(input) {
+          tested.push(input);
+          return { ok: true, imap: { ok: true }, smtp: { ok: true } };
+        },
+      },
+    });
+
+    await plane.handle(credentialsSync("ctl-creds"));
+    const ack = await plane.handle(channelTest("ctl-test-2", { channel_id: "chan-1" }));
+
+    assert.equal(ack.status, "connected");
+    assert.deepEqual(tested[0].credentials, EMAIL_CREDENTIALS);
+  });
+
+  it("returns error with the tester's detail when the probe fails", async () => {
+    const plane = createEdgeControlPlane({
+      cipher: createRfPayloadCipher({ key: CACHE_KEY }),
+      channelTester: {
+        async test() {
+          return {
+            ok: false,
+            imap: { ok: false, detail: "Invalid credentials" },
+            smtp: { ok: true },
+            detail: "IMAP: Invalid credentials",
+          };
+        },
+      },
+    });
+
+    const ack = await plane.handle(
+      channelTest("ctl-test-3", { credentials: EMAIL_CREDENTIALS }),
+    );
+
+    assert.equal(ack.status, "error");
+    assert.match(ack.detail ?? "", /IMAP: Invalid credentials/);
+  });
+
+  it("is not deduplicated — a repeated control_id re-runs the probe", async () => {
+    let runs = 0;
+    const plane = createEdgeControlPlane({
+      cipher: createRfPayloadCipher({ key: CACHE_KEY }),
+      channelTester: {
+        async test() {
+          runs += 1;
+          return { ok: true, imap: { ok: true }, smtp: { ok: true } };
+        },
+      },
+    });
+
+    const first = await plane.handle(channelTest("ctl-test-same", { credentials: EMAIL_CREDENTIALS }));
+    const second = await plane.handle(channelTest("ctl-test-same", { credentials: EMAIL_CREDENTIALS }));
+
+    assert.equal(first.duplicate, false);
+    assert.equal(second.duplicate, false, "channel_test must always run fresh");
+    assert.equal(runs, 2);
+  });
+
+  it("returns error when no tester is configured", async () => {
+    const plane = createEdgeControlPlane({ cipher: createRfPayloadCipher({ key: CACHE_KEY }) });
+
+    const ack = await plane.handle(channelTest("ctl-test-4", { credentials: EMAIL_CREDENTIALS }));
+
+    assert.equal(ack.status, "error");
+    assert.match(ack.detail ?? "", /No channel tester/);
+  });
+
+  it("returns error when neither payload nor cache has credentials", async () => {
+    const plane = createEdgeControlPlane({
+      cipher: createRfPayloadCipher({ key: CACHE_KEY }),
+      channelTester: {
+        async test() {
+          return { ok: true, imap: { ok: true }, smtp: { ok: true } };
+        },
+      },
+    });
+
+    const ack = await plane.handle(channelTest("ctl-test-5", {}));
+
+    assert.equal(ack.status, "error");
+    assert.match(ack.detail ?? "", /No credentials available/);
+  });
+});
+
 const MAX_CREDENTIALS = { token: "max-bot-token-org-1" };
 
 function maxCredentialsSync(controlId: string, organizationId = "org-1") {
