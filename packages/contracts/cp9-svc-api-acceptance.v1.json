@@ -3,6 +3,14 @@
   "x-stage": "M5",
   "x-status": "complete",
   "accepted_at": "2026-07-04",
+  "x-revisions": [
+    {
+      "date": "2026-07-13",
+      "reason": "Осознанный пересмотр замороженного гейта: маршруты Email/Bridge Mail M5, добавленные в /api/v1 после заморозки (PUT /channels/{id}, POST /mail/mailboxes, GET /attachments/{id}/content), включены в опубликованную v1-поверхность согласно инварианту гейта «every actual Nest /api/v1 route is published». Обновлены generated_operation_count 72→75 и generated_path_count 60→63; добавлены surface-записи. Владелец контрактов: решение A (включить в v1).",
+      "operation_count": "72 -> 75",
+      "path_count": "60 -> 63"
+    }
+  ],
   "scope": {
     "services": [
       "SVC-API"
@@ -31,8 +39,8 @@
       "base_path": "/api/v1",
       "openapi": {
         "artifact": "packages/contracts/openapi/backend-core/openapi.json",
-        "generated_operation_count": 72,
-        "generated_path_count": 60,
+        "generated_operation_count": 75,
+        "generated_path_count": 63,
         "metadata": {
           "x-contract-id": "C3",
           "x-owner": "SVC-API",
@@ -58,7 +66,10 @@
         { "method": "get", "path": "/api/v1/web-chat/conversations/{id}/messages" },
         { "method": "post", "path": "/api/v1/web-chat/messages" },
         { "method": "post", "path": "/api/v1/web-chat/email-code" },
-        { "method": "post", "path": "/api/v1/web-chat/email-code:verify" }
+        { "method": "post", "path": "/api/v1/web-chat/email-code:verify" },
+        { "method": "put", "path": "/api/v1/channels/{id}" },
+        { "method": "post", "path": "/api/v1/mail/mailboxes" },
+        { "method": "get", "path": "/api/v1/attachments/{id}/content" }
       ],
       "versioning": {
         "strategy": "uri",
@@ -91,7 +102,10 @@
         "services/backend/src/modules/knowledge-base/knowledge-base.controller.ts",
         "services/backend/src/modules/workflow/workflow.controller.ts",
         "services/backend/src/modules/workflow/workflow-subschema.controller.ts",
-        "services/backend/src/modules/web-chat/web-chat.controller.ts"
+        "services/backend/src/modules/web-chat/web-chat.controller.ts",
+        "services/backend/src/modules/integration-gateway/channels.controller.ts",
+        "services/backend/src/modules/integration-gateway/mail.controller.ts",
+        "services/backend/src/modules/communication-core/attachment.controller.ts"
       ],
       "evidence": [
         "services/backend/test/unit/openapi-decorators.spec.ts",

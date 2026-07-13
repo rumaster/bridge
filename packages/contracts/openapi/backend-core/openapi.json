@@ -462,6 +462,30 @@
         ]
       }
     },
+    "/api/v1/attachments/{id}/content": {
+      "get": {
+        "operationId": "AttachmentController_downloadContent_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Download attachment bytes (proxied from Edge storage)",
+        "tags": [
+          "attachments"
+        ]
+      }
+    },
     "/api/v1/channels": {
       "get": {
         "operationId": "ChannelsController_listChannels_v1",
@@ -517,6 +541,47 @@
         ]
       }
     },
+    "/api/v1/channels/{id}": {
+      "put": {
+        "operationId": "ChannelsController_updateChannel_v1",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateChannelRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectChannelResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Update a channel and rotate its credentials",
+        "tags": [
+          "channels"
+        ]
+      }
+    },
     "/api/v1/channels/{id}/capabilities": {
       "get": {
         "operationId": "ChannelsController_getCapabilities_v1",
@@ -562,6 +627,38 @@
         "summary": "Test a connected channel",
         "tags": [
           "channels"
+        ]
+      }
+    },
+    "/api/v1/mail/mailboxes": {
+      "post": {
+        "operationId": "MailController_orderMailbox_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderMailboxRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrderMailboxResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Order a managed Bridge Mail mailbox and connect it as an email channel",
+        "tags": [
+          "mail"
         ]
       }
     },
@@ -2371,7 +2468,7 @@
             }
           }
         },
-        "summary": "Start optional Web Chat email verification by code",
+        "summary": "Start optional Web Chat email verification by code (не в MVP-UI виджета)",
         "tags": [
           "web-chat"
         ]
@@ -2829,6 +2926,39 @@
           "page"
         ]
       },
+      "AttachmentResponseDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000701"
+          },
+          "name": {
+            "type": "string",
+            "example": "invoice.pdf"
+          },
+          "contentType": {
+            "type": "object",
+            "example": "application/pdf",
+            "nullable": true
+          },
+          "sizeBytes": {
+            "type": "number",
+            "example": 2048
+          },
+          "url": {
+            "type": "string",
+            "example": "/api/v1/attachments/00000000-0000-4000-8000-000000000701/content"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "contentType",
+          "sizeBytes",
+          "url"
+        ]
+      },
       "MessageResponseDto": {
         "type": "object",
         "properties": {
@@ -2904,6 +3034,12 @@
             "type": "object",
             "example": null,
             "nullable": true
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AttachmentResponseDto"
+            }
           }
         },
         "required": [
@@ -3080,6 +3216,64 @@
           "updated_at"
         ]
       },
+      "EmailEndpointCredentialsDto": {
+        "type": "object",
+        "properties": {
+          "host": {
+            "type": "string",
+            "example": "imap.example.com"
+          },
+          "port": {
+            "type": "number",
+            "example": 993
+          },
+          "tls": {
+            "type": "boolean",
+            "example": true,
+            "description": "Использовать TLS/SSL при подключении."
+          },
+          "username": {
+            "type": "string",
+            "example": "support@example.com"
+          },
+          "password": {
+            "type": "string",
+            "description": "Пароль/секрет почтового сервера. Только в теле запроса: шифруется в channels.credentials_envelope и никогда не возвращается в ответе.",
+            "example": "app-specific-password"
+          }
+        },
+        "required": [
+          "host",
+          "port",
+          "tls",
+          "username",
+          "password"
+        ]
+      },
+      "EmailChannelCredentialsDto": {
+        "type": "object",
+        "properties": {
+          "imap": {
+            "$ref": "#/components/schemas/EmailEndpointCredentialsDto"
+          },
+          "smtp": {
+            "$ref": "#/components/schemas/EmailEndpointCredentialsDto"
+          },
+          "from_email": {
+            "type": "string",
+            "example": "support@example.com"
+          },
+          "from_name": {
+            "type": "string",
+            "example": "Служба поддержки Example"
+          }
+        },
+        "required": [
+          "imap",
+          "smtp",
+          "from_email"
+        ]
+      },
       "ConnectChannelRequestDto": {
         "type": "object",
         "properties": {
@@ -3113,6 +3307,14 @@
             "description": "Plaintext-секрет канала (например токен Telegram-бота из @BotFather). Только в теле запроса: шифруется в channels.credentials_envelope и никогда не возвращается в ответе. Для Telegram обязателен, формат <bot_id>:<token>.",
             "example": "123456789:AA-bot-token-from-botfather"
           },
+          "email_credentials": {
+            "description": "Структурные креды email-канала (IMAP + SMTP). Только для channel_type=email; шифруются в channels.credentials_envelope и не возвращаются в ответе.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EmailChannelCredentialsDto"
+              }
+            ]
+          },
           "config": {
             "type": "object",
             "additionalProperties": true,
@@ -3135,6 +3337,65 @@
           }
         },
         "required": [
+          "channel"
+        ]
+      },
+      "UpdateChannelRequestDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Telegram Support"
+          },
+          "credentials": {
+            "type": "string",
+            "description": "Новый plaintext-секрет токен-канала (например Telegram-бот). Только в теле запроса: перешифровывается и не возвращается в ответе.",
+            "example": "123456789:AA-new-bot-token"
+          },
+          "email_credentials": {
+            "description": "Новые структурные креды email-канала (IMAP + SMTP).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/EmailChannelCredentialsDto"
+              }
+            ]
+          },
+          "config": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        }
+      },
+      "OrderMailboxRequestDto": {
+        "type": "object",
+        "properties": {
+          "local_part": {
+            "type": "string",
+            "example": "support",
+            "description": "Локальная часть адреса (до @)"
+          },
+          "name": {
+            "type": "string",
+            "example": "Email support"
+          }
+        },
+        "required": [
+          "local_part"
+        ]
+      },
+      "OrderMailboxResponseDto": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "example": "support@mail.example.com"
+          },
+          "channel": {
+            "$ref": "#/components/schemas/ChannelResponseDto"
+          }
+        },
+        "required": [
+          "address",
           "channel"
         ]
       },
