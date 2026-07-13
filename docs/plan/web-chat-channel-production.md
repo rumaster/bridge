@@ -3,7 +3,7 @@ title: План доведения канала Web Chat до боевого р�
 service: Web Chat (Frontend) / Backend / Edge Gateway / Integration Platform / SaaS Administration
 service_id: SVC-CHAT · SVC-API · SVC-EDGE · SVC-INT · SVC-ADMIN
 version: 1.0
-status: In progress (W1–W3 done 2026-07-13; W4–W7 planned)
+status: In progress (W1–W4 done 2026-07-13; W5–W7 planned)
 language: ru-RU
 based_on: docs/plan/telegram-channel-production.md, docs/plan/max-channel-production.md, docs/plan/email-channel-production.md, docs/plan/services/13-web-chat.md, docs/plan/mock-to-production-roadmap.md
 date: 2026-07-12
@@ -418,6 +418,41 @@ Origin/rate-limit публичных ручек (W4); хостируемая с�
 
 **Тесты.** Интеграционный: сессия для org без канала → отказ; запрос с чужого
 origin → отказ; rate-limit срабатывает; happy-path с валидным каналом/origin.
+
+**Статус реализации W4 (2026-07-13): выполнено (backend-контроль; saas-admin —
+уже покрыт).**
+- **Включённость канала (задача 1, WG-10).** `createOrResumeSession`
+  ([`web-chat.service.ts`](../../services/backend/src/modules/web-chat/web-chat.service.ts))
+  требует `channels.status='connected'` для `web_chat` организации и читает его
+  `config` (`requireEnabledChannel`); иначе — 403 `WEB_CHAT_CHANNEL_DISABLED`.
+- **Allow-list Origin (задача 2, WG-11).** Из `config.widget_origin`/`widget_origins`
+  ([`web-chat-access.ts`](../../services/backend/src/modules/web-chat/web-chat-access.ts),
+  `isOriginAllowed`): при заданном allow-list чужой/отсутствующий Origin → 403
+  `WEB_CHAT_ORIGIN_NOT_ALLOWED`; без него — ограничение выключено (opt-in).
+- **Rate-limit (задача 3, WG-11).** In-memory лимитер
+  ([`web-chat-rate-limiter.ts`](../../services/backend/src/modules/web-chat/web-chat-rate-limiter.ts))
+  на `sessions`/`messages`/`email-code` по ключу organization+источник (429
+  `WEB_CHAT_RATE_LIMITED`; лимиты через `WEB_CHAT_RATE_*`). Источник — из
+  `X-Forwarded-For`/IP (`resolveClientIp`).
+- **Транзит заголовков (Edge, W2-доп).** Edge-прокси
+  ([`server.ts`](../../services/edge-gateway/src/server.ts)) теперь переносит
+  `Origin` и достраивает `X-Forwarded-For` (client IP) — чтобы allow-list и
+  rate-limit работали и через Edge.
+- **saas-admin (задача 4).** Коннектор Web Chat уже пишет `config.widget_origin`
+  ([`ChannelsPage.tsx`](../../apps/saas-admin/src/presentation/pages/ChannelsPage.tsx)),
+  который рантайм теперь и потребляет — связка «бизнес-клиент добавил канал → allow-list»
+  замкнута без правок фронта. Реальный `:test` доступности виджет-эндпоинта и
+  публичный widget-key вместо org id — осознанно отложены (не в DoD W4).
+- **Тесты.** Backend unit (без Docker): `web-chat-access.spec` (allow-list/IP),
+  `web-chat-rate-limiter.spec` (окно/ключи), `web-chat.service.guards.spec`
+  (429/403 channel/403 origin/happy path на моке БД). Edge integration
+  `web-chat-proxy.test` дополнен проверкой переноса Origin/XFF. Backend unit
+  **180/180**, `web-chat-public.spec` **3/3**, edge-набор зелёный, `tsc` — чисто.
+
+> **Влияние на деплой.** Теперь сессия Web Chat требует **подключённого** канала
+> `web_chat` у организации. На стенде/в демо нужно добавить канал Web Chat на
+> `:8081/channels` (с `widget_origin` домена виджета), иначе `/web-chat/sessions`
+> вернёт 403 — это ожидаемое новое поведение (WG-10).
 
 ---
 

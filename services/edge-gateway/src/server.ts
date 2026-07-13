@@ -363,13 +363,16 @@ export function createEdgeGatewayServer({
 const WEB_CHAT_PROXY_PREFIX = "/web-chat/";
 // Заголовки, которые Edge переносит в ядро как есть при транзите Web Chat.
 // idempotency-key — сквозной ключ реплики (ТЗ §11.12); x-bridge-edge-tunnel —
-// маркер C9-туннеля виджета (ТЗ §7.6). Прочие (host/connection) не переносим.
+// маркер C9-туннеля виджета (ТЗ §7.6); origin — для allow-list виджета на ядре
+// (W4, WG-11). Прочие (host/connection) не переносим. x-forwarded-for
+// достраивается отдельно (client IP для rate-limit ядра, W4).
 const WEB_CHAT_PROXY_FORWARD_HEADERS = [
   "content-type",
   "accept",
   "idempotency-key",
   "x-bridge-edge-tunnel",
   "x-request-id",
+  "origin",
 ];
 
 function isWebChatProxyPath(path) {
@@ -406,6 +409,20 @@ async function proxyWebChatRequest(request, response, backendBaseUrl) {
     if (typeof value === "string" && value !== "") {
       headers[name] = value;
     }
+  }
+
+  // Достраиваем X-Forwarded-For (W4): ядро определяет реальный источник за Edge
+  // для rate-limit. Сохраняем предыдущую цепочку, дописываем IP клиента Edge.
+  const clientIp = request.socket?.remoteAddress;
+  const priorForwardedFor = request.headers["x-forwarded-for"];
+  const forwardedChain = [
+    typeof priorForwardedFor === "string" ? priorForwardedFor : undefined,
+    clientIp,
+  ]
+    .filter((part) => typeof part === "string" && part !== "")
+    .join(", ");
+  if (forwardedChain !== "") {
+    headers["x-forwarded-for"] = forwardedChain;
   }
 
   const targetUrl = joinBackendUrl(backendBaseUrl, request.url ?? "/");

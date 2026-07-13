@@ -2,7 +2,9 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
+  Ip,
   Param,
   ParseUUIDPipe,
   Post,
@@ -10,6 +12,8 @@ import {
   Version,
 } from "@nestjs/common";
 import { ApiCreatedResponse, ApiOkResponse, ApiOperation, ApiTags } from "@nestjs/swagger";
+
+import { resolveClientIp, type WebChatRequestContext } from "./web-chat-access";
 
 import {
   MessageListResponseDto,
@@ -37,8 +41,11 @@ export class WebChatController {
   @ApiCreatedResponse({ type: WebChatSessionResponseDto })
   createOrResumeSession(
     @Body() body: CreateOrResumeWebChatSessionDto,
+    @Headers("origin") origin: string | undefined,
+    @Headers("x-forwarded-for") forwardedFor: string | undefined,
+    @Ip() ip: string,
   ): Promise<WebChatSessionResponseDto> {
-    return this.webChat.createOrResumeSession(body);
+    return this.webChat.createOrResumeSession(body, requestContext(origin, forwardedFor, ip));
   }
 
   @Get("conversations/:id/messages")
@@ -56,8 +63,13 @@ export class WebChatController {
   @Version("1")
   @ApiOperation({ summary: "Send an inbound Web Chat visitor message" })
   @ApiCreatedResponse({ type: MessageResponseDto })
-  sendMessage(@Body() body: SendWebChatMessageDto): Promise<MessageResponseDto> {
-    return this.webChat.sendMessage(body);
+  sendMessage(
+    @Body() body: SendWebChatMessageDto,
+    @Headers("origin") origin: string | undefined,
+    @Headers("x-forwarded-for") forwardedFor: string | undefined,
+    @Ip() ip: string,
+  ): Promise<MessageResponseDto> {
+    return this.webChat.sendMessage(body, requestContext(origin, forwardedFor, ip));
   }
 
   @Post("email-code")
@@ -66,8 +78,11 @@ export class WebChatController {
   @ApiCreatedResponse({ type: WebChatEmailCodeStartResponseDto })
   startEmailCode(
     @Body() body: StartWebChatEmailCodeDto,
+    @Headers("origin") origin: string | undefined,
+    @Headers("x-forwarded-for") forwardedFor: string | undefined,
+    @Ip() ip: string,
   ): Promise<WebChatEmailCodeStartResponseDto> {
-    return this.webChat.startEmailCode(body);
+    return this.webChat.startEmailCode(body, requestContext(origin, forwardedFor, ip));
   }
 
   @Post("email-code\\:verify")
@@ -80,4 +95,16 @@ export class WebChatController {
   ): Promise<WebChatSessionResponseDto> {
     return this.webChat.verifyEmailCode(body);
   }
+}
+
+/** Собирает контекст публичного запроса: браузерный Origin + источник (W4). */
+function requestContext(
+  origin: string | undefined,
+  forwardedFor: string | undefined,
+  ip: string,
+): WebChatRequestContext {
+  return {
+    origin: origin?.trim() || undefined,
+    clientIp: resolveClientIp(forwardedFor, ip),
+  };
 }

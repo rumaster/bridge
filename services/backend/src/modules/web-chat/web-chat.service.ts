@@ -1,10 +1,19 @@
 import { createHmac, randomInt, randomUUID, timingSafeEqual } from "node:crypto";
 
-import { Injectable, NotFoundException, UnauthorizedException } from "@nestjs/common";
+import {
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from "@nestjs/common";
 
 import { PgDatabase } from "../../common/database/database.service";
 import type { Queryable } from "../../common/database/database.service";
 import { C7RealtimeEventPublisher } from "../communication-core/c7-realtime-event.publisher";
+import { isOriginAllowed, type WebChatRequestContext } from "./web-chat-access";
+import { WebChatRateLimiter, type RateLimitRule } from "./web-chat-rate-limiter";
 import { mapMessage } from "../communication-core/communication-core.dto";
 import type {
   MessageListResponseDto,
@@ -25,6 +34,11 @@ const WEB_CHAT_CHANNEL = "web_chat";
 const CODE_TTL_SECONDS = 5 * 60;
 const MAX_CODE_ATTEMPTS = 5;
 const LOCKOUT_SECONDS = 15 * 60;
+const RATE_WINDOW_MS = 60_000;
+
+interface WebChatChannelRow {
+  config: Record<string, unknown> | null;
+}
 
 interface WebChatSessionRow {
   client_id: string;
@@ -51,15 +65,82 @@ export class WebChatService {
   constructor(
     private readonly database: PgDatabase,
     private readonly realtime: C7RealtimeEventPublisher,
+    private readonly rateLimiter: WebChatRateLimiter,
   ) {}
+
+  /** Rate-limit публичной ручки по ключу organization+источник (W4, WG-11). */
+  private enforceRateLimit(
+    action: string,
+    organizationId: string,
+    context: WebChatRequestContext,
+    rule: RateLimitRule,
+  ): void {
+    const source = context.clientIp?.trim() || "unknown";
+    const key = `web-chat:${action}:${organizationId}:${source}`;
+    if (!this.rateLimiter.tryConsume(key, rule)) {
+      throw new HttpException(
+        {
+          code: "WEB_CHAT_RATE_LIMITED",
+          description: `rate limit exceeded for web-chat ${action}`,
+          humanMessage: "Слишком много запросов. Попробуйте позже.",
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+  }
+
+  /**
+   * Требует включённый (status=connected) канал web_chat у организации (W4,
+   * WG-10). Возвращает его config (allow-list origin и пр.). Иначе — 403.
+   */
+  private async requireEnabledChannel(
+    queryable: Queryable,
+    organizationId: string,
+  ): Promise<WebChatChannelRow> {
+    const result = await queryable.query<WebChatChannelRow>(
+      `
+        SELECT config
+        FROM channels
+        WHERE organization_id = $1
+          AND channel_type = $2
+          AND status = 'connected'
+        ORDER BY updated_at DESC
+        LIMIT 1
+      `,
+      [organizationId, WEB_CHAT_CHANNEL],
+    );
+
+    if (!result.rowCount || result.rowCount === 0) {
+      throw forbidden(
+        "WEB_CHAT_CHANNEL_DISABLED",
+        `organization ${organizationId} has no connected web_chat channel`,
+        "Канал Web Chat не подключён для этой организации.",
+      );
+    }
+    return result.rows[0];
+  }
 
   async createOrResumeSession(
     input: CreateOrResumeWebChatSessionDto,
+    context: WebChatRequestContext = {},
   ): Promise<WebChatSessionResponseDto> {
     const organizationId = input.organization_id;
     const visitorSessionId = normalizeVisitorSessionId(input.visitor_session_id);
 
+    this.enforceRateLimit("session", organizationId, context, sessionRateRule());
+
     return this.database.withTenant(organizationId, async (client) => {
+      // Регистрация ↔ рантайм (W4, WG-10): сессия создаётся только если у
+      // организации включён канал web_chat; из его config берём allow-list origin.
+      const channel = await this.requireEnabledChannel(client, organizationId);
+      if (!isOriginAllowed(channel.config, context.origin)) {
+        throw forbidden(
+          "WEB_CHAT_ORIGIN_NOT_ALLOWED",
+          `origin ${context.origin ?? "<none>"} is not allowed for this Web Chat channel`,
+          "Виджет размещён на неразрешённом домене.",
+        );
+      }
+
       const existing = await this.findSession(client, organizationId, visitorSessionId);
       if (existing) {
         const conversationId = await this.resolveConversation(
@@ -205,8 +286,12 @@ export class WebChatService {
     });
   }
 
-  async sendMessage(input: SendWebChatMessageDto): Promise<MessageResponseDto> {
+  async sendMessage(
+    input: SendWebChatMessageDto,
+    context: WebChatRequestContext = {},
+  ): Promise<MessageResponseDto> {
     const organizationId = input.organization_id;
+    this.enforceRateLimit("message", organizationId, context, messageRateRule());
     const message = await this.database.withTenant(organizationId, async (client) => {
       await this.requireSessionConversation(
         client,
@@ -289,8 +374,10 @@ export class WebChatService {
 
   async startEmailCode(
     input: StartWebChatEmailCodeDto,
+    context: WebChatRequestContext = {},
   ): Promise<WebChatEmailCodeStartResponseDto> {
     const organizationId = input.organization_id;
+    this.enforceRateLimit("email-code", organizationId, context, emailRateRule());
     const email = normalizeEmail(input.email);
     const code = generateCode();
     const requestId = randomUUID();
@@ -803,4 +890,25 @@ function unauthorized(description: string): UnauthorizedException {
     description,
     humanMessage: "Код подтверждения недействителен.",
   });
+}
+
+function forbidden(code: string, description: string, humanMessage: string): ForbiddenException {
+  return new ForbiddenException({ code, description, humanMessage });
+}
+
+function sessionRateRule(): RateLimitRule {
+  return { limit: numberEnv(process.env.WEB_CHAT_RATE_SESSION_PER_MIN, 30), windowMs: RATE_WINDOW_MS };
+}
+
+function messageRateRule(): RateLimitRule {
+  return { limit: numberEnv(process.env.WEB_CHAT_RATE_MESSAGE_PER_MIN, 120), windowMs: RATE_WINDOW_MS };
+}
+
+function emailRateRule(): RateLimitRule {
+  return { limit: numberEnv(process.env.WEB_CHAT_RATE_EMAIL_PER_MIN, 5), windowMs: RATE_WINDOW_MS };
+}
+
+function numberEnv(value: string | undefined, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }

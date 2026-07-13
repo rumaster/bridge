@@ -51,6 +51,8 @@ describe("Edge Web Chat REST-транзит (W2)", () => {
         idempotencyKey: request.headers["idempotency-key"] ?? null,
         edgeTunnel: request.headers["x-bridge-edge-tunnel"] ?? null,
         contentType: request.headers["content-type"] ?? null,
+        origin: request.headers["origin"] ?? null,
+        forwardedFor: request.headers["x-forwarded-for"] ?? null,
         body,
       });
       if (request.url === "/api/v1/web-chat/sessions") {
@@ -87,6 +89,7 @@ describe("Edge Web Chat REST-транзит (W2)", () => {
         "content-type": "application/json",
         "idempotency-key": "idem-1",
         "x-bridge-edge-tunnel": "web_chat",
+        origin: "https://shop.test",
       },
       body: JSON.stringify({ organization_id: "org-1", visitor_session_id: "v-1" }),
     });
@@ -101,6 +104,10 @@ describe("Edge Web Chat REST-транзит (W2)", () => {
     // Сквозные заголовки сохранены: идемпотентность и маркер C9-туннеля.
     assert.equal(last.idempotencyKey, "idem-1");
     assert.equal(last.edgeTunnel, "web_chat");
+    // W4: Origin переносится для allow-list ядра; X-Forwarded-For достраивается
+    // (client IP) для rate-limit ядра.
+    assert.equal(last.origin, "https://shop.test");
+    assert.ok(typeof last.forwardedFor === "string" && last.forwardedFor.length > 0);
     assert.equal(JSON.parse(last.body).organization_id, "org-1");
   });
 
