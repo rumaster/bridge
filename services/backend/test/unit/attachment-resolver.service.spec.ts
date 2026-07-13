@@ -1,4 +1,8 @@
-import { NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import {
+  NotFoundException,
+  PayloadTooLargeException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 
 import { AttachmentResolverService } from "../../src/modules/communication-core/attachment.service";
 import {
@@ -98,6 +102,52 @@ describe("AttachmentResolverService", () => {
     const service = new AttachmentResolverService(database);
     await expect(service.resolve(ORG, ATTACHMENT_ID)).rejects.toBeInstanceOf(ServiceUnavailableException);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  describe("store (outgoing upload → Edge, §4.3-bis follow-up п.2)", () => {
+    it("uploads bytes to Edge and returns the storage_ref descriptor", async () => {
+      fetchMock.mockResolvedValue({
+        status: 201,
+        ok: true,
+        json: async () => ({ storage_ref: STORAGE_REF, size: 9, content_hash: "a".repeat(64) }),
+      });
+      const service = new AttachmentResolverService(makeDatabase(null));
+
+      const stored = await service.store(ORG, {
+        content: Buffer.from("PDF-BYTES"),
+        filename: "счёт.pdf",
+        mime: "application/pdf",
+      });
+
+      expect(stored.storageRef).toBe(STORAGE_REF);
+      expect(stored.size).toBe(9);
+      expect(stored.contentHash).toBe("a".repeat(64));
+      const [calledUrl, init] = fetchMock.mock.calls[0];
+      // Байты уходят POST-ом на Edge с org/filename/mime в query.
+      expect(String(calledUrl)).toContain("http://edge.local/internal/edge/attachments?");
+      expect(String(calledUrl)).toContain(`organization_id=${ORG}`);
+      expect(String(calledUrl)).toContain("filename=");
+      expect(init.method).toBe("POST");
+      expect(Buffer.isBuffer(init.body)).toBe(true);
+    });
+
+    it("maps a 413 from Edge to PayloadTooLargeException", async () => {
+      fetchMock.mockResolvedValue({ status: 413, ok: false, json: async () => ({}) });
+      const service = new AttachmentResolverService(makeDatabase(null));
+      await expect(
+        service.store(ORG, { content: Buffer.from("x") }),
+      ).rejects.toBeInstanceOf(PayloadTooLargeException);
+    });
+
+    it("503s when no Edge storage is configured", async () => {
+      delete process.env.EDGE_ATTACHMENT_URL;
+      delete process.env.EDGE_CONTROL_URL;
+      const service = new AttachmentResolverService(makeDatabase(null));
+      await expect(
+        service.store(ORG, { content: Buffer.from("x") }),
+      ).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 });
 

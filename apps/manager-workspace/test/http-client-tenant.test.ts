@@ -147,6 +147,97 @@ describe("Manager Workspace API client tenant scope", () => {
     });
   });
 
+  it("uploads a file with tenant header + encoded filename and returns the descriptor", async () => {
+    window.localStorage.setItem(
+      MANAGER_WORKSPACE_SESSION_STORAGE_KEY,
+      JSON.stringify({
+        token: "brs_manager_demo",
+        user: { id: "u", displayName: "M", role: "manager", telegramUsername: "m" },
+        organization: { id: ORGANIZATION_ID, name: "Tenant A" },
+        expiresAt: "2099-01-01T00:00:00.000Z"
+      })
+    );
+    let requestedPath = "";
+    let method = "";
+    let filenameHeader: string | null = null;
+    const storageRef = `edge-attach://${ORGANIZATION_ID}/${"a".repeat(64)}`;
+    const api = createManagerWorkspaceApiClient({
+      baseUrl: "/api/v1",
+      fetcher: async (url, init) => {
+        requestedPath = new URL(String(url), "http://localhost").pathname;
+        method = String(init?.method);
+        const headers = new Headers(init?.headers);
+        expect(headers.get("x-organization-id")).toBe(ORGANIZATION_ID);
+        filenameHeader = headers.get("x-attachment-filename");
+        return new Response(
+          JSON.stringify({ storageRef, name: "отчёт.pdf", contentType: "application/pdf", sizeBytes: 9 }),
+          { status: 201, headers: { "content-type": "application/json" } }
+        );
+      }
+    });
+
+    const file = new File([new Uint8Array([1, 2, 3])], "отчёт.pdf", { type: "application/pdf" });
+    const descriptor = await api.attachments.upload(file);
+
+    expect(requestedPath).toBe("/api/v1/attachments");
+    expect(method).toBe("POST");
+    // Кириллическое имя уходит URL-encoded (ASCII-safe заголовок).
+    expect(filenameHeader).toBe(encodeURIComponent("отчёт.pdf"));
+    expect(descriptor.storageRef).toBe(storageRef);
+    expect(descriptor.name).toBe("отчёт.pdf");
+  });
+
+  it("throws when attachment upload fails", async () => {
+    const api = createManagerWorkspaceApiClient({
+      baseUrl: "/api/v1",
+      fetcher: async () => new Response("too big", { status: 413 })
+    });
+    const file = new File([new Uint8Array([1])], "f.bin");
+    await expect(api.attachments.upload(file)).rejects.toThrow();
+  });
+
+  it("includes uploaded attachment descriptors in the POST /messages body", async () => {
+    let sentBody: any;
+    const storageRef = `edge-attach://${ORGANIZATION_ID}/${"b".repeat(64)}`;
+    const api = createManagerWorkspaceApiClient({
+      baseUrl: "/api/v1",
+      fetcher: async (url, init) => {
+        const path = new URL(String(url), "http://localhost").pathname;
+        if (path === "/api/v1/messages") {
+          sentBody = JSON.parse(String(init?.body));
+        }
+        return new Response(
+          JSON.stringify({
+            id: "30000000-0000-4000-8000-000000000601",
+            conversationId: "conv-1",
+            channel: "email",
+            direction: "outbound",
+            senderType: "manager",
+            content: { text: "во вложении", subject: "Re: заявка" },
+            status: "routed",
+            createdAt: "2026-07-11T10:00:00.000Z"
+          }),
+          { status: 200, headers: { "content-type": "application/json" } }
+        );
+      }
+    });
+
+    await api.messages.create({
+      conversationId: "conv-1",
+      content: "во вложении",
+      idempotencyKey: "idem-3",
+      subject: "Re: заявка",
+      attachments: [
+        { storageRef, name: "отчёт.pdf", contentType: "application/pdf", sizeBytes: 2048 }
+      ]
+    });
+
+    expect(sentBody.attachments).toEqual([
+      { storageRef, name: "отчёт.pdf", contentType: "application/pdf", sizeBytes: 2048 }
+    ]);
+    expect(sentBody.content).toEqual({ text: "во вложении", subject: "Re: заявка" });
+  });
+
   it("keeps content as a plain string when no subject is provided", async () => {
     let sentBody: any;
     const api = createManagerWorkspaceApiClient({

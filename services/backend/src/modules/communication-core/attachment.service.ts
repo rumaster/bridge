@@ -1,4 +1,10 @@
-import { Injectable, Logger, NotFoundException, ServiceUnavailableException } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  PayloadTooLargeException,
+  ServiceUnavailableException,
+} from "@nestjs/common";
 
 import { PgDatabase } from "../../common/database/database.service";
 
@@ -19,6 +25,13 @@ export interface ResolvedAttachment {
   content: Buffer;
   contentType: string;
   filename?: string;
+}
+
+/** Дескриптор загруженного на Edge вложения (§4.3-bis follow-up п.2). */
+export interface StoredAttachment {
+  storageRef: string;
+  size: number;
+  contentHash?: string;
 }
 
 interface AttachmentRow {
@@ -112,6 +125,94 @@ export class AttachmentResolverService {
       (typeof row.mime === "string" && row.mime !== "" ? row.mime : "application/octet-stream");
     const filename = this.filenameOf(row.metadata);
     return { content, contentType, filename };
+  }
+
+  /**
+   * Загружает байты исходящего вложения на Edge (§4.3-bis follow-up п.2): менеджер
+   * прикрепил файл к ответу, backend проксирует его на RF-том Edge
+   * (`POST /internal/edge/attachments`) и получает непрозрачный `storage_ref`.
+   * Байты физически оседают на RF (резидентность), а egress несёт только ссылку.
+   */
+  async store(
+    organizationId: string,
+    input: { content: Buffer; filename?: string; mime?: string },
+  ): Promise<StoredAttachment> {
+    const edgeUrl = this.edgeAttachmentUrl();
+    if (!edgeUrl) {
+      this.logger.warn("EDGE_ATTACHMENT_URL/EDGE_CONTROL_URL не заданы — загрузка вложения невозможна");
+      throw new ServiceUnavailableException({
+        code: "ATTACHMENT_STORAGE_UNAVAILABLE",
+        description: "attachment storage is not configured",
+        humanMessage: "Хранилище вложений недоступно.",
+      });
+    }
+
+    const params = new URLSearchParams({ organization_id: organizationId });
+    if (input.filename && input.filename.trim() !== "") {
+      params.set("filename", input.filename.trim());
+    }
+    if (input.mime && input.mime.trim() !== "") {
+      params.set("mime", input.mime.trim());
+    }
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs());
+    let response: Response;
+    try {
+      const token = process.env.EDGE_CONTROL_TOKEN;
+      response = await fetch(`${edgeUrl}?${params.toString()}`, {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "content-type": input.mime && input.mime.trim() !== "" ? input.mime.trim() : "application/octet-stream",
+          ...(token && token.trim() !== "" ? { authorization: `Bearer ${token.trim()}` } : {}),
+        },
+        body: input.content,
+      });
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Не удалось загрузить вложение на Edge: ${reason}`);
+      throw new ServiceUnavailableException({
+        code: "ATTACHMENT_UPLOAD_FAILED",
+        description: `edge attachment upload failed: ${reason}`,
+        humanMessage: "Не удалось загрузить вложение.",
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (response.status === 413) {
+      throw new PayloadTooLargeException({
+        code: "ATTACHMENT_TOO_LARGE",
+        description: "attachment exceeds the storage size limit",
+        humanMessage: "Файл слишком большой.",
+      });
+    }
+    if (!response.ok) {
+      throw new ServiceUnavailableException({
+        code: "ATTACHMENT_UPLOAD_FAILED",
+        description: `edge returned HTTP ${response.status}`,
+        humanMessage: "Не удалось загрузить вложение.",
+      });
+    }
+
+    const body = (await response.json().catch(() => ({}))) as {
+      storage_ref?: unknown;
+      size?: unknown;
+      content_hash?: unknown;
+    };
+    if (typeof body.storage_ref !== "string" || body.storage_ref.trim() === "") {
+      throw new ServiceUnavailableException({
+        code: "ATTACHMENT_UPLOAD_FAILED",
+        description: "edge did not return a storage_ref",
+        humanMessage: "Не удалось загрузить вложение.",
+      });
+    }
+    return {
+      storageRef: body.storage_ref,
+      size: typeof body.size === "number" ? body.size : input.content.byteLength,
+      ...(typeof body.content_hash === "string" ? { contentHash: body.content_hash } : {}),
+    };
   }
 
   /**

@@ -44,7 +44,20 @@ export interface CreateEdgeGatewayServerOptions {
    */
   attachmentStore?: {
     get(storageRef: string): Promise<{ content: Buffer; mime?: string; filename?: string; size: number } | null>;
+    /**
+     * Загрузка байтов исходящего вложения (§4.3-bis follow-up п.2): backend-прокси
+     * (`POST /api/v1/attachments`) кладёт файл менеджера СЮДА, чтобы байты
+     * оседали на RF (резидентность), а egress нёс только непрозрачный `storage_ref`.
+     */
+    put?(input: {
+      content: Buffer;
+      organizationId: string;
+      mime?: string;
+      filename?: string;
+    }): Promise<{ storageRef: string; contentHash: string; size: number; deduped: boolean }>;
   };
+  /** Верхняя граница размера загружаемого вложения (байты). По умолчанию 26 МБ. */
+  attachmentUploadMaxBytes?: number;
   liveness?: { isUp(): boolean; lastProbeAt(): number | null } | null;
   /**
    * База ядра (App) для прозрачного edge-транзита REST Web Chat (W2). Если задана —
@@ -70,6 +83,7 @@ export function createEdgeGatewayServer({
   vpnTunnel,
   controlPlane,
   attachmentStore,
+  attachmentUploadMaxBytes = 26 * 1024 * 1024,
   liveness,
   webChatBackendUrl,
   realtimeConfigured,
@@ -169,6 +183,72 @@ export function createEdgeGatewayServer({
             400,
             problem(400, "Control message rejected", (error as Error).message, []),
           );
+        }
+        return;
+      }
+
+      // Загрузка байтов ИСХОДЯЩЕГО вложения (§4.3-bis follow-up п.2): backend-прокси
+      // (`POST /api/v1/attachments`) кладёт файл менеджера на RF-том Edge, чтобы
+      // байты оседали на RF (резидентность), а egress нёс только `storage_ref`.
+      // organization_id/filename/mime — в query; тело — сырые байты.
+      if (
+        attachmentStore?.put &&
+        request.method === "POST" &&
+        path === "/internal/edge/attachments"
+      ) {
+        const organizationId = url.searchParams.get("organization_id");
+        if (!organizationId || organizationId.trim() === "") {
+          sendJson(
+            response,
+            400,
+            problem(400, "Bad Request", "Query param 'organization_id' is required.", []),
+          );
+          return;
+        }
+        let content: Buffer;
+        try {
+          content = await readRawBody(request, attachmentUploadMaxBytes);
+        } catch (error) {
+          if (error instanceof PayloadError) {
+            sendJson(response, error.status, problem(error.status, error.title, error.message, []));
+            return;
+          }
+          throw error;
+        }
+        if (content.byteLength === 0) {
+          sendJson(response, 400, problem(400, "Bad Request", "Attachment body is empty.", []));
+          return;
+        }
+        const filename = url.searchParams.get("filename") ?? undefined;
+        const mime =
+          url.searchParams.get("mime") ??
+          (typeof request.headers["content-type"] === "string" &&
+          request.headers["content-type"] !== "application/octet-stream"
+            ? (request.headers["content-type"] as string)
+            : undefined);
+        try {
+          const result = await attachmentStore.put({
+            content,
+            organizationId: organizationId.trim(),
+            ...(filename ? { filename } : {}),
+            ...(mime ? { mime } : {}),
+          });
+          sendJson(response, 201, {
+            storage_ref: result.storageRef,
+            content_hash: result.contentHash,
+            size: result.size,
+            deduped: result.deduped,
+          });
+        } catch (error) {
+          if ((error as { tooLarge?: boolean })?.tooLarge) {
+            sendJson(
+              response,
+              413,
+              problem(413, "Payload Too Large", (error as Error).message, []),
+            );
+            return;
+          }
+          throw error;
         }
         return;
       }
@@ -496,6 +576,20 @@ function publishC7Event(webSocketChannel, payload, now) {
     event_id: result.event.event_id,
     published_at: now(),
   };
+}
+
+/** Читает сырое тело запроса (Buffer) с явным лимитом — для загрузки вложений. */
+async function readRawBody(request, maxBytes) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    size += chunk.byteLength;
+    if (size > maxBytes) {
+      throw new PayloadError(413, "Payload Too Large", "Attachment body is too large.");
+    }
+    chunks.push(chunk);
+  }
+  return chunks.length > 0 ? Buffer.concat(chunks) : Buffer.alloc(0);
 }
 
 async function readJson(request) {

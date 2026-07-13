@@ -290,5 +290,45 @@ describe("internal-messaging.dto нормализация (issue #189, п. 1–3
       expect(delivery.channel_id).toBe("web:anon");
       expect(delivery.message.conversation_ref).toBe("conv-77");
     });
+
+    it("прокидывает исходящие вложения (storage_ref) в конверт egress", () => {
+      const storageRef = `edge-attach://${ORG_UUID}/${"a".repeat(64)}`;
+      const delivery = buildC2EgressDelivery(
+        {
+          id: MESSAGE_UUID,
+          organization_id: ORG_UUID,
+          conversation_id: "conv-77",
+          channel: "email",
+          type: "text",
+          content: { text: "во вложении" },
+        },
+        {
+          channel: "email",
+          external_id: "email-chan:client@example.com",
+          metadata: { channel_id: "email-chan", sender_ref: "client@example.com" },
+        },
+        [{ storage_ref: storageRef, filename: "отчёт.pdf", mime: "application/pdf", size: 2048 }],
+      );
+      expect(delivery.message.attachments).toEqual([
+        { storage_ref: storageRef, filename: "отчёт.pdf", mime: "application/pdf", size: 2048 },
+      ]);
+      // Адресация письма — реальный email клиента (не UUID диалога).
+      expect(delivery.message.recipient_ref).toBe("client@example.com");
+    });
+
+    it("не добавляет attachments, когда их нет (обратная совместимость)", () => {
+      const delivery = buildC2EgressDelivery(
+        {
+          id: MESSAGE_UUID,
+          organization_id: ORG_UUID,
+          conversation_id: "conv-77",
+          channel: "email",
+          type: "text",
+          content: { text: "без вложений" },
+        },
+        { channel: "email", external_id: "email-chan:client@example.com", metadata: null },
+      );
+      expect(delivery.message.attachments).toBeUndefined();
+    });
   });
 });

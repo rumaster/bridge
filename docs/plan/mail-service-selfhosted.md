@@ -413,11 +413,30 @@ e2e-сценарий email проходит на настоящих сокета
 >   (`MAIL_QUEUE_WARN`/`MAIL_DISK_WARN_PCT`) — для cron/алертов. Проверено на стенде.
 > - **Ротация логов** — `MAIL_LOGROTATE_INTERVAL`/`MAIL_LOGROTATE_COUNT` в compose
 >   (docker-mailserver `LOGROTATE_*`).
-> - **Лимиты отправки (anti-abuse)** — шаблон
->   [`deploy/mail/postfix-main.cf.example`](../../deploy/mail/postfix-main.cf.example)
->   (поклиентные anvil-лимиты + размер письма); точные per-user/per-org лимиты
->   (postfwd) и suspend по злоупотреблению — отдельный шаг (услуга без боевой
->   исходящей доставки, M3 отложен).
+> - **Лимиты отправки (anti-abuse)** — два уровня:
+>   1. поклиентные (по IP) anvil-лимиты + размер письма доведены до боевых
+>      значений в [`postfix-main.cf.example`](../../deploy/mail/postfix-main.cf.example)
+>      (грубый предохранитель: весь трафик с одного IP edge-gateway);
+>   2. per-user/per-org лимиты по отправителю + suspend — ruleset postfwd
+>      [`postfwd.cf.example`](../../deploy/mail/postfwd.cf.example) (часовой/суточный
+>      лимит писем, веер получателей, suspend-списки, fallback по IP) +
+>      helper [`mail-suspend.sh`](../../deploy/mail/mail-suspend.sh) (add/del/list,
+>      reload postfwd по SIGHUP). Подключение postfwd к submission
+>      (`postconf -P … check_policy_service`) задокументировано в
+>      [`deploy/mail/README.md`](../../deploy/mail/README.md) §M4.
+>   Подключение postfwd к боевой submission-цепочке включается при выводе
+>   исходящей доставки в интернет (M3 отложен: порт 25 заблокирован на стенде).
+> - **Наблюдаемость RPO edge-буфера** — capacity-хук RF-буфера, на котором стоит
+>   входящий email-канал, подключён к логам/метрикам
+>   ([`edge-buffer-observability.ts`](../../services/edge-gateway/src/edge-buffer-observability.ts)):
+>   `createPostgresBufferStore` поднимает стор с `EDGE_BUFFER_CAPACITY`/
+>   `EDGE_BUFFER_HIGH_WATERMARK_RATIO`, при high-watermark/исчерпании идёт
+>   warn/error, а метрики `edge_cluster_buffer_capacity_*` и `edge_buffer_capacity`
+>   отдаются в `/metrics` (раньше capacity-события молчали: стенд поднимал буфер с
+>   `capacity=Infinity` без notify). Для боевого RPO задать конечную ёмкость.
+>   Проверено локально (36 unit-тестов + tsc); передеплой на стенд не делался —
+>   изменение аддитивное, а на стенде при `capacity=Infinity` новых рантайм-
+>   сигналов нет (счётчики = 0, gauge не рендерится).
 
 - Бэкап volume `bridge-mail-data` (ящики) и `bridge-mail-state`; регламент
   восстановления.
@@ -439,6 +458,17 @@ e2e-сценарий email проходит на настоящих сокета
 > - **Провижининг-агент** — `serve`-режим
 >   [`scripts/mail-provision.ts`](../../scripts/mail-provision.ts): HTTP
 >   (`POST /provision`, `DELETE`, `GET /health`, Bearer-токен) рядом с почтовиком.
+>   Оформлен штатным **compose-сервисом** `mail-provision` под профилем `mail`
+>   ([`docker-compose.rf.yml`](../../deploy/compose/docker-compose.rf.yml),
+>   образ [`deploy/docker/mail-provision/Dockerfile`](../../deploy/docker/mail-provision/Dockerfile):
+>   node + docker-клиент, сокет хоста) с healthcheck на `/health` и обязательным
+>   `MAIL_PROVISION_TOKEN` (serve падает без токена; открытый режим —
+>   `MAIL_PROVISION_ALLOW_OPEN=1`). Ручной `docker run` больше не нужен.
+>   **Проверено на стенде** (изолированно, без правки общего compose): образ
+>   собрался (docker-клиент из docker:cli работает поверх debian slim), `GET
+>   /health` → `{ok:true}`, `POST /provision` создал реальный ящик на общем
+>   mailserver через docker-сокет, `DELETE /provision` удалил (без следов),
+>   отказ без токена → 401, serve без токена → fail-fast.
 > - **Backend** — `IntegrationGatewayFacade.provisionManagedMailbox` +
 >   `POST /api/v1/mail/mailboxes` (admin-auth,
 >   [`mail.controller.ts`](../../services/backend/src/modules/integration-gateway/mail.controller.ts)):
@@ -450,8 +480,7 @@ e2e-сценарий email проходит на настоящих сокета
 > - Проверено на стенде: `POST /api/v1/mail/mailboxes {local_part}` → HTTP 201,
 >   ящик создан на почтовике, канал `email/connected` с `credentials_envelope`.
 > - **Осталось (по потребности):** тариф/биллинг-хук, отображение квоты/адреса и
->   удаление ящика из UI, суспенд по злоупотреблению; агент как compose-сервис
->   (сейчас — `docker run`, рецепт в [`deploy/mail/README.md`](../../deploy/mail/README.md)).
+>   удаление ящика из UI, суспенд по злоупотреблению.
 
 - UI в SaaS Administration (`:8081`): заказ ящика организацией, отображение
   квоты/адреса; автопровижн через `mail-provision` (M2).

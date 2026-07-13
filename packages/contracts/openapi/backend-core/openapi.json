@@ -462,6 +462,21 @@
         ]
       }
     },
+    "/api/v1/attachments": {
+      "post": {
+        "operationId": "AttachmentController_upload_v1",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "summary": "Upload outgoing attachment bytes (proxied to Edge storage)",
+        "tags": [
+          "attachments"
+        ]
+      }
+    },
     "/api/v1/attachments/{id}/content": {
       "get": {
         "operationId": "AttachmentController_downloadContent_v1",
@@ -3075,6 +3090,36 @@
           "page"
         ]
       },
+      "OutgoingAttachmentDto": {
+        "type": "object",
+        "properties": {
+          "storageRef": {
+            "type": "string",
+            "example": "edge-attach://<org>/<sha256>"
+          },
+          "name": {
+            "type": "string",
+            "example": "отчёт.pdf"
+          },
+          "contentType": {
+            "type": "string",
+            "example": "application/pdf"
+          },
+          "sizeBytes": {
+            "type": "number",
+            "example": 20480,
+            "minimum": 0
+          },
+          "kind": {
+            "type": "string",
+            "example": "file"
+          }
+        },
+        "required": [
+          "storageRef",
+          "name"
+        ]
+      },
       "CreateMessageDto": {
         "type": "object",
         "properties": {
@@ -3140,6 +3185,12 @@
           },
           "idempotencyKey": {
             "type": "string"
+          },
+          "attachments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutgoingAttachmentDto"
+            }
           }
         },
         "required": [

@@ -7,7 +7,7 @@ import {
   useRef,
   useState
 } from "react";
-import { Send, Sparkles } from "lucide-react";
+import { Paperclip, Send, Sparkles, X } from "lucide-react";
 import { useParams } from "react-router-dom";
 
 import type {
@@ -58,6 +58,7 @@ export default function DialogPage() {
   const [client, setClient] = useState<ClientProfile | null>(null);
   const [draft, setDraft] = useState("");
   const [subject, setSubject] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [sendError, setSendError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -71,6 +72,7 @@ export default function DialogPage() {
   const lastSequenceNumberRef = useRef<number | null>(null);
   const seenEventIdsRef = useRef(new Set<string>());
   const seenMessageIdsRef = useRef(new Set<string>());
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadDialog = useCallback(async () => {
     const startedAt = startClientNfrMeasurement();
@@ -189,7 +191,10 @@ export default function DialogPage() {
     event.preventDefault();
 
     const content = draft.trim();
-    if (!conversation || !content) {
+    const filesToSend = isEmail ? pendingFiles : [];
+    // Отправка допускается, если есть текст ИЛИ хотя бы одно вложение (письмо
+    // может состоять только из файла).
+    if (!conversation || (!content && filesToSend.length === 0)) {
       return;
     }
 
@@ -213,15 +218,27 @@ export default function DialogPage() {
     setMessages((current) => mergeMessagesById(current, [optimisticMessage]));
 
     try {
+      // Сначала загружаем файлы (байты → RF-том Edge), получаем дескрипторы со
+      // storage_ref, затем создаём сообщение с ссылками на них.
+      const uploaded = [];
+      for (const file of filesToSend) {
+        uploaded.push(await api.attachments.upload(file));
+      }
+
       const createdMessage = await api.messages.create({
         conversationId: conversation.id,
         content,
         idempotencyKey,
-        ...(emailSubject ? { subject: emailSubject } : {})
+        ...(emailSubject ? { subject: emailSubject } : {}),
+        ...(uploaded.length > 0 ? { attachments: uploaded } : {})
       });
 
       seenMessageIdsRef.current.add(createdMessage.id);
       setSubject("");
+      setPendingFiles([]);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
       setMessages((current) => reconcileMessage(current, optimisticMessage.id, createdMessage));
       setConversation((current) =>
         current
@@ -340,9 +357,64 @@ export default function DialogPage() {
                 value={draft}
               />
             </label>
+            {isEmail ? (
+              <div className="reply-attachments">
+                <input
+                  aria-label="Прикрепить файл"
+                  className="reply-attachments-input"
+                  multiple
+                  onChange={(event) => {
+                    const files = event.target.files ? Array.from(event.target.files) : [];
+                    if (files.length > 0) {
+                      setPendingFiles((current) => [...current, ...files]);
+                    }
+                  }}
+                  ref={fileInputRef}
+                  type="file"
+                />
+                <Button
+                  disabled={sending}
+                  onClick={() => fileInputRef.current?.click()}
+                  type="button"
+                  variant="secondary"
+                >
+                  <Paperclip aria-hidden="true" size={16} />
+                  Прикрепить файл
+                </Button>
+                {pendingFiles.length > 0 ? (
+                  <ul className="attachment-pending-list">
+                    {pendingFiles.map((file, index) => (
+                      <li className="attachment-pending" key={`${file.name}-${index}`}>
+                        <span>
+                          {file.name} · {formatBytes(file.size)}
+                        </span>
+                        <button
+                          aria-label={`Убрать ${file.name}`}
+                          className="attachment-remove"
+                          disabled={sending}
+                          onClick={() =>
+                            setPendingFiles((current) => current.filter((_, position) => position !== index))
+                          }
+                          type="button"
+                        >
+                          <X aria-hidden="true" size={14} />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
             <div className="reply-actions">
               {sendError ? <p className="error-text">{sendError}</p> : null}
-              <Button disabled={sending || draft.trim() === "" || !conversation} type="submit">
+              <Button
+                disabled={
+                  sending ||
+                  !conversation ||
+                  (draft.trim() === "" && (!isEmail || pendingFiles.length === 0))
+                }
+                type="submit"
+              >
                 <Send aria-hidden="true" size={16} />
                 Отправить
               </Button>

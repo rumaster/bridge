@@ -103,6 +103,9 @@ export function createEdgeChannelRuntime({
   const emailSender = createEdgeEmailSender({
     createTransport: ({ smtp }) =>
       createNodemailerTransport({ smtp }, { rejectUnauthorized: emailTlsRejectUnauthorized }),
+    // Исходящие вложения (§4.3-bis follow-up п.2): sender резолвит storage_ref в
+    // реальные байты из того же тома, что хранит входящие, и вкладывает их в письмо.
+    attachmentStore,
     now,
   });
 

@@ -21,7 +21,8 @@ import type {
   SendMessageRequest,
   TelegramLoginStartRequest,
   TelegramLoginStartResponse,
-  TelegramLoginVerifyRequest
+  TelegramLoginVerifyRequest,
+  UploadedAttachment
 } from "./types";
 import { MANAGER_WORKSPACE_SESSION_STORAGE_KEY } from "../../state/session-storage";
 
@@ -105,6 +106,30 @@ export function createManagerWorkspaceApiClient(
           });
         }
         return response.blob();
+      },
+      // Загрузка файла к ответу менеджера: сырые байты POST-ом на backend, который
+      // проксирует их на RF-том Edge. Имя файла — в заголовке (URL-encoded для
+      // кириллицы), MIME — content-type. Возвращает дескриптор с непрозрачным
+      // storageRef для последующего POST /messages.
+      upload: async (file: File): Promise<UploadedAttachment> => {
+        const url = jsonClient.resolveUrl("/attachments");
+        const response = await fetcher(url, {
+          method: "POST",
+          headers: {
+            ...readTenantHeaders(),
+            "content-type": file.type && file.type !== "" ? file.type : "application/octet-stream",
+            "x-attachment-filename": encodeURIComponent(file.name)
+          },
+          body: file
+        });
+        if (!response.ok) {
+          throw new BridgeApiError(`Attachment upload failed with ${response.status}`, {
+            status: response.status,
+            body: undefined,
+            url
+          });
+        }
+        return (await response.json()) as UploadedAttachment;
       }
     },
     clients: {
@@ -170,13 +195,23 @@ function toCreateMessageBody(request: SendMessageRequest): {
   conversationId: string;
   idempotencyKey: string;
   content: string | { text: string; subject: string };
+  attachments?: Array<{ storageRef: string; name: string; contentType?: string; sizeBytes?: number }>;
 } {
   const subject = request.subject?.trim();
+  const attachments = (request.attachments ?? [])
+    .filter((attachment) => attachment.storageRef.trim() !== "")
+    .map((attachment) => ({
+      storageRef: attachment.storageRef,
+      name: attachment.name,
+      ...(attachment.contentType ? { contentType: attachment.contentType } : {}),
+      ...(Number.isFinite(attachment.sizeBytes) ? { sizeBytes: attachment.sizeBytes } : {})
+    }));
 
   return {
     conversationId: request.conversationId,
     idempotencyKey: request.idempotencyKey,
-    content: subject ? { text: request.content, subject } : request.content
+    content: subject ? { text: request.content, subject } : request.content,
+    ...(attachments.length > 0 ? { attachments } : {})
   };
 }
 

@@ -4,7 +4,7 @@ import { RequestMethod, VersioningType } from "@nestjs/common";
 import type { LogLevel } from "@nestjs/common";
 import type { INestApplication } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
-import type { Express } from "express";
+import { raw, type Express } from "express";
 
 import { AppModule } from "./app.module";
 import { setupSwaggerUi } from "./common/openapi/openapi";
@@ -50,6 +50,8 @@ export function configureBackendApp(
     type: VersioningType.URI,
   });
 
+  installAttachmentUploadBodyParser(app);
+
   if (options.installOperationAliases !== false) {
     installOperationAliases(app);
   }
@@ -57,6 +59,25 @@ export function configureBackendApp(
   if (options.installSwaggerUi !== false) {
     setupSwaggerUi(app);
   }
+}
+
+/**
+ * Сырой (binary) парсер тела для загрузки вложений (§4.3-bis follow-up п.2):
+ * `POST /api/v1/attachments` принимает байты файла как есть. Глобальный
+ * `express.json()` для не-JSON content-type тело не трогает, поэтому raw-парсер
+ * читает поток целиком в `req.body` (Buffer). Действует только на POST коллекции
+ * (не на `GET /:id/content`). Лимит — с запасом над лимитом Edge (26 МБ).
+ */
+function installAttachmentUploadBodyParser(app: INestApplication): void {
+  const express = app.getHttpAdapter().getInstance() as Express;
+  const parseRaw = raw({ type: () => true, limit: "30mb" });
+  express.use("/api/v1/attachments", (request, response, next) => {
+    if (request.method !== "POST") {
+      next();
+      return;
+    }
+    parseRaw(request, response, next);
+  });
 }
 
 function installOperationAliases(app: INestApplication): void {

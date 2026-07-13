@@ -9,7 +9,8 @@ import type {
   SendMessageRequest,
   TelegramLoginStartRequest,
   TelegramLoginStartResponse,
-  TelegramLoginVerifyRequest
+  TelegramLoginVerifyRequest,
+  UploadedAttachment
 } from "../client/types";
 import {
   mockClients,
@@ -30,6 +31,7 @@ export interface MockManagerWorkspaceBackend {
   createMessage: (request: SendMessageRequest) => Message;
   getMessage: (messageId: string) => Message;
   downloadAttachment: (attachmentId: string) => Blob;
+  uploadAttachment: (file: File) => UploadedAttachment;
   listClients: () => ClientProfile[];
   getClient: (clientId: string) => ClientProfile;
   listNotifications: () => NotificationItem[];
@@ -140,6 +142,15 @@ export function createMockManagerWorkspaceBackend(): MockManagerWorkspaceBackend
       return new Blob([`mock-bytes:${attachment.name}`], {
         type: attachment.contentType || "application/octet-stream"
       });
+    },
+    uploadAttachment(file) {
+      // Мок «загрузки»: детерминированный storage_ref по имени файла.
+      return {
+        storageRef: `edge-attach://mock-org/${encodeURIComponent(file.name)}`,
+        name: file.name,
+        contentType: file.type && file.type !== "" ? file.type : null,
+        sizeBytes: file.size
+      };
     },
     listClients() {
       return clients.map(copyClient);

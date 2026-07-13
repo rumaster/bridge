@@ -259,6 +259,55 @@ services:
       - "${MAIL_SMTP_HOST_PORT:-1587}:587"
       - "${MAIL_IMAP_HOST_PORT:-1143}:143"
 
+  # Провижининг-агент «Bridge Mail» (Этап M5). Раньше запускался вручную через
+  # `docker run` (deploy/mail/README.md); теперь — штатный compose-сервис под тем
+  # же профилем `mail`. Backend App-стороны дозванивается сюда
+  # (MAIL_PROVISION_URL) и заказывает/удаляет ящики; агент выполняет их через
+  # `docker exec mailserver setup ...`, поэтому монтируется docker-сокет хоста.
+  #
+  # ВАЖНО: MAIL_PROVISION_TOKEN обязателен — агент управляет ящиками и слушает по
+  # сети. Guard — рантаймовый (serveAgent падает без токена), а не через
+  # ${..:?} в compose: иначе обычный RF-`up` без профиля mail ломался бы на
+  # интерполяции. Открытый запуск (только изолированная сеть) —
+  # MAIL_PROVISION_ALLOW_OPEN=1.
+  mail-provision:
+    profiles: ["mail"]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/mail-provision/Dockerfile
+    restart: unless-stopped
+    environment:
+      MAIL_DOMAIN: ${MAIL_DOMAIN:-bridge.local}
+      # Имя контейнера почтовика в этом compose-проекте (name: bridge-edge-rf).
+      MAILSERVER_CONTAINER: ${MAILSERVER_CONTAINER:-bridge-edge-rf-mailserver-1}
+      # Хост/порты, которые агент пропишет в креды канала (внутри docker-сети).
+      MAIL_HOST: ${MAIL_PROVISION_MAIL_HOST:-mailserver}
+      MAIL_IMAP_PORT: ${MAIL_PROVISION_IMAP_PORT:-143}
+      MAIL_SMTP_PORT: ${MAIL_PROVISION_SMTP_PORT:-587}
+      MAIL_PROVISION_PORT: ${MAIL_PROVISION_PORT:-3300}
+      MAIL_PROVISION_TOKEN: ${MAIL_PROVISION_TOKEN:-}
+      MAIL_PROVISION_ALLOW_OPEN: ${MAIL_PROVISION_ALLOW_OPEN:-}
+    volumes:
+      # Доступ к docker-демону хоста для `docker exec <mailserver> setup ...`.
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - mailserver
+    # Публикуем на хост, чтобы backend App-стороны (другой сервер) дозванивался
+    # по http://<rf-host>:<порт>. В изолированном контуре можно убрать publish и
+    # ходить по имени сервиса mail-provision внутри сети.
+    ports:
+      - "${MAIL_PROVISION_PORT:-3300}:${MAIL_PROVISION_PORT:-3300}"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:'+(process.env.MAIL_PROVISION_PORT||'3300')+'/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
 volumes:
   bridge-edge-postgres-data:
   bridge-edge-attachments:

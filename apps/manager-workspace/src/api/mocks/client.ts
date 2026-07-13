@@ -43,6 +43,9 @@ export function createMockManagerWorkspaceApiClient(): ManagerWorkspaceApiClient
     attachments: {
       async download(attachmentId: string) {
         return backend.downloadAttachment(attachmentId);
+      },
+      async upload(file: File) {
+        return backend.uploadAttachment(file);
       }
     },
     clients: {
