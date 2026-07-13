@@ -37,6 +37,8 @@ interface MockWebSocketClient {
   closed: boolean;
   lastEventId?: string;
   subscription: NormalizedSubscription;
+  /** Подписка ограничена по organization_id (иначе событий не получает, W3). */
+  scoped: boolean;
   sendEvent(event: C7Event): void;
 }
 
@@ -160,10 +162,13 @@ export function createMockWebSocketChannel({
     event_published_total: 0,
     duplicate_event_total: 0,
     rejected_event_total: 0,
+    unscoped_rejected_total: 0,
   };
   const unsubscribeFromEventBus = eventBus.subscribe((event) => {
     for (const client of clients) {
-      if (eventMatchesSubscription(event, client.subscription)) {
+      // Изоляция арендаторов (W3, WG-9): неограниченная по organization_id подписка
+      // не получает событий (иначе wildcard = утечка в чужой поток).
+      if (client.scoped && eventMatchesSubscription(event, client.subscription)) {
         client.sendEvent(event);
       }
     }
@@ -175,10 +180,13 @@ export function createMockWebSocketChannel({
         throw new TypeError("send must be a function");
       }
 
+      const normalizedSubscription = normalizeSubscription(subscription);
+      const scoped = Boolean(normalizedSubscription.organizationId);
       const client = {
         closed: false,
         lastEventId,
-        subscription: normalizeSubscription(subscription),
+        subscription: normalizedSubscription,
+        scoped,
         sendEvent(event) {
           if (this.closed) {
             return;
@@ -191,12 +199,18 @@ export function createMockWebSocketChannel({
       clients.add(client);
       metrics.connection_total += 1;
 
-      for (const event of eventStore.select({
-        afterSequenceNumber,
-        lastEventId,
-        subscription: client.subscription,
-      })) {
-        client.sendEvent(event);
+      if (!scoped) {
+        // Изоляция арендаторов (W3, WG-9): подписка без organization_id не матчит
+        // ничего — ни реплей истории, ни живой поток. Раньше это был wildcard.
+        metrics.unscoped_rejected_total += 1;
+      } else {
+        for (const event of eventStore.select({
+          afterSequenceNumber,
+          lastEventId,
+          subscription: client.subscription,
+        })) {
+          client.sendEvent(event);
+        }
       }
 
       return {

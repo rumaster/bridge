@@ -15,10 +15,19 @@ import {
   WebSocketChannelMockValidationError,
   createMockWebSocketChannel,
 } from "./mock-ws-channel.js";
+import {
+  WS_OPCODE,
+  createWebSocketFrameDecoder,
+  encodeCloseFrame,
+  encodePingFrame,
+  encodePongFrame,
+  encodeTextFrame,
+} from "./ws-frame.js";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" };
 const MAX_BODY_BYTES = 1024 * 1024;
 const WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+const WS_KEEPALIVE_INTERVAL_MS = 30_000;
 
 export interface CreateEdgeGatewayServerOptions {
   core?: any;
@@ -35,6 +44,12 @@ export interface CreateEdgeGatewayServerOptions {
    * VPN-туннеля (AmneziaWG). Без неё маршрут отдаёт прежний 404 (проброс выключен).
    */
   webChatBackendUrl?: string;
+  /**
+   * Признак, что C7-realtime реально сконфигурирован (Redis→WS мост поднят, W3).
+   * Отдаётся в /health и /metrics, чтобы отсутствие realtime было видимым, а не
+   * «тихим». Для mock-режима не задаётся.
+   */
+  realtimeConfigured?: boolean;
   mode?: string;
   now?: () => string;
 }
@@ -48,6 +63,7 @@ export function createEdgeGatewayServer({
   controlPlane,
   liveness,
   webChatBackendUrl,
+  realtimeConfigured,
   mode = "m0-mock",
   now = () => new Date().toISOString(),
 }: CreateEdgeGatewayServerOptions = {}) {
@@ -66,6 +82,12 @@ export function createEdgeGatewayServer({
           service: "edge-gateway",
           mode,
           contracts: ["C7", "C9"],
+          // Видимая деградация realtime (W3, WG-8): configured=false ⇒ события
+          // менеджера/посетителю по WS не доходят (Redis→WS мост не поднят).
+          realtime: {
+            configured: realtimeConfigured ?? null,
+            connected_clients: webSocketChannel.getMetrics?.()?.connected_clients ?? 0,
+          },
         });
         return;
       }
@@ -89,6 +111,7 @@ export function createEdgeGatewayServer({
             vpnTunnel: vpnTunnel?.getMetrics?.(),
             liveness,
             pending,
+            realtimeConfigured,
           }),
         );
         return;
@@ -208,6 +231,16 @@ export function createEdgeGatewayServer({
       return;
     }
 
+    // Изоляция арендаторов (W3, WG-9): подписка без organization_id матчила бы все
+    // события (wildcard). Требуем organization_id — иначе отклоняем апгрейд, чтобы
+    // виджет/менеджер не мог подписаться на чужой поток.
+    const subscription = subscriptionFromSearchParams(url.searchParams);
+    if (!subscription.organizationId) {
+      socket.write("HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+
     const acceptKey = createHash("sha1")
       .update(`${key}${WEBSOCKET_GUID}`)
       .digest("base64");
@@ -226,22 +259,90 @@ export function createEdgeGatewayServer({
     const connection = webSocketChannel.connect({
       afterSequenceNumber: url.searchParams.get("after_sequence_number") ?? undefined,
       lastEventId: url.searchParams.get("last_event_id") ?? undefined,
-      subscription: subscriptionFromSearchParams(url.searchParams),
+      subscription,
       send(event) {
-        socket.write(encodeWebSocketTextFrame(JSON.stringify(event)));
+        socket.write(encodeTextFrame(JSON.stringify(event)));
       },
     });
 
-    const close = () => {
+    let closed = false;
+    let isAlive = true;
+    let keepAlive: ReturnType<typeof setInterval> | undefined;
+    const finalize = () => {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      if (keepAlive) {
+        clearInterval(keepAlive);
+      }
       connection.close();
       upgradedSockets.delete(socket);
     };
-    socket.on("close", close);
-    socket.on("end", () => {
-      close();
+    const closeSocket = () => {
+      finalize();
       socket.destroy();
+    };
+
+    // Keepalive (W3, WG-9): периодический ping; нет pong к следующему тику →
+    // сокет считаем мёртвым и закрываем. Раньше keepalive не было вовсе.
+    keepAlive = setInterval(() => {
+      if (!isAlive) {
+        closeSocket();
+        return;
+      }
+      isAlive = false;
+      try {
+        socket.write(encodePingFrame());
+      } catch {
+        closeSocket();
+      }
+    }, WS_KEEPALIVE_INTERVAL_MS);
+    keepAlive.unref?.();
+
+    // Декодирование входящих кадров (W3, WG-9): ранее сервер их не читал вовсе —
+    // ping/pong/close/subscribe от клиента игнорировались. Обрабатываем keepalive
+    // (ping→pong, pong→alive) и корректное закрытие; TEXT (subscribe виджета)
+    // подтверждаем no-op — подписка берётся из query.
+    const decoder = createWebSocketFrameDecoder();
+    socket.on("data", (chunk: Buffer) => {
+      let frames;
+      try {
+        frames = decoder.push(chunk);
+      } catch {
+        try {
+          socket.write(encodeCloseFrame(1009, "frame too large"));
+        } catch {
+          // сокет уже закрыт — игнорируем
+        }
+        closeSocket();
+        return;
+      }
+      for (const frame of frames) {
+        if (frame.opcode === WS_OPCODE.PING) {
+          try {
+            socket.write(encodePongFrame(frame.payload));
+          } catch {
+            closeSocket();
+          }
+        } else if (frame.opcode === WS_OPCODE.PONG) {
+          isAlive = true;
+        } else if (frame.opcode === WS_OPCODE.CLOSE) {
+          try {
+            socket.write(encodeCloseFrame());
+          } catch {
+            // сокет уже закрыт — игнорируем
+          }
+          closeSocket();
+        }
+      }
     });
-    socket.on("error", close);
+
+    socket.on("close", finalize);
+    socket.on("end", () => {
+      closeSocket();
+    });
+    socket.on("error", finalize);
   });
 
   const closeServer = server.close.bind(server);
@@ -415,28 +516,6 @@ function problem(status, title, detail, errors) {
     detail,
     errors,
   };
-}
-
-function encodeWebSocketTextFrame(text) {
-  const payload = Buffer.from(text, "utf8");
-
-  if (payload.byteLength < 126) {
-    return Buffer.concat([Buffer.from([0x81, payload.byteLength]), payload]);
-  }
-
-  if (payload.byteLength <= 0xffff) {
-    const header = Buffer.alloc(4);
-    header[0] = 0x81;
-    header[1] = 126;
-    header.writeUInt16BE(payload.byteLength, 2);
-    return Buffer.concat([header, payload]);
-  }
-
-  const header = Buffer.alloc(10);
-  header[0] = 0x81;
-  header[1] = 127;
-  header.writeBigUInt64BE(BigInt(payload.byteLength), 2);
-  return Buffer.concat([header, payload]);
 }
 
 class PayloadError extends Error {

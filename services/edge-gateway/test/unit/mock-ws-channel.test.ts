@@ -46,6 +46,9 @@ describe("Mock C7 WebSocket channel", () => {
     const delivered = [];
 
     const connection = channel.connect({
+      // Изоляция арендаторов (W3): подписка обязана нести organization_id, иначе
+      // событий не получает. События makeEvent относятся к org-1.
+      subscription: { organizationId: "org-1" },
       lastEventId: "event-1",
       send(event) {
         delivered.push(event.event_id);

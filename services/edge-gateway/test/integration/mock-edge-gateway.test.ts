@@ -95,10 +95,21 @@ describe("Edge Gateway M0 mock", () => {
 
   it("handles a minimal WebSocket upgrade for the mock channel", async () => {
     const address = server.address();
-    const handshake: any = await requestWebSocketUpgrade(address.port, "/api/v1/ws");
+    // Изоляция арендаторов (W3): апгрейд требует organization_id в подписке.
+    const handshake: any = await requestWebSocketUpgrade(
+      address.port,
+      "/api/v1/ws?organization_id=org-1",
+    );
 
     assert.match(handshake, /^HTTP\/1\.1 101 Switching Protocols/);
     assert.match(handshake, /Sec-WebSocket-Accept:/);
+  });
+
+  it("rejects a WebSocket upgrade without organization_id (tenant isolation, W3)", async () => {
+    const address = server.address();
+    const handshake: any = await requestWebSocketUpgrade(address.port, "/api/v1/ws");
+
+    assert.match(handshake, /^HTTP\/1\.1 400 Bad Request/);
   });
 
   it("accepts internal C7 events and delivers them to matching WS subscriptions", async () => {

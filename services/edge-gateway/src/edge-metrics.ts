@@ -26,6 +26,8 @@ export interface EdgeMetricsSources {
   liveness?: { isUp(): boolean; lastProbeAt(): number | null } | null;
   /** Текущий размер RF-буфера (pending), best-effort. */
   pending?: number | null;
+  /** C7-realtime сконфигурирован (Redis→WS мост поднят, W3). undefined → не рендерим. */
+  realtimeConfigured?: boolean;
   nowMs?: number;
 }
 
@@ -67,9 +69,21 @@ export function renderEdgeMetrics({
   vpnTunnel,
   liveness,
   pending,
+  realtimeConfigured,
   nowMs = Date.now(),
 }: EdgeMetricsSources = {}): string {
   const series: Series[] = [];
+
+  // Видимая деградация C7-realtime (W3, WG-8): 0 ⇒ Redis→WS мост не поднят,
+  // события менеджера/посетителю по WS не доходят.
+  if (realtimeConfigured !== undefined) {
+    series.push({
+      name: "edge_c7_realtime_configured",
+      type: "gauge",
+      help: "C7 realtime Redis→WS bridge configured on the Edge (1/0).",
+      value: realtimeConfigured ? 1 : 0,
+    });
+  }
 
   if (tunnelMock) {
     series.push(

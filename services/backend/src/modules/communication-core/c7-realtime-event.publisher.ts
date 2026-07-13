@@ -19,6 +19,7 @@ export interface MessageStatusChangedEventInput {
 @Injectable()
 export class C7RealtimeEventPublisher {
   private readonly logger = new Logger(C7RealtimeEventPublisher.name);
+  private warnedNoRedis = false;
 
   constructor(private readonly redis: RedisInfrastructureService) {}
 
@@ -56,6 +57,17 @@ export class C7RealtimeEventPublisher {
     },
   ): Promise<void> {
     if (!this.redis.isConfigured()) {
+      // Видимая деградация вместо тихого no-op (W3, WG-8): realtime C7 отключён —
+      // сообщения не будут доставляться менеджеру/посетителю по WS в реальном
+      // времени (лента подтянет их только через REST). Логируем один раз, чтобы не
+      // спамить; публикация остаётся best-effort и не роняет создание сообщения.
+      if (!this.warnedNoRedis) {
+        this.warnedNoRedis = true;
+        this.logger.warn(
+          "C7 realtime disabled: REDIS_URL is not configured — realtime WS events " +
+            "(message.created/status_changed) will NOT be published",
+        );
+      }
       return;
     }
 

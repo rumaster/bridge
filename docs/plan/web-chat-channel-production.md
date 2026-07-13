@@ -3,7 +3,7 @@ title: План доведения канала Web Chat до боевого р�
 service: Web Chat (Frontend) / Backend / Edge Gateway / Integration Platform / SaaS Administration
 service_id: SVC-CHAT · SVC-API · SVC-EDGE · SVC-INT · SVC-ADMIN
 version: 1.0
-status: In progress (W1–W2 done 2026-07-13; W3–W7 planned)
+status: In progress (W1–W3 done 2026-07-13; W4–W7 planned)
 language: ru-RU
 based_on: docs/plan/telegram-channel-production.md, docs/plan/max-channel-production.md, docs/plan/email-channel-production.md, docs/plan/services/13-web-chat.md, docs/plan/mock-to-production-roadmap.md
 date: 2026-07-12
@@ -346,6 +346,47 @@ W6 (снятие моков, довод фич, WG-12,13,14,15)
 **Тесты.** Юнит на декодер WS-кадров и keepalive; интеграционный: publish→WS
 доставка одному конкретному conversation, отсутствие утечки в чужой; проба fail-fast
 без Redis.
+
+**Статус реализации W3 (2026-07-13): выполнено.**
+- **Боевой WS-транспорт (задача 1, WG-9).** Новый модуль
+  [`ws-frame.ts`](../../services/edge-gateway/src/ws-frame.ts) — кодировщики
+  server→client кадров и инкрементальный декодер маскированных client→server
+  кадров. В edge-сервере
+  ([`server.ts`](../../services/edge-gateway/src/server.ts)) upgrade-обработчик
+  теперь **читает** входящие кадры (ping→pong, pong→alive, close→закрытие) и держит
+  **keepalive-ping** (30с; нет pong к следующему тику → сокет закрывается). Прежний
+  ад-хок `encodeWebSocketTextFrame` снят.
+- **Изоляция арендаторов (задача 1, WG-9).** Апгрейд без `organization_id`
+  отклоняется (400); в C7-канале
+  ([`mock-ws-channel.ts`](../../services/edge-gateway/src/mock-ws-channel.ts))
+  подписка без `organization_id` больше **не** матчит всё (был wildcard-leak) — ни
+  реплей истории, ни живой поток; добавлена метрика `unscoped_rejected_total`.
+- **Redis обязателен для realtime + видимая деградация (задача 2, WG-8).** В
+  edge-рантайме ([`edge-runtime.ts`](../../services/edge-gateway/src/edge-runtime.ts))
+  при отсутствии `REDIS_URL` — **fail-fast**, если realtime обязателен
+  (`EDGE_C7_REALTIME_REQUIRED` или включённый транзит Web Chat
+  `EDGE_WEB_CHAT_BACKEND_URL`), иначе явный `WARN`. Backend-публикатор
+  ([`c7-realtime-event.publisher.ts`](../../services/backend/src/modules/communication-core/c7-realtime-event.publisher.ts))
+  вместо тихого no-op логирует предупреждение один раз (публикация best-effort,
+  создание сообщения не роняет).
+- **Видимое состояние (задача 3).** `/health` отдаёт
+  `realtime.configured`/`connected_clients`; `/metrics` — гейдж
+  `edge_c7_realtime_configured` (edge-metrics.ts). Боевой канал экспортирован под
+  продовым именем [`c7-ws-channel.ts`](../../services/edge-gateway/src/c7-ws-channel.ts)
+  (`createC7WebSocketChannel`), рантайм больше не завязан на «mock»-нейминг.
+- **Тесты.** Юнит [`ws-frame.test.ts`](../../services/edge-gateway/test/unit/ws-frame.test.ts)
+  (кодирование/декодирование/фрагментация/лимит), unit
+  [`c7-realtime-required.test.ts`](../../services/edge-gateway/test/unit/c7-realtime-required.test.ts)
+  (логика fail-fast), integration
+  [`web-chat-realtime.test.ts`](../../services/edge-gateway/test/integration/web-chat-realtime.test.ts)
+  (реальный сокет: доставка scoped-события, ping→pong, отсутствие утечки в чужую
+  организацию) + обновлён `mock-edge-gateway`-тест (апгрейд с/без `organization_id`).
+  Весь edge-набор **168/168**, `tsc` — чисто; backend publisher-spec и `tsc` — без
+  новых ошибок.
+
+**Осознанно вне W3 (переходит в W4/W5):** проверка включённости канала и
+Origin/rate-limit публичных ручек (W4); хостируемая страница организации и сборка
+виджета под RF-edge (W5). Полный e2e через реальный Redis+edge — CI-профиль (W7).
 
 ---
 

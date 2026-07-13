@@ -3,7 +3,7 @@ import { createC7RedisStreamBridge } from "./c7-redis-stream-bridge.js";
 import { createEdgeChannelRuntime } from "./edge-channel-drivers.js";
 import { createEdgeCluster } from "./edge-cluster.js";
 import { createPostgresEdgeMessageBufferStore } from "./edge-message-buffer.js";
-import { createMockWebSocketChannel } from "./mock-ws-channel.js";
+import { createC7WebSocketChannel } from "./c7-ws-channel.js";
 import { createRedisStreamClient } from "./redis-stream-client.js";
 import { createRfPayloadCipher, resolveRfPayloadKey } from "./rf-payload-cipher.js";
 import { createEdgeGatewayServer } from "./server.js";
@@ -145,8 +145,22 @@ export async function createEdgeGatewayRuntimeFromEnv(
           now: options.now,
         })
       : null;
-  const wsChannel = options.wsChannel ?? createMockWebSocketChannel();
+  const wsChannel = options.wsChannel ?? createC7WebSocketChannel();
   const c7StreamClient = await createC7StreamClientFromEnv(env, options.c7StreamClient);
+  // Видимая деградация realtime (W3, WG-8): без Redis C7 Redis→WS мост не стартует
+  // и события менеджера/посетителю по WS не доходят. Раньше это молчаливый no-op —
+  // теперь fail-fast, если realtime обязателен, иначе явный WARN + метрика.
+  if (!c7StreamClient) {
+    if (isC7RealtimeRequired(env)) {
+      throw new VpnTunnelError(
+        "REDIS_URL is required for C7 realtime (EDGE_WEB_CHAT_BACKEND_URL/EDGE_C7_REALTIME_REQUIRED set): " +
+          "без него события менеджера/посетителю по WS не доходят",
+      );
+    }
+    console.warn(
+      "[edge] C7 realtime disabled: REDIS_URL not configured — realtime WS events will NOT be delivered",
+    );
+  }
   const c7StreamBridge = c7StreamClient
     ? createC7RedisStreamBridge({
         stream: env.C7_REALTIME_STREAM?.trim() || undefined,
@@ -191,6 +205,7 @@ export async function createEdgeGatewayRuntimeFromEnv(
       liveness: livenessLink,
       controlPlane: channelRuntime?.controlPlane,
       webChatBackendUrl: resolveWebChatBackendUrl(env),
+      realtimeConfigured: Boolean(c7StreamBridge),
     }),
     cluster,
     tunnel,
@@ -431,6 +446,20 @@ function resolveWebChatBackendUrl(
   env: Record<string, string | undefined>,
 ): string | undefined {
   return env.EDGE_WEB_CHAT_BACKEND_URL?.trim() || undefined;
+}
+
+/**
+ * Обязателен ли C7-realtime (Redis) на Edge (W3, WG-8). Включается явным флагом
+ * `EDGE_C7_REALTIME_REQUIRED` ЛИБО автоматически при включённом транзите Web Chat
+ * (`EDGE_WEB_CHAT_BACKEND_URL`): раз виджет ходит через Edge, ответы менеджера
+ * должны доходить по WS — отсутствие Redis тогда fail-fast, а не тихая деградация.
+ */
+export function isC7RealtimeRequired(env: Record<string, string | undefined>): boolean {
+  const flag = (env.EDGE_C7_REALTIME_REQUIRED ?? "").trim().toLowerCase();
+  if (flag === "on" || flag === "1" || flag === "true") {
+    return true;
+  }
+  return Boolean(env.EDGE_WEB_CHAT_BACKEND_URL?.trim());
 }
 
 function numberEnv(value: string | undefined, fallback: number | undefined) {
