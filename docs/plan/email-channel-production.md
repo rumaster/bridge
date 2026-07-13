@@ -101,7 +101,7 @@ decisions:
 |------|-------------|--------|
 | **E0** | G-2/G-4 — структурные email-креды, `PUT /channels/:id` | ✅ backend |
 | **E1** | G-1 — UI ввода IMAP/SMTP кред + заказ «Bridge Mail» + реальный `:test` через Edge | ✅ форма + автопровижн (M5) + `channel_test` (реальный IMAP LOGIN + SMTP verify) |
-| **E2** | G-10 — control-plane App→Edge | ✅ приёмник (`/internal/edge/control/messages`), egress-паблишер и **publisher `channel_credentials_sync` (Ш1 push + Ш2 resync 60с)** — на стенде лог `Email creds resync: 1/1`. **MP-12:** control-plane переведён на VPN-туннель (relay edge-vpn-app + control-listener Edge, за гейтами), HTTP оставлен fallback'ом; in-process тесты зелёные, боевой сокет — на стенде |
+| **E2** | G-10 — control-plane App→Edge | ✅ приёмник (`/internal/edge/control/messages`), egress-паблишер и **publisher `channel_credentials_sync` (Ш1 push + Ш2 resync 60с)** — на стенде лог `Email creds resync: 1/1`. **MP-12:** control-plane переведён на VPN-туннель (relay edge-vpn-app + control-listener Edge, за гейтами), HTTP оставлен fallback'ом; in-process тесты зелёные, **боевой сокет проверен на стенде 2026-07-13** (creds-sync/egress/backend-e2e по реальному AmneziaWG-туннелю) |
 | **E3** | G-5/G-9 — входящий IMAP-драйвер на Edge (RF-first) | ✅ боевой (`imapflow`), подключён — но инертен без creds-sync |
 | **E4** | G-6/G-7 — SMTP-sender на Edge + поля эгресса | ✅ боевой (`nodemailer`) + egress по HTTP — инертен без creds-sync |
 | **E5** | G-8 — email в manager-workspace (тип, тема) | ✅ frontend |
@@ -123,8 +123,13 @@ decisions:
    стенда; туннельный путь включает `EDGE_CONTROL_TUNNEL_URL` (backend),
    `EDGE_VPN_EDGE_CONTROL_URL` (edge-vpn-app) и `EDGE_VPN_CONTROL_LISTEN=on`
    (Edge). Без потерь при разрыве (офлайн-очередь + дедуп по `control_id`),
-   покрыто in-process тестами. Осталось: боевая проверка реального AmneziaWG-
-   сокета на стенде; сам data-plane Edge→App уже на боевом TCP/TLS-сокете.
+   покрыто in-process тестами. **Проверено на стенде (2026-07-13, реальный
+   AmneziaWG-туннель):** creds-sync → `stored` + идемпотентность по `control_id`;
+   egress_dispatch → реальная SMTP-попытка на Edge туннельными кредами (ответ
+   mailserver вернулся по туннелю); backend end-to-end `Email creds resync: 1/1`
+   через relay по туннелю, Edge поднял IMAP-драйвер. Побочно найдено и
+   исправлено: control-RPC нужен отдельный таймаут `EDGE_VPN_CONTROL_TIMEOUT_MS`
+   (30с) — egress/channel_test делают реальный SMTP/IMAP и превышают 5с data-plane.
 4. ~~**Вложения → `storage_ref`** — по-прежнему непрозрачны (S3 отложен, §4.3).~~
    **Закрыто (2026-07-13):** реальное хранение байтов вложений на Edge (файловый
    том на RF, дедуп по content-hash) + рабочий `storage_ref`, резолвящийся
