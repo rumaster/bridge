@@ -109,6 +109,11 @@ services:
       # Edge), а НЕ в integration-platform. Пусто — email идёт прежним путём.
       # На стенде Edge в отдельном RF-кластере → через host-порт edge-gateway.
       EDGE_CONTROL_URL: ${EDGE_CONTROL_URL:-}
+      # Туннельный путь control-plane (Этап E2/MP-12): адрес HTTP-релея на
+      # edge-vpn-app. Задан → backend шлёт creds-sync/egress/channel_test сюда, а
+      # релей проталкивает их на Edge по VPN-туннелю (приоритетнее EDGE_CONTROL_URL).
+      # Пусто → прямой HTTP на EDGE_CONTROL_URL (одно-хостовый стенд).
+      EDGE_CONTROL_TUNNEL_URL: ${EDGE_CONTROL_TUNNEL_URL:-}
       EDGE_CONTROL_TOKEN: ${EDGE_CONTROL_TOKEN:-}
       EDGE_CREDENTIALS_RESYNC_INTERVAL_MS: ${EDGE_CREDENTIALS_RESYNC_INTERVAL_MS:-60000}
       # «Bridge Mail» (Этап M5): URL провижининг-агента почтовика (mail-provision
@@ -269,6 +274,19 @@ services:
       EDGE_VPN_APP_WSS_TLS_KEY: ${EDGE_VPN_APP_WSS_TLS_KEY:-}
       EDGE_VPN_APP_WSS_TLS_CERT: ${EDGE_VPN_APP_WSS_TLS_CERT:-}
       EDGE_VPN_APP_WSS_TLS_CA: ${EDGE_VPN_APP_WSS_TLS_CA:-}
+      # App→Edge control-plane через туннель (Этап E2/MP-12). Адрес control-
+      # listener'а Edge по туннельному IP (обратное направление от data-plane).
+      # Пусто → релей не поднимается, backend остаётся на прямом HTTP (стенд).
+      EDGE_VPN_EDGE_CONTROL_URL: ${EDGE_VPN_EDGE_CONTROL_URL:-}
+      EDGE_VPN_EDGE_CONTROL_WSS_URL: ${EDGE_VPN_EDGE_CONTROL_WSS_URL:-}
+      # HTTP-релей для backend (host-internal, edge-vpn-app:3052). Backend бьёт
+      # сюда через EDGE_CONTROL_TUNNEL_URL, релей толкает на Edge по туннелю.
+      EDGE_CONTROL_RELAY_HOST: 0.0.0.0
+      EDGE_CONTROL_RELAY_PORT: ${EDGE_CONTROL_RELAY_PORT:-3052}
+      EDGE_CONTROL_TOKEN: ${EDGE_CONTROL_TOKEN:-}
+      # Проактивный TCP-liveness control-порта Edge (быстрый сигнал разрыва).
+      EDGE_VPN_CONTROL_LIVENESS: ${EDGE_VPN_CONTROL_LIVENESS:-off}
+      EDGE_VPN_CONTROL_CLIENT_TLS_CA: ${EDGE_VPN_CONTROL_CLIENT_TLS_CA:-}
     ports:
       - "${EDGE_VPN_APP_TCP_PORT:-3049}:${EDGE_VPN_APP_TCP_PORT:-3049}"
       - "${EDGE_VPN_APP_WSS_PORT:-3050}:${EDGE_VPN_APP_WSS_PORT:-3050}"

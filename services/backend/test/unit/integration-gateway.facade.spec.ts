@@ -291,6 +291,34 @@ describe("IntegrationGatewayFacade", () => {
     }
   });
 
+  it("шлёт creds-sync на туннельный релей (EDGE_CONTROL_TUNNEL_URL) приоритетнее прямого HTTP (MP-12)", async () => {
+    const prevDirect = process.env.EDGE_CONTROL_URL;
+    const prevTunnel = process.env.EDGE_CONTROL_TUNNEL_URL;
+    process.env.EDGE_CONTROL_URL = "http://edge.test/internal/edge/control/messages";
+    process.env.EDGE_CONTROL_TUNNEL_URL = "http://edge-vpn-app:3052/internal/edge/control/relay";
+    try {
+      const fetchImpl = jest.fn(async () => ({ ok: true, status: 202 }));
+      const facade = createFacade({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+      await facade.connectChannel({
+        organization_id: ORG_ID,
+        channel_type: "email",
+        name: "Bridge Mail",
+        email_credentials: EMAIL_CREDENTIALS,
+      });
+
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      const [url] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
+      // Туннельный путь: backend бьёт в релей edge-vpn-app, а не напрямую в Edge.
+      expect(url).toBe("http://edge-vpn-app:3052/internal/edge/control/relay");
+    } finally {
+      if (prevDirect === undefined) delete process.env.EDGE_CONTROL_URL;
+      else process.env.EDGE_CONTROL_URL = prevDirect;
+      if (prevTunnel === undefined) delete process.env.EDGE_CONTROL_TUNNEL_URL;
+      else process.env.EDGE_CONTROL_TUNNEL_URL = prevTunnel;
+    }
+  });
+
   it("connect не падает, если Edge-control недоступен (best-effort)", async () => {
     const prev = process.env.EDGE_CONTROL_URL;
     process.env.EDGE_CONTROL_URL = "http://edge.test/internal/edge/control/messages";

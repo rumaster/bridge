@@ -22,6 +22,7 @@ import type { PoolClient } from "pg";
 
 import { PgDatabase } from "../../common/database/database.service";
 import type { Queryable } from "../../common/database/database.service";
+import { resolveEdgeControlUrl } from "../../common/edge-control/edge-control-endpoint";
 import { AuditService } from "../audit/audit.service";
 import { C7RealtimeEventPublisher } from "./c7-realtime-event.publisher";
 import {
@@ -747,13 +748,15 @@ export class InternalMessagingService {
   private async forwardEgressDelivery(delivery: C2EgressDelivery): Promise<AdapterDeliveryOutcome> {
     // Email — edge-owned канал: исходящее уходит на Edge Gateway через App→Edge
     // control-plane (C9.EdgeControlMessage type=egress_dispatch), где живёт боевой
-    // SMTP-клиент (Этапы E2/E6, docs/plan/email-channel-production.md). При заданном
-    // EDGE_CONTROL_URL email больше НЕ идёт в integration-platform по HTTP-шлюзу.
-    // Прочие каналы — прежний путь INTEGRATION_EGRESS_URL (ниже), без изменений.
+    // SMTP-клиент (Этапы E2/E6, docs/plan/email-channel-production.md). Адрес —
+    // туннельный релей edge-vpn-app (EDGE_CONTROL_TUNNEL_URL) при RF-разнесении,
+    // иначе прямой HTTP (EDGE_CONTROL_URL) для одно-хостового стенда (MP-12). При
+    // любом из них email НЕ идёт в integration-platform по HTTP-шлюзу. Прочие
+    // каналы — прежний путь INTEGRATION_EGRESS_URL (ниже), без изменений.
     if (delivery.message.channel_type === "email") {
-      const edgeControlUrl = process.env.EDGE_CONTROL_URL;
-      if (edgeControlUrl && edgeControlUrl.trim() !== "") {
-        return this.forwardEgressToEdgeControl(delivery, edgeControlUrl.trim());
+      const edgeControlUrl = resolveEdgeControlUrl();
+      if (edgeControlUrl) {
+        return this.forwardEgressToEdgeControl(delivery, edgeControlUrl);
       }
     }
 

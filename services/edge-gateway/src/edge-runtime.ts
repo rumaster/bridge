@@ -1,6 +1,9 @@
 import { createLivenessLink, createTcpLivenessProbe } from "./awg-liveness.js";
 import { createC7RedisStreamBridge } from "./c7-redis-stream-bridge.js";
 import { createEdgeChannelRuntime } from "./edge-channel-drivers.js";
+import { createEdgeControlClient } from "./edge-control-client.js";
+import { createEdgeControlRelayServer } from "./edge-control-relay.js";
+import { createTunnelEdgeControlTransport } from "./edge-control-transport.js";
 import { createEdgeCluster } from "./edge-cluster.js";
 import { createPostgresEdgeMessageBufferStore } from "./edge-message-buffer.js";
 import { createC7WebSocketChannel } from "./c7-ws-channel.js";
@@ -194,6 +197,21 @@ export async function createEdgeGatewayRuntimeFromEnv(
     });
   }
 
+  // Control-listener App→Edge (Этап E2/MP-12): Edge поднимает RPC-приёмник на
+  // туннельном IP (обратное направление от data-plane), чей эндпоинт оборачивает
+  // control-plane канальных драйверов. App-сторона (edge-vpn-app) дозванивается
+  // сюда по туннелю и толкает creds-sync/egress/channel_test. За гейтом
+  // EDGE_VPN_CONTROL_LISTEN=on (по умолчанию off — не менять поведение живого
+  // edge, пока App-сторона не начнёт слать control по туннелю). Требует поднятого
+  // channelRuntime.controlPlane (EDGE_CHANNEL_DRIVERS=on).
+  const controlListener = maybeCreateControlListener(env, channelRuntime?.controlPlane);
+  if (controlListener) {
+    await listen(controlListener.server, controlListener.port, controlListener.host);
+    console.log(
+      `edge control-listener listening on tcp://${controlListener.host}:${controlListener.port}`,
+    );
+  }
+
   return {
     mode,
     server: createEdgeGatewayServer({
@@ -215,9 +233,42 @@ export async function createEdgeGatewayRuntimeFromEnv(
       }
       channelRuntime?.stop();
       livenessLink?.stop();
+      if (controlListener) {
+        await closeServer(controlListener.server);
+      }
       await c7StreamBridge?.stop();
       await buffer.close();
     },
+  };
+}
+
+/**
+ * Собирает Edge-сторонний control-listener (App→Edge, Этап E2/MP-12), если
+ * включён `EDGE_VPN_CONTROL_LISTEN=on`. Возвращает `null`, когда листенер
+ * выключен. Если листенер запрошен, но control-plane недоступен (не подняты
+ * канальные драйверы), это ошибка конфигурации — падаем fail-fast, а не молча
+ * слушаем «пустой» control-канал.
+ */
+function maybeCreateControlListener(
+  env: Record<string, string | undefined>,
+  controlPlane?: { handle(message: unknown): Promise<unknown> },
+) {
+  if ((env.EDGE_VPN_CONTROL_LISTEN ?? "off").trim().toLowerCase() !== "on") {
+    return null;
+  }
+  if (!controlPlane || typeof controlPlane.handle !== "function") {
+    throw new VpnTunnelError(
+      "EDGE_VPN_CONTROL_LISTEN=on requires channel drivers (EDGE_CHANNEL_DRIVERS=on) for the control-plane",
+    );
+  }
+  const server = createVpnTunnelTcpAppServer({
+    endpoint: { control: (message) => controlPlane.handle(message) },
+    tls: tlsFromEnv(env, "EDGE_VPN_CONTROL"),
+  });
+  return {
+    server,
+    port: numberEnv(env.EDGE_VPN_CONTROL_PORT, 3051) as number,
+    host: env.EDGE_VPN_CONTROL_HOST ?? env.HOST ?? "0.0.0.0",
   };
 }
 
@@ -342,13 +393,129 @@ async function startAppVpnRuntime(env: Record<string, string | undefined>) {
     `edge-gateway app-vpn listening on tcp://${tcpHost}:${tcpPort} and ws(s)://${wsHost}:${wsPort}${env.EDGE_VPN_APP_WSS_PATH ?? "/vpn"}`,
   );
 
+  // App→Edge control-relay (Этап E2/MP-12): host-internal HTTP-приёмник для
+  // backend, проталкивающий control-сообщения на Edge по туннелю. Включается
+  // заданием EDGE_VPN_EDGE_CONTROL_URL (адрес control-listener'а Edge по туннелю,
+  // напр. tcp://10.7.0.2:3051). Без него релей не поднимается (одно-хостовый
+  // стенд остаётся на прямом HTTP-пути backend→Edge).
+  const control = maybeStartAppControlRelay(env);
+  const cleanups: Array<() => void | Promise<void>> = [];
+  if (control) {
+    await listen(control.server, control.port, control.host);
+    servers.push(control.server);
+    control.liveness?.start();
+    const drainMs = numberEnv(env.EDGE_CONTROL_DRAIN_INTERVAL_MS, 5_000);
+    let drainTimer: ReturnType<typeof setInterval> | undefined;
+    if (drainMs > 0) {
+      drainTimer = setInterval(() => {
+        void control.client.drain().catch(() => {});
+      }, drainMs);
+      drainTimer.unref?.();
+    }
+    cleanups.push(() => {
+      if (drainTimer) clearInterval(drainTimer);
+      control.liveness?.stop();
+    });
+    console.log(
+      `edge-gateway app-vpn control-relay on http://${control.host}:${control.port}${control.path} → ${control.edgeControlUrl}`,
+    );
+  }
+
   return {
     mode: "app-vpn" as const,
     servers,
     close: async () => {
+      for (const cleanup of cleanups) {
+        await cleanup();
+      }
       await Promise.all(servers.map(closeServer));
     },
   };
+}
+
+/**
+ * App-сторонний control-relay + туннельный control-клиент (Этап E2/MP-12).
+ * Возвращает `null`, если `EDGE_VPN_EDGE_CONTROL_URL` не задан (релей выключен).
+ * Транспорт: TCP-primary по туннельному IP Edge (+ опциональный WSS-fallback),
+ * поверх — офлайн-очередь `createEdgeControlClient` (без потерь при разрыве).
+ * Опциональный TCP-liveness control-порта Edge даёт быстрый сигнал разрыва
+ * вместо TCP-таймаута на каждом сообщении (EDGE_VPN_CONTROL_LIVENESS=on).
+ */
+function maybeStartAppControlRelay(env: Record<string, string | undefined>) {
+  const edgeControlUrl = env.EDGE_VPN_EDGE_CONTROL_URL?.trim();
+  if (!edgeControlUrl) {
+    return null;
+  }
+
+  const timeoutMs = numberEnv(env.EDGE_VPN_TIMEOUT_MS, 5_000);
+  const primary = createVpnTunnelTcpRemoteServer({
+    url: edgeControlUrl,
+    timeoutMs,
+    tls: tlsFromEnv(env, "EDGE_VPN_CONTROL_CLIENT"),
+  });
+  const fallbackUrl = env.EDGE_VPN_EDGE_CONTROL_WSS_URL?.trim();
+  const fallback = fallbackUrl
+    ? createVpnTunnelWebSocketRemoteServer({
+        url: fallbackUrl,
+        timeoutMs,
+        tls: tlsFromEnv(env, "EDGE_VPN_CONTROL_WSS_CLIENT"),
+      })
+    : null;
+  const remote = fallback
+    ? createFailoverVpnTunnelRemoteServer({ primary, fallback })
+    : primary;
+
+  const liveness = createControlLivenessFromEnv(env, edgeControlUrl);
+  const transport = createTunnelEdgeControlTransport({
+    remote,
+    ...(liveness ? { link: liveness } : {}),
+  });
+  const client = createEdgeControlClient({
+    transport,
+    maxQueue: numberEnv(env.EDGE_CONTROL_MAX_QUEUE, 1024) as number,
+  });
+
+  const path = env.EDGE_CONTROL_RELAY_PATH ?? "/internal/edge/control/relay";
+  const server = createEdgeControlRelayServer({
+    dispatch: (message) => client.dispatch(message),
+    sendNow: (message) => transport.send(message),
+    authToken: env.EDGE_CONTROL_TOKEN,
+    path,
+  });
+
+  return {
+    server,
+    client,
+    liveness,
+    edgeControlUrl,
+    path,
+    port: numberEnv(env.EDGE_CONTROL_RELAY_PORT, 3052) as number,
+    host: env.EDGE_CONTROL_RELAY_HOST ?? env.HOST ?? "0.0.0.0",
+  };
+}
+
+/**
+ * Опциональный TCP-liveness control-порта Edge на App-стороне
+ * (EDGE_VPN_CONTROL_LIVENESS=on). Хост/порт берём из EDGE_VPN_EDGE_CONTROL_URL.
+ */
+function createControlLivenessFromEnv(
+  env: Record<string, string | undefined>,
+  edgeControlUrl: string,
+) {
+  if ((env.EDGE_VPN_CONTROL_LIVENESS ?? "off").trim().toLowerCase() !== "on") {
+    return null;
+  }
+  const parsed = new URL(edgeControlUrl);
+  const probe = createTcpLivenessProbe({
+    host: parsed.hostname,
+    port: Number(parsed.port || 3051),
+    timeoutMs: numberEnv(env.EDGE_VPN_LIVENESS_TIMEOUT_MS, 2_000),
+  });
+  return createLivenessLink({
+    probe,
+    intervalMs: numberEnv(env.EDGE_VPN_LIVENESS_INTERVAL_MS, 5_000),
+    initialUp: true,
+  });
 }
 
 function createRemoteVpnServerFromEnv(env: Record<string, string | undefined>) {
