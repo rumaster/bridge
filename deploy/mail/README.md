@@ -150,26 +150,38 @@ saas-admin → POST /api/v1/mail/mailboxes {local_part}
      → connectChannel(email_credentials) → канал email/connected (секрет write-only)
 ```
 
-**Провижининг-агент** — `mail-provision.ts serve` на хосте с почтовиком (доступ к
-docker). Запуск (одноразовый node-контейнер с docker CLI/сокетом):
+**Провижининг-агент** — штатный compose-сервис `mail-provision` под профилем
+`mail` (образ [`deploy/docker/mail-provision/Dockerfile`](../../deploy/docker/mail-provision/Dockerfile):
+node + docker-клиент; демон не нужен — монтируется сокет хоста). Раньше запускался
+вручную через `docker run`; теперь поднимается вместе с почтовиком:
 
 ```bash
-docker run -d --name bridge-mail-agent \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v $(command -v docker):/usr/local/bin/docker \
-  -v "$PWD":/repo -w /repo \
-  -e MAIL_DOMAIN=$MAIL_DOMAIN \
-  -e MAILSERVER_CONTAINER=<mailserver> \
-  -e MAIL_PROVISION_TOKEN=<общий-токен> \
-  -e MAIL_PROVISION_PORT=3300 -p 3300:3300 \
-  node:20.20.2-bookworm-slim npx --yes tsx@4.19.2 scripts/mail-provision.ts serve
+# В .env.rf задайте MAIL_PROVISION_TOKEN (обязателен) и, при нужде,
+# MAILSERVER_CONTAINER (по умолчанию bridge-edge-rf-mailserver-1).
+docker compose --env-file .env.rf -f deploy/compose/docker-compose.rf.yml \
+  --profile mail up --build -d mailserver mail-provision
+
+# Проверка здоровья агента:
+curl -s http://localhost:${MAIL_PROVISION_PORT:-3300}/health   # {"ok":true}
 ```
 
+Агент фейлится на старте без `MAIL_PROVISION_TOKEN` (управляет ящиками и слушает
+по сети). Осознанный открытый запуск в изолированной сети —
+`MAIL_PROVISION_ALLOW_OPEN=1`. Healthcheck сервиса дергает `GET /health`.
+
 **Backend** (app-сторона) включает услугу через env (`.env`):
-`MAIL_PROVISION_URL=http://<host>:3300`, `MAIL_PROVISION_TOKEN=<тот-же-токен>`.
+`MAIL_PROVISION_URL=http://<rf-host>:3300`, `MAIL_PROVISION_TOKEN=<тот-же-токен>`.
 Пусто — раздел «заказать ящик» неактивен.
 
 Эндпоинты агента: `POST /provision {local_part}`, `DELETE /provision {address}`,
 `GET /health`. Защита — общий `Bearer`-токен (`MAIL_PROVISION_TOKEN`).
+
+> **Разовые команды без Node на хосте.** Для ручных `add`/`list`/`password` без
+> Node можно выполнить скрипт в одноразовом контейнере того же образа:
+> ```bash
+> docker compose --env-file .env.rf -f deploy/compose/docker-compose.rf.yml \
+>   --profile mail run --rm --no-deps --entrypoint "" mail-provision \
+>   node --import tsx scripts/mail-provision.ts list
+> ```
 
 Тариф/биллинг-хук и суспенд по злоупотреблению — отдельный шаг (по потребности).

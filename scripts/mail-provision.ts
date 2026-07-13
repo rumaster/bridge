@@ -209,6 +209,18 @@ function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
 function serveAgent(flags: Flags): void {
   const port = flags.port ?? Number(env("MAIL_PROVISION_PORT", "3300"));
   const token = env("MAIL_PROVISION_TOKEN");
+  // Fail-fast: агент управляет ящиками и слушает по сети (в compose порт
+  // публикуется на хост для backend App-стороны). Открытый запуск без токена —
+  // footgun, поэтому по умолчанию запрещаем. Осознанный открытый режим (только в
+  // изолированной сети) — MAIL_PROVISION_ALLOW_OPEN=1. Guard рантаймовый (не в
+  // compose через ${..:?}), иначе он ломал бы обычный RF-`up` без профиля mail.
+  if (!token && env("MAIL_PROVISION_ALLOW_OPEN") !== "1") {
+    throw new Error(
+      "mail-provision serve: не задан MAIL_PROVISION_TOKEN. Агент управляет " +
+        "ящиками и доступен по сети — задайте общий Bearer-токен. Для осознанного " +
+        "открытого запуска в изолированной сети: MAIL_PROVISION_ALLOW_OPEN=1.",
+    );
+  }
   const server = createServer((req, res) => {
     void handleAgentRequest(req, res, token, flags);
   });
