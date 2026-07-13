@@ -9,14 +9,13 @@ import {
 const C2_VERSION = "1.0.0";
 export const WEB_CHAT_CHANNEL_TYPE = "web_chat";
 const WEB_CHAT_ADAPTER_NAME = "web-chat-adapter";
-const WEB_CHAT_SUPPORTED_CAPABILITIES = new Set([
-  "text",
-  "image",
-  "file",
-  "typing_indicator",
-  "read_receipt",
-]);
-const WEB_CHAT_MESSAGE_TYPES = new Set(["text", "image", "file"]);
+// C6-возможности web_chat (WG-14, docs/plan/web-chat-channel-production.md):
+// вложения (image/file) убраны из «supported» — сквозняк «виджет → ядро →
+// менеджер» их не переносит (ядро хранит только text), поэтому дескриптор не
+// должен заявлять нереализованное. Останутся text + typing/read-receipt (клиент их
+// обрабатывает). Вернуть image/file — когда будет сквозная доставка вложений.
+const WEB_CHAT_SUPPORTED_CAPABILITIES = new Set(["text", "typing_indicator", "read_receipt"]);
+const WEB_CHAT_MESSAGE_TYPES = new Set(["text"]);
 
 /** Опции {@link createWebChatAdapter}. */
 export interface WebChatAdapterOptions {

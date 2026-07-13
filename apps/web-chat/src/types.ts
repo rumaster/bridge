@@ -1,3 +1,5 @@
+import type { C7WebSocketEnvelope } from "../../../packages/contracts/src/c7-constants";
+
 export type WebChatAuthorType = "visitor" | "manager" | "ai" | "system";
 
 export type WebChatMessageStatus =
@@ -66,21 +68,11 @@ export type WebChatRealtimeEvent =
       channel: "web_chat";
     };
 
-export type C7WebSocketEvent = {
-  contract: "C7.WebSocketEvent";
-  version: "1.0.0";
-  event:
-    | "message.created"
-    | "message.status_changed"
-    | "typing.started"
-    | "typing.stopped";
-  event_id: string;
-  organization_id: string;
-  subscription_id?: string;
-  sequence_number: number;
-  payload: Record<string, unknown>;
-  occurred_at: string;
-};
+// Канонический конверт C7 — из общего контракта (W6/WG-15), а не дубль в виджете.
+// Импорт только типовой (стирается при сборке): нулевая рантайм-связь с contracts,
+// но литералы contract/version/event в виджете и моке проверяются компилятором на
+// совпадение с каноном.
+export type C7WebSocketEvent = C7WebSocketEnvelope;
 
 export type NormalizedWebChatRealtimeEvent =
   | {

@@ -72,9 +72,17 @@ export class WebChatController {
     return this.webChat.sendMessage(body, requestContext(origin, forwardedFor, ip));
   }
 
+  // Опциональная email-верификация посетителя (WG-13,
+  // docs/plan/web-chat-channel-production.md): линкует анонимную визит-сессию с
+  // подтверждённым email. НЕ входит в MVP-петлю «посетитель пишет ↔ менеджер
+  // отвечает» и осознанно НЕ выведена в UI виджета (осознанный descope W6). Ручки
+  // остаются доступной опциональной возможностью ядра (покрыты тестами); при
+  // необходимости их поверхностит отдельная фича, а не MVP-виджет.
   @Post("email-code")
   @Version("1")
-  @ApiOperation({ summary: "Start optional Web Chat email verification by code" })
+  @ApiOperation({
+    summary: "Start optional Web Chat email verification by code (не в MVP-UI виджета)",
+  })
   @ApiCreatedResponse({ type: WebChatEmailCodeStartResponseDto })
   startEmailCode(
     @Body() body: StartWebChatEmailCodeDto,

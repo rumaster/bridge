@@ -18,9 +18,8 @@ test("страница организации монтирует виджет и
   await page.getByRole("button", { name: /Отправить/ }).click();
 
   await expect(page.getByText("Привет со страницы организации")).toBeVisible();
-  await expect(
-    page.getByText("Здравствуйте! Менеджер получил сообщение."),
-  ).toBeVisible();
+  // Демо-автоответ мока (WG-12): явно демо, не реальный менеджер.
+  await expect(page.getByText(/Демо-режим \(MSW\)/)).toBeVisible();
 });
 
 test("без организации в URL — подсказка вместо виджета", async ({ page }) => {

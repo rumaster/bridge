@@ -127,11 +127,11 @@ export const webChatMockHandlers = [
 
     const existingMessage = mockMessages.find((item) => item.id === message.id);
     if (!existingMessage) {
-      const managerReply = createManagerReply(message);
-      mockMessages.push(message, managerReply);
+      const demoReply = createDemoAutoReply(message);
+      mockMessages.push(message, demoReply);
       mockMessages.sort(compareMessages);
       broadcastMessageCreated(message);
-      broadcastMessageCreated(managerReply);
+      broadcastMessageCreated(demoReply);
     } else {
       broadcastMessageCreated(existingMessage);
     }
@@ -192,7 +192,13 @@ function createMockMessage({
   };
 }
 
-function createManagerReply(sourceMessage: WebChatMessage): WebChatMessage {
+/**
+ * Демо-автоответ MSW-мока (WG-12, docs/plan/web-chat-channel-production.md): раньше
+ * мок фабриковал сообщение от «Менеджера», создавая иллюзию рабочей петли
+ * «клиент ↔ менеджер». Теперь это ЯВНО системный демо-автоответ — не выдаёт себя за
+ * реального менеджера. Реальная петля работает только на связке backend+redis+edge.
+ */
+function createDemoAutoReply(sourceMessage: WebChatMessage): WebChatMessage {
   const sequenceNumber = Math.max(
     nextSequenceNumber(sourceMessage.conversationId),
     (sourceMessage.sequenceNumber ?? 0) + 1,
@@ -205,12 +211,12 @@ function createManagerReply(sourceMessage: WebChatMessage): WebChatMessage {
     organizationId: sourceMessage.organizationId,
     channel: "web_chat",
     author: {
-      type: "manager",
-      displayName: "Менеджер",
+      type: "system",
+      displayName: "Демо-режим",
     },
     body: {
       type: "text",
-      text: "Здравствуйте! Менеджер получил сообщение.",
+      text: "Демо-режим (MSW): сообщение получено. Это автоответ мока, а не реальный менеджер.",
     },
     createdAt: new Date().toISOString(),
     sequenceNumber,

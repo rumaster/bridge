@@ -227,7 +227,8 @@ export function normalizeRealtimeEvent(
   }
 
   if (parsedValue.contract === "C7.WebSocketEvent") {
-    return normalizeC7Event(parsedValue as C7WebSocketEvent);
+    // parsedValue — распарсенный JSON (Record); нормализатор сам валидирует поля.
+    return normalizeC7Event(parsedValue as unknown as C7WebSocketEvent);
   }
 
   const type = getString(parsedValue.type);

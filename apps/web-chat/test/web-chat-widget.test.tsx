@@ -88,9 +88,8 @@ describe("Bridge Web Chat widget", () => {
 
     expect(await screen.findByText("Здравствуйте")).toBeInTheDocument();
     expect(await screen.findByText("доставлено")).toBeInTheDocument();
-    expect(
-      await screen.findByText("Здравствуйте! Менеджер получил сообщение."),
-    ).toBeInTheDocument();
+    // Демо-автоответ мока (WG-12): явный демо-ответ, не «Менеджер».
+    expect(await screen.findByText(/Демо-режим \(MSW\)/)).toBeInTheDocument();
     expect(screen.getByLabelText("Сообщение")).toHaveValue("");
   });
 

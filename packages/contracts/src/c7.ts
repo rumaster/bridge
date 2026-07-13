@@ -1,44 +1,29 @@
 import { readFileSync } from "node:fs";
 
 import { validateJsonSchema } from "./c4.js";
+import {
+  C7_CONTRACT,
+  C7_EVENT_TYPES,
+  C7_RECONNECT_SEMANTICS,
+  C7_VERSION,
+  C7_WS_API_PATH,
+  C7_WS_PATH,
+  C7_WS_SUBSCRIPTION_FILTERS,
+} from "./c7-constants.js";
 
-export const C7_CONTRACT = "C7.WebSocketEvent";
-export const C7_VERSION = "1.0.0";
-export const C7_WS_PATH = "/ws";
-export const C7_WS_API_PATH = "/api/v1/ws";
-
-export const C7_EVENT_TYPES = Object.freeze([
-  "message.created",
-  "message.status_changed",
-  "typing.started",
-  "typing.stopped",
-  "client.status_changed",
-  "channel.status_changed",
-  "notification.created",
-  "broadcast.state_changed",
-  "workflow.state_changed",
-]);
-
-export const C7_RECONNECT_SEMANTICS = Object.freeze({
-  mode: "client_auto_reconnect",
-  resume_cursor: "last_event_id",
-  fallback_cursor: "after_sequence_number",
-  delivery: "at_least_once_with_client_dedup",
-  duplicate_rule: "drop events with event_id already observed by the client",
-  ordering: "sequence_number is monotonic inside one WebSocket subscription",
-});
-
-export const C7_WS_SUBSCRIPTION_FILTERS = Object.freeze([
-  "organization_id",
-  "subscription_id",
-  "conversation_id",
-  "endpoint_id",
-  "client_id",
-  "recipient_user_id",
-  "user_id",
-  "manager_user_id",
-  "visitor_session_id",
-]);
+// Канонический источник C7-констант — c7-constants.ts (браузеро-безопасный, без
+// node:fs). Здесь ре-экспортируем их для обратной совместимости импортов из c7.ts
+// (W6/WG-15) и добавляем серверную часть: JSON-схему и валидацию.
+export {
+  C7_CONTRACT,
+  C7_VERSION,
+  C7_WS_PATH,
+  C7_WS_API_PATH,
+  C7_EVENT_TYPES,
+  C7_RECONNECT_SEMANTICS,
+  C7_WS_SUBSCRIPTION_FILTERS,
+} from "./c7-constants.js";
+export type { C7EventType, C7WebSocketEnvelope } from "./c7-constants.js";
 
 export const C7_WEBSOCKET_EVENT_SCHEMA = Object.freeze(
   JSON.parse(
@@ -49,7 +34,9 @@ export const C7_WEBSOCKET_EVENT_SCHEMA = Object.freeze(
   ),
 );
 
-const C7_EVENT_TYPE_SET = new Set(C7_EVENT_TYPES);
+// Set<string>: `has()` вызывается с произвольной строкой (валидация входа), а не
+// только с литералами C7EventType — иначе tsc сузит параметр до union.
+const C7_EVENT_TYPE_SET = new Set<string>(C7_EVENT_TYPES);
 
 /** Входные данные {@link createWebSocketEvent} (C7.WebSocketEvent). */
 export interface CreateWebSocketEventInput {

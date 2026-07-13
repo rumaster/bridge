@@ -86,8 +86,9 @@ describe("Web Chat adapter normalization", () => {
 
     assert.equal(adapter.capabilityDescriptor.channel_type, WEB_CHAT_CHANNEL_TYPE);
     assert.equal(adapter.capabilityDescriptor.capabilities.text.supported, true);
-    assert.equal(adapter.capabilityDescriptor.capabilities.image.supported, true);
-    assert.equal(adapter.capabilityDescriptor.capabilities.file.supported, true);
+    // WG-14: вложения не заявляются — сквозняк их не переносит (ядро хранит text).
+    assert.equal(adapter.capabilityDescriptor.capabilities.image.supported, false);
+    assert.equal(adapter.capabilityDescriptor.capabilities.file.supported, false);
     assert.equal(
       adapter.capabilityDescriptor.capabilities.typing_indicator.supported,
       true,

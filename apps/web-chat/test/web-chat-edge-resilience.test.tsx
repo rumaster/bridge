@@ -79,15 +79,13 @@ describe("Bridge Web Chat — устойчивость через Edge (CP-7)", 
     expect(screen.getAllByText("Реплика в офлайне")).toHaveLength(1);
     expect(screen.queryByText("ошибка")).not.toBeInTheDocument();
 
-    // Ответ менеджера подтянут докруткой ленты после переотправки (§7.10).
-    expect(
-      await screen.findByText("Здравствуйте! Менеджер получил сообщение."),
-    ).toBeInTheDocument();
+    // Демо-автоответ мока (WG-12) подтянут докруткой ленты после переотправки.
+    const DEMO_REPLY =
+      "Демо-режим (MSW): сообщение получено. Это автоответ мока, а не реальный менеджер.";
+    expect(await screen.findByText(DEMO_REPLY)).toBeInTheDocument();
 
     const texts = messageTexts(mountPoint);
-    expect(texts.indexOf("Реплика в офлайне")).toBeLessThan(
-      texts.indexOf("Здравствуйте! Менеджер получил сообщение."),
-    );
+    expect(texts.indexOf("Реплика в офлайне")).toBeLessThan(texts.indexOf(DEMO_REPLY));
   });
 
   it("сохраняет порядок нескольких реплик после переподключения", async () => {

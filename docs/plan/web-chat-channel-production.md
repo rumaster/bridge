@@ -3,7 +3,7 @@ title: План доведения канала Web Chat до боевого р�
 service: Web Chat (Frontend) / Backend / Edge Gateway / Integration Platform / SaaS Administration
 service_id: SVC-CHAT · SVC-API · SVC-EDGE · SVC-INT · SVC-ADMIN
 version: 1.0
-status: In progress (W1–W5 done 2026-07-13; W6–W7 planned)
+status: In progress (W1–W6 done 2026-07-13; W7 planned)
 language: ru-RU
 based_on: docs/plan/telegram-channel-production.md, docs/plan/max-channel-production.md, docs/plan/email-channel-production.md, docs/plan/services/13-web-chat.md, docs/plan/mock-to-production-roadmap.md
 date: 2026-07-12
@@ -544,6 +544,35 @@ origin → отказ; rate-limit срабатывает; happy-path с вали
 
 **Тесты.** Юнит/интеграция под выбранный объём (email-UI ИЛИ его снятие; вложения ИЛИ
 их снятие из C6); проверка сборки виджета после перехода на общие типы.
+
+**Статус реализации W6 (2026-07-13): выполнено.**
+- **WG-12 (иллюзия менеджера в dev).** MSW-мок больше не фабрикует ответ от
+  «Менеджера»: демо-автоответ теперь **явно системный**
+  ([`handlers.ts`](../../apps/web-chat/src/mocks/handlers.ts), `createDemoAutoReply`,
+  author `system`/«Демо-режим», текст «Демо-режим (MSW)…»). Реальная петля работает
+  только на связке backend+redis+edge. e2e/vitest переведены на новый текст.
+- **WG-14 (C6 заявлял вложения).** Из C6-дескриптора web_chat убраны
+  `image`/`file` (сквозняк их не переносит — ядро хранит только `text`);
+  `WEB_CHAT_MESSAGE_TYPES` сведён к `text`
+  ([`web-chat-adapter.ts`](../../services/integration-platform/src/adapters/web-chat/web-chat-adapter.ts)).
+  Тесты дескриптора обновлены (`image/file.supported=false`).
+- **WG-15 (дубль типов C7).** Выделен браузеро-безопасный
+  [`c7-constants.ts`](../../packages/contracts/src/c7-constants.ts) (константы + тип
+  `C7WebSocketEnvelope`); [`c7.ts`](../../packages/contracts/src/c7.ts) ре-экспортит
+  их (единый источник). Виджет
+  ([`types.ts`](../../apps/web-chat/src/types.ts)) теперь **алиасит** свой
+  `C7WebSocketEvent` на канонический конверт (тип-only импорт, стирается при
+  сборке) — литералы contract/version/event в виджете и моке проверяются
+  компилятором против канона. Сборка виджета проверена (импорт стёрт).
+- **WG-13 (email-верификация мертва на фронте).** Осознанный descope: email —
+  **опциональная** возможность идентификации, не входит в MVP-петлю «посетитель ↔
+  менеджер». Бэкенд (эндпоинты + таблица + тесты) **сохранён** как доступная
+  опциональная возможность и **явно помечен** как не выведенный в UI виджета MVP
+  ([`web-chat.controller.ts`](../../services/backend/src/modules/web-chat/web-chat.controller.ts)) —
+  вместо удаления рабочего кода/миграции или раздувания виджета. Вывод в UI —
+  отдельная фича при необходимости.
+- **Тесты.** Widget vitest **50/50** + сборка; SVC-INT **114/114**; edge (c7-рефактор)
+  **168/168**; backend `tsc` — чисто.
 
 ---
 

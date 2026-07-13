@@ -81,8 +81,9 @@ describe("Web Chat adapter <-> mock core CP-1 slice", () => {
     assert.equal(capabilities.contract, "C6.CapabilityDescriptor");
     assert.equal(capabilities.channel_type, "web_chat");
     assert.equal(capabilities.capabilities.text.supported, true);
-    assert.equal(capabilities.capabilities.image.supported, true);
-    assert.equal(capabilities.capabilities.file.supported, true);
+    // WG-14: вложения (image/file) не заявляются как supported.
+    assert.equal(capabilities.capabilities.image.supported, false);
+    assert.equal(capabilities.capabilities.file.supported, false);
     assert.equal(capabilities.capabilities.typing_indicator.supported, true);
     assert.equal(capabilities.capabilities.read_receipt.supported, true);
     assert.equal(capabilities.capabilities.voice.supported, false);
