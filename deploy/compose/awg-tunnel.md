@@ -72,3 +72,14 @@ docker run --rm --network "container:bridge-edge-rf-edge-gateway-1" \
 - Хранение/ротация ключей и версионирование профиля обфускации — вынесенная
   задача (Q5/Q6), вне Этапа 1.
 - Снятие прикладного криптослоя C9 и liveness по свежести хендшейка — **Этап 2**.
+
+## Стабилизация: watchdog авто-перезапуска
+
+AWG-контейнеры используют `network_mode: service:<провайдер>` (awg-server ↔
+edge-vpn-app, awg-client ↔ edge-gateway). При пересоздании провайдера netns
+зависимый awg-контейнер теряется, и обычный `restart:` его не поднимает; хендшейк
+также может протухнуть при простое (NAT-conntrack). Для устойчивости —
+[`awg-watchdog.sh`](./awg-watchdog.sh) + systemd-юнит
+[`awg-watchdog.service`](./awg-watchdog.service): периодически проверяет, что
+awg-server/awg-client подняты и хендшейк свежий, и **пересоздаёт** их в актуальные
+netns при падении/протухании. Установка — см. шапку `.service`.

@@ -1,0 +1,22 @@
+# systemd-юнит watchdog AWG-туннеля (стабилизация, авто-перезапуск awg-server/-client).
+# Установка на хост, где живут оба кластера (стенд):
+#   sudo cp deploy/compose/awg-watchdog.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now awg-watchdog
+# Правьте REPO/интервалы под окружение (или через systemctl edit).
+[Unit]
+Description=Bridge AWG tunnel watchdog (auto-restart awg-server/awg-client)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+Environment=REPO=/root/git/bridge
+Environment=AWG_WATCHDOG_INTERVAL=30
+Environment=AWG_MAX_HANDSHAKE_AGE=180
+ExecStart=/root/git/bridge/deploy/compose/awg-watchdog.sh loop
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
