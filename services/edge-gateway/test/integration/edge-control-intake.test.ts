@@ -44,7 +44,7 @@ describe("edge control intake route (M5)", () => {
     });
 
     assert.equal(response.status, 202);
-    const ack = await response.json();
+    const ack = (await response.json()) as { status?: string; control_id?: string };
     assert.equal(ack.status, "stored");
     assert.equal(ack.control_id, "ctl-1");
     assert.equal(handled.length, 1);
@@ -61,7 +61,7 @@ describe("edge control intake route (M5)", () => {
   });
 
   it("does not expose the control route when no control-plane is wired", async () => {
-    const bareServer = createEdgeGatewayServer({});
+    const bareServer: any = createEdgeGatewayServer({});
     await new Promise((resolve) => bareServer.listen(0, "127.0.0.1", resolve));
     const bareUrl = `http://127.0.0.1:${bareServer.address().port}`;
 

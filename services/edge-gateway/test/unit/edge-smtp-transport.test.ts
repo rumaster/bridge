@@ -45,7 +45,7 @@ describe("edge nodemailer transport (M1)", () => {
       references: ["<orig-1@x.io>"],
     });
 
-    assert.equal(result.messageId, "<server-assigned@mailserver>");
+    assert.equal((result as { messageId?: string }).messageId, "<server-assigned@mailserver>");
     assert.equal(sent.length, 1);
     assert.deepEqual(sent[0], {
       from: "support@x.io",
