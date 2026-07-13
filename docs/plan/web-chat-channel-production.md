@@ -3,7 +3,7 @@ title: План доведения канала Web Chat до боевого р�
 service: Web Chat (Frontend) / Backend / Edge Gateway / Integration Platform / SaaS Administration
 service_id: SVC-CHAT · SVC-API · SVC-EDGE · SVC-INT · SVC-ADMIN
 version: 1.0
-status: In progress (W1–W6 done 2026-07-13; W7 planned)
+status: Implemented (W1–W7, 2026-07-13)
 language: ru-RU
 based_on: docs/plan/telegram-channel-production.md, docs/plan/max-channel-production.md, docs/plan/email-channel-production.md, docs/plan/services/13-web-chat.md, docs/plan/mock-to-production-roadmap.md
 date: 2026-07-12
@@ -604,6 +604,43 @@ origin → отказ; rate-limit срабатывает; happy-path с вали
 и [`m6-cp-max-e2e.integration.test.ts`](../../services/integration-platform/test/integration/m6-cp-max-e2e.integration.test.ts))
 + edge e2e (REST-транзит + WS) + виджет e2e CP-7
 ([`web-chat.cp7.spec.ts`](../../apps/web-chat/test/e2e/web-chat.cp7.spec.ts)).
+
+**Статус реализации W7 (2026-07-13): выполнено.**
+- **Сквозная приёмка «приём и ответ» через Edge (задачи 1–4).** Новый edge e2e
+  [`web-chat-acceptance.test.ts`](../../services/edge-gateway/test/integration/web-chat-acceptance.test.ts)
+  по образцу m6-cp-max («реальные компоненты под тестом, замоканные края»): реальные
+  edge-компоненты (REST-транзит [`server.ts`](../../services/edge-gateway/src/server.ts) +
+  C7 Redis→WS мост [`c7-redis-stream-bridge.ts`](../../services/edge-gateway/src/c7-redis-stream-bridge.ts) +
+  боевой WS-канал), замоканы только границы (ядро-HTTP-дублёр, Redis-поток —
+  управляемый fake). Проверяет: **приём** (виджет → edge → app по REST с сохранением
+  пути/Origin), **ответ** (менеджер → app публикует C7 → Redis → мост → edge WS →
+  посетитель), **изоляцию арендаторов** по WS (событие чужой org не доходит), **дедуп**
+  по `event_id`.
+- **Существующее покрытие контура.** edge REST-транзит
+  [`web-chat-proxy.test.ts`](../../services/edge-gateway/test/integration/web-chat-proxy.test.ts),
+  edge realtime/WS + изоляция
+  [`web-chat-realtime.test.ts`](../../services/edge-gateway/test/integration/web-chat-realtime.test.ts),
+  бэкенд W1 (без фантомного egress) / W4 (channel-gate, origin, rate-limit) специи,
+  виджет CP-7 «Потеря соединения» (буфер/переотправка/дедуп, задача 5)
+  [`web-chat.cp7.spec.ts`](../../apps/web-chat/test/e2e/web-chat.cp7.spec.ts).
+- **Приёмка на стенде (2026-07-13).** Развёрнуты W1–W6 на `edge`-контуре с Redis;
+  подтверждено вживую: страница `/chat/<org>` отдаётся (200), сессия создаётся
+  через прокси страницы в ядро (201), **channel-gate** (org без канала → 403,
+  с каналом → 201), edge realtime `configured:true`, контейнеры healthy.
+- **Тесты.** Edge-набор **188/188** (включая W7 acceptance), `tsc` — чисто.
+
+**DoD (сквозной) — закрыт.** Бизнес-клиент добавляет канал Web Chat (`connected`);
+посетитель со страницы организации пишет → менеджер отвечает → ответ приходит по WS;
+весь путь через Edge; изоляция арендаторов, идемпотентность/дедуп и деградация
+CP-7 подтверждены тестами (edge e2e + виджет e2e) и стендовой приёмкой.
+
+---
+
+## Итог: план Web Chat выполнен (W1–W7)
+
+Все разрывы `WG-1…WG-15` закрыты; сквозной боевой сценарий Web Chat «клиент ↔ edge ↔
+app ↔ manager» работает без моков и разрывов, включая хостируемую страницу
+организации `/chat/<id>`. Остаточные follow-up вне ядра — в §6.
 
 ---
 
