@@ -382,7 +382,7 @@ describe("IntegrationGatewayFacade", () => {
         encrypt: () => ({}),
         async resolveChannelSecret() { return serialized; },
       };
-      const fetchImpl = jest.fn(async () => ({ ok: true, status: 200 }));
+      const fetchImpl = jest.fn(async (_url?: unknown, _init?: RequestInit) => ({ ok: true, status: 200 }));
       const facade = createFacade({
         database: database as never,
         channelSecrets: channelSecrets as never,

@@ -48,8 +48,8 @@ export const generatedOpenApiDocuments = [
     "openapi": "3.0.0",
     "title": "Bridge Backend Core API",
     "version": "1.0.0",
-    "pathCount": 60,
-    "operationCount": 72
+    "pathCount": 63,
+    "operationCount": 75
   },
   {
     "artifact": "packages/contracts/openapi/broadcasts/c8.broadcasts.openapi.json",
@@ -228,6 +228,17 @@ export const generatedOpenApiOperations = [
   {
     "artifact": "packages/contracts/openapi/backend-core/openapi.json",
     "contractId": "C3",
+    "method": "get",
+    "path": "/api/v1/attachments/{id}/content",
+    "operationId": "AttachmentController_downloadContent_v1",
+    "summary": "Download attachment bytes (proxied from Edge storage)",
+    "tags": [
+      "attachments"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
     "method": "post",
     "path": "/api/v1/auth/login/telegram/start",
     "operationId": "TelegramAuthController_startTelegramLogin_v1",
@@ -331,6 +342,17 @@ export const generatedOpenApiOperations = [
     "path": "/api/v1/channels",
     "operationId": "ChannelsController_connectChannel_v1",
     "summary": "Connect an omnichannel adapter",
+    "tags": [
+      "channels"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "put",
+    "path": "/api/v1/channels/{id}",
+    "operationId": "ChannelsController_updateChannel_v1",
+    "summary": "Update a channel and rotate its credentials",
     "tags": [
       "channels"
     ]
@@ -570,6 +592,17 @@ export const generatedOpenApiOperations = [
     "artifact": "packages/contracts/openapi/backend-core/openapi.json",
     "contractId": "C3",
     "method": "post",
+    "path": "/api/v1/mail/mailboxes",
+    "operationId": "MailController_orderMailbox_v1",
+    "summary": "Order a managed Bridge Mail mailbox and connect it as an email channel",
+    "tags": [
+      "mail"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "post",
     "path": "/api/v1/messages",
     "operationId": "MessageController_createMessage_v1",
     "summary": "Idempotently proxy outbound message creation to Communication Core",
@@ -792,7 +825,7 @@ export const generatedOpenApiOperations = [
     "method": "post",
     "path": "/api/v1/web-chat/email-code",
     "operationId": "WebChatController_startEmailCode_v1",
-    "summary": "Start optional Web Chat email verification by code",
+    "summary": "Start optional Web Chat email verification by code (не в MVP-UI виджета)",
     "tags": [
       "web-chat"
     ]
