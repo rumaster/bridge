@@ -99,11 +99,56 @@ node --import tsx scripts/mail-provision.ts add support \
 >   node:20.20.2-bookworm-slim npx --yes tsx@4.19.2 scripts/mail-provision.ts <args>
 > ```
 
-## M3 — Deliverability (DNS/DKIM)
+## M3 — Deliverability (relay + DNS/DKIM)
 
-DKIM-ключ и DNS-записи (MX/SPF/DKIM/DMARC + PTR) — см.
-[`dns-records.md`](./dns-records.md). Боевая доставка отложена (на стенде
-исходящий порт 25 заблокирован, PTR некорректен) — детали и чек-лист там же.
+**Модель отправки — relay через транзакционный SMTP** (основная; исходящий порт 25
+на площадке обычно закрыт → прямая доставка по MX невозможна). Наш Postfix
+принимает письмо, **подписывает DKIM локально** (OpenDKIM-milter, до relay) и
+релеит наружу через провайдера с хорошей репутацией IP. DMARC проходит по
+**DKIM-alignment независимо от IP/SPF relay** — см. [`dns-records.md`](./dns-records.md).
+
+Включение (в `.env.rf`), когда есть relay-креды:
+
+```bash
+# 1) Исходящий relay (пусто = выключен, прямая доставка по MX — M1-контур)
+MAIL_RELAY_HOST=smtp.<провайдер>          # напр. транзакционный SMTP
+MAIL_RELAY_PORT=587                       # 587 STARTTLS или 465 implicit-TLS
+MAIL_RELAY_USER=<логин>
+MAIL_RELAY_PASSWORD=<пароль/API-ключ>     # секрет — не коммитить
+# 2) Продовые тумблеры (см. предупреждение ниже — общий стенд!)
+MAIL_ENABLE_OPENDKIM=1                     # подпись исходящего ключом домена
+MAIL_ENABLE_OPENDMARC=1
+MAIL_ENABLE_RSPAMD=1
+MAIL_ENABLE_FAIL2BAN=1
+MAIL_SSL_TYPE=letsencrypt                  # или свой сертификат
+```
+
+Пересоздать почтовик, чтобы применились env:
+
+```bash
+docker compose --env-file .env.rf -f deploy/compose/docker-compose.rf.yml \
+  --profile mail up -d mailserver
+```
+
+> **DKIM подписывается ДО relay.** OpenDKIM работает как milter Postfix
+> (`smtpd_milters`/`non_smtpd_milters`), поэтому письмо подписывается локально
+> до передачи relay-хосту — подпись `d=<домен>` уходит наружу как есть, и DMARC
+> у получателя проходит по DKIM. Ключ — `config/opendkim/keys/<домен>/`
+> (генерируется `setup config dkim`, приватная часть не коммитится).
+
+> **Внутренняя M1-доставка не ломается.** `relayhost` применяется только к
+> **нелокальным** адресатам; письмо `support@<домен>` → `client@<домен>` (тот же
+> локальный домен) Postfix доставляет локально, минуя relay. Поэтому включение
+> relay безопасно для внутреннего e2e-контура.
+
+> ⚠️ **Общий стенд.** Тумблеры и relay включают боевой режим почтовика, который
+> общий для нескольких сессий — согласуйте перед включением на стенде. Дефолты
+> (пустой relay, тумблеры `0`) сохраняют текущий M1/M2-контур.
+
+DNS-записи (MX/SPF/DKIM/DMARC + PTR) и полный чек-лист внешних действий —
+[`dns-records.md`](./dns-records.md). Боевая доставка на текущем стенде отложена
+(порт 25 закрыт, PTR некорректен) — нужны relay-креды/корректный PTR у владельца
+инфраструктуры.
 
 ## M4 — Эксплуатация
 

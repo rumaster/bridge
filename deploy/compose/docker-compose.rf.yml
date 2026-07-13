@@ -224,6 +224,17 @@ services:
       ENABLE_OPENDMARC: ${MAIL_ENABLE_OPENDMARC:-0}
       ENABLE_FAIL2BAN: ${MAIL_ENABLE_FAIL2BAN:-0}
       SSL_TYPE: ${MAIL_SSL_TYPE:-}
+      # Исходящий relay (Этап M3, ОСНОВНАЯ модель отправки — исходящий порт 25 на
+      # площадке обычно закрыт, прямая доставка по MX невозможна). Пусто (M1/дефолт)
+      # → relay выключен, Postfix доставляет напрямую по MX (текущее поведение не
+      # ломается). Задано → ВСЯ исходящая почта релеится через транзакционный SMTP
+      # (587 STARTTLS / 465 implicit-TLS) с SASL-аутентификацией. DKIM подписывается
+      # локально (OpenDKIM-milter) ДО передачи в relay, поэтому DMARC проходит по
+      # DKIM-alignment независимо от IP/SPF relay-хоста (см. deploy/mail/dns-records.md).
+      RELAY_HOST: ${MAIL_RELAY_HOST:-}
+      RELAY_PORT: ${MAIL_RELAY_PORT:-587}
+      RELAY_USER: ${MAIL_RELAY_USER:-}
+      RELAY_PASSWORD: ${MAIL_RELAY_PASSWORD:-}
       # Разрешить SMTP-приём от контейнеров docker-сети (edge-gateway) без SASL.
       PERMIT_DOCKER: ${MAIL_PERMIT_DOCKER:-connected-networks}
       POSTMASTER_ADDRESS: ${MAIL_POSTMASTER:-postmaster@bridge.local}

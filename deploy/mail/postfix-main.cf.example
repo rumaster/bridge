@@ -23,3 +23,11 @@ smtpd_client_message_rate_limit = 100
 smtpd_client_recipient_rate_limit = 200
 # Одновременных подключений с одного клиента.
 smtpd_client_connection_count_limit = 20
+
+# --- (Опционально) Ужесточение TLS для исходящего relay (Этап M3) ---
+# docker-mailserver при заданном RELAY_HOST уже включает SASL и STARTTLS. Если
+# relay ТОЛЬКО через транзакционный SMTP (прямой доставки по MX нет), можно
+# потребовать шифрование ко всем исходящим — раскомментируйте:
+#   smtp_tls_security_level = encrypt
+# ВНИМАНИЕ: `encrypt` сломает прямую доставку по MX на серверы без TLS. Если
+# используется и relay, и прямая доставка — оставьте дефолт `may` (оппортунистич.).
