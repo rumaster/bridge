@@ -51,6 +51,28 @@ describe("edge-metrics — Prometheus наблюдаемость туннеля 
     assert.match(text, /edge_buffer_pending 5/);
   });
 
+  it("экспонирует capacity-метрики RF-буфера (§7.14); ёмкость Infinity не рендерится", () => {
+    const bounded = renderEdgeMetrics({
+      cluster: {
+        ingested_total: 10,
+        buffer_capacity: 1000,
+        buffer_capacity_high_watermark_total: 2,
+        buffer_capacity_rejected_total: 1,
+        buffer_notification_failed_total: 0,
+      },
+    });
+    assert.match(bounded, /# TYPE edge_cluster_buffer_capacity_high_watermark_total counter/);
+    assert.match(bounded, /edge_cluster_buffer_capacity_high_watermark_total 2/);
+    assert.match(bounded, /edge_cluster_buffer_capacity_rejected_total 1/);
+    assert.match(bounded, /# TYPE edge_buffer_capacity gauge/);
+    assert.match(bounded, /edge_buffer_capacity 1000/);
+
+    const unbounded = renderEdgeMetrics({
+      cluster: { ingested_total: 10, buffer_capacity: Number.POSITIVE_INFINITY },
+    });
+    assert.doesNotMatch(unbounded, /edge_buffer_capacity /);
+  });
+
   it("опускает секции при отсутствии источников (валидный вывод)", () => {
     const text = renderEdgeMetrics({});
     assert.equal(text, "\n");

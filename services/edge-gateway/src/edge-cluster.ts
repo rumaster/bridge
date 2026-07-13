@@ -401,7 +401,20 @@ export function createEdgeCluster({
     },
 
     getMetrics() {
-      return { ...metrics };
+      // Прокидываем capacity-метрики самого стора (§7.14) наружу, чтобы
+      // high-watermark/исчерпание RF-буфера были видимы в /metrics, а не только
+      // в notify-логах. Ключи префиксуем `buffer_` во избежание коллизий с
+      // одноимёнными метриками кластера (duplicate_total/forwarded_total/…).
+      const storeMetrics =
+        typeof bufferStore.getMetrics === "function" ? bufferStore.getMetrics() : {};
+      const capacity = getBufferCapacityPolicy().capacity;
+      return {
+        ...metrics,
+        buffer_capacity: capacity,
+        buffer_capacity_high_watermark_total: storeMetrics.capacity_high_watermark_total ?? 0,
+        buffer_capacity_rejected_total: storeMetrics.capacity_rejected_total ?? 0,
+        buffer_notification_failed_total: storeMetrics.notification_failed_total ?? 0,
+      };
     },
   };
 }

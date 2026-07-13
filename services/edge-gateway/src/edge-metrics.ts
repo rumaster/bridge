@@ -141,12 +141,25 @@ export function renderEdgeMetrics({
       ["channel_down_total", "Tunnel channel-down events observed by EdgeCluster.", "counter"],
       ["backpressure_total", "App backpressure signals observed by EdgeCluster.", "counter"],
       ["buffer_backpressure_total", "RF buffer backpressure (capacity) events.", "counter"],
+      ["buffer_capacity_high_watermark_total", "RF buffer capacity high-watermark events.", "counter"],
+      ["buffer_capacity_rejected_total", "RF buffer enqueues rejected due to exhausted capacity.", "counter"],
+      ["buffer_notification_failed_total", "RF buffer observability notify hooks that threw.", "counter"],
       ["recovery_total", "Drain/recovery cycles executed.", "counter"],
       ["duplicate_total", "Duplicate idempotency keys deduplicated at Edge.", "counter"],
       ["expired_skipped_total", "Buffered messages skipped due to TTL expiry.", "counter"],
     ];
     for (const [key, help, type] of map) {
       series.push({ name: `edge_cluster_${key}`, type, help, value: num(cluster[key]) });
+    }
+    // Ёмкость RF-буфера — gauge; на стенде capacity=Infinity (не рендерится,
+    // renderSeries отбрасывает не-конечные), в проде — заданный лимит.
+    if (Number.isFinite(cluster.buffer_capacity)) {
+      series.push({
+        name: "edge_buffer_capacity",
+        type: "gauge",
+        help: "Configured RF buffer capacity (max buffered messages); absent when unbounded.",
+        value: num(cluster.buffer_capacity),
+      });
     }
   }
   if (pending != null && Number.isFinite(pending)) {
