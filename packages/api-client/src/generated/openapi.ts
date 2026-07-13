@@ -48,8 +48,8 @@ export const generatedOpenApiDocuments = [
     "openapi": "3.0.0",
     "title": "Bridge Backend Core API",
     "version": "1.0.0",
-    "pathCount": 63,
-    "operationCount": 75
+    "pathCount": 64,
+    "operationCount": 76
   },
   {
     "artifact": "packages/contracts/openapi/broadcasts/c8.broadcasts.openapi.json",
@@ -223,6 +223,17 @@ export const generatedOpenApiOperations = [
     "summary": "Generate a structured AI onboarding command (never auto-applied)",
     "tags": [
       "ai-integration"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "post",
+    "path": "/api/v1/attachments",
+    "operationId": "AttachmentController_upload_v1",
+    "summary": "Upload outgoing attachment bytes (proxied to Edge storage)",
+    "tags": [
+      "attachments"
     ]
   },
   {

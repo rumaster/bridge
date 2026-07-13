@@ -174,7 +174,13 @@ function createMeasuredWorkspaceServices(options: { messageCount?: number } = {}
       get: vi.fn()
     },
     attachments: {
-      download: vi.fn(async () => new Blob(["mock"]))
+      download: vi.fn(async () => new Blob(["mock"])),
+      upload: vi.fn(async (file: File) => ({
+        storageRef: `edge-attach://mock-org/${file.name}`,
+        name: file.name,
+        contentType: file.type || null,
+        sizeBytes: file.size
+      }))
     },
     clients: {
       list: vi.fn(async () => clients.map((client) => copyClient(client))),

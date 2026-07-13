@@ -329,6 +329,58 @@ describe("Внутренний messaging-путь (issue #189/#191)", () => {
     });
   });
 
+  it("прокидывает исходящие вложения (storage_ref) в конверт egress (§4.3-bis follow-up п.2)", async () => {
+    const attachEndpoint = "20000000-0000-4000-8000-0000000004a1";
+    const attachOutMessage = "20000000-0000-4000-8000-000000000661";
+    const attachOutId = "20000000-0000-4000-8000-0000000006b1";
+    const storageRef = `edge-attach://${ORG}/${"c".repeat(64)}`;
+
+    // Выделенный endpoint, чтобы вставка сообщения НЕ сдвигала sequence_number
+    // общего OUT_ENDPOINT (иначе ломается broadcast-тест ниже). Сохранённое
+    // исходящее сообщение + строка вложения (её кладёт createMessage при отправке
+    // менеджером; здесь фиксируем фикстурой напрямую в БД).
+    await withClient(databaseUrl, async (client) => {
+      await setPlatformOperator(client);
+      await client.query(
+        `
+          INSERT INTO communication_endpoints (
+            id, organization_id, client_id, channel, external_id, verified, metadata
+          )
+          VALUES ($1, $2, $3, 'telegram', 'tg-bot-1:tg-user-attach', true,
+            '{"channel_id":"778","conversation_ref":"chat-attach"}'::jsonb)
+        `,
+        [attachEndpoint, ORG, OUT_CLIENT],
+      );
+      await client.query(
+        `
+          INSERT INTO messages (
+            id, organization_id, conversation_id, endpoint_id, channel, direction, sender_type,
+            sequence_number, type, content, status, created_at
+          )
+          VALUES ($1, $2, $3, $4, 'telegram', 'outbound', 'manager', 1, 'text',
+            '{"text":"файл во вложении"}'::jsonb, 'routed', '2026-07-04T08:45:00.000Z')
+        `,
+        [attachOutMessage, ORG, OUT_CONVERSATION, attachEndpoint],
+      );
+      await client.query(
+        `
+          INSERT INTO attachments (id, organization_id, message_id, kind, storage_ref, mime, size, metadata)
+          VALUES ($1, $2, $3, 'file', $4, 'application/pdf', 2048, '{"filename":"отчёт.pdf"}'::jsonb)
+        `,
+        [attachOutId, ORG, attachOutMessage, storageRef],
+      );
+    });
+
+    const egress = await request(app.getHttpServer())
+      .post("/internal/egress/messages")
+      .send({ organization_id: ORG, message_id: attachOutMessage, adapter: "telegram" })
+      .expect(202);
+
+    expect(egress.body.delivery.message.attachments).toEqual([
+      { storage_ref: storageRef, filename: "отчёт.pdf", mime: "application/pdf", size: 2048 },
+    ]);
+  });
+
   it("возвращает 404 при попытке egress для входящего сообщения", async () => {
     await request(app.getHttpServer())
       .post("/internal/egress/messages")

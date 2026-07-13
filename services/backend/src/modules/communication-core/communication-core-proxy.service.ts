@@ -23,6 +23,7 @@ import {
   mapMessage,
 } from "./communication-core.dto";
 import type {
+  AttachmentRow,
   ConversationListResponseDto,
   ConversationResponseDto,
   ConversationRow,
@@ -269,6 +270,21 @@ export class CommunicationCoreProxyService {
         `,
         [organizationId, payload.conversationId, result.rows[0].created_at],
       );
+      // Исходящие вложения (§4.3-bis follow-up п.2): дескрипторы уже загруженных
+      // на Edge файлов сохраняем в `attachments` (message_id теперь есть — FK
+      // выполним). storage_ref непрозрачен (резолвит Edge); filename — в metadata,
+      // как у входящих. Записи возвращаем в ответе, чтобы «отправленное» сообщение
+      // сразу показывало вложение (без рефетча).
+      const attachmentRows = await this.persistOutgoingAttachments(
+        client,
+        organizationId,
+        result.rows[0].id,
+        payload.attachments,
+      );
+      if (attachmentRows.length > 0) {
+        result.rows[0].attachments = attachmentRows;
+      }
+
       await this.audit.record(client, {
         action: "message.create",
         actorUserId: context.actorUserId,
@@ -313,6 +329,57 @@ export class CommunicationCoreProxyService {
     }
 
     return message;
+  }
+
+  /**
+   * Сохраняет дескрипторы исходящих вложений в таблицу `attachments` (§4.3-bis
+   * follow-up п.2). Байты уже лежат на RF-томе Edge (менеджер загрузил их через
+   * `POST /api/v1/attachments`); здесь фиксируется только непрозрачный
+   * `storage_ref` + метаданные. Возвращает строки в форме read-path (для ответа).
+   */
+  private async persistOutgoingAttachments(
+    client: Queryable,
+    organizationId: string,
+    messageId: string,
+    attachments: CreateMessageDto["attachments"],
+  ): Promise<AttachmentRow[]> {
+    if (!Array.isArray(attachments) || attachments.length === 0) {
+      return [];
+    }
+
+    const rows: AttachmentRow[] = [];
+    for (const attachment of attachments) {
+      const storageRef = attachment.storageRef?.trim();
+      if (!storageRef) {
+        // Пустой storage_ref нарушил бы CHECK attachments_storage_ref_not_blank —
+        // пропускаем (клиент прислал незагруженное вложение).
+        continue;
+      }
+      const id = randomUUID();
+      const mime =
+        typeof attachment.contentType === "string" && attachment.contentType.trim() !== ""
+          ? attachment.contentType.trim()
+          : null;
+      const kind = attachment.kind?.trim() || attachmentKindFromMime(mime);
+      const size = Number.isFinite(attachment.sizeBytes) ? Number(attachment.sizeBytes) : 0;
+      const metadata: Record<string, unknown> = {};
+      if (typeof attachment.name === "string" && attachment.name.trim() !== "") {
+        metadata.filename = attachment.name.trim();
+      }
+
+      await client.query(
+        `
+          INSERT INTO attachments (
+            id, organization_id, message_id, kind, storage_ref, mime, size, metadata
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+        `,
+        [id, organizationId, messageId, kind, storageRef, mime, size, JSON.stringify(metadata)],
+      );
+
+      rows.push({ id, kind, mime, size, metadata });
+    }
+    return rows;
   }
 
   async addClientEndpoint(
@@ -783,4 +850,21 @@ function badRequest(description: string): BadRequestException {
     description,
     humanMessage: "Некорректный запрос.",
   });
+}
+
+/** Категория вложения по MIME (для attachments.kind). Совпадает с логикой Edge. */
+function attachmentKindFromMime(mime: string | null): string {
+  if (typeof mime !== "string") {
+    return "file";
+  }
+  if (mime.startsWith("image/")) {
+    return "image";
+  }
+  if (mime.startsWith("video/")) {
+    return "video";
+  }
+  if (mime.startsWith("audio/")) {
+    return "voice";
+  }
+  return "file";
 }

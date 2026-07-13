@@ -1,5 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
+import { Type } from "class-transformer";
 import {
+  ArrayMaxSize,
+  IsArray,
   IsDefined,
   IsIn,
   IsInt,
@@ -7,11 +10,52 @@ import {
   IsString,
   IsUUID,
   Matches,
+  Max,
   MaxLength,
   Min,
+  ValidateNested,
 } from "class-validator";
 
 import { PaginationPageDto } from "../../common/query/paginated-response.dto";
+
+/**
+ * Дескриптор исходящего вложения в `POST /messages` (§4.3-bis follow-up п.2).
+ * Байты уже загружены менеджером на RF-том Edge через `POST /api/v1/attachments`,
+ * который вернул непрозрачный `storageRef`. Здесь едут только ссылка и метаданные;
+ * ядро сохраняет запись в `attachments`, а Edge резолвит байты при SMTP-отправке.
+ */
+export class OutgoingAttachmentDto {
+  @ApiProperty({ example: "edge-attach://<org>/<sha256>" })
+  @IsString()
+  @Matches(/\S/)
+  @MaxLength(2048)
+  storageRef!: string;
+
+  @ApiProperty({ example: "отчёт.pdf" })
+  @IsString()
+  @Matches(/\S/)
+  @MaxLength(512)
+  name!: string;
+
+  @ApiPropertyOptional({ example: "application/pdf" })
+  @IsString()
+  @MaxLength(255)
+  @IsOptional()
+  contentType?: string;
+
+  @ApiPropertyOptional({ example: 20480, minimum: 0 })
+  @IsInt()
+  @Min(0)
+  @Max(Number.MAX_SAFE_INTEGER)
+  @IsOptional()
+  sizeBytes?: number;
+
+  @ApiPropertyOptional({ example: "file" })
+  @IsString()
+  @MaxLength(32)
+  @IsOptional()
+  kind?: string;
+}
 
 export class CreateMessageDto {
   @ApiPropertyOptional({ example: "00000000-0000-4000-8000-000000000601" })
@@ -85,6 +129,17 @@ export class CreateMessageDto {
   @IsString()
   @IsOptional()
   idempotencyKey?: string;
+
+  // Исходящие вложения (§4.3-bis follow-up п.2): дескрипторы уже загруженных на
+  // Edge файлов. Сохраняются в таблицу `attachments` после вставки сообщения и
+  // прокидываются в egress (storage_ref → байты на Edge).
+  @ApiPropertyOptional({ type: [OutgoingAttachmentDto] })
+  @IsArray()
+  @ArrayMaxSize(20)
+  @ValidateNested({ each: true })
+  @Type(() => OutgoingAttachmentDto)
+  @IsOptional()
+  attachments?: OutgoingAttachmentDto[];
 }
 
 export class ConversationResponseDto {

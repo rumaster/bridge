@@ -36,7 +36,28 @@ export interface EdgeSmtpMessage {
   messageId: string;
   inReplyTo?: string;
   references?: string[];
-  attachments?: Array<{ filename?: string; path: string; contentType?: string }>;
+  /**
+   * Вложения для nodemailer. Байты (`content`) резолвятся из EdgeAttachmentStore
+   * по `storage_ref` (исходящие вложения, §4.3-bis follow-up п.2): реальный
+   * контент вкладывается в письмо, а не ссылка. Если резолвер не задан или байты
+   * не найдены — откат на `path` (прежнее поведение, чтобы отправка не падала).
+   */
+  attachments?: Array<{
+    filename?: string;
+    content?: Buffer;
+    path?: string;
+    contentType?: string;
+  }>;
+}
+
+/**
+ * Резолвер байтов вложения по непрозрачному `storage_ref` (EdgeAttachmentStore).
+ * Тот же стор, что хранит входящие вложения; для исходящих backend заранее
+ * загрузил байты на Edge (`POST /internal/edge/attachments`) и прислал `storage_ref`
+ * в egress-контракте.
+ */
+export interface EdgeAttachmentResolver {
+  get(storageRef: string): Promise<{ content: Buffer; mime?: string; filename?: string } | null>;
 }
 
 export interface EdgeSmtpTransport {
@@ -56,6 +77,12 @@ export interface EdgeSmtpTransport {
 export interface CreateEdgeEmailSenderOptions {
   /** Фабрика SMTP-транспорта по конфигу организации (nodemailer в боевом daemon). */
   createTransport: (input: { smtp: EdgeSmtpConfig }) => EdgeSmtpTransport;
+  /**
+   * Хранилище байтов вложений (EdgeAttachmentStore). Если задано — исходящие
+   * вложения резолвятся из него по `storage_ref` и вкладываются реальными байтами.
+   * Пусто → вложения (если есть) уходят прежней ссылкой `path` (best-effort).
+   */
+  attachmentStore?: EdgeAttachmentResolver;
   now?: () => string;
 }
 
@@ -74,6 +101,7 @@ interface StructuredEmailCredentials {
 
 export function createEdgeEmailSender({
   createTransport,
+  attachmentStore,
   now = () => new Date().toISOString(),
 }: CreateEdgeEmailSenderOptions): {
   send(delivery: EdgeEmailDelivery): Promise<{ external_message_id: string }>;
@@ -87,7 +115,14 @@ export function createEdgeEmailSender({
   // Транспорты кэшируются per-SMTP-конфиг (по организации), как resolving-клиент
   // Telegram кэширует по токену.
   const transportsByKey = new Map<string, EdgeSmtpTransport>();
-  const metrics = { sent_total: 0, failed_total: 0, warmed_total: 0, warm_failed_total: 0 };
+  const metrics = {
+    sent_total: 0,
+    failed_total: 0,
+    warmed_total: 0,
+    warm_failed_total: 0,
+    attachments_resolved_total: 0,
+    attachments_unresolved_total: 0,
+  };
 
   function getTransport(smtp: EdgeSmtpConfig): EdgeSmtpTransport {
     const key = `${smtp.host}:${smtp.port}:${smtp.username}`;
@@ -99,7 +134,7 @@ export function createEdgeEmailSender({
     return transport;
   }
 
-  return {
+  const sender = {
     async send(delivery: EdgeEmailDelivery) {
       const credentials = delivery.credentials as StructuredEmailCredentials | null | undefined;
       if (!credentials?.smtp?.host) {
@@ -138,7 +173,7 @@ export function createEdgeEmailSender({
           ? { references: delivery.references }
           : {}),
         ...(Array.isArray(delivery.attachments) && delivery.attachments.length > 0
-          ? { attachments: mapAttachments(delivery.attachments) }
+          ? { attachments: await mapAttachments(delivery.attachments) }
           : {}),
       };
 
@@ -181,19 +216,56 @@ export function createEdgeEmailSender({
       return { ...metrics, cached_transports: transportsByKey.size };
     },
   };
-}
 
-function mapAttachments(attachments: unknown[]): EdgeSmtpMessage["attachments"] {
-  return attachments.map((attachment) => {
-    const a = attachment as { storage_ref?: string; filename?: string; mime?: string };
-    return {
-      ...(a.filename ? { filename: a.filename } : {}),
-      // Контент вложения тянется из storage по storage_ref боевым daemon
-      // (object storage отложен на MVP, см. §4.5); здесь передаётся ссылка.
-      path: a.storage_ref ?? "",
-      ...(a.mime ? { contentType: a.mime } : {}),
-    };
-  });
+  async function mapAttachments(attachments: unknown[]): Promise<EdgeSmtpMessage["attachments"]> {
+    return Promise.all(
+      attachments.map(async (attachment) => {
+        const a = attachment as {
+          storage_ref?: string;
+          filename?: string;
+          mime?: string;
+          content_type?: string;
+        };
+        const storageRef = firstNonEmpty(a.storage_ref);
+        const contentType = firstNonEmpty(a.mime) ?? firstNonEmpty(a.content_type);
+
+        // Резолвим реальные байты вложения из EdgeAttachmentStore по storage_ref и
+        // вкладываем их в письмо (nodemailer `content`). Так исходящее письмо несёт
+        // сам файл, а не непрозрачную ссылку. Байты уже лежат на RF (backend загрузил
+        // их на Edge при отправке менеджером) — за рубеж ничего не тянем заранее.
+        if (attachmentStore && storageRef) {
+          try {
+            const resolved = await attachmentStore.get(storageRef);
+            if (resolved?.content) {
+              metrics.attachments_resolved_total += 1;
+              return {
+                filename: firstNonEmpty(a.filename) ?? firstNonEmpty(resolved.filename) ?? "attachment",
+                content: Buffer.isBuffer(resolved.content)
+                  ? resolved.content
+                  : Buffer.from(resolved.content),
+                ...(contentType ?? resolved.mime
+                  ? { contentType: contentType ?? resolved.mime }
+                  : {}),
+              };
+            }
+          } catch {
+            // Сбой резолва не роняет всю отправку — откатываемся на ссылку ниже.
+          }
+        }
+
+        // Резолвер не задан либо байты не найдены: прежнее поведение — передаём
+        // ссылку `path` (best-effort). Считаем неразрешённым для видимости в метриках.
+        metrics.attachments_unresolved_total += 1;
+        return {
+          ...(a.filename ? { filename: a.filename } : {}),
+          path: storageRef ?? "",
+          ...(contentType ? { contentType } : {}),
+        };
+      }),
+    );
+  }
+
+  return sender;
 }
 
 function formatAddress(email?: string, name?: string): string | undefined {
