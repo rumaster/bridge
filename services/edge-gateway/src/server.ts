@@ -37,6 +37,14 @@ export interface CreateEdgeGatewayServerOptions {
   vpnTunnel?: any;
   /** Control-plane App→Edge (creds-sync + egress_dispatch), Этап M5. */
   controlPlane?: { handle(message: unknown): Promise<any> };
+  /**
+   * Хранилище вложений (§4.3): резолв байтов по `storage_ref` для ленивого
+   * скачивания менеджером через backend-прокси. Байты остаются на RF —
+   * отдаются только по запросу. Пусто → маршрут отдаёт 404.
+   */
+  attachmentStore?: {
+    get(storageRef: string): Promise<{ content: Buffer; mime?: string; filename?: string; size: number } | null>;
+  };
   liveness?: { isUp(): boolean; lastProbeAt(): number | null } | null;
   /**
    * База ядра (App) для прозрачного edge-транзита REST Web Chat (W2). Если задана —
@@ -61,6 +69,7 @@ export function createEdgeGatewayServer({
   edgeCluster,
   vpnTunnel,
   controlPlane,
+  attachmentStore,
   liveness,
   webChatBackendUrl,
   realtimeConfigured,
@@ -161,6 +170,33 @@ export function createEdgeGatewayServer({
             problem(400, "Control message rejected", (error as Error).message, []),
           );
         }
+        return;
+      }
+
+      // Резолв байтов вложения по storage_ref (§4.3): backend-прокси
+      // (`GET /v1/attachments/:id/content`) дергает этот маршрут ЛЕНИВО — только
+      // когда менеджер открывает вложение. Байты живут на RF, за рубеж уходят
+      // лишь по запросу. ref — непрозрачная строка из конверта.
+      if (attachmentStore && request.method === "GET" && path === "/internal/edge/attachments") {
+        const ref = url.searchParams.get("ref");
+        if (!ref) {
+          sendJson(response, 400, problem(400, "Bad Request", "Query param 'ref' is required.", []));
+          return;
+        }
+        const object = await attachmentStore.get(ref);
+        if (!object) {
+          sendJson(response, 404, problem(404, "Not Found", "Attachment not found for storage_ref.", []));
+          return;
+        }
+        const headers: Record<string, string> = {
+          "content-type": object.mime && object.mime.trim() !== "" ? object.mime : "application/octet-stream",
+          "content-length": String(object.size),
+        };
+        if (object.filename && object.filename.trim() !== "") {
+          headers["content-disposition"] = contentDisposition(object.filename);
+        }
+        response.writeHead(200, headers);
+        response.end(object.content);
         return;
       }
 
@@ -509,6 +545,14 @@ function subscriptionFromSearchParams(searchParams) {
     managerUserId: searchParams.get("manager_user_id") ?? undefined,
     visitorSessionId: searchParams.get("visitor_session_id") ?? undefined,
   };
+}
+
+// Content-Disposition с именем файла: ASCII-фолбэк + RFC 5987 filename* для
+// не-ASCII имён (кириллица), чтобы браузер менеджера сохранял с исходным именем.
+function contentDisposition(filename: string): string {
+  const ascii = filename.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
+  const encoded = encodeURIComponent(filename);
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`;
 }
 
 function sendJson(response, statusCode, payload) {

@@ -38,6 +38,29 @@ export interface CoreMutationContext {
   requestId?: string;
 }
 
+// Агрегат вложений сообщения (§4.3): читаем метаданные из таблицы attachments и
+// отдаём массивом (json). Байты НЕ читаем — их менеджер тянет лениво по
+// `url` (backend-прокси → Edge). RLS `withTenant` уже ограничивает organization.
+const ATTACHMENTS_JSON_SUBQUERY = `
+  COALESCE(
+    (
+      SELECT json_agg(
+        json_build_object(
+          'id', a.id,
+          'kind', a.kind,
+          'mime', a.mime,
+          'size', a.size,
+          'metadata', a.metadata
+        )
+        ORDER BY a.created_at
+      )
+      FROM attachments a
+      WHERE a.organization_id = m.organization_id AND a.message_id = m.id
+    ),
+    '[]'::json
+  )
+`;
+
 interface CreateIdentityLinkParams {
   actorUserId?: string;
   endpointId: string;
@@ -99,22 +122,23 @@ export class CommunicationCoreProxyService {
       const result = await client.query<MessageRow>(
         `
           SELECT
-            id,
-            organization_id,
-            conversation_id,
-            endpoint_id,
-            channel,
-            direction,
-            sender_type,
-            sequence_number,
-            type,
-            content,
-            status,
-            created_at,
-            delivered_at
-          FROM messages
-          WHERE organization_id = $1 AND conversation_id = $2
-          ORDER BY sequence_number ASC
+            m.id,
+            m.organization_id,
+            m.conversation_id,
+            m.endpoint_id,
+            m.channel,
+            m.direction,
+            m.sender_type,
+            m.sequence_number,
+            m.type,
+            m.content,
+            m.status,
+            m.created_at,
+            m.delivered_at,
+            ${ATTACHMENTS_JSON_SUBQUERY} AS attachments
+          FROM messages m
+          WHERE m.organization_id = $1 AND m.conversation_id = $2
+          ORDER BY m.sequence_number ASC
           LIMIT $3
         `,
         [organizationId, conversationId, limit],
@@ -132,21 +156,22 @@ export class CommunicationCoreProxyService {
       const result = await client.query<MessageRow>(
         `
           SELECT
-            id,
-            organization_id,
-            conversation_id,
-            endpoint_id,
-            channel,
-            direction,
-            sender_type,
-            sequence_number,
-            type,
-            content,
-            status,
-            created_at,
-            delivered_at
-          FROM messages
-          WHERE organization_id = $1 AND id = $2
+            m.id,
+            m.organization_id,
+            m.conversation_id,
+            m.endpoint_id,
+            m.channel,
+            m.direction,
+            m.sender_type,
+            m.sequence_number,
+            m.type,
+            m.content,
+            m.status,
+            m.created_at,
+            m.delivered_at,
+            ${ATTACHMENTS_JSON_SUBQUERY} AS attachments
+          FROM messages m
+          WHERE m.organization_id = $1 AND m.id = $2
         `,
         [organizationId, messageId],
       );

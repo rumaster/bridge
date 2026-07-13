@@ -173,6 +173,9 @@ function createMeasuredWorkspaceServices(options: { messageCount?: number } = {}
       }),
       get: vi.fn()
     },
+    attachments: {
+      download: vi.fn(async () => new Blob(["mock"]))
+    },
     clients: {
       list: vi.fn(async () => clients.map((client) => copyClient(client))),
       get: vi.fn(async (clientId: string) => {

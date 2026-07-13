@@ -119,7 +119,11 @@ decisions:
 3. **Реальный сокет VPN-туннеля (MP-12):** App→Edge control сейчас идёт по прямому
    HTTP (`EDGE_CONTROL_URL`, host-port), а НЕ через туннель; сам туннель Edge→App
    по-прежнему без боевого TCP/TLS-сокета для data-plane.
-4. **Вложения → `storage_ref`** — по-прежнему непрозрачны (S3 отложен, §4.3).
+4. ~~**Вложения → `storage_ref`** — по-прежнему непрозрачны (S3 отложен, §4.3).~~
+   **Закрыто (2026-07-13):** реальное хранение байтов вложений на Edge (файловый
+   том на RF, дедуп по content-hash) + рабочий `storage_ref`, резолвящийся
+   backend-прокси к Edge при скачивании менеджером. Детали — §4.3 и раздел
+   [«Хранение вложений»](#хранение-вложений-реализовано) ниже.
 
 > **Ограничение документа.** Только план. Кода и диффов нет. Оценки
 > трудозатрат в человеко-днях/датах — не приводятся; шаги — логические/
@@ -724,10 +728,11 @@ app-side HTTP-шлюзу для email; `health`/статус канала не �
    на провайдера, но не все провайдеры/тарифы поддерживают его стабильно;
    poll — проще, но с задержкой и риском рейт-лимитов. Решение влияет на
    Этап E3.
-3. **Хранение вложений.** `attachments[].storage_ref` в C1 уже непрозрачная
-   строка (S3 сознательно отложен на MVP, см. `mock-to-production.md` §4.15);
-   для email нужно решить, куда физически сохраняются вложения писем на
-   Edge/RF-стороне до появления object storage.
+3. **Хранение вложений — РЕШЕНО и РЕАЛИЗОВАНО (2026-07-13).** `attachments[].storage_ref`
+   в C1 — непрозрачная строка; байты писем физически сохраняются на **Edge/RF**
+   (файловый том, MVP; MinIO/S3 — тем же интерфейсом позже, сознательно отложен,
+   см. `mock-to-production.md` §4.15). Детали ниже, раздел
+   [«Хранение вложений»](#хранение-вложений-реализовано).
 4. **Судьба существующего `EMAIL_DELIVERY_URL`-пути в SVC-INT.** Решение 1
    подразумевает его вывод из эксплуатации для email (Этап E6). Нужно
    подтвердить, что альтернативных сценариев (например, сторонний
@@ -780,6 +785,82 @@ app-side HTTP-шлюзу для email; `health`/статус канала не �
      прогрев). **Живая проверка на стенде (2026-07-13):** после ре-деплоя и
      рестарта Edge первое письмо менеджера ушло `sent` и доставлено (до фикса —
      ложный `failed`). **async-ack** (целевой) — по-прежнему отложен.
+
+---
+
+## 4.3-bis. Хранение вложений (реализовано)
+
+> **Статус (2026-07-13): реализовано и покрыто тестами локально.** Остаётся одна
+> финальная e2e-проверка на стенде (реальное письмо с вложением → скачивание
+> менеджером). Реальный сетевой IMAP/туннель — общая веха MP-12, как и для
+> остального email-контура.
+
+**Проблема (было).** IMAP-драйвер клал в конверт только метаданные вложения
+(`filename`/`mime`/`size`), а `storage_ref` был заглушкой `email-attachment://…`.
+Хуже — ядро вообще НЕ персистило вложения (таблица `attachments` существовала, но
+в коде не заполнялась), а read-path менеджера их не отдавал. Итог: менеджер не
+видел и не мог скачать вложение письма.
+
+**Решения.**
+
+1. **Бэкенд хранения — файловый том на RF (MVP), за интерфейсом
+   `EdgeAttachmentStore`.** Выбран файловый том (а не сразу MinIO): резидентность
+   ПДн (152-ФЗ) — байты остаются на RF; ноль новой инфраструктуры; полностью
+   тестируется локально (tmpdir). Self-hosted S3-совместимый MinIO подключается
+   позже тем же интерфейсом без изменений вызывающего кода (S3 сознательно
+   отложен). Реализация:
+   [`edge-attachment-store.ts`](../../services/edge-gateway/src/edge-attachment-store.ts)
+   (`createFilesystemAttachmentStore`).
+2. **Резидентность — байты не едут за рубеж заранее.** Вложения физически лежат
+   на Edge (RF). Менеджер (App-сторона) скачивает их **лениво**: backend-прокси
+   `GET /v1/attachments/:id/content`
+   ([`attachment.controller.ts`](../../services/backend/src/modules/communication-core/attachment.controller.ts) +
+   [`attachment.service.ts`](../../services/backend/src/modules/communication-core/attachment.service.ts))
+   тянет байты с Edge (`GET /internal/edge/attachments?ref=…`,
+   [`server.ts`](../../services/edge-gateway/src/server.ts)) **только когда
+   менеджер открывает вложение**. «Не тащим байты за рубеж без нужды».
+3. **`storage_ref` — непрозрачная строка `edge-attach://<org>/<sha256>`.**
+   Content-hash в пути → дедуп (одинаковые байты кладутся один раз). Ядро схему
+   НЕ парсит (хранит и отдаёт как есть) — резолвит только Edge. Учтён лимит
+   размера (`EMAIL_ATTACHMENT_MAX_BYTES`, дефолт 25 МБ): больше — сохраняются
+   только метаданные, приём письма не падает.
+
+**Поток (сверху вниз).**
+
+```
+Письмо с вложением (IMAP)
+  → edge-imap-mailbox.ts: mailparser даёт байты → EdgeAttachmentStore.put()
+    → storage_ref = edge-attach://<org>/<sha256>, size, content_hash
+  → edge-email-ingress.ts: attachments[] в конверте C2 (id — детерминированный
+    UUID по (messageId, ссылка) для идемпотентности; storage_ref непрозрачен)
+  → RF-буфер → туннель → CORE_INGRESS_URL
+  → ядро acceptIngress: INSERT INTO attachments (storage_ref как есть,
+    ON CONFLICT DO NOTHING — повтор письма не плодит дублей)
+  → read-path (listMessages/getMessage): json_agg вложений →
+    attachments[{id,name,contentType,sizeBytes,url}], url = /v1/attachments/:id/content
+  → manager-workspace: качает blob через API-клиент (tenant-заголовок + cookie
+    сессии), а не плоским <a href>; backend-прокси стримит байты с Edge
+```
+
+**Изменения ядра — минимальны и аддитивны.** Ядро по-прежнему НЕ понимает схему
+`storage_ref` (полностью непрозрачна). Добавлено только: (а) персистентность
+`attachments[]` в `acceptIngress`; (б) выдача вложений в read-path; (в) прокси
+`GET /v1/attachments/:id/content`. Контракты C1/C2 и форма конверта не менялись.
+
+**Тесты (локально, без стенда).**
+- Edge: `edge-attachment-store.test.ts` (put/get, дедуп, лимит, чужой ref),
+  `edge-imap-mailbox.test.ts` (сохранение байтов + реальный `storage_ref`;
+  oversized → только метаданные), `edge-attachment-resolve.test.ts` (маршрут
+  отдаёт байты/404/400), `edge-email-ingress.test.ts` (UUID-id, идемпотентность).
+- Backend: `attachment-resolver.service.spec.ts` (резолв+прокси, дерив URL из
+  EDGE_CONTROL_URL, 404 при отсутствии байтов, 503 без резолвера; маппинг
+  read-path в `url`), `internal-messaging.dto.spec.ts` (нормализация вложений),
+  `internal-messaging.spec.ts` (персистентность + дедуп в БД).
+- manager-workspace: скачивание через API-клиент (blob) — mock-бэкенд + клиент.
+
+**Инфраструктура.** `docker-compose.rf.yml` — том `bridge-edge-attachments`
+(`EMAIL_ATTACHMENT_STORAGE_DIR`); `docker-compose.yml` — `EDGE_ATTACHMENT_URL`
+(дефолт — дерив из `EDGE_CONTROL_URL`). Гейт — тот же `EDGE_CHANNEL_DRIVERS=on`.
 
 ---
 

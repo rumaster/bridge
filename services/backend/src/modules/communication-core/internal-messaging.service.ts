@@ -24,6 +24,7 @@ import { PgDatabase } from "../../common/database/database.service";
 import type { Queryable } from "../../common/database/database.service";
 import { AuditService } from "../audit/audit.service";
 import { C7RealtimeEventPublisher } from "./c7-realtime-event.publisher";
+import { attachmentContentUrl } from "./communication-core.dto";
 import {
   assertMessageStatusTransition,
   MESSAGE_DIRECTION,
@@ -260,6 +261,31 @@ export class InternalMessagingService {
           ],
         );
 
+        // Вложения (§4.3): непрозрачный `storage_ref` из конверта сохраняется как
+        // есть (ядро схему не парсит — резолвит Edge). ON CONFLICT DO NOTHING —
+        // повторный приём того же письма (детерминированные id) не плодит дублей.
+        for (const attachment of ingress.message.attachments) {
+          await client.query(
+            `
+              INSERT INTO attachments (
+                id, organization_id, message_id, kind, storage_ref, mime, size, metadata
+              )
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb)
+              ON CONFLICT (id) DO NOTHING
+            `,
+            [
+              attachment.id,
+              ingress.organizationId,
+              ingress.message.id,
+              attachment.kind,
+              attachment.storageRef,
+              attachment.mime,
+              attachment.size,
+              JSON.stringify(attachment.metadata ?? {}),
+            ],
+          );
+        }
+
         await client.query(
           `
             UPDATE conversations
@@ -328,6 +354,19 @@ export class InternalMessagingService {
     result: IngressAcceptResult,
   ): Promise<void> {
     try {
+      // Вложения — в realtime-конверт (§4.3): менеджер мержит WS-сообщение
+      // напрямую, поэтому без этого вложение появилось бы только после REST-
+      // рефетча. Форма идентична read-path (`url` на backend-прокси).
+      const attachments = ingress.message.attachments.map((attachment) => ({
+        id: attachment.id,
+        name:
+          typeof attachment.metadata.filename === "string" && attachment.metadata.filename.trim() !== ""
+            ? (attachment.metadata.filename as string)
+            : attachment.id,
+        contentType: attachment.mime,
+        sizeBytes: attachment.size,
+        url: attachmentContentUrl(attachment.id),
+      }));
       await this.realtime.publishMessageCreated({
         id: result.message_id,
         organizationId: result.organization_id,
@@ -342,6 +381,7 @@ export class InternalMessagingService {
         status: result.status,
         createdAt: result.received_at,
         deliveredAt: null,
+        ...(attachments.length > 0 ? { attachments } : {}),
       });
     } catch (error) {
       this.logger.warn(

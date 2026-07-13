@@ -29,6 +29,7 @@ export interface MockManagerWorkspaceBackend {
   listMessages: (conversationId: string) => Message[];
   createMessage: (request: SendMessageRequest) => Message;
   getMessage: (messageId: string) => Message;
+  downloadAttachment: (attachmentId: string) => Blob;
   listClients: () => ClientProfile[];
   getClient: (clientId: string) => ClientProfile;
   listNotifications: () => NotificationItem[];
@@ -126,6 +127,19 @@ export function createMockManagerWorkspaceBackend(): MockManagerWorkspaceBackend
       }
 
       return copyMessage(message);
+    },
+    downloadAttachment(attachmentId) {
+      const owner = messages.find((message) =>
+        message.attachments?.some((attachment) => attachment.id === attachmentId)
+      );
+      const attachment = owner?.attachments?.find((item) => item.id === attachmentId);
+      if (!attachment) {
+        throw new MockBackendError("Attachment not found", 404);
+      }
+      // Мок отдаёт детерминированные «байты» — по имени вложения.
+      return new Blob([`mock-bytes:${attachment.name}`], {
+        type: attachment.contentType || "application/octet-stream"
+      });
     },
     listClients() {
       return clients.map(copyClient);

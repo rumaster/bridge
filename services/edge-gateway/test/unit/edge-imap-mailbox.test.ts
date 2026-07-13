@@ -153,6 +153,115 @@ describe("edge imap mailbox", () => {
     assert.ok(email.attachments?.[0].mime?.startsWith("text/plain"));
   });
 
+  it("saves attachment bytes to the store and sets a real storage_ref + size", async () => {
+    const boundary = "b0undary";
+    const multipart = [
+      "From: Client <client@example.com>",
+      "To: support@example.com",
+      "Subject: С вложением",
+      "Message-ID: <att2@example.com>",
+      "Date: Wed, 12 Jul 2026 10:00:00 +0000",
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      "",
+      `--${boundary}`,
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      "смотри вложение",
+      `--${boundary}`,
+      'Content-Type: application/pdf; name="doc.pdf"',
+      "Content-Disposition: attachment; filename=\"doc.pdf\"",
+      "Content-Transfer-Encoding: base64",
+      "",
+      Buffer.from("PDF-BYTES").toString("base64"),
+      `--${boundary}--`,
+      "",
+    ].join("\r\n");
+
+    const saved: Array<{ organizationId: string; content: Buffer; mime?: string; filename?: string }> = [];
+    const attachmentStore = {
+      async put(input: { organizationId: string; content: Buffer | Uint8Array; mime?: string; filename?: string }) {
+        const content = Buffer.isBuffer(input.content) ? input.content : Buffer.from(input.content);
+        saved.push({ organizationId: input.organizationId, content, mime: input.mime, filename: input.filename });
+        return {
+          storageRef: `edge-attach://${input.organizationId}/${"a".repeat(64)}`,
+          contentHash: "a".repeat(64),
+          size: content.byteLength,
+          deduped: false,
+        };
+      },
+      async get() {
+        return null;
+      },
+      canResolve() {
+        return true;
+      },
+    };
+
+    const fake = createFakeImapClient([{ uid: 20, raw: multipart }], 21);
+    const mailbox = createImapMailbox(
+      { credentials: CREDENTIALS, channel: CHANNEL },
+      { clientFactory: () => fake, attachmentStore },
+    );
+
+    const [email] = await mailbox.fetchNew({ sinceUid: 19 });
+    const attachment = email.attachments?.[0];
+    assert.ok(attachment);
+    assert.equal(attachment.storage_ref, `edge-attach://org-1/${"a".repeat(64)}`);
+    assert.equal(attachment.content_hash, "a".repeat(64));
+    assert.equal(attachment.size, "PDF-BYTES".length);
+    // Байты и контекст дошли до стора.
+    assert.equal(saved.length, 1);
+    assert.equal(saved[0].organizationId, "org-1");
+    assert.equal(saved[0].content.toString(), "PDF-BYTES");
+    assert.equal(saved[0].filename, "doc.pdf");
+  });
+
+  it("keeps metadata-only when the store rejects oversized bytes (ingest not broken)", async () => {
+    const boundary = "b0undary";
+    const multipart = [
+      "From: Client <client@example.com>",
+      "To: support@example.com",
+      "Subject: Большое вложение",
+      "Message-ID: <att3@example.com>",
+      "Date: Wed, 12 Jul 2026 10:00:00 +0000",
+      `Content-Type: multipart/mixed; boundary="${boundary}"`,
+      "",
+      `--${boundary}`,
+      'Content-Type: application/octet-stream; name="big.bin"',
+      "Content-Disposition: attachment; filename=\"big.bin\"",
+      "",
+      "way too many bytes for this store",
+      `--${boundary}--`,
+      "",
+    ].join("\r\n");
+
+    const attachmentStore = {
+      async put() {
+        const { AttachmentTooLargeError } = await import("../../src/edge-attachment-store.js");
+        throw new AttachmentTooLargeError(1000, 4);
+      },
+      async get() {
+        return null;
+      },
+      canResolve() {
+        return true;
+      },
+    };
+
+    const fake = createFakeImapClient([{ uid: 30, raw: multipart }], 31);
+    const mailbox = createImapMailbox(
+      { credentials: CREDENTIALS, channel: CHANNEL },
+      { clientFactory: () => fake, attachmentStore, logger: { warn() {}, error() {} } },
+    );
+
+    const [email] = await mailbox.fetchNew({ sinceUid: 29 });
+    const attachment = email.attachments?.[0];
+    assert.ok(attachment);
+    assert.equal(attachment.filename, "big.bin");
+    assert.equal(attachment.storage_ref, undefined, "нет реального ref для непринятых байтов");
+    assert.equal(attachment.content_hash, undefined);
+  });
+
   it("rejects credentials without an imap endpoint", () => {
     assert.throws(
       () => createImapMailbox({ credentials: { smtp: {} }, channel: CHANNEL }),

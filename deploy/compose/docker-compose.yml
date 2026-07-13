@@ -111,6 +111,12 @@ services:
       EDGE_CONTROL_URL: ${EDGE_CONTROL_URL:-}
       EDGE_CONTROL_TOKEN: ${EDGE_CONTROL_TOKEN:-}
       EDGE_CREDENTIALS_RESYNC_INTERVAL_MS: ${EDGE_CREDENTIALS_RESYNC_INTERVAL_MS:-60000}
+      # Резолв вложений (§4.3): менеджер скачивает вложение через backend-прокси,
+      # который тянет байты с Edge (`GET /internal/edge/attachments`). Пусто —
+      # выводится из EDGE_CONTROL_URL (тот же Edge-хост). Задать явно, если
+      # attachments-маршрут Edge живёт на другом адресе.
+      EDGE_ATTACHMENT_URL: ${EDGE_ATTACHMENT_URL:-}
+      EDGE_ATTACHMENT_TIMEOUT_MS: ${EDGE_ATTACHMENT_TIMEOUT_MS:-20000}
       # «Bridge Mail» (Этап M5): URL провижининг-агента почтовика (mail-provision
       # serve, рядом с mailserver). Задан — админка может заказывать ящики
       # (POST /api/v1/mail/mailboxes → агент создаёт ящик → авто-connect канала).

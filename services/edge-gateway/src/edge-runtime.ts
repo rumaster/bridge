@@ -204,6 +204,7 @@ export async function createEdgeGatewayRuntimeFromEnv(
       vpnTunnel: tunnel,
       liveness: livenessLink,
       controlPlane: channelRuntime?.controlPlane,
+      attachmentStore: channelRuntime?.attachmentStore,
       webChatBackendUrl: resolveWebChatBackendUrl(env),
       realtimeConfigured: Boolean(c7StreamBridge),
     }),
