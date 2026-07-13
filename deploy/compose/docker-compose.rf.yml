@@ -83,6 +83,18 @@ services:
       EDGE_VPN_TIMEOUT_MS: ${EDGE_VPN_TIMEOUT_MS:-5000}
       EDGE_VPN_BACKOFF_MS: ${EDGE_VPN_BACKOFF_MS:-100,500,1000,2500,5000}
       EDGE_BUFFER_TTL_MS: ${EDGE_BUFFER_TTL_MS:-3600000}
+      # Прозрачный edge-транзит REST Web Chat (Этап W2,
+      # docs/plan/web-chat-channel-production.md). База ядра (App), достижимая по
+      # AmneziaWG-туннелю (обычно http://<app-wg-ip>:3000). Пусто → проброс
+      # /web-chat/* выключен, маршрут отдаёт 404.
+      EDGE_WEB_CHAT_BACKEND_URL: ${EDGE_WEB_CHAT_BACKEND_URL:-}
+      # Realtime C7 (менеджер → посетитель по WS): Edge читает поток событий из
+      # Redis App-стороны (по WG) и раздаёт виджетам. Пусто → C7-мост не стартует
+      # (финализируется на этапе W3). Совпадает со стримом backend-публикатора.
+      REDIS_URL: ${EDGE_REDIS_URL:-}
+      C7_REALTIME_STREAM: ${C7_REALTIME_STREAM:-bridge:c7:events}
+      C7_REALTIME_GROUP: ${C7_REALTIME_GROUP:-edge-gateway-c7}
+      C7_REALTIME_POLL_MS: ${C7_REALTIME_POLL_MS:-1000}
       # Канал MAX на Edge (edge-owned, docs/plan/max-channel-production.md).
       # EDGE_CHANNEL_DRIVERS=on поднимает control-plane + входящий MAX-драйвер на
       # Edge (Этап M5); off (по умолчанию) — поведение edge не меняется.

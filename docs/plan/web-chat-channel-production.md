@@ -3,7 +3,7 @@ title: План доведения канала Web Chat до боевого р�
 service: Web Chat (Frontend) / Backend / Edge Gateway / Integration Platform / SaaS Administration
 service_id: SVC-CHAT · SVC-API · SVC-EDGE · SVC-INT · SVC-ADMIN
 version: 1.0
-status: In progress (W1 done 2026-07-12; W2–W7 planned)
+status: In progress (W1–W2 done 2026-07-13; W3–W7 planned)
 language: ru-RU
 based_on: docs/plan/telegram-channel-production.md, docs/plan/max-channel-production.md, docs/plan/email-channel-production.md, docs/plan/services/13-web-chat.md, docs/plan/mock-to-production-roadmap.md
 date: 2026-07-12
@@ -280,6 +280,39 @@ W6 (снятие моков, довод фич, WG-12,13,14,15)
 
 **Тесты.** Интеграционный edge: REST `/web-chat/*` через туннель к ядру-дублёру
 (проброс + идемпотентность); проверка 404→200 на ранее непроксируемых путях.
+
+**Статус реализации W2 (2026-07-13): выполнено (транзит + деплой-обвязка;
+финальная RF-топология — операторская настройка).**
+- **Прозрачный REST-транзит (задачи 1–2).** В edge-сервере
+  ([`server.ts`](../../services/edge-gateway/src/server.ts)) добавлен проброс
+  `/api/v1/web-chat/*` → ядро (App): читает тело, переносит сквозные заголовки
+  (`idempotency-key`, `x-bridge-edge-tunnel`, `content-type`, …), форвардит
+  исходный URL и зеркалит статус/тело. Включается опцией `webChatBackendUrl`
+  ([`edge-runtime.ts`](../../services/edge-gateway/src/edge-runtime.ts):
+  `EDGE_WEB_CHAT_BACKEND_URL`) в обоих режимах (mock/edge); без неё — прежний 404
+  (поведение живого edge не меняется). **Решение по WG-4:** транзит идёт
+  HTTP-reverse-proxy'ом поверх **сетевого** VPN-туннеля (AmneziaWG), а не
+  приложенческим C9-RPC — контракты C3.messages/C1 и идемпотентность не меняются,
+  их держит ядро (`WebChatService`). Виджет уже слал `x-bridge-edge-tunnel: web_chat`
+  и `edgeBaseUrl` — теперь они реально обслуживаются edge (задача 2 без правок
+  фронта).
+- **Деплой-обвязка (задача 3).** В RF-компоуз
+  ([`docker-compose.rf.yml`](../../deploy/compose/docker-compose.rf.yml)) и
+  [`.env.rf.example`](../../.env.rf.example) добавлены `EDGE_WEB_CHAT_BACKEND_URL`
+  (база ядра по WG) и `REDIS_URL`/`C7_REALTIME_*` (рельс C7 Redis→WS моста;
+  фактический старт моста финализируется в W3). Значения по умолчанию пустые —
+  оператор задаёт адреса App-стороны по WG; маршрутизация `web-chat`-виджета на RF-edge
+  (`VITE_BRIDGE_EDGE_BASE_URL`) и хостинг страницы — совместно с этапом W5.
+- **Тесты.** Новый edge integration
+  [`web-chat-proxy.test.ts`](../../services/edge-gateway/test/integration/web-chat-proxy.test.ts):
+  POST `/web-chat/sessions` и GET истории проксируются в ядро-дублёр с сохранением
+  пути/query/тела и сквозных заголовков; повтор с тем же `idempotency-key`
+  прозрачен (дедуп — на ядре); без `webChatBackendUrl` путь остаётся 404. Весь
+  edge-набор **155/155**, `tsc` — чисто.
+
+**Осознанно вне W2 (переходит в W3/W5):** боевой C7 WS-канал вместо `mock-ws`,
+жёсткая зависимость от Redis и старт C7-моста (W3); хостируемая страница
+организации и сборка виджета под RF-edge (W5).
 
 ---
 

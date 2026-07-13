@@ -29,6 +29,12 @@ export interface CreateEdgeGatewayServerOptions {
   /** Control-plane App→Edge (creds-sync + egress_dispatch), Этап M5. */
   controlPlane?: { handle(message: unknown): Promise<any> };
   liveness?: { isUp(): boolean; lastProbeAt(): number | null } | null;
+  /**
+   * База ядра (App) для прозрачного edge-транзита REST Web Chat (W2). Если задана —
+   * запросы `/api/v1/web-chat/*` синхронно проксируются в ядро поверх сетевого
+   * VPN-туннеля (AmneziaWG). Без неё маршрут отдаёт прежний 404 (проброс выключен).
+   */
+  webChatBackendUrl?: string;
   mode?: string;
   now?: () => string;
 }
@@ -41,6 +47,7 @@ export function createEdgeGatewayServer({
   vpnTunnel,
   controlPlane,
   liveness,
+  webChatBackendUrl,
   mode = "m0-mock",
   now = () => new Date().toISOString(),
 }: CreateEdgeGatewayServerOptions = {}) {
@@ -146,6 +153,16 @@ export function createEdgeGatewayServer({
         return;
       }
 
+      // Прозрачный edge-транзит REST Web Chat (W2, WG-3/WG-4): виджет клиента РФ
+      // обращается к /api/v1/web-chat/* на Edge; Edge синхронно проксирует запрос в
+      // ядро (App) поверх сетевого VPN-туннеля (AmneziaWG) и возвращает ответ.
+      // Контракты C3.messages/C1 не меняются — проброс прозрачный; idempotency-key,
+      // тело и статус сохраняются. Требует webChatBackendUrl (иначе — прежний 404).
+      if (webChatBackendUrl && isWebChatProxyPath(path)) {
+        await proxyWebChatRequest(request, response, webChatBackendUrl);
+        return;
+      }
+
       sendJson(response, 404, problem(404, "Not Found", "No Edge Gateway route matched.", []));
     } catch (error) {
       if (
@@ -240,6 +257,80 @@ export function createEdgeGatewayServer({
   };
 
   return server;
+}
+
+const WEB_CHAT_PROXY_PREFIX = "/web-chat/";
+// Заголовки, которые Edge переносит в ядро как есть при транзите Web Chat.
+// idempotency-key — сквозной ключ реплики (ТЗ §11.12); x-bridge-edge-tunnel —
+// маркер C9-туннеля виджета (ТЗ §7.6). Прочие (host/connection) не переносим.
+const WEB_CHAT_PROXY_FORWARD_HEADERS = [
+  "content-type",
+  "accept",
+  "idempotency-key",
+  "x-bridge-edge-tunnel",
+  "x-request-id",
+];
+
+function isWebChatProxyPath(path) {
+  return path === "/web-chat" || path.startsWith(WEB_CHAT_PROXY_PREFIX);
+}
+
+/**
+ * Прозрачный проброс REST Web Chat «клиент → edge → app» (W2). Читает тело,
+ * переносит выбранные заголовки, форвардит исходный URL (с префиксом /api/v1) в
+ * ядро и зеркалит статус/тело обратно клиенту. Идемпотентность и семантика
+ * контрактов не меняются — их обеспечивает ядро (WebChatService).
+ */
+async function proxyWebChatRequest(request, response, backendBaseUrl) {
+  const method = request.method ?? "GET";
+  const hasBody = method !== "GET" && method !== "HEAD";
+  let body;
+  if (hasBody) {
+    const chunks = [];
+    let size = 0;
+    for await (const chunk of request) {
+      size += chunk.byteLength;
+      if (size > MAX_BODY_BYTES) {
+        sendJson(response, 413, problem(413, "Payload Too Large", "Request body is too large.", []));
+        return;
+      }
+      chunks.push(chunk);
+    }
+    body = chunks.length > 0 ? Buffer.concat(chunks) : undefined;
+  }
+
+  const headers = {};
+  for (const name of WEB_CHAT_PROXY_FORWARD_HEADERS) {
+    const value = request.headers[name];
+    if (typeof value === "string" && value !== "") {
+      headers[name] = value;
+    }
+  }
+
+  const targetUrl = joinBackendUrl(backendBaseUrl, request.url ?? "/");
+  let upstream;
+  try {
+    upstream = await fetch(targetUrl, { method, headers, body });
+  } catch (error) {
+    sendJson(
+      response,
+      502,
+      problem(502, "Bad Gateway", `Edge could not reach App for Web Chat: ${(error as Error).message}`, []),
+    );
+    return;
+  }
+
+  const payload = Buffer.from(await upstream.arrayBuffer());
+  response.writeHead(upstream.status, {
+    "content-type": upstream.headers.get("content-type") ?? "application/json; charset=utf-8",
+  });
+  response.end(payload);
+}
+
+function joinBackendUrl(baseUrl, requestUrl) {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+  const suffix = requestUrl.startsWith("/") ? requestUrl : `/${requestUrl}`;
+  return `${normalizedBase}${suffix}`;
 }
 
 function publishC7Event(webSocketChannel, payload, now) {

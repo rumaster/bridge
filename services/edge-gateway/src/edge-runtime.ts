@@ -59,7 +59,10 @@ export async function createEdgeGatewayRuntimeFromEnv(
   if (mode === "mock") {
     return {
       mode,
-      server: createEdgeGatewayServer({ now: options.now }),
+      server: createEdgeGatewayServer({
+        now: options.now,
+        webChatBackendUrl: resolveWebChatBackendUrl(env),
+      }),
       close: async () => {},
     };
   }
@@ -187,6 +190,7 @@ export async function createEdgeGatewayRuntimeFromEnv(
       vpnTunnel: tunnel,
       liveness: livenessLink,
       controlPlane: channelRuntime?.controlPlane,
+      webChatBackendUrl: resolveWebChatBackendUrl(env),
     }),
     cluster,
     tunnel,
@@ -416,6 +420,17 @@ function parseBackoff(value: string | undefined) {
     .map((item) => Number(item.trim()))
     .filter((item) => Number.isFinite(item) && item >= 0);
   return parsed.length > 0 ? parsed : undefined;
+}
+
+/**
+ * База ядра (App) для прозрачного edge-транзита REST Web Chat (W2). В RF-контуре —
+ * адрес ядра, достижимый по сетевому VPN-туннелю (AmneziaWG); в dev — прямой URL
+ * бэкенда. Пусто → проброс `/web-chat/*` выключен (маршрут отдаёт 404).
+ */
+function resolveWebChatBackendUrl(
+  env: Record<string, string | undefined>,
+): string | undefined {
+  return env.EDGE_WEB_CHAT_BACKEND_URL?.trim() || undefined;
 }
 
 function numberEnv(value: string | undefined, fallback: number | undefined) {
