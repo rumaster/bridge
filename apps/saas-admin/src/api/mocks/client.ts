@@ -5,6 +5,7 @@ import type {
   Channel,
   ChannelStatus,
   ConnectChannelRequest,
+  OrderMailboxRequest,
   CreateBroadcastRequest,
   CreateKnowledgeDocumentRequest,
   CreateWorkflowSubschemaRequest,
@@ -245,6 +246,28 @@ export function createMockSaasAdminApiClient(
           status: "connected",
           checked_at: checkedAt
         };
+      },
+      async orderMailbox(request: OrderMailboxRequest) {
+        const localPart = request.local_part.trim();
+        if (!localPart || /[@\s]/.test(localPart)) {
+          throw new Error("local_part invalid");
+        }
+        const createdAt = "2026-07-03T10:30:00.000Z";
+        const address = `${localPart}@mail.example.com`;
+        const channel: Channel = {
+          id: `channel-email-mailbox-${nextChannelNumber++}`,
+          organization_id: "00000000-0000-4000-8000-000000000101",
+          channel_type: "email",
+          name: request.name?.trim() || `Bridge Mail: ${address}`,
+          status: "connected",
+          config: {},
+          last_check_at: createdAt,
+          created_at: createdAt,
+          updated_at: createdAt,
+          error_log: []
+        };
+        currentChannels = [...currentChannels, channel];
+        return { address, channel: cloneChannel(channel) };
       }
     },
     knowledge: {

@@ -272,6 +272,32 @@ export const handlers = [
     return HttpResponse.json({ channel: cloneChannel(channel) }, { status: 201 });
   }),
 
+  http.post(`${API_PREFIX}/mail/mailboxes`, async ({ request }) => {
+    const body = (await request.json()) as { local_part?: string; name?: string };
+    const localPart = body.local_part?.trim();
+    if (!localPart || /[@\s]/.test(localPart)) {
+      return validationProblem(["local_part must be a mailbox name without @ or spaces"], "Invalid mailbox name.");
+    }
+    const createdAt = "2026-07-03T10:30:00.000Z";
+    const address = `${localPart}@mail.example.com`;
+    const channelId = `channel-email-mailbox-${nextChannelNumber++}`;
+    const channel: Channel = {
+      id: channelId,
+      organization_id: mockOrganization.id,
+      channel_type: "email",
+      name: body.name?.trim() || `Bridge Mail: ${address}`,
+      status: "connected",
+      credentials_ref: `secret://email/${mockOrganization.id}/${channelId}`,
+      config: {},
+      last_check_at: createdAt,
+      created_at: createdAt,
+      updated_at: createdAt,
+      error_log: []
+    };
+    currentChannels = [...currentChannels, channel];
+    return HttpResponse.json({ address, channel: cloneChannel(channel) }, { status: 201 });
+  }),
+
   http.get(`${API_PREFIX}/channels/:channelId/capabilities`, ({ params }) => {
     const channel = currentChannels.find((item) => item.id === params.channelId);
     if (!channel) {

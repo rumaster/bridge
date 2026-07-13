@@ -6,6 +6,7 @@ import {
   Injectable,
   NotFoundException,
   Optional,
+  ServiceUnavailableException,
 } from "@nestjs/common";
 
 import { FacadeResilience, type FacadeResilienceOptions } from "../../common/resilience/resilience";
@@ -469,6 +470,77 @@ export class IntegrationGatewayFacade {
     );
 
     return mapRowToFacade(inserted.rows[0]);
+  }
+
+  /**
+   * Заказ ящика «Bridge Mail» (Этап M5, docs/plan/mail-service-selfhosted.md):
+   * backend просит провижининг-агента (`MAIL_PROVISION_URL`, рядом с почтовиком)
+   * создать ящик, получает структурные IMAP/SMTP-креды и СРАЗУ подключает их как
+   * email-канал организации (`connectChannel`) — administrator не вводит креды
+   * вручную. Пароль наружу не возвращается (write-only, envelope-шифрование).
+   */
+  async provisionManagedMailbox(request: {
+    organization_id: string;
+    local_part: string;
+    name?: string;
+  }): Promise<{ address: string; channel: ChannelFacade }> {
+    const agentUrl = process.env.MAIL_PROVISION_URL?.trim();
+    if (!agentUrl) {
+      throw new ServiceUnavailableException({
+        code: "MAIL_PROVISION_DISABLED",
+        description: "MAIL_PROVISION_URL is not configured",
+        humanMessage: "Услуга «Bridge Mail» не настроена.",
+      });
+    }
+    const localPart = request.local_part?.trim();
+    if (!localPart || /[@\s]/.test(localPart)) {
+      throw new BadRequestException({
+        code: "MAIL_LOCAL_PART_INVALID",
+        description: "local_part must be a non-empty mailbox name without @ or spaces",
+        humanMessage: "Некорректное имя ящика.",
+      });
+    }
+
+    const token = process.env.MAIL_PROVISION_TOKEN?.trim();
+    let response: Response;
+    try {
+      response = await this.fetchImpl(`${agentUrl.replace(/\/$/, "")}/provision`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ local_part: localPart }),
+      });
+    } catch (error) {
+      throw new ServiceUnavailableException({
+        code: "MAIL_PROVISION_UNAVAILABLE",
+        description: `mail provisioning agent unreachable: ${String(error)}`,
+        humanMessage: "Сервис почты недоступен.",
+      });
+    }
+
+    const payload = (await response.json().catch(() => ({}))) as {
+      address?: string;
+      email_credentials?: EmailChannelCredentials;
+      error?: string;
+    };
+    if (!response.ok || !payload.address || !payload.email_credentials) {
+      throw new ServiceUnavailableException({
+        code: "MAIL_PROVISION_FAILED",
+        description: `mail provisioning failed HTTP ${response.status}: ${payload.error ?? ""}`,
+        humanMessage: "Не удалось создать почтовый ящик.",
+      });
+    }
+
+    const channel = await this.connectChannel({
+      organization_id: request.organization_id,
+      channel_type: "email",
+      name: request.name?.trim() || `Bridge Mail: ${payload.address}`,
+      email_credentials: payload.email_credentials,
+    });
+
+    return { address: payload.address, channel };
   }
 
   /**

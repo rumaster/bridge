@@ -137,6 +137,39 @@ MAIL_QUEUE_WARN=100 MAIL_DISK_WARN_PCT=90 deploy/mail/status.sh
 `config/postfix-main.cf` и перезапустите почтовик. Базовые поклиентные anvil-лимиты;
 точные per-user/per-org лимиты требуют policy-сервиса (postfwd) — отдельный шаг.
 
-## M5 — Продуктивизация
+## M5 — Продуктивизация «Bridge Mail» (заказ ящика из админки)
 
-Заказ ящика из админки, автопровижн, тариф — см. план.
+Administrator заказывает ящик на `:8081/channels` («Bridge Mail — заказать ящик»):
+backend через **провижининг-агента** создаёт ящик на почтовике и сразу подключает
+его как email-канал (без ручного ввода кред). Поток:
+
+```
+saas-admin → POST /api/v1/mail/mailboxes {local_part}
+  → backend facade.provisionManagedMailbox
+     → POST {MAIL_PROVISION_URL}/provision (агент рядом с почтовиком) → создать ящик
+     → connectChannel(email_credentials) → канал email/connected (секрет write-only)
+```
+
+**Провижининг-агент** — `mail-provision.ts serve` на хосте с почтовиком (доступ к
+docker). Запуск (одноразовый node-контейнер с docker CLI/сокетом):
+
+```bash
+docker run -d --name bridge-mail-agent \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v $(command -v docker):/usr/local/bin/docker \
+  -v "$PWD":/repo -w /repo \
+  -e MAIL_DOMAIN=$MAIL_DOMAIN \
+  -e MAILSERVER_CONTAINER=<mailserver> \
+  -e MAIL_PROVISION_TOKEN=<общий-токен> \
+  -e MAIL_PROVISION_PORT=3300 -p 3300:3300 \
+  node:20.20.2-bookworm-slim npx --yes tsx@4.19.2 scripts/mail-provision.ts serve
+```
+
+**Backend** (app-сторона) включает услугу через env (`.env`):
+`MAIL_PROVISION_URL=http://<host>:3300`, `MAIL_PROVISION_TOKEN=<тот-же-токен>`.
+Пусто — раздел «заказать ящик» неактивен.
+
+Эндпоинты агента: `POST /provision {local_part}`, `DELETE /provision {address}`,
+`GET /health`. Защита — общий `Bearer`-токен (`MAIL_PROVISION_TOKEN`).
+
+Тариф/биллинг-хук и суспенд по злоупотреблению — отдельный шаг (по потребности).

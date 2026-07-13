@@ -211,3 +211,24 @@ export class ConnectChannelResponseDto {
   @ApiProperty({ type: ChannelResponseDto })
   channel!: ChannelResponseDto;
 }
+
+/** Заказ управляемого ящика «Bridge Mail» (Этап M5). */
+export class OrderMailboxRequestDto {
+  @ApiProperty({ example: "support", description: "Локальная часть адреса (до @)" })
+  @IsString()
+  @IsNotEmpty()
+  local_part!: string;
+
+  @ApiPropertyOptional({ example: "Email support" })
+  @IsString()
+  @IsOptional()
+  name?: string;
+}
+
+export class OrderMailboxResponseDto {
+  @ApiProperty({ example: "support@mail.example.com" })
+  address!: string;
+
+  @ApiProperty({ type: ChannelResponseDto })
+  channel!: ChannelResponseDto;
+}

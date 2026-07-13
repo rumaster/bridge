@@ -38,6 +38,7 @@
  */
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 
 interface Flags {
   password?: string;
@@ -53,6 +54,7 @@ interface Flags {
   imapTls?: boolean;
   smtpTls?: boolean;
   fromName?: string;
+  port?: number;
 }
 
 function parseArgs(argv: string[]): { command: string; positionals: string[]; flags: Flags } {
@@ -73,6 +75,7 @@ function parseArgs(argv: string[]): { command: string; positionals: string[]; fl
     else if (a === "--imap-tls") flags.imapTls = argv[++i] !== "false";
     else if (a === "--smtp-tls") flags.smtpTls = argv[++i] !== "false";
     else if (a === "--from-name") flags.fromName = argv[++i];
+    else if (a === "--port") flags.port = Number(argv[++i]);
     else positionals.push(a);
   }
   const [command, ...rest] = positionals;
@@ -179,10 +182,104 @@ function printCredentials(address: string, password: string, flags: Flags, conne
   else if (!flags.connect) console.log(`(канал не подключён — используйте --connect или введите креды на :8081/channels)`);
 }
 
+function readJsonBody(req: IncomingMessage): Promise<Record<string, unknown>> {
+  return new Promise((resolve) => {
+    let data = "";
+    req.on("data", (chunk) => (data += chunk));
+    req.on("end", () => {
+      try {
+        resolve(data ? (JSON.parse(data) as Record<string, unknown>) : {});
+      } catch {
+        resolve({});
+      }
+    });
+    req.on("error", () => resolve({}));
+  });
+}
+
+/**
+ * HTTP-агент провижининга (Этап M5). Крутится на хосте с доступом к почтовику и
+ * принимает запросы от backend (`POST /api/v1/mail/mailboxes` → сюда):
+ *   POST   /provision  { local_part | address, password?, quota? } → { address, password, email_credentials }
+ *   DELETE /provision  { address }                                 → { address, deleted:true }
+ *   GET    /health
+ * Защита — общий токен `MAIL_PROVISION_TOKEN` (Bearer). Без токена агент ОТКРЫТ —
+ * задавайте токен в проде.
+ */
+function serveAgent(flags: Flags): void {
+  const port = flags.port ?? Number(env("MAIL_PROVISION_PORT", "3300"));
+  const token = env("MAIL_PROVISION_TOKEN");
+  const server = createServer((req, res) => {
+    void handleAgentRequest(req, res, token, flags);
+  });
+  server.listen(port, "0.0.0.0", () => {
+    console.log(
+      `mail-provision agent на :${port} (domain=${env("MAIL_DOMAIN") ?? "?"}, auth=${token ? "token" : "OPEN"})`,
+    );
+  });
+}
+
+async function handleAgentRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  token: string | undefined,
+  flags: Flags,
+): Promise<void> {
+  const send = (code: number, obj: unknown) => {
+    res.writeHead(code, { "content-type": "application/json" });
+    res.end(JSON.stringify(obj));
+  };
+  try {
+    const url = (req.url ?? "/").split("?")[0];
+    // /health — без авторизации (liveness-проба).
+    if (req.method === "GET" && url === "/health") {
+      send(200, { ok: true });
+      return;
+    }
+    if (token) {
+      const auth = req.headers["authorization"];
+      const provided = typeof auth === "string" && auth.startsWith("Bearer ") ? auth.slice(7) : "";
+      if (provided !== token) {
+        send(401, { error: "unauthorized" });
+        return;
+      }
+    }
+    const body = await readJsonBody(req);
+    if (req.method === "POST" && url === "/provision") {
+      const input = String(body.local_part ?? body.localpart ?? body.address ?? "").trim();
+      if (!input) {
+        send(400, { error: "local_part is required" });
+        return;
+      }
+      const address = resolveAddress(input);
+      const password =
+        typeof body.password === "string" && body.password ? body.password : generatePassword();
+      await setup(["email", "add", address, password]);
+      if (body.quota) await setup(["quota", "set", address, String(body.quota)]);
+      send(200, { address, password, email_credentials: buildEmailCredentials(address, password, flags) });
+      return;
+    }
+    if (req.method === "DELETE" && url === "/provision") {
+      const address = resolveAddress(String(body.address ?? body.local_part ?? "").trim());
+      await setup(["email", "del", "-y", address]);
+      send(200, { address, deleted: true });
+      return;
+    }
+    send(404, { error: "not found" });
+  } catch (error) {
+    send(500, { error: error instanceof Error ? error.message : String(error) });
+  }
+}
+
 async function main(): Promise<void> {
   const { command, positionals, flags } = parseArgs(process.argv.slice(2));
 
   switch (command) {
+    case "serve": {
+      serveAgent(flags);
+      await new Promise(() => {}); // держим процесс живым
+      break;
+    }
     case "add": {
       if (!positionals[0]) throw new Error("usage: add <address|localpart> [password]");
       const address = resolveAddress(positionals[0]);
@@ -227,7 +324,7 @@ async function main(): Promise<void> {
     }
     default:
       console.error(
-        "Команды: add | password | del | list | quota\n" +
+        "Команды: add | password | del | list | quota | serve\n" +
           "См. шапку scripts/mail-provision.ts и deploy/mail/README.md",
       );
       process.exit(2);

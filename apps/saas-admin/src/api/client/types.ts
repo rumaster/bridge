@@ -163,6 +163,16 @@ export interface ConnectChannelResponse {
   channel: Channel;
 }
 
+export interface OrderMailboxRequest {
+  local_part: string;
+  name?: string;
+}
+
+export interface OrderMailboxResponse {
+  address: string;
+  channel: Channel;
+}
+
 export interface ChannelCapabilityDescriptor {
   contract: "C6.CapabilityDescriptor";
   version: string;
@@ -728,6 +738,7 @@ export interface SaasAdminApiClient {
     createChannel: (request: ConnectChannelRequest) => Promise<ConnectChannelResponse>;
     getCapabilities: (channelId: string) => Promise<ChannelCapabilityDescriptor>;
     testChannel: (channelId: string) => Promise<ChannelTestResult>;
+    orderMailbox: (request: OrderMailboxRequest) => Promise<OrderMailboxResponse>;
   };
   knowledge: {
     listDocuments: () => Promise<KnowledgeDocument[]>;

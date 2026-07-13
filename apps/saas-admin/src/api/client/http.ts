@@ -7,6 +7,8 @@ import type {
   ChannelTestResult,
   ConnectChannelRequest,
   ConnectChannelResponse,
+  OrderMailboxRequest,
+  OrderMailboxResponse,
   CreateBroadcastRequest,
   CreateBroadcastResponse,
   CreateKnowledgeDocumentRequest,
@@ -118,6 +120,11 @@ export function createSaasAdminApiClient(options: SaasAdminApiClientOptions = {}
         requestJson<ChannelTestResult>(`/channels/${channelId}:test`, {
           method: "POST",
           body: JSON.stringify({})
+        }),
+      orderMailbox: (request: OrderMailboxRequest) =>
+        requestJson<OrderMailboxResponse>("/mail/mailboxes", {
+          method: "POST",
+          body: JSON.stringify(request)
         })
     },
     knowledge: {

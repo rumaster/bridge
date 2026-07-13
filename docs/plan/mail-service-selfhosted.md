@@ -384,7 +384,26 @@ e2e-сценарий email проходит на настоящих сокета
 **DoD (M4):** есть бэкап/restore-процедура, базовый мониторинг очереди и
 хранилища, лимиты отправки на ящик.
 
-### M5 — Продуктивизация «Bridge Mail» как услуги (по потребности)
+### M5 — Продуктивизация «Bridge Mail» как услуги — ✅ РЕАЛИЗОВАН (базовый заказ)
+
+> **Статус: реализовано и проверено на стенде** (базовый заказ ящика из админки;
+> тариф/биллинг — по потребности). Что сделано:
+> - **Провижининг-агент** — `serve`-режим
+>   [`scripts/mail-provision.ts`](../../scripts/mail-provision.ts): HTTP
+>   (`POST /provision`, `DELETE`, `GET /health`, Bearer-токен) рядом с почтовиком.
+> - **Backend** — `IntegrationGatewayFacade.provisionManagedMailbox` +
+>   `POST /api/v1/mail/mailboxes` (admin-auth,
+>   [`mail.controller.ts`](../../services/backend/src/modules/integration-gateway/mail.controller.ts)):
+>   зовёт агента → `connectChannel` (секрет write-only). Config `MAIL_PROVISION_URL`/
+>   `MAIL_PROVISION_TOKEN`.
+> - **saas-admin** — форма «Bridge Mail — заказать ящик» на `:8081/channels`
+>   ([`ChannelsPage.tsx`](../../apps/saas-admin/src/presentation/pages/ChannelsPage.tsx))
+>   + `api.channels.orderMailbox` + типы + MSW + vitest.
+> - Проверено на стенде: `POST /api/v1/mail/mailboxes {local_part}` → HTTP 201,
+>   ящик создан на почтовике, канал `email/connected` с `credentials_envelope`.
+> - **Осталось (по потребности):** тариф/биллинг-хук, отображение квоты/адреса и
+>   удаление ящика из UI, суспенд по злоупотреблению; агент как compose-сервис
+>   (сейчас — `docker run`, рецепт в [`deploy/mail/README.md`](../../deploy/mail/README.md)).
 
 - UI в SaaS Administration (`:8081`): заказ ящика организацией, отображение
   квоты/адреса; автопровижн через `mail-provision` (M2).

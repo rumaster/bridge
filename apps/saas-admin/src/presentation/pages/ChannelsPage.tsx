@@ -175,6 +175,9 @@ export default function ChannelsPage() {
   const [testingChannelId, setTestingChannelId] = useState<string | null>(null);
   const [testMessages, setTestMessages] = useState<Record<string, string>>({});
   const [realtimeStatus, setRealtimeStatus] = useState("offline");
+  const [mailLocalPart, setMailLocalPart] = useState("");
+  const [mailOrdering, setMailOrdering] = useState(false);
+  const [mailNotice, setMailNotice] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -317,6 +320,33 @@ export default function ChannelsPage() {
     }
   }
 
+  async function handleOrderMailbox(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!session) {
+      return;
+    }
+    const localPart = mailLocalPart.trim();
+    if (!localPart || /[@\s]/.test(localPart)) {
+      setMailNotice({ tone: "err", text: "Укажите имя ящика без @ и пробелов." });
+      return;
+    }
+    setMailOrdering(true);
+    setMailNotice(null);
+    try {
+      const result = await api.channels.orderMailbox({ local_part: localPart });
+      setChannels((current) => [...current, result.channel]);
+      setMailLocalPart("");
+      setMailNotice({
+        tone: "ok",
+        text: `Ящик ${result.address} создан и подключён как канал Email.`,
+      });
+    } catch (error) {
+      setMailNotice({ tone: "err", text: getProblemMessage(error, "Не удалось заказать ящик.") });
+    } finally {
+      setMailOrdering(false);
+    }
+  }
+
   async function handleTestChannel(channelId: string) {
     setTestingChannelId(channelId);
     setAlert(null);
@@ -387,6 +417,39 @@ export default function ChannelsPage() {
               <strong>{getRealtimeStatusLabel(realtimeStatus)}</strong>
             </Panel>
           </div>
+
+          <Panel as="form" className="m2-form" onSubmit={(event) => void handleOrderMailbox(event)}>
+            <div className="panel-heading-row">
+              <div>
+                <h2>Bridge Mail — заказать ящик</h2>
+                <p>
+                  Создаём почтовый ящик на нашем сервере и сразу подключаем его как канал Email —
+                  креды вводить не нужно.
+                </p>
+              </div>
+            </div>
+            {mailNotice ? (
+              mailNotice.tone === "ok" ? (
+                <div className="form-success">{mailNotice.text}</div>
+              ) : (
+                <div className="form-alert" role="alert">
+                  {mailNotice.text}
+                </div>
+              )
+            ) : null}
+            <TextInput
+              id="bridge-mail-local-part"
+              label="Имя ящика (до @)"
+              onChange={(event) => setMailLocalPart(event.currentTarget.value)}
+              placeholder="support"
+              value={mailLocalPart}
+            />
+            <div className="form-actions">
+              <Button disabled={mailOrdering} type="submit" variant="primary">
+                {mailOrdering ? "Создаём…" : "Заказать ящик"}
+              </Button>
+            </div>
+          </Panel>
 
           <Panel as="form" className="m2-form" onSubmit={(event) => void handleCreateChannel(event)}>
             <div className="panel-heading-row">
