@@ -363,6 +363,23 @@ e2e-сценарий email проходит на настоящих сокета
 > **Возобновление боевой доставки:** получить relay-креды (ИЛИ открытый 25 + PTR),
 > заполнить `MAIL_RELAY_*`, включить тумблеры, опубликовать DNS — чек-лист
 > «Что ещё нужно» в [`dns-records.md`](../../deploy/mail/dns-records.md).
+>
+> **Проверка на стенде 2026-07-13 (внутренний контур + DKIM):**
+> - Канал `email` в БД (`channels.id=0e2702e3…`, `support@lissac-games.online`) —
+>   расшифрован envelope (AES-256-GCM), пароль **валиден** (`doveadm auth test` →
+>   `auth succeeded`); годится и для IMAP(143), и для submission(587).
+> - Провижининг ящиков **работает**: `setup email add`/`update`/`del -y` (создание
+>   и смена пароля на throwaway-ящике — новый пароль аутентифицируется). Нюанс:
+>   старый пароль при немедленном ретесте ещё проходил — вероятно auth-cache Dovecot.
+> - **DKIM-подпись подтверждена end-to-end:** при `MAIL_ENABLE_OPENDKIM=1`
+>   реальная отправка `support@`→`client@` через submission-587 (AUTH LOGIN →
+>   `queued`) даёт в доставленном письме валидный заголовок
+>   `DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/simple; d=lissac-games.online; s=mail`
+>   (milter `$dkim_milter` на `smtpd`+`non_smtpd`). После проверки стенд возвращён
+>   в baseline (`OPENDKIM=0`), тестовое письмо удалено.
+> - **Внешняя доставка по-прежнему невозможна** без relay-кред: submission-587 без
+>   `SSL_TYPE` — plaintext (STARTTLS не анонсируется), исходящий 25 закрыт; edge-gateway
+>   видит `channels: 0` (backend не публикует `channel_credentials_sync` в штатном режиме).
 
 - **Исходящий транспорт (основное):** relay через транзакционный SMTP —
   `MAIL_RELAY_HOST/PORT/USER/PASSWORD` в `.env.rf` (реализовано). Требует внешних
