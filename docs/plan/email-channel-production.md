@@ -52,28 +52,50 @@ decisions:
 
 ## Статус реализации (E0–E6)
 
-Все этапы **E0–E6 выполнены** на уровне зрелости data-plane репозитория
-(детерминированный, покрытый тестами код; реальные сетевые сокеты/клиенты —
-единая внешняя веха **MP-12/MP-22**, реальная межсерверная сеть):
+> **Актуализация 2026-07-13 (проверка моков/разрывов по факту кода и стенда,
+> HEAD `277ba0f`).** Практическая часть MP-12 для email **закрыта** отдельной
+> веткой работ — self-hosted почтовый сервис «Bridge Mail»
+> ([`mail-service-selfhosted.md`](./mail-service-selfhosted.md), M1–M5): боевые
+> IMAP (`imapflow`, `edge-imap-mailbox.ts`) и SMTP (`nodemailer`,
+> `edge-smtp-transport.ts`) реально работают против живого `mailserver` в
+> RF-сети; входящий/исходящий драйверы подключены в рантайм
+> (`edge-channel-drivers.ts`, гейт `EDGE_CHANNEL_DRIVERS=on`, на стенде **on**);
+> backend-egress переведён на `egress_dispatch` (HTTP на `EDGE_CONTROL_URL`,
+> коммит `e65de03`). Сквозной путь подтверждён на стенде — 3 inbound + 3 outbound
+> email в `messages`.
+>
+> **Остался один реальный рантайм-разрыв: publisher `channel_credentials_sync`
+> на стороне backend отсутствует.** Ничто в проде не шлёт креды каналов на Edge —
+> `edge-control-plane.storeCredentials` наполняется только вручную скриптом
+> `verify-full-path.ts`, играющим роль App-стороны. Поэтому в штатной работе Edge
+> видит `channels: 0` (проверено в логах edge-gateway на стенде): входящий IMAP
+> ничего не поллит (**менеджер не получает входящих**), а `egress_dispatch`
+> падает с «No SMTP credentials». План закрытия —
+> [`email-inbound-edge-implementation.md`](./email-inbound-edge-implementation.md).
 
-| Этап | Что закрыто | Статус |
+| Этап | Что закрыто | Статус (факт на 2026-07-13) |
 |------|-------------|--------|
 | **E0** | G-2/G-4 — структурные email-креды, `PUT /channels/:id` | ✅ backend |
-| **E1** | G-1 — UI ввода IMAP/SMTP кред (saas-admin) | ✅ форма (real `:test` — с MP-12) |
-| **E2** | G-10 — control-plane туннеля App→Edge (креды + egress + офлайн-очередь) | ✅ control-plane |
-| **E3** | G-5/G-9 — входящий IMAP-драйвер на Edge (RF-first) | ✅ драйвер |
-| **E4** | G-6/G-7 — SMTP-sender на Edge + поля эгресса | ✅ sender + контракт |
+| **E1** | G-1 — UI ввода IMAP/SMTP кред + заказ «Bridge Mail» | ✅ форма + автопровижн (M5) |
+| **E2** | G-10 — control-plane App→Edge | 🟡 приёмник (`/internal/edge/control/messages`) и egress-паблишер есть; **publisher `channel_credentials_sync` на backend НЕ реализован** |
+| **E3** | G-5/G-9 — входящий IMAP-драйвер на Edge (RF-first) | ✅ боевой (`imapflow`), подключён — но инертен без creds-sync |
+| **E4** | G-6/G-7 — SMTP-sender на Edge + поля эгресса | ✅ боевой (`nodemailer`) + egress по HTTP — инертен без creds-sync |
 | **E5** | G-8 — email в manager-workspace (тип, тема) | ✅ frontend |
-| **E6** | F1/F2 — вывод SVC-INT email-пути + сквозная приёмка | ✅ in-process |
+| **E6** | F1/F2 — вывод SVC-INT email-пути + сквозная приёмка | 🟡 e2e только через `verify-full-path.ts` (не штатный путь) |
 
-**Единственный оставшийся блок — боевой Edge-daemon (MP-12/MP-22):** реальные
-IMAP (IDLE/poll) и nodemailer SMTP вместо инъектируемых клиентов; TCP/TLS-сокет
-туннеля (data + control) вместо in-process link; проброс RF-секретов/`DATABASE_URL`
-в edge-gateway; перевод backend `handoffEgress` для email на `egress_dispatch`
-через туннель + публикация `channel_credentials_sync`; реальный `:test` кред с
-Edge-стороны (IMAP LOGIN / SMTP EHLO). Вся доменная логика (контракты, нормализация, RF-first,
-threading, идемпотентность, no-loss) уже реализована и протестирована — daemon
-подключает к ней реальный транспорт.
+**Оставшиеся блоки (актуально):**
+1. **Publisher `channel_credentials_sync` на backend — главный разрыв.** При
+   `connectChannel`/`updateChannel` email-канала backend должен слать
+   `channel_credentials_sync` на `EDGE_CONTROL_URL` (тем же путём, что уже
+   работает для `egress_dispatch`), плюс периодический/bulk resync (кэш Edge —
+   in-memory, теряется при рестарте → снова `channels: 0`). Без него весь
+   email-путь инертен вне verify-скрипта.
+2. **Боевая deliverability (M3):** порт 25 заблокирован, PTR/DNS не опубликованы —
+   внешняя доставка отложена; внутри RF-сети `mailserver`↔Edge работает.
+3. **Реальный сокет VPN-туннеля (MP-12):** App→Edge control сейчас идёт по прямому
+   HTTP (`EDGE_CONTROL_URL`, host-port), а НЕ через туннель; сам туннель Edge→App
+   по-прежнему без боевого TCP/TLS-сокета для data-plane.
+4. **Вложения → `storage_ref`** — по-прежнему непрозрачны (S3 отложен, §4.3).
 
 > **Ограничение документа.** Только план. Кода и диффов нет. Оценки
 > трудозатрат в человеко-днях/датах — не приводятся; шаги — логические/
