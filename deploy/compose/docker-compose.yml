@@ -370,6 +370,11 @@ services:
       context: ../..
       dockerfile: deploy/docker/web-chat/Dockerfile
     restart: unless-stopped
+    environment:
+      # Хостируемая страница организации /chat/<id> (W5) обращается к /api;
+      # vite preview проксирует /api на ядро. Без этого адреса страница не смогла
+      # бы создать сессию (W4). Для RF-контура тут может стоять адрес Edge.
+      BACKEND_INTERNAL_URL: ${WEB_CHAT_BACKEND_INTERNAL_URL:-http://backend:3000}
     ports:
       - "${WEB_CHAT_PORT:-8083}:4173"
 
