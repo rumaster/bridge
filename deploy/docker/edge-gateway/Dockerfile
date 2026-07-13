@@ -14,12 +14,16 @@ WORKDIR /repo
 # docs/plan/mail-service-selfhosted.md): edge-channel-drivers статически их
 # импортирует, поэтому пакеты обязаны присутствовать в образе (Dockerfile ставит
 # рантайм-зависимости явно, без npm ci по package.json).
+# redis — клиент C7 Redis→WS моста (realtime, W3 docs/plan/web-chat-channel-production.md):
+# redis-stream-client динамически импортирует 'redis', поэтому при заданном
+# REDIS_URL пакет обязан присутствовать в образе (иначе ERR_MODULE_NOT_FOUND).
 RUN npm install --no-save --no-package-lock \
   tsx@^4.19.2 \
   pg@^8.22.0 \
   imapflow@^1.4.7 \
   mailparser@^3.9.14 \
-  nodemailer@^6.9.16
+  nodemailer@^6.9.16 \
+  redis@^6.1.0
 COPY packages/contracts ./packages/contracts
 COPY services/edge-gateway ./services/edge-gateway
 WORKDIR /repo/services/edge-gateway
