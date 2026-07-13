@@ -33,6 +33,8 @@ const OUT_ENDPOINT = "20000000-0000-4000-8000-000000000401";
 const OUT_CONVERSATION = "20000000-0000-4000-8000-000000000501";
 const OUT_MESSAGE = "20000000-0000-4000-8000-000000000602";
 const FAIL_MESSAGE = "20000000-0000-4000-8000-000000000603";
+const WEB_CHAT_ENDPOINT = "20000000-0000-4000-8000-000000000403";
+const WEB_CHAT_MESSAGE = "20000000-0000-4000-8000-000000000606";
 const EDGE_CLIENT = "20000000-0000-4000-8000-000000000302";
 const EDGE_ENDPOINT = "20000000-0000-4000-8000-000000000402";
 const EDGE_CONVERSATION = "20000000-0000-4000-8000-000000000502";
@@ -434,6 +436,64 @@ describe("Внутренний messaging-путь (issue #189/#191)", () => {
     }
   });
 
+  it("не диспетчеризует Web Chat egress: остаётся routed, SVC-INT не вызывается (WG-6, W1)", async () => {
+    // Ловушка на INTEGRATION_EGRESS_URL: если handoffEgress всё же дёрнет SVC-INT
+    // для web_chat — тест это заметит. Web Chat доставляется публикацией C7 ядром,
+    // внешнего egress-адаптера у канала нет (docs/plan/web-chat-channel-production.md).
+    let egressCalls = 0;
+    const server = createServer((_request, response) => {
+      egressCalls += 1;
+      response.statusCode = 202;
+      response.end("{}");
+    });
+    await new Promise<void>((resolveServer) => server.listen(0, "127.0.0.1", resolveServer));
+    const previousUrl = process.env.INTEGRATION_EGRESS_URL;
+    process.env.INTEGRATION_EGRESS_URL = `http://127.0.0.1:${
+      (server.address() as AddressInfo).port
+    }/egress`;
+
+    try {
+      const response = await request(app.getHttpServer())
+        .post("/internal/egress/messages")
+        .send({ organization_id: ORG, message_id: WEB_CHAT_MESSAGE, adapter: "web_chat" })
+        .expect(202);
+
+      expect(response.body).toMatchObject({
+        accepted: true,
+        message_id: WEB_CHAT_MESSAGE,
+        channel: "web_chat",
+        status: "routed",
+        forwarded: false,
+        degraded: false,
+        attempt_no: 0,
+      });
+      expect(response.body.error).toBeNull();
+      expect(egressCalls).toBe(0);
+
+      await withClient(databaseUrl, async (client) => {
+        await setPlatformOperator(client);
+        const message = await client.query("SELECT status FROM messages WHERE id = $1", [
+          WEB_CHAT_MESSAGE,
+        ]);
+        expect(message.rows[0].status).toBe("routed");
+        const attempts = await client.query(
+          "SELECT attempt_no FROM message_delivery_attempts WHERE message_id = $1",
+          [WEB_CHAT_MESSAGE],
+        );
+        expect(attempts.rows).toEqual([]);
+      });
+    } finally {
+      if (previousUrl === undefined) {
+        delete process.env.INTEGRATION_EGRESS_URL;
+      } else {
+        process.env.INTEGRATION_EGRESS_URL = previousUrl;
+      }
+      await new Promise<void>((resolveServer, reject) => {
+        server.close((error) => (error ? reject(error) : resolveServer()));
+      });
+    }
+  });
+
   it("экспортирует load-probe ingress counters в /metrics", async () => {
     const response = await request(app.getHttpServer()).get("/metrics").expect(200);
 
@@ -548,6 +608,29 @@ async function seedFixtures(databaseUrl: string): Promise<void> {
           '{"text":"Ответ с ошибкой адаптера"}'::jsonb, 'routed', '2026-07-04T08:35:00.000Z')
       `,
       [FAIL_MESSAGE, ORG, OUT_CONVERSATION, OUT_ENDPOINT],
+    );
+    // Web Chat endpoint + outbound-ответ менеджера: realtime/direct-канал без
+    // внешнего egress (WG-6, план W1). Доставляется публикацией C7 ядром.
+    await client.query(
+      `
+        INSERT INTO communication_endpoints (
+          id, organization_id, client_id, channel, external_id, verified, metadata
+        )
+        VALUES ($1, $2, $3, 'web_chat', 'web_chat:visitor-9', false,
+          '{"visitor_session_id":"visitor-9"}'::jsonb)
+      `,
+      [WEB_CHAT_ENDPOINT, ORG, OUT_CLIENT],
+    );
+    await client.query(
+      `
+        INSERT INTO messages (
+          id, organization_id, conversation_id, endpoint_id, channel, direction, sender_type,
+          sequence_number, type, content, status, created_at
+        )
+        VALUES ($1, $2, $3, $4, 'web_chat', 'outbound', 'manager', 1, 'text',
+          '{"text":"Ответ менеджера в веб-чат"}'::jsonb, 'routed', '2026-07-04T08:40:00.000Z')
+      `,
+      [WEB_CHAT_MESSAGE, ORG, OUT_CONVERSATION, WEB_CHAT_ENDPOINT],
     );
   });
 }

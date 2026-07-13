@@ -25,6 +25,14 @@ export interface WebChatAdapterOptions {
   now?: () => string;
 }
 
+/**
+ * Адаптер Web Chat — **inbound/C6-only**. У Web Chat нет внешнего канала доставки:
+ * клиент подключён напрямую к ядру по REST/C7-WS, поэтому исходящее доставляется
+ * публикацией C7-события ядром, а НЕ egress-адаптером (WG-6/WG-7,
+ * docs/plan/web-chat-channel-production.md, этап W1). Здесь остаются только приём
+ * (нормализация входящего → C2.IngressMessage) и C6 capability-дескриптор; egress
+ * из адаптера снят и в движок доставки SVC-INT он не регистрируется.
+ */
 export function createWebChatAdapter({
   coreIngressUrl,
   fetchImpl = globalThis.fetch,
@@ -34,13 +42,9 @@ export function createWebChatAdapter({
     throw new TypeError("fetchImpl must be a function");
   }
 
-  const channelDeliveries = [];
   const metrics = {
     ingress_published_total: 0,
     ingress_failed_total: 0,
-    egress_accepted_total: 0,
-    egress_duplicate_total: 0,
-    egress_rejected_total: 0,
   };
 
   const capabilityDescriptor = createWebChatCapabilityDescriptor({
@@ -52,10 +56,6 @@ export function createWebChatAdapter({
 
     getMetrics() {
       return { ...metrics };
-    },
-
-    getChannelDeliveries() {
-      return channelDeliveries.map((delivery) => structuredClone(delivery));
     },
 
     async emulateIncomingMessage(payload) {
@@ -93,46 +93,6 @@ export function createWebChatAdapter({
         accepted: true,
         core_status: response.status,
         ingress,
-      };
-    },
-
-    async acceptEgressDelivery(delivery) {
-      let channelDelivery;
-      try {
-        channelDelivery = normalizeOutgoingWebChatDelivery(delivery);
-      } catch (error) {
-        metrics.egress_rejected_total += 1;
-        return {
-          accepted: false,
-          errors: [error.message],
-        };
-      }
-
-      const duplicate = channelDeliveries.find(
-        (item) => item.idempotency_key === channelDelivery.idempotency_key,
-      );
-
-      if (duplicate) {
-        metrics.egress_duplicate_total += 1;
-        return {
-          accepted: true,
-          duplicate: true,
-          delivery: structuredClone(duplicate),
-        };
-      }
-
-      const acceptedDelivery = {
-        ...channelDelivery,
-        accepted_at: now(),
-      };
-
-      channelDeliveries.push(acceptedDelivery);
-      metrics.egress_accepted_total += 1;
-
-      return {
-        accepted: true,
-        duplicate: false,
-        delivery: structuredClone(acceptedDelivery),
       };
     },
   };
@@ -230,33 +190,6 @@ export function normalizeIncomingWebChatMessage(payload, now = () => new Date().
   };
 }
 
-export function normalizeOutgoingWebChatDelivery(delivery) {
-  const errors = validateEgressDelivery(delivery);
-  const attachments = normalizeAttachments(delivery?.message?.attachments ?? [], errors);
-  if (errors.length > 0) {
-    throw new TypeError(errors.join("; "));
-  }
-
-  const message = delivery.message;
-  return {
-    idempotency_key: delivery.idempotency_key,
-    message_id: message.message_id,
-    organization_id: message.organization_id,
-    channel_id: delivery.channel_id,
-    session_id: message.conversation_ref,
-    type: message.content.type,
-    text: message.content.text,
-    attachments,
-  };
-}
-
-export function isWebChatEgressDelivery(delivery) {
-  return (
-    delivery?.message?.channel_type === WEB_CHAT_CHANNEL_TYPE ||
-    delivery?.message?.channel === WEB_CHAT_CHANNEL_TYPE
-  );
-}
-
 function createCapability(capability) {
   if (WEB_CHAT_SUPPORTED_CAPABILITIES.has(capability)) {
     return { supported: true };
@@ -339,70 +272,9 @@ function normalizeAttachments(attachments, errors) {
   });
 }
 
-function validateEgressDelivery(delivery) {
-  const errors = [];
-
-  expectRecord(errors, delivery, "delivery");
-  expectEqual(errors, delivery?.contract, "C2.EgressDelivery", "contract");
-  expectEqual(errors, delivery?.version, C2_VERSION, "version");
-  expectNonEmptyString(errors, delivery?.idempotency_key, "idempotency_key");
-  expectNonEmptyString(errors, delivery?.channel_id, "channel_id");
-  expectRecord(errors, delivery?.message, "message");
-  expectNonEmptyString(errors, delivery?.message?.message_id, "message.message_id");
-  expectNonEmptyString(
-    errors,
-    delivery?.message?.organization_id,
-    "message.organization_id",
-  );
-  expectNonEmptyString(errors, delivery?.message?.channel_id, "message.channel_id");
-  expectEqual(errors, delivery?.message?.direction, "outbound", "message.direction");
-  expectRecord(errors, delivery?.message?.content, "message.content");
-  expectNonEmptyString(errors, delivery?.message?.content?.type, "message.content.type");
-
-  if (
-    typeof delivery?.channel_id === "string" &&
-    typeof delivery?.message?.channel_id === "string" &&
-    delivery.channel_id !== delivery.message.channel_id
-  ) {
-    errors.push("channel_id must match message.channel_id");
-  }
-
-  if (
-    typeof delivery?.idempotency_key === "string" &&
-    typeof delivery?.message?.message_id === "string" &&
-    delivery.idempotency_key !== delivery.message.message_id
-  ) {
-    errors.push("idempotency_key must match message.message_id");
-  }
-
-  if (
-    delivery?.message?.channel_type !== undefined &&
-    delivery.message.channel_type !== WEB_CHAT_CHANNEL_TYPE
-  ) {
-    errors.push(`message.channel_type must equal ${JSON.stringify(WEB_CHAT_CHANNEL_TYPE)}`);
-  }
-
-  if (
-    typeof delivery?.message?.content?.type === "string" &&
-    !WEB_CHAT_MESSAGE_TYPES.has(delivery.message.content.type)
-  ) {
-    errors.push("message.content.type must be one of: text, image, file");
-  }
-
-  expectNonEmptyString(errors, delivery?.message?.conversation_ref, "message.conversation_ref");
-
-  return errors;
-}
-
 function expectRecord(errors, value, path) {
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     errors.push(`${path} must be an object`);
-  }
-}
-
-function expectEqual(errors, actual, expected, path) {
-  if (actual !== expected) {
-    errors.push(`${path} must equal ${JSON.stringify(expected)}`);
   }
 }
 

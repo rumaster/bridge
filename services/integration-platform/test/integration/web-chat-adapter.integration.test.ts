@@ -3,8 +3,6 @@ import { createServer } from "node:http";
 import { after, before, describe, it } from "node:test";
 
 import { createWebChatAdapter } from "../../src/adapters/web-chat/web-chat-adapter.js";
-import { createAdapterDeliveryChannel } from "../../src/delivery/adapter-delivery-channel.js";
-import { createDeliveryEngine } from "../../src/delivery/delivery-engine.js";
 import { createIntegrationPlatformServer } from "../../src/server.js";
 
 const JSON_HEADERS = { "content-type": "application/json" };
@@ -65,10 +63,6 @@ describe("Web Chat adapter <-> mock core CP-1 slice", () => {
       now: () => "2026-07-03T09:00:00.000Z",
     });
     integrationServer = createIntegrationPlatformServer({
-      deliveryEngine: createDeliveryEngine({
-        backendClient: createNoopBackendClient(),
-        channel: createAdapterDeliveryChannel({ adapters: { web_chat: adapter } }),
-      }),
       webChatAdapter: adapter,
     });
     integrationBaseUrl = await listen(integrationServer);
@@ -176,64 +170,11 @@ describe("Web Chat adapter <-> mock core CP-1 slice", () => {
     assert.match(body.errors[0], /channel_id or endpoint_id/);
   });
 
-  it("accepts C2 Egress and delivers one idempotent Web Chat payload", async () => {
-    const egressBody = {
-      contract: "C2.EgressDelivery",
-      version: "1.0.0",
-      idempotency_key: "web-out-1",
-      channel_id: "channel-web",
-      message: {
-        message_id: "web-out-1",
-        organization_id: "org-1",
-        channel_id: "channel-web",
-        channel_type: "web_chat",
-        conversation_ref: "session-1",
-        direction: "outbound",
-        content: { type: "text", text: "hello web chat" },
-      },
-    };
-
-    const first = await fetch(`${integrationBaseUrl}/internal/delivery/dispatch`, {
-      method: "POST",
-      headers: JSON_HEADERS,
-      body: JSON.stringify(egressBody),
-    });
-    const second = await fetch(`${integrationBaseUrl}/internal/delivery/dispatch`, {
-      method: "POST",
-      headers: JSON_HEADERS,
-      body: JSON.stringify(egressBody),
-    });
-
-    assert.equal(first.status, 202);
-    assert.equal(second.status, 202);
-
-    const firstBody: any = await first.json();
-    const secondBody: any = await second.json();
-    assert.equal(firstBody.delivered, true);
-    assert.equal(firstBody.duplicate, false);
-    assert.equal(secondBody.delivered, true);
-    assert.equal(secondBody.duplicate, true);
-
-    assert.deepEqual(adapter.getChannelDeliveries(), [
-      {
-        idempotency_key: "web-out-1",
-        message_id: "web-out-1",
-        organization_id: "org-1",
-        channel_id: "channel-web",
-        session_id: "session-1",
-        type: "text",
-        text: "hello web chat",
-        attachments: [],
-        accepted_at: "2026-07-03T09:00:00.000Z",
-      },
-    ]);
+  it("не диспетчеризует Web Chat egress: доставка терминальна по C7/WS (WG-6, W1)", async () => {
+    // Web Chat — inbound/C6-only: у адаптера нет acceptEgressDelivery, а в движок
+    // доставки SVC-INT он не регистрируется. Исходящее доходит до посетителя
+    // публикацией C7-события ядром, а не egress-конвертом сюда.
+    assert.equal(typeof (adapter as any).acceptEgressDelivery, "undefined");
+    assert.equal(typeof (adapter as any).getChannelDeliveries, "undefined");
   });
 });
-
-function createNoopBackendClient() {
-  return {
-    async recordAttempt() {
-      return { recorded: true };
-    },
-  };
-}

@@ -8,7 +8,7 @@ import { isUuidV4 } from "../../common/request-context";
 import { AuditService } from "../audit/audit.service";
 import { mapClientEndpoint, mapClientIdentityLink } from "../client/client.dto";
 import { C7RealtimeEventPublisher } from "./c7-realtime-event.publisher";
-import { InternalMessagingService } from "./internal-messaging.service";
+import { InternalMessagingService, isDirectRealtimeChannel } from "./internal-messaging.service";
 import type {
   AddClientEndpointDto,
   ClientEndpointResponseDto,
@@ -262,11 +262,14 @@ export class CommunicationCoreProxyService {
     // сохранял сообщение (routed) и публиковал C7, но НЕ инициировал доставку —
     // из-за чего ответ менеджера не доходил до клиента. Триггерим handoffEgress
     // после коммита (best-effort, идемпотентно по message_id). Рассылки идут
-    // отдельным путём (deliverBroadcast) — пропускаем.
+    // отдельным путём (deliverBroadcast) — пропускаем. Realtime/direct-каналы
+    // (Web Chat) доставляются публикацией C7 выше и НЕ имеют внешнего egress —
+    // не дёргаем SVC-INT, иначе фантомный failed/delivered (WG-6, план W1).
     if (
       message.direction === "outbound" &&
       message.status === "routed" &&
-      message.senderType !== "broadcast"
+      message.senderType !== "broadcast" &&
+      !isDirectRealtimeChannel(message.channel)
     ) {
       try {
         const handoff = await this.messaging.handoffEgress({

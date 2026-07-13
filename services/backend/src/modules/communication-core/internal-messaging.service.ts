@@ -56,6 +56,20 @@ import {
 } from "./communication-core-m5.service";
 import type { MessageStatus } from "./message-status";
 
+/**
+ * Каналы с прямым realtime-подключением клиента (виджет по C7/WS, напр. Web Chat):
+ * исходящее доставляется публикацией C7-события, внешнего egress-адаптера у канала
+ * нет. Такие каналы исключаются из handoffEgress/SVC-INT — иначе получаем фантомный
+ * `failed` (prod) или `delivered` (mock-fallback) от несуществующего адаптера
+ * (WG-6, docs/plan/web-chat-channel-production.md, этап W1). Доставку подтверждает
+ * WS-ack (routed -> delivered) на этапе W3.
+ */
+export const DIRECT_REALTIME_CHANNELS: ReadonlySet<string> = new Set(["web_chat"]);
+
+export function isDirectRealtimeChannel(channel: string): boolean {
+  return DIRECT_REALTIME_CHANNELS.has(channel);
+}
+
 interface EndpointRow {
   id: string;
   client_id: string;
@@ -356,9 +370,6 @@ export class InternalMessagingService {
           humanMessage: "Сообщение не является исходящим.",
         });
       }
-      // Проверяем и переводим статус routed -> sent машиной состояний C1.
-      assertMessageStatusTransition(message.status as never, MESSAGE_STATUS.SENT);
-
       const endpoint = await this.requireEndpointById(
         client,
         request.organizationId,
@@ -379,6 +390,33 @@ export class InternalMessagingService {
           metadata: endpoint.metadata,
         },
       );
+
+      // Web Chat и другие realtime/direct-каналы: клиент подключён напрямую по
+      // C7/WS, внешнего канала доставки нет. Не переводим routed -> sent и не
+      // дёргаем SVC-INT — доставка терминальна по факту публикации C7 (WS-ack ->
+      // delivered делает этап W3). Закрывает WG-6 у источника для любого
+      // вызывающего (createMessage и внутренний /internal/egress/messages).
+      if (isDirectRealtimeChannel(message.channel)) {
+        return {
+          accepted: true,
+          message_id: message.id,
+          organization_id: request.organizationId,
+          conversation_id: message.conversation_id,
+          endpoint_id: message.endpoint_id,
+          channel: message.channel,
+          status: message.status,
+          adapter: request.adapter,
+          attempt_no: 0,
+          forwarded: false,
+          degraded: false,
+          error: null,
+          delivery,
+          sent_at: this.now(),
+        };
+      }
+
+      // Проверяем и переводим статус routed -> sent машиной состояний C1.
+      assertMessageStatusTransition(message.status as never, MESSAGE_STATUS.SENT);
 
       const occurredAt = this.now();
       const deliveryResult = await this.deliverWithAdapterFailure(client, {

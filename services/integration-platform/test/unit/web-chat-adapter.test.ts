@@ -5,7 +5,6 @@ import {
   WEB_CHAT_CHANNEL_TYPE,
   createWebChatAdapter,
   normalizeIncomingWebChatMessage,
-  normalizeOutgoingWebChatDelivery,
 } from "../../src/adapters/web-chat/web-chat-adapter.js";
 
 describe("Web Chat adapter normalization", () => {
@@ -77,99 +76,6 @@ describe("Web Chat adapter normalization", () => {
       type: "text",
       text: "legacy ping",
     });
-  });
-
-  it("normalizes outbound C2 Egress delivery into a Web Chat channel payload", () => {
-    const delivery = normalizeOutgoingWebChatDelivery({
-      contract: "C2.EgressDelivery",
-      version: "1.0.0",
-      idempotency_key: "web-out-1",
-      channel_id: "channel-web",
-      message: {
-        message_id: "web-out-1",
-        organization_id: "org-1",
-        channel_id: "channel-web",
-        channel_type: WEB_CHAT_CHANNEL_TYPE,
-        conversation_ref: "session-1",
-        direction: "outbound",
-        content: {
-          type: "file",
-          text: "Документ",
-        },
-        attachments: [
-          {
-            id: "file-1",
-            kind: "file",
-            storage_ref: "blob://file-1",
-            mime: "application/pdf",
-            filename: "terms.pdf",
-            size: 4096,
-          },
-        ],
-      },
-    });
-
-    assert.deepEqual(delivery, {
-      idempotency_key: "web-out-1",
-      message_id: "web-out-1",
-      organization_id: "org-1",
-      channel_id: "channel-web",
-      session_id: "session-1",
-      type: "file",
-      text: "Документ",
-      attachments: [
-        {
-          id: "file-1",
-          kind: "file",
-          storage_ref: "blob://file-1",
-          mime: "application/pdf",
-          filename: "terms.pdf",
-          size: 4096,
-        },
-      ],
-    });
-  });
-
-  it("rejects outbound C2 Egress when idempotency_key drifts from message_id", () => {
-    assert.throws(
-      () =>
-        normalizeOutgoingWebChatDelivery({
-          contract: "C2.EgressDelivery",
-          version: "1.0.0",
-          idempotency_key: "delivery-key",
-          channel_id: "channel-web",
-          message: {
-            message_id: "message-key",
-            organization_id: "org-1",
-            channel_id: "channel-web",
-            channel_type: WEB_CHAT_CHANNEL_TYPE,
-            direction: "outbound",
-            content: { type: "text", text: "hello" },
-          },
-        }),
-      /idempotency_key must match message\.message_id/,
-    );
-  });
-
-  it("rejects outbound C2 Egress without a Web Chat conversation reference", () => {
-    assert.throws(
-      () =>
-        normalizeOutgoingWebChatDelivery({
-          contract: "C2.EgressDelivery",
-          version: "1.0.0",
-          idempotency_key: "web-out-1",
-          channel_id: "channel-web",
-          message: {
-            message_id: "web-out-1",
-            organization_id: "org-1",
-            channel_id: "channel-web",
-            channel_type: WEB_CHAT_CHANNEL_TYPE,
-            direction: "outbound",
-            content: { type: "text", text: "hello" },
-          },
-        }),
-      /message\.conversation_ref must be a non-empty string/,
-    );
   });
 
   it("publishes Web Chat C6 capabilities with only actually supported features enabled", () => {
