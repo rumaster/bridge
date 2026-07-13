@@ -12,6 +12,7 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 
+import { resolveEdgeControlUrl } from "../../common/edge-control/edge-control-endpoint";
 import { FacadeResilience, type FacadeResilienceOptions } from "../../common/resilience/resilience";
 import type { PgDatabase } from "../../common/database/database.service";
 import type { ChannelSecretEnvelope } from "../../common/secrets/channel-secret.store";
@@ -348,7 +349,7 @@ export class IntegrationGatewayFacade implements OnApplicationBootstrap, OnModul
     const rawInterval = process.env.EDGE_CREDENTIALS_RESYNC_INTERVAL_MS;
     const parsedInterval = rawInterval && rawInterval.trim() !== "" ? Number(rawInterval) : NaN;
     const intervalMs = Number.isFinite(parsedInterval) ? parsedInterval : 60_000;
-    const edgeControlUrl = process.env.EDGE_CONTROL_URL?.trim();
+    const edgeControlUrl = resolveEdgeControlUrl();
     if (!edgeControlUrl || intervalMs <= 0 || !this.database || !this.channelSecrets) {
       return;
     }
@@ -922,7 +923,7 @@ export class IntegrationGatewayFacade implements OnApplicationBootstrap, OnModul
         })
       : null;
 
-    const edgeControlUrl = process.env.EDGE_CONTROL_URL?.trim();
+    const edgeControlUrl = resolveEdgeControlUrl();
 
     if (!secret) {
       status = "error";
@@ -930,7 +931,7 @@ export class IntegrationGatewayFacade implements OnApplicationBootstrap, OnModul
     } else if (!edgeControlUrl) {
       status = "error";
       error =
-        "Проверка email недоступна: EDGE_CONTROL_URL не настроен (IMAP/SMTP проверяются на Edge Gateway).";
+        "Проверка email недоступна: EDGE_CONTROL_URL/EDGE_CONTROL_TUNNEL_URL не настроен (IMAP/SMTP проверяются на Edge Gateway).";
     } else {
       let credentials: EmailChannelCredentials | null = null;
       try {
@@ -1174,7 +1175,7 @@ export class IntegrationGatewayFacade implements OnApplicationBootstrap, OnModul
     /** Стабильный маркер версии кред (`updated_at` канала) — основа `control_id`. */
     credsVersion: string;
   }): Promise<void> {
-    const edgeControlUrl = process.env.EDGE_CONTROL_URL?.trim();
+    const edgeControlUrl = resolveEdgeControlUrl();
     if (!edgeControlUrl) {
       return;
     }
@@ -1224,7 +1225,7 @@ export class IntegrationGatewayFacade implements OnApplicationBootstrap, OnModul
    * не прерывает остальные. No-op без `EDGE_CONTROL_URL` / БД / секрет-стора.
    */
   async resyncEmailChannelCredentials(): Promise<{ synced: number; total: number }> {
-    if (!process.env.EDGE_CONTROL_URL?.trim() || !this.database || !this.channelSecrets) {
+    if (!resolveEdgeControlUrl() || !this.database || !this.channelSecrets) {
       return { synced: 0, total: 0 };
     }
 

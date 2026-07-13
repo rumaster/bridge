@@ -16,8 +16,15 @@ const DEFAULT_MAX_FRAME_BYTES = 2 * 1024 * 1024;
 const WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 export interface VpnTunnelRpcEndpoint {
-  handshake: (hello: any) => any;
-  deliver: (args: any) => any;
+  handshake?: (hello: any) => any;
+  deliver?: (args: any) => any;
+  /**
+   * Обратный канал App→Edge control-plane (Этап E2/MP-12): Edge-сторона
+   * оборачивает `edgeControlPlane.handle`. Отдельный RPC-метод, чтобы один и тот
+   * же TCP/WSS-сервер мог обслуживать либо data-plane (`deliver`), либо
+   * control-plane (`control`), не смешивая их в одном эндпоинте.
+   */
+  control?: (message: any) => any;
 }
 
 export interface CreateVpnTunnelTcpAppServerOptions {
@@ -129,6 +136,10 @@ export function createVpnTunnelTcpRemoteServer({
     },
     deliver(args) {
       return call("deliver", args);
+    },
+    /** App→Edge control-plane (Этап E2/MP-12): проталкивает control-сообщение на Edge. */
+    control(message) {
+      return call("control", message);
     },
     getMetrics() {
       return { ...metrics };
@@ -248,6 +259,10 @@ export function createVpnTunnelWebSocketRemoteServer({
     deliver(args) {
       return call("deliver", args);
     },
+    /** App→Edge control-plane (Этап E2/MP-12): проталкивает control-сообщение на Edge. */
+    control(message) {
+      return call("control", message);
+    },
     getMetrics() {
       return { ...metrics };
     },
@@ -264,17 +279,17 @@ export function createFailoverVpnTunnelRemoteServer({
     failed_total: 0,
   };
 
-  async function call(method: "handshake" | "deliver", payload: any) {
+  async function call(method: "handshake" | "deliver" | "control", payload: any) {
     metrics.primary_total += 1;
     try {
-      return await primary[method](payload);
+      return await (primary as any)[method](payload);
     } catch (error) {
       if (error instanceof VpnTunnelAuthError || error instanceof VpnTunnelBackpressureError) {
         metrics.failed_total += 1;
         throw error;
       }
       metrics.fallback_total += 1;
-      return fallback[method](payload);
+      return (fallback as any)[method](payload);
     }
   }
 
@@ -284,6 +299,10 @@ export function createFailoverVpnTunnelRemoteServer({
     },
     deliver(args) {
       return call("deliver", args);
+    },
+    /** App→Edge control-plane (Этап E2/MP-12): primary→fallback, как data-plane. */
+    control(message) {
+      return call("control", message);
     },
     getMetrics() {
       return { ...metrics };
@@ -297,10 +316,22 @@ async function dispatchRpc(endpoint: VpnTunnelRpcEndpoint, request: any) {
   }
   const payload = decodeBuffers(request.payload);
   if (request.type === "handshake") {
+    if (typeof endpoint.handshake !== "function") {
+      throw new VpnTunnelError("handshake RPC is not supported by this endpoint");
+    }
     return endpoint.handshake(payload);
   }
   if (request.type === "deliver") {
+    if (typeof endpoint.deliver !== "function") {
+      throw new VpnTunnelError("deliver RPC is not supported by this endpoint");
+    }
     return endpoint.deliver(payload);
+  }
+  if (request.type === "control") {
+    if (typeof endpoint.control !== "function") {
+      throw new VpnTunnelError("control RPC is not supported by this endpoint");
+    }
+    return endpoint.control(payload);
   }
   throw new VpnTunnelError(`Unsupported VPN RPC method: ${request.type}`);
 }
