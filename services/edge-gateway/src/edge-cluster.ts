@@ -72,6 +72,7 @@ export function createEdgeCluster({
     recovery_total: 0,
     expired_skipped_total: 0,
     sequencer_restored_total: 0,
+    buffer_pruned_total: 0,
   };
 
   function aadFor(record) {
@@ -316,7 +317,19 @@ export function createEdgeCluster({
      * и финальный дедуп — на приёмнике (ядро, §7.10/§11.12).
      */
     async drain() {
-      return drainPending();
+      const result = await drainPending();
+      // Гигиена буфера: после дренажа удаляем подтверждённые строки, оставляя
+      // по каждому endpoint строку с max sequence_number как якорь high-water
+      // (иначе рехидратация после рестарта потеряет источник нумерации). Дёшево
+      // (обычно 0–N строк), выполняется в цикле дренажа (§7.9/§7.14).
+      if (typeof bufferStore.purgeForwardedBelowHighWater === "function") {
+        try {
+          metrics.buffer_pruned_total += await bufferStore.purgeForwardedBelowHighWater();
+        } catch {
+          // Уборка не критична для доставки — не срываем цикл дренажа при сбое.
+        }
+      }
+      return result;
     },
 
     /**

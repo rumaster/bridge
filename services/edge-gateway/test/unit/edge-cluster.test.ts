@@ -361,4 +361,33 @@ describe("Edge Cluster РФ — RF-first конвейер (§7.3/§7.9/§7.10/§
     assert.equal(ok.duplicate, false);
     assert.equal(ok.fixed_in_rf, true);
   });
+
+  it("drain убирает подтверждённые строки ниже high-water, сохраняя якорь для рехидратации", async () => {
+    const first = buildCluster();
+    first.tunnel.connect();
+    await first.cluster.ingest(inbound({ id: IDS[1] })); // seq 1, forwarded
+    await first.cluster.ingest(inbound({ id: IDS[2] })); // seq 2, forwarded
+    await first.cluster.ingest(inbound({ id: IDS[3] })); // seq 3, forwarded
+
+    await first.cluster.drain(); // прунит forwarded ниже high-water (оставляет seq 3)
+
+    // В буфере остался только якорь seq 3 endpoint'а A; high-water сохранён.
+    assert.equal(await first.bufferStore.size(), 1);
+    assert.deepEqual(await first.bufferStore.listEndpointSequenceHighWater(), [
+      { endpoint_id: ENDPOINT_A, sequence_number: 3 },
+    ]);
+
+    // «Рестарт» + рехидратация → нумерация продолжается с 4, без коллизии.
+    const cluster2 = createEdgeCluster({
+      cipher: first.cipher,
+      tunnel: first.tunnel,
+      sequencer: createEdgeSequencer(),
+      bufferStore: first.bufferStore,
+      now,
+    });
+    assert.equal(await cluster2.rehydrateSequencer(), 1);
+    const ok = await cluster2.ingest(inbound({ id: IDS[4] }));
+    assert.equal(ok.sequence_number, 4);
+    assert.equal(ok.duplicate, false);
+  });
 });

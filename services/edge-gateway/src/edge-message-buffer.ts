@@ -296,6 +296,34 @@ export function createInMemoryEdgeMessageBufferStore(options = {}) {
       return removed;
     },
 
+    /**
+     * Удаляет подтверждённые (forwarded) строки, СОХРАНЯЯ по каждому endpoint
+     * строку с максимальным sequence_number как якорь high-water. Иначе purge
+     * снёс бы источник, по которому секвенсор рехидратируется после рестарта
+     * (см. rehydrateSequencer), и нумерация начала бы конфликтовать заново.
+     * Pending-строки (forwarded_at NULL) не трогаются.
+     */
+    async purgeForwardedBelowHighWater() {
+      const maxByEndpoint = new Map();
+      for (const record of byIdempotencyKey.values()) {
+        const current = maxByEndpoint.get(record.endpoint_id) ?? 0;
+        if (record.sequence_number > current) {
+          maxByEndpoint.set(record.endpoint_id, record.sequence_number);
+        }
+      }
+      let removed = 0;
+      for (const [key, record] of byIdempotencyKey.entries()) {
+        const highWater = maxByEndpoint.get(record.endpoint_id) ?? 0;
+        if (record.forwarded_at !== null && record.sequence_number < highWater) {
+          byIdempotencyKey.delete(key);
+          endpointSequence.delete(sequenceKey(record));
+          removed += 1;
+        }
+      }
+      metrics.purged_total += removed;
+      return removed;
+    },
+
     async size() {
       return byIdempotencyKey.size;
     },
@@ -534,6 +562,27 @@ export function createPostgresEdgeMessageBufferStore(
     async purgeForwarded() {
       const result = await client.query(
         "DELETE FROM edge_message_buffer WHERE forwarded_at IS NOT NULL",
+      );
+      metrics.purged_total += result.rowCount;
+      return result.rowCount;
+    },
+
+    /**
+     * Удаляет подтверждённые (forwarded) строки, СОХРАНЯЯ по каждому endpoint
+     * строку с максимальным sequence_number (якорь high-water для рехидратации
+     * секвенсора после рестарта). Pending-строки (forwarded_at NULL) не трогаются.
+     */
+    async purgeForwardedBelowHighWater() {
+      const result = await client.query(
+        `
+          DELETE FROM edge_message_buffer b
+          WHERE b.forwarded_at IS NOT NULL
+            AND b.sequence_number < (
+              SELECT MAX(b2.sequence_number)
+              FROM edge_message_buffer b2
+              WHERE b2.endpoint_id = b.endpoint_id
+            )
+        `,
       );
       metrics.purged_total += result.rowCount;
       return result.rowCount;

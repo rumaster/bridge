@@ -179,6 +179,43 @@ describe("Edge message buffer store (RF-буфер §7.9/§7.14, CP-7)", () => {
     assert.equal(reused.inserted, true);
   });
 
+  it("purgeForwardedBelowHighWater удаляет подтверждённые ниже high-water, сохраняя якорь endpoint", async () => {
+    const store = createInMemoryEdgeMessageBufferStore();
+    // A: seq 1,2,3 — все forwarded. B: seq 1 forwarded, seq 2 pending.
+    await store.enqueue(entry({ endpoint_id: ENDPOINT_A, sequence_number: 1, idempotency_key: "a-1" }));
+    await store.enqueue(entry({ endpoint_id: ENDPOINT_A, sequence_number: 2, idempotency_key: "a-2" }));
+    await store.enqueue(entry({ endpoint_id: ENDPOINT_A, sequence_number: 3, idempotency_key: "a-3" }));
+    await store.enqueue(entry({ endpoint_id: ENDPOINT_B, sequence_number: 1, idempotency_key: "b-1" }));
+    await store.enqueue(entry({ endpoint_id: ENDPOINT_B, sequence_number: 2, idempotency_key: "b-2" }));
+    for (const key of ["a-1", "a-2", "a-3", "b-1"]) {
+      await store.markForwarded(key, HOUR_LATER);
+    }
+
+    const removed = await store.purgeForwardedBelowHighWater();
+    assert.equal(removed, 3); // a-1, a-2 (ниже max A=3), b-1 (ниже max B=2)
+
+    // Якоря high-water сохранены: a-3 (max forwarded для A), b-2 (pending, max для B).
+    assert.ok(await store.get("a-3"));
+    assert.ok(await store.get("b-2"));
+    assert.equal(await store.get("a-1"), null);
+    assert.equal(await store.get("b-1"), null);
+
+    // Рехидратация после рестарта получит верный high-water.
+    const byEp = Object.fromEntries(
+      (await store.listEndpointSequenceHighWater()).map((e) => [e.endpoint_id, e.sequence_number]),
+    );
+    assert.equal(byEp[ENDPOINT_A], 3);
+    assert.equal(byEp[ENDPOINT_B], 2);
+
+    // Якорь всё ещё блокирует повторное использование seq 3, а seq 4 — свободен.
+    await assert.rejects(
+      () => store.enqueue(entry({ endpoint_id: ENDPOINT_A, sequence_number: 3, idempotency_key: "a-3b" })),
+      /нарушение уникальности/,
+    );
+    const cont = await store.enqueue(entry({ endpoint_id: ENDPOINT_A, sequence_number: 4, idempotency_key: "a-4" }));
+    assert.equal(cont.inserted, true);
+  });
+
   it("валидирует инварианты записи (seq>0, непустой payload, ttl>=received_at)", async () => {
     const store = createInMemoryEdgeMessageBufferStore();
 
