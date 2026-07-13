@@ -1,3 +1,4 @@
+import { createEdgeAttachmentGc } from "./edge-attachment-gc.js";
 import {
   createFilesystemAttachmentStore,
   type EdgeAttachmentStore,
@@ -80,6 +81,22 @@ export function createEdgeChannelRuntime({
         maxBytes: numberEnv(env.EMAIL_ATTACHMENT_MAX_BYTES, 25 * 1024 * 1024),
       })
     : undefined;
+
+  // Retention/GC байтов на RF-томе (§Follow-up п.1): MVP по TTL от времени
+  // записи объекта. EMAIL_ATTACHMENT_TTL_DAYS ≤ 0 (или пусто) → GC выключен
+  // (том растёт без ограничений — прежнее поведение). Учёт дедупа — на уровне
+  // свипа (удалённый объект пересоздаётся по content-hash при новом письме).
+  const attachmentTtlDays = numberEnv(env.EMAIL_ATTACHMENT_TTL_DAYS, 0);
+  const attachmentGc =
+    attachmentStore && attachmentTtlDays > 0
+      ? createEdgeAttachmentGc({
+          store: attachmentStore,
+          ttlMs: attachmentTtlDays * 24 * 60 * 60 * 1000,
+          intervalMs: numberEnv(env.EMAIL_ATTACHMENT_GC_INTERVAL_MS, 6 * 60 * 60 * 1000),
+          now: () => Date.now(),
+          logger,
+        })
+      : undefined;
 
   // Исходящее email (Этап E4/M1): боевой nodemailer SMTP-транспорт за сеамом
   // createTransport; инжектится в control-plane для egress_dispatch (email).
@@ -170,6 +187,8 @@ export function createEdgeChannelRuntime({
     emailSender,
     /** Хранилище вложений для резолва на выдаче (server route). */
     attachmentStore,
+    /** GC байтов вложений на RF-томе (undefined — TTL не задан/том выключен). */
+    attachmentGc,
 
     async start(): Promise<void> {
       await maxDriver.start({
@@ -178,12 +197,16 @@ export function createEdgeChannelRuntime({
       await emailDriver.start({
         refreshIntervalMs: numberEnv(env.EMAIL_INBOUND_REFRESH_INTERVAL_MS, 30_000),
       });
-      logger?.info?.("Edge channel runtime started (MAX + email)", {});
+      attachmentGc?.start();
+      logger?.info?.("Edge channel runtime started (MAX + email)", {
+        attachment_gc: attachmentGc ? "on" : "off",
+      });
     },
 
     stop(): void {
       maxDriver.stop();
       emailDriver.stop();
+      attachmentGc?.stop();
     },
 
     getMetrics() {
@@ -193,6 +216,7 @@ export function createEdgeChannelRuntime({
         control_plane: controlPlane.getMetrics(),
         max_sender: maxSender.getMetrics(),
         email_sender: emailSender.getMetrics(),
+        attachment_gc: attachmentGc?.getMetrics(),
       };
     },
   };

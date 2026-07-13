@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import type { Dirent, Stats } from "node:fs";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 /**
@@ -58,6 +59,39 @@ export interface AttachmentGetResult {
   size: number;
 }
 
+export interface AttachmentSweepOptions {
+  /**
+   * TTL в миллисекундах: объект удаляется, когда его возраст (now − mtime)
+   * ≥ ttlMs. Возраст меряется по mtime файла байтов (время последней записи —
+   * для дедуп-объекта это первая запись; повторные ссылки mtime не двигают).
+   */
+  ttlMs: number;
+  /** Текущее время (мс от эпохи) для сравнения; по умолчанию `Date.now()`. */
+  now?: number;
+  /**
+   * Защита дедуп-объектов: если задана и вернёт `true`, объект НЕ удаляется,
+   * даже если просрочен по TTL. Точка расширения под будущий GC-по-ссылкам:
+   * App-сторона (таблица `attachments`) через control-plane отдаёт множество
+   * «живых» `storage_ref`, и сборщик не трогает объект, на который ссылается
+   * хотя бы одно сообщение. Ошибка предиката трактуется как «жив» (не удаляем —
+   * лучше протечь байтами, чем удалить нужное).
+   */
+  isLive?: (storageRef: string, parsed: ParsedAttachmentRef) => boolean | Promise<boolean>;
+}
+
+export interface AttachmentSweepResult {
+  /** Просканировано объектов (файлов байтов, без sidecar). */
+  scanned: number;
+  /** Удалено объектов (байты + sidecar). */
+  deleted: number;
+  /** Сохранено объектов, защищённых `isLive` несмотря на просрочку. */
+  kept: number;
+  /** Освобождено байт (сумма размеров удалённых файлов). */
+  reclaimedBytes: number;
+  /** Число объектов, которые не удалось удалить (ошибка ФС) — свип не падает. */
+  errors: number;
+}
+
 export interface EdgeAttachmentStore {
   /**
    * Сохраняет байты и возвращает непрозрачный `storage_ref`. Бросает
@@ -68,6 +102,14 @@ export interface EdgeAttachmentStore {
   get(storageRef: string): Promise<AttachmentGetResult | null>;
   /** Разрешён ли этот ref данному хранилищем (схема + разбор). */
   canResolve(storageRef: string): boolean;
+  /**
+   * Удаляет просроченные по TTL объекты (retention/GC на RF-томе, см.
+   * `docs/plan/email-channel-production.md` §Follow-up п.1). Идемпотентен и
+   * безопасен к параллельным `put`: объект уже записан целиком до появления в
+   * листинге, а дедуп детерминирован по content-hash — удалённый объект будет
+   * пересоздан при следующем письме с теми же байтами.
+   */
+  sweep(options: AttachmentSweepOptions): Promise<AttachmentSweepResult>;
 }
 
 /** Размер вложения превысил лимит хранилища — байты не сохранены. */
@@ -165,6 +207,81 @@ export function createFilesystemAttachmentStore({
 
     canResolve(storageRef: string): boolean {
       return parseAttachmentRef(storageRef) !== null;
+    },
+
+    async sweep({ ttlMs, now = Date.now(), isLive }: AttachmentSweepOptions): Promise<AttachmentSweepResult> {
+      const result: AttachmentSweepResult = { scanned: 0, deleted: 0, kept: 0, reclaimedBytes: 0, errors: 0 };
+      if (!Number.isFinite(ttlMs) || ttlMs < 0) {
+        return result;
+      }
+
+      let orgEntries: Dirent[];
+      try {
+        orgEntries = await readdir(baseDir, { withFileTypes: true });
+      } catch {
+        // Том ещё не создан (ни одного вложения) — удалять нечего.
+        return result;
+      }
+
+      for (const orgEntry of orgEntries) {
+        if (!orgEntry.isDirectory()) {
+          continue;
+        }
+        const org = orgEntry.name;
+        const orgDir = join(baseDir, org);
+        let files: string[];
+        try {
+          files = await readdir(orgDir);
+        } catch {
+          continue;
+        }
+
+        for (const name of files) {
+          // Каталог хранит объект `<sha256>` + sidecar `<sha256>.meta.json`.
+          // Итерируем только по объектам байтов; sidecar удаляем вместе с ними.
+          if (!/^[0-9a-f]{64}$/i.test(name)) {
+            continue;
+          }
+          result.scanned += 1;
+          const file = join(orgDir, name);
+          let info: Stats;
+          try {
+            info = await stat(file);
+          } catch {
+            // Файл исчез между листингом и stat (конкурентный свип/put) — пропускаем.
+            continue;
+          }
+          if (now - info.mtimeMs < ttlMs) {
+            continue;
+          }
+
+          if (isLive) {
+            const storageRef = `${ATTACHMENT_REF_SCHEME}://${org}/${name}`;
+            let live: boolean;
+            try {
+              live = await isLive(storageRef, { organizationId: org, contentHash: name });
+            } catch {
+              // Не знаем — считаем живым и не удаляем.
+              live = true;
+            }
+            if (live) {
+              result.kept += 1;
+              continue;
+            }
+          }
+
+          try {
+            await rm(file, { force: true });
+            await rm(`${file}.meta.json`, { force: true });
+            result.deleted += 1;
+            result.reclaimedBytes += info.size;
+          } catch {
+            result.errors += 1;
+          }
+        }
+      }
+
+      return result;
     },
   };
 }

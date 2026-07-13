@@ -68,7 +68,7 @@ export interface CreateImapMailboxOptions {
    * сохраняются, а в конверт кладётся реальный `storage_ref` (иначе — только
    * метаданные, `storage_ref` остаётся заглушкой, как раньше).
    */
-  attachmentStore?: EdgeAttachmentStore;
+  attachmentStore?: Pick<EdgeAttachmentStore, "put">;
   /**
    * false — принимать самоподписанный серверный TLS-сертификат (M1: почтовик
    * self-signed внутри docker-сети). Игнорируется, если задан свой clientFactory.
@@ -195,7 +195,7 @@ export function createImapMailbox(
 }
 
 interface AttachmentSaveContext {
-  attachmentStore?: EdgeAttachmentStore;
+  attachmentStore?: Pick<EdgeAttachmentStore, "put">;
   organizationId?: string;
   logger?: CreateImapMailboxOptions["logger"];
 }
