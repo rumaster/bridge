@@ -475,7 +475,13 @@ export class InternalMessagingService {
         maxAttempts: request.maxAttempts,
         message,
         organizationId: request.organizationId,
-        timeoutMs: request.timeoutMs,
+        // Email уходит на Edge по SMTP: реальный round-trip к почтовику (>250мс,
+        // дефолт M5) превышает обёртку `deliverWithAdapterFailure`, из-за чего
+        // письмо доставлялось, но помечалось `failed`. Для email даём дедлайн
+        // заведомо больше внутреннего вызова Edge (`edgeControlTimeoutMs`), чтобы
+        // обёртка дождалась настоящего ack `sent`, а не срабатывала раньше него
+        // (§4.6). Явный `request.timeoutMs` (внутренний egress-эндпоинт) — в приоритете.
+        timeoutMs: request.timeoutMs ?? this.egressTimeoutMsForChannel(message.channel),
       });
 
       return {
@@ -975,6 +981,25 @@ export class InternalMessagingService {
   private edgeControlTimeoutMs(): number {
     const raw = Number(process.env.EDGE_CONTROL_TIMEOUT_MS);
     return Number.isFinite(raw) && raw > 0 ? raw : 15_000;
+  }
+
+  /**
+   * Дедлайн M5-обёртки `deliverWithAdapterFailure` для egress по каналу. Для
+   * edge-owned каналов с реальной сетевой отправкой (email → SMTP на Edge) дефолт
+   * M5 (250мс) меньше реального round-trip, поэтому письмо доставлялось, но
+   * помечалось `failed`. Возвращаем дедлайн заведомо больше внутреннего вызова
+   * Edge (`edgeControlTimeoutMs`, дефолт 15с) + запас, чтобы дождаться настоящего
+   * ack. Настраивается `EMAIL_EGRESS_TIMEOUT_MS`. Прочие каналы — `null` (дефолт M5).
+   */
+  private egressTimeoutMsForChannel(channel: string): number | null {
+    if (channel !== "email") {
+      return null;
+    }
+    const raw = Number(process.env.EMAIL_EGRESS_TIMEOUT_MS);
+    if (Number.isFinite(raw) && raw > 0) {
+      return raw;
+    }
+    return this.edgeControlTimeoutMs() + 5_000;
   }
 
   private async deliverWithAdapterFailure(
