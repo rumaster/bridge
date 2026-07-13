@@ -5,6 +5,10 @@ import { createEdgeControlClient } from "./edge-control-client.js";
 import { createEdgeControlRelayServer } from "./edge-control-relay.js";
 import { createTunnelEdgeControlTransport } from "./edge-control-transport.js";
 import { createEdgeCluster } from "./edge-cluster.js";
+import {
+  createBufferCapacityNotifier,
+  resolveBufferCapacityOptions,
+} from "./edge-buffer-observability.js";
 import { createPostgresEdgeMessageBufferStore } from "./edge-message-buffer.js";
 import { createC7WebSocketChannel } from "./c7-ws-channel.js";
 import { createRedisStreamClient } from "./redis-stream-client.js";
@@ -80,7 +84,7 @@ export async function createEdgeGatewayRuntimeFromEnv(
   const cipher = createRfPayloadCipher({ key: resolveRfPayloadKey(env) });
   const buffer = options.bufferStore
     ? { store: options.bufferStore, close: async () => {} }
-    : await createPostgresBufferStore(env.DATABASE_URL);
+    : await createPostgresBufferStore(env.DATABASE_URL, env);
   const remoteServer = createRemoteVpnServerFromEnv(env);
   // Единый слой (Q2): при EDGE_VPN_APP_CRYPTO=off прикладной AES-GCM/mTLS снят —
   // защиту канала даёт AmneziaWG. По умолчанию on (обратная совместимость).
@@ -552,11 +556,23 @@ function createRemoteVpnServerFromEnv(env: Record<string, string | undefined>) {
   return primary ?? fallback;
 }
 
-async function createPostgresBufferStore(databaseUrl: string) {
+async function createPostgresBufferStore(
+  databaseUrl: string,
+  env: Record<string, string | undefined> = {},
+) {
   const { Pool } = await loadPg();
   const pool = new Pool({ connectionString: databaseUrl });
+  // Наблюдаемость ёмкости RF-буфера (§7.14): без capacity/notify стор молча
+  // рос до Infinity, а переполнение — потеря RPO — было невидимо. Ёмкость и
+  // порог берём из env (дефолт Infinity/0.8 — поведение стенда не меняется),
+  // notify логирует high-watermark/exhausted (edge-buffer-observability.ts).
+  const capacityOptions = resolveBufferCapacityOptions(env);
   return {
-    store: createPostgresEdgeMessageBufferStore({ client: pool }),
+    store: createPostgresEdgeMessageBufferStore({
+      client: pool,
+      ...capacityOptions,
+      notify: createBufferCapacityNotifier({ logger: console }),
+    }),
     close: async () => {
       await pool.end();
     },

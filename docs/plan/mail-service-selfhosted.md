@@ -379,6 +379,14 @@ e2e-сценарий email проходит на настоящих сокета
 >   (поклиентные anvil-лимиты + размер письма); точные per-user/per-org лимиты
 >   (postfwd) и suspend по злоупотреблению — отдельный шаг (услуга без боевой
 >   исходящей доставки, M3 отложен).
+> - **Наблюдаемость RPO edge-буфера** — capacity-хук RF-буфера, на котором стоит
+>   входящий email-канал, подключён к логам/метрикам
+>   ([`edge-buffer-observability.ts`](../../services/edge-gateway/src/edge-buffer-observability.ts)):
+>   `createPostgresBufferStore` поднимает стор с `EDGE_BUFFER_CAPACITY`/
+>   `EDGE_BUFFER_HIGH_WATERMARK_RATIO`, при high-watermark/исчерпании идёт
+>   warn/error, а метрики `edge_cluster_buffer_capacity_*` и `edge_buffer_capacity`
+>   отдаются в `/metrics` (раньше capacity-события молчали: стенд поднимал буфер с
+>   `capacity=Infinity` без notify). Для боевого RPO задать конечную ёмкость.
 
 - Бэкап volume `bridge-mail-data` (ящики) и `bridge-mail-state`; регламент
   восстановления.
