@@ -374,11 +374,19 @@ e2e-сценарий email проходит на настоящих сокета
 >   (`MAIL_QUEUE_WARN`/`MAIL_DISK_WARN_PCT`) — для cron/алертов. Проверено на стенде.
 > - **Ротация логов** — `MAIL_LOGROTATE_INTERVAL`/`MAIL_LOGROTATE_COUNT` в compose
 >   (docker-mailserver `LOGROTATE_*`).
-> - **Лимиты отправки (anti-abuse)** — шаблон
->   [`deploy/mail/postfix-main.cf.example`](../../deploy/mail/postfix-main.cf.example)
->   (поклиентные anvil-лимиты + размер письма); точные per-user/per-org лимиты
->   (postfwd) и suspend по злоупотреблению — отдельный шаг (услуга без боевой
->   исходящей доставки, M3 отложен).
+> - **Лимиты отправки (anti-abuse)** — два уровня:
+>   1. поклиентные (по IP) anvil-лимиты + размер письма доведены до боевых
+>      значений в [`postfix-main.cf.example`](../../deploy/mail/postfix-main.cf.example)
+>      (грубый предохранитель: весь трафик с одного IP edge-gateway);
+>   2. per-user/per-org лимиты по отправителю + suspend — ruleset postfwd
+>      [`postfwd.cf.example`](../../deploy/mail/postfwd.cf.example) (часовой/суточный
+>      лимит писем, веер получателей, suspend-списки, fallback по IP) +
+>      helper [`mail-suspend.sh`](../../deploy/mail/mail-suspend.sh) (add/del/list,
+>      reload postfwd по SIGHUP). Подключение postfwd к submission
+>      (`postconf -P … check_policy_service`) задокументировано в
+>      [`deploy/mail/README.md`](../../deploy/mail/README.md) §M4.
+>   Подключение postfwd к боевой submission-цепочке включается при выводе
+>   исходящей доставки в интернет (M3 отложен: порт 25 заблокирован на стенде).
 > - **Наблюдаемость RPO edge-буфера** — capacity-хук RF-буфера, на котором стоит
 >   входящий email-канал, подключён к логам/метрикам
 >   ([`edge-buffer-observability.ts`](../../services/edge-gateway/src/edge-buffer-observability.ts)):

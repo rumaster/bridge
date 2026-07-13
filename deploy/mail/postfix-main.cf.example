@@ -5,21 +5,39 @@
 #   cp deploy/mail/postfix-main.cf.example deploy/mail/config/postfix-main.cf
 #   docker restart <mailserver>
 #
-# Значения — консервативный базовый уровень против превращения услуги в спам-релей.
-# Лимиты anvil — ПОКЛИЕНТНЫЕ (по IP). Точные per-user/per-organization лимиты
-# отправки требуют policy-сервиса (postfwd/policyd) — отдельный шаг (услуга пока
-# без боевой исходящей доставки, Этап M3 отложен).
+# ДВА УРОВНЯ защиты от превращения услуги в спам-релей:
+#   1. anvil (ниже) — ПОКЛИЕНТНЫЕ (по IP) лимиты. Грубый предохранитель: весь
+#      внутренний трафик идёт с ОДНОГО IP edge-gateway, поэтому anvil лимитирует
+#      суммарный поток с этого IP, а не отдельный ящик. Держите его выше суммы
+#      легитимной нагрузки всех менеджеров — иначе throttlит всех разом.
+#   2. postfwd (deploy/mail/postfwd.cf.example) — per-user/per-org лимиты по
+#      ОТПРАВИТЕЛЮ (sasl_username/домен) + suspend. Это основной контроль злоупотреблений;
+#      подключается к submission через check_policy_service (рецепт запуска и
+#      подключения — deploy/mail/README.md §M4). anvil его не заменяет.
 
 # Максимальный размер письма (25 MiB).
 message_size_limit = 26214400
 
-# Окно для anvil-счётчиков.
+# --- anvil: поклиентные (по IP) лимиты, окно 60s ---------------------------
 anvil_rate_time_unit = 60s
-# Не более N подключений с одного клиента за окно.
-smtpd_client_connection_rate_limit = 30
-# Не более N писем с одного клиента за окно.
-smtpd_client_message_rate_limit = 100
-# Не более N получателей с одного клиента за окно.
-smtpd_client_recipient_rate_limit = 200
+# Подключений с одного клиента за окно.
+smtpd_client_connection_rate_limit = 60
+# Писем с одного клиента за окно. Держите с запасом над пиком edge-gateway
+# (суммарно по всем менеджерам), т.к. это ОДИН IP; тонкий per-ящик срез — postfwd.
+smtpd_client_message_rate_limit = 600
+# Получателей (адресатов) с одного клиента за окно.
+smtpd_client_recipient_rate_limit = 2000
 # Одновременных подключений с одного клиента.
-smtpd_client_connection_count_limit = 20
+smtpd_client_connection_count_limit = 40
+# Ошибок/новых адресов с одного клиента за окно (грубый анти-scan предохранитель).
+smtpd_client_new_tls_session_rate_limit = 60
+
+# --- postfwd policy hook ---------------------------------------------------
+# Per-user/per-org лимиты и suspend делает postfwd (postfwd.cf.example), а не
+# main.cf: он должен стоять в submission-цепочке (587/465), чтобы лимитировать
+# ОТПРАВКУ клиентов, а не входящий MX. Подключение — через -o в postfix-master.cf
+# (см. postfix-master.cf.example), НЕ глобальным smtpd_*_restrictions здесь, иначе
+# перетрётся managed-цепочка docker-mailserver. Рецепт запуска postfwd и его
+# подключения к submission (postconf -P) — deploy/mail/README.md §M4. Подключайте
+# только ПОСЛЕ запуска postfwd, иначе submission начнёт падать в 451 (policy-
+# сервис недоступен).

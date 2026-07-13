@@ -132,10 +132,63 @@ MAIL_QUEUE_WARN=100 MAIL_DISK_WARN_PCT=90 deploy/mail/status.sh
 **Ротация логов** — `MAIL_LOGROTATE_INTERVAL` (daily|weekly|monthly, default weekly)
 и `MAIL_LOGROTATE_COUNT` в `.env.rf` (применяется при пересоздании почтовика).
 
-**Лимиты отправки (anti-abuse)** — шаблон
-[`postfix-main.cf.example`](./postfix-main.cf.example): скопируйте в
-`config/postfix-main.cf` и перезапустите почтовик. Базовые поклиентные anvil-лимиты;
-точные per-user/per-org лимиты требуют policy-сервиса (postfwd) — отдельный шаг.
+### Лимиты отправки (anti-abuse)
+
+Два уровня, чтобы услуга не стала спам-релеем:
+
+**1. anvil (по IP) — базовый предохранитель, активен сразу.** Шаблон
+[`postfix-main.cf.example`](./postfix-main.cf.example) (лимиты подключений/писем/
+получателей + размер письма). Весь внутренний трафик идёт с одного IP
+edge-gateway, поэтому anvil лимитирует суммарный поток — держите его выше пика
+всех менеджеров, тонкий per-ящик срез делает postfwd (ниже).
+
+```bash
+cp deploy/mail/postfix-main.cf.example deploy/mail/config/postfix-main.cf
+docker restart <mailserver>
+```
+
+**2. postfwd — per-user/per-org лимиты + suspend (основной контроль).**
+Policy-демон Postfix лимитирует ОТПРАВКУ по отправителю (`sasl_username` = адрес
+ящика, которым edge-gateway аутентифицируется при submission; в MVP один ящик на
+организацию → per-mailbox == per-org) и жёстко REJECT'ит приостановленные ящики.
+Ruleset — [`postfwd.cf.example`](./postfwd.cf.example) (часовой/суточный лимит
+писем, веер получателей, suspend-списки, fallback по IP для неаутентифицированного
+relay). Услуга пока без боевой исходящей доставки (M3 отложен), поэтому postfwd
+подключается при выводе доставки в интернет:
+
+```bash
+# (a) запустить postfwd рядом с почтовиком (пример compose-сайдкара; образ vet'ится
+#     оператором — postfwd не входит в docker-mailserver):
+#   postfwd:
+#     profiles: ["mail"]
+#     image: <vetted-postfwd-image>
+#     command: ["--file=/etc/postfwd/postfwd.cf", "--interface=0.0.0.0", "--port=10040"]
+#     volumes:
+#       - ../mail/postfwd.cf.example:/etc/postfwd/postfwd.cf:ro
+#       - ../mail/config/postfwd:/etc/postfwd:rw   # suspended-senders.cf (host-managed)
+#
+# (b) подключить postfwd к submission (587/465), НЕ к входящему MX и НЕ глобально
+#     (иначе перетрётся managed-цепочка docker-mailserver). Через user-patches.sh
+#     или разово в контейнере почтовика:
+docker exec <mailserver> postconf -P \
+  "submission/inet/smtpd_data_restrictions=check_policy_service inet:postfwd:10040"
+docker exec <mailserver> postconf -P \
+  "submissions/inet/smtpd_data_restrictions=check_policy_service inet:postfwd:10040"
+docker exec <mailserver> postfix reload
+```
+
+> Подключайте hook только ПОСЛЕ запуска postfwd — иначе submission падает в 451
+> (policy-сервис недоступен).
+
+**Suspend по злоупотреблению** — [`mail-suspend.sh`](./mail-suspend.sh) правит
+список, который читают правила `SUSPEND_*` в ruleset:
+
+```bash
+deploy/mail/mail-suspend.sh add client-<org>@$MAIL_DOMAIN   # приостановить (REJECT)
+deploy/mail/mail-suspend.sh del client-<org>@$MAIL_DOMAIN   # снять
+deploy/mail/mail-suspend.sh list
+# POSTFWD_CONTAINER=<postfwd> — тогда скрипт перечитает список по SIGHUP
+```
 
 ## M5 — Продуктивизация «Bridge Mail» (заказ ящика из админки)
 
