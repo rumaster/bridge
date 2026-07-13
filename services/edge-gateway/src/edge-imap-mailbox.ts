@@ -1,6 +1,7 @@
 import { ImapFlow } from "imapflow";
 import { simpleParser } from "mailparser";
 
+import { AttachmentTooLargeError, type EdgeAttachmentStore } from "./edge-attachment-store.js";
 import type { EdgeMailbox } from "./edge-email-inbound-driver.js";
 import type { RawEmail, RawEmailAttachment } from "./edge-email-ingress.js";
 
@@ -63,6 +64,12 @@ export interface CreateImapMailboxOptions {
   /** Максимум писем за один poll: остаток догоняется на следующем поллинге. */
   fetchLimit?: number;
   /**
+   * Хранилище байтов вложений (RF-сторона). Если задано — байты каждого вложения
+   * сохраняются, а в конверт кладётся реальный `storage_ref` (иначе — только
+   * метаданные, `storage_ref` остаётся заглушкой, как раньше).
+   */
+  attachmentStore?: EdgeAttachmentStore;
+  /**
    * false — принимать самоподписанный серверный TLS-сертификат (M1: почтовик
    * self-signed внутри docker-сети). Игнорируется, если задан свой clientFactory.
    * Дефолт — строгая проверка.
@@ -79,15 +86,18 @@ const DEFAULT_MAILBOX = "INBOX";
 const DEFAULT_FETCH_LIMIT = 50;
 
 export function createImapMailbox(
-  { credentials }: CreateImapMailboxInput,
+  { credentials, channel }: CreateImapMailboxInput,
   {
     clientFactory,
     mailbox = DEFAULT_MAILBOX,
     fetchLimit = DEFAULT_FETCH_LIMIT,
     tlsRejectUnauthorized = true,
+    attachmentStore,
+    logger,
   }: CreateImapMailboxOptions = {},
 ): EdgeMailbox {
   const imap = extractImapEndpoint(credentials);
+  const organizationId = channel?.organizationId;
   const makeClient =
     clientFactory ??
     ((config: ImapClientConfig) =>
@@ -163,7 +173,9 @@ export function createImapMailbox(
           if (!Number.isInteger(uid) || uid <= since || !message.source) {
             continue;
           }
-          emails.push(await toRawEmail(uid, message.source));
+          emails.push(
+            await toRawEmail(uid, message.source, { attachmentStore, organizationId, logger }),
+          );
           if (emails.length >= fetchLimit) {
             break;
           }
@@ -182,12 +194,25 @@ export function createImapMailbox(
   };
 }
 
-async function toRawEmail(uid: number, source: Buffer | Uint8Array): Promise<RawEmail> {
+interface AttachmentSaveContext {
+  attachmentStore?: EdgeAttachmentStore;
+  organizationId?: string;
+  logger?: CreateImapMailboxOptions["logger"];
+}
+
+async function toRawEmail(
+  uid: number,
+  source: Buffer | Uint8Array,
+  ctx: AttachmentSaveContext,
+): Promise<RawEmail> {
   const parsed = await simpleParser(source as Buffer);
   const from = parsed.from?.value?.[0]?.address ?? parsed.from?.text ?? undefined;
   const messageId = stripAngleBrackets(parsed.messageId);
   const html = typeof parsed.html === "string" ? parsed.html : undefined;
-  const attachments = (parsed.attachments ?? []).map(toRawAttachment);
+  const attachments: RawEmailAttachment[] = [];
+  for (const attachment of parsed.attachments ?? []) {
+    attachments.push(await toRawAttachment(attachment, ctx));
+  }
 
   return {
     uid,
@@ -201,18 +226,66 @@ async function toRawEmail(uid: number, source: Buffer | Uint8Array): Promise<Raw
   };
 }
 
-function toRawAttachment(attachment: {
-  filename?: string;
-  contentId?: string;
-  contentType?: string;
-  size?: number;
-}): RawEmailAttachment {
-  return {
+/**
+ * Метаданные вложения → {@link RawEmailAttachment}, а байты (`attachment.content`
+ * от mailparser) — в {@link EdgeAttachmentStore}, с проставлением реального
+ * `storage_ref` и фактического размера. Байтов/стора нет или вложение больше
+ * лимита — остаются только метаданные (`storage_ref` заглушкой достроит ingress),
+ * приём письма при этом НЕ падает: текст и прочие вложения доезжают.
+ */
+async function toRawAttachment(
+  attachment: {
+    filename?: string;
+    contentId?: string;
+    contentType?: string;
+    size?: number;
+    content?: Buffer | Uint8Array;
+  },
+  { attachmentStore, organizationId, logger }: AttachmentSaveContext,
+): Promise<RawEmailAttachment> {
+  const mime = attachment.contentType ?? "application/octet-stream";
+  const base: RawEmailAttachment = {
     ...(attachment.filename ? { filename: attachment.filename } : {}),
     ...(attachment.contentId ? { content_id: stripAngleBrackets(attachment.contentId) } : {}),
-    mime: attachment.contentType ?? "application/octet-stream",
+    mime,
     ...(typeof attachment.size === "number" ? { size: attachment.size } : {}),
   };
+
+  if (!attachmentStore || !organizationId || !attachment.content) {
+    return base;
+  }
+
+  try {
+    const saved = await attachmentStore.put({
+      content: attachment.content,
+      organizationId,
+      mime,
+      filename: attachment.filename,
+    });
+    return {
+      ...base,
+      storage_ref: saved.storageRef,
+      content_hash: saved.contentHash,
+      // Доверяем фактическому размеру сохранённых байтов (MIME `size` бывает
+      // отсутствует/неточен).
+      size: saved.size,
+    };
+  } catch (error) {
+    if (error instanceof AttachmentTooLargeError) {
+      logger?.warn?.("Attachment exceeds size limit; storing metadata only", {
+        filename: attachment.filename,
+        size: error.size,
+        max_bytes: error.maxBytes,
+      });
+      return base;
+    }
+    // Сбой хранилища не должен ронять приём письма — логируем и отдаём метаданные.
+    logger?.error?.("Failed to store attachment bytes; storing metadata only", {
+      filename: attachment.filename,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return base;
+  }
 }
 
 function extractImapEndpoint(credentials: unknown): EdgeImapEndpointCredentials {

@@ -62,6 +62,49 @@ describe("Manager Workspace API client tenant scope", () => {
     expect(requestedPaths).toEqual(["/api/v1/conversations", "/api/v1/clients"]);
   });
 
+  it("downloads an attachment as a blob with the tenant header (§4.3)", async () => {
+    window.localStorage.setItem(
+      MANAGER_WORKSPACE_SESSION_STORAGE_KEY,
+      JSON.stringify({
+        token: "brs_manager_demo",
+        user: {
+          id: "30000000-0000-4000-8000-000000000202",
+          displayName: "Manager Demo",
+          role: "manager",
+          telegramUsername: "manager_demo"
+        },
+        organization: { id: ORGANIZATION_ID, name: "Tenant A" },
+        expiresAt: "2099-01-01T00:00:00.000Z"
+      })
+    );
+    const attachmentId = "30000000-0000-4000-8000-0000000006a1";
+    let requestedPath = "";
+    const api = createManagerWorkspaceApiClient({
+      baseUrl: "/api/v1",
+      fetcher: async (url, init) => {
+        requestedPath = new URL(String(url), "http://localhost").pathname;
+        // Скачивание несёт tenant-заголовок (иначе backend-прокси вернул бы 400).
+        expect(new Headers(init?.headers).get("x-organization-id")).toBe(ORGANIZATION_ID);
+        return new Response("PDF-BYTES", {
+          status: 200,
+          headers: { "content-type": "application/pdf" }
+        });
+      }
+    });
+
+    const blob = await api.attachments.download(attachmentId);
+    expect(requestedPath).toBe(`/api/v1/attachments/${attachmentId}/content`);
+    expect(await blob.text()).toBe("PDF-BYTES");
+  });
+
+  it("throws when attachment download fails", async () => {
+    const api = createManagerWorkspaceApiClient({
+      baseUrl: "/api/v1",
+      fetcher: async () => new Response("nope", { status: 404 })
+    });
+    await expect(api.attachments.download("30000000-0000-4000-8000-0000000006a1")).rejects.toThrow();
+  });
+
   it("preserves the email channel and nests the reply subject into content (E5)", async () => {
     let sentBody: any;
     const api = createManagerWorkspaceApiClient({

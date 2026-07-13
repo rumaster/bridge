@@ -108,6 +108,54 @@ describe("internal-messaging.dto нормализация (issue #189, п. 1–3
       expect(result.message.content.type).toBe("audio");
     });
 
+    it("проносит вложения из конверта для персистентности (§4.3)", () => {
+      const result = normalizeIngressEnvelope(
+        validIngress({
+          attachments: [
+            {
+              id: "40000000-0000-4000-8000-0000000000a1",
+              kind: "file",
+              storage_ref: `edge-attach://${ORG_UUID}/${"a".repeat(64)}`,
+              mime: "application/pdf",
+              filename: "счёт.pdf",
+              content_hash: "a".repeat(64),
+              size: 2048,
+            },
+          ],
+        } as never),
+        now,
+      );
+      expect(result.message.attachments).toHaveLength(1);
+      const [attachment] = result.message.attachments;
+      expect(attachment.id).toBe("40000000-0000-4000-8000-0000000000a1");
+      expect(attachment.storageRef).toBe(`edge-attach://${ORG_UUID}/${"a".repeat(64)}`);
+      expect(attachment.mime).toBe("application/pdf");
+      expect(attachment.size).toBe(2048);
+      expect(attachment.metadata).toEqual({
+        filename: "счёт.pdf",
+        content_hash: "a".repeat(64),
+      });
+    });
+
+    it("пропускает вложения без storage_ref (CHECK not-blank) и выводит UUID из не-UUID id", () => {
+      const result = normalizeIngressEnvelope(
+        validIngress({
+          attachments: [
+            { id: "no-ref", kind: "file", mime: "text/plain" },
+            { id: "legacy-id", kind: "file", storage_ref: "edge-attach://x/y", mime: "text/plain" },
+          ],
+        } as never),
+        now,
+      );
+      expect(result.message.attachments).toHaveLength(1);
+      expect(isUuid(result.message.attachments[0].id)).toBe(true);
+    });
+
+    it("даёт пустой список вложений, когда их нет", () => {
+      const result = normalizeIngressEnvelope(validIngress(), now);
+      expect(result.message.attachments).toEqual([]);
+    });
+
     it("отклоняет неверную версию контракта", () => {
       expect(() =>
         normalizeIngressEnvelope({ ...validIngress(), version: "0.9.0" }, now),

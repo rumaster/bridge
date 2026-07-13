@@ -1,6 +1,8 @@
 import { Module } from "@nestjs/common";
 
 import { AuditModule } from "../audit/audit.module";
+import { AttachmentController } from "./attachment.controller";
+import { AttachmentResolverService } from "./attachment.service";
 import { C7RealtimeEventPublisher } from "./c7-realtime-event.publisher";
 import { ConversationController, MessageController } from "./communication-core.controller";
 import {
@@ -13,9 +15,15 @@ import { InternalMessagingController } from "./internal-messaging.controller";
 import { InternalMessagingService } from "./internal-messaging.service";
 
 @Module({
-  controllers: [ConversationController, MessageController, InternalMessagingController],
+  controllers: [
+    ConversationController,
+    MessageController,
+    AttachmentController,
+    InternalMessagingController,
+  ],
   exports: [
     AdapterFailureCoordinator,
+    AttachmentResolverService,
     C7RealtimeEventPublisher,
     CommunicationCoreLoadProbeService,
     CommunicationCoreProxyService,
@@ -25,6 +33,7 @@ import { InternalMessagingService } from "./internal-messaging.service";
   imports: [AuditModule],
   providers: [
     AdapterFailureCoordinator,
+    AttachmentResolverService,
     C7RealtimeEventPublisher,
     CommunicationCoreLoadProbeService,
     CommunicationCoreProxyService,

@@ -118,7 +118,23 @@ export interface NormalizedIngress {
     type: string;
     content: Record<string, unknown>;
     sequenceNumber: number | null;
+    attachments: NormalizedAttachment[];
   };
+}
+
+/**
+ * Нормализованное вложение для персистентности (таблица `attachments`).
+ * `storageRef` — непрозрачная строка из конверта (ядро её не парсит: где и как
+ * лежат байты, знает только Edge-резолвер). `metadata` несёт `filename`/
+ * `content_hash`/`content_id` для выдачи и аудита.
+ */
+export interface NormalizedAttachment {
+  id: string;
+  kind: string;
+  storageRef: string;
+  mime: string | null;
+  size: number;
+  metadata: Record<string, unknown>;
 }
 
 export interface EgressRequestBody {
@@ -217,6 +233,60 @@ function toMessageUuid(value: unknown, fallback: string): string {
   }
 
   return uuidFromText(`message:${isNonBlankString(value) ? value : fallback}`);
+}
+
+/**
+ * Нормализует `message.attachments[]` из конверта ingress в записи для таблицы
+ * `attachments`. Пропускает записи без пригодного `storage_ref` (blank —
+ * нарушил бы CHECK `attachments_storage_ref_not_blank`). `id` разворачивается в
+ * UUID при необходимости (Edge уже присылает UUID; фолбэк — детерминированный).
+ */
+export function normalizeAttachments(value: unknown, messageId: string): NormalizedAttachment[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const result: NormalizedAttachment[] = [];
+  for (const [index, raw] of value.entries()) {
+    if (!isPlainObject(raw)) {
+      continue;
+    }
+    const storageRef = raw.storage_ref;
+    if (!isNonBlankString(storageRef)) {
+      continue;
+    }
+    const idSource = isNonBlankString(raw.id) ? raw.id : `${messageId}:${index}`;
+    const id = isUuid(idSource) ? idSource : uuidFromText(`attachment:${idSource}`);
+    const mime = firstNonBlank(raw.mime, raw.mime_type);
+    const size = Number.isFinite(raw.size) && (raw.size as number) >= 0 ? Number(raw.size) : 0;
+    const metadata: Record<string, unknown> = {};
+    if (isNonBlankString(raw.filename)) {
+      metadata.filename = raw.filename;
+    }
+    if (isNonBlankString(raw.content_hash)) {
+      metadata.content_hash = raw.content_hash;
+    }
+    if (isNonBlankString(raw.content_id)) {
+      metadata.content_id = raw.content_id;
+    }
+    result.push({
+      id,
+      kind: isNonBlankString(raw.kind) ? raw.kind : "file",
+      storageRef: storageRef.trim(),
+      mime: mime ?? null,
+      size,
+      metadata,
+    });
+  }
+  return result;
+}
+
+function firstNonBlank(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (isNonBlankString(value)) {
+      return value.trim();
+    }
+  }
+  return undefined;
 }
 
 export function normalizeChannel(channel: unknown): string {
@@ -365,6 +435,7 @@ export function normalizeIngressEnvelope(
         message.sequence_number === undefined || message.sequence_number === null
           ? null
           : Number(message.sequence_number),
+      attachments: normalizeAttachments(message.attachments, messageId),
     },
   };
 }
@@ -445,6 +516,7 @@ function normalizeCanonicalIngressMessage(
       type,
       content: { ...content, type },
       sequenceNumber: Number(payload.sequence_number),
+      attachments: normalizeAttachments(payload.attachments, payload.id as string),
     },
   };
 }

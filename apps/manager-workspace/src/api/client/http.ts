@@ -1,4 +1,4 @@
-import { createJsonApiClient } from "@bridge/api-client";
+import { BridgeApiError, createJsonApiClient } from "@bridge/api-client";
 import type {
   AssistantSuggestRequest,
   AssistantSuggestResponse,
@@ -46,11 +46,13 @@ const NOTIFICATION_STATUSES = ["new", "read"] as const satisfies readonly Notifi
 export function createManagerWorkspaceApiClient(
   options: ManagerWorkspaceApiClientOptions = {}
 ): ManagerWorkspaceApiClient {
-  const { requestJson } = createJsonApiClient({
+  const jsonClient = createJsonApiClient({
     baseUrl: options.baseUrl ?? DEFAULT_BASE_URL,
     defaultHeaders: readTenantHeaders,
     fetcher: options.fetcher
   });
+  const { requestJson } = jsonClient;
+  const fetcher = options.fetcher ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
 
   return {
     auth: {
@@ -87,6 +89,23 @@ export function createManagerWorkspaceApiClient(
           body: JSON.stringify(toCreateMessageBody(request))
         }).then(normalizeMessage),
       get: (messageId: string) => requestJson<MessageApiResponse>(`/messages/${messageId}`).then(normalizeMessage)
+    },
+    attachments: {
+      // Скачиваем через API-клиент (а не плоским <a href>): fetch несёт
+      // tenant-заголовок и same-origin cookie сессии — без них backend-прокси
+      // (`/attachments/:id/content`) ответил бы 400/401.
+      download: async (attachmentId: string): Promise<Blob> => {
+        const url = jsonClient.resolveUrl(`/attachments/${attachmentId}/content`);
+        const response = await fetcher(url, { headers: readTenantHeaders() });
+        if (!response.ok) {
+          throw new BridgeApiError(`Attachment download failed with ${response.status}`, {
+            status: response.status,
+            body: undefined,
+            url
+          });
+        }
+        return response.blob();
+      }
     },
     clients: {
       list: async () =>

@@ -118,6 +118,23 @@ export class ConversationListResponseDto {
   page!: PaginationPageDto;
 }
 
+export class AttachmentResponseDto {
+  @ApiProperty({ example: "00000000-0000-4000-8000-000000000701" })
+  id!: string;
+
+  @ApiProperty({ example: "invoice.pdf" })
+  name!: string;
+
+  @ApiProperty({ example: "application/pdf", nullable: true })
+  contentType!: null | string;
+
+  @ApiProperty({ example: 2048 })
+  sizeBytes!: number;
+
+  @ApiProperty({ example: "/api/v1/attachments/00000000-0000-4000-8000-000000000701/content" })
+  url!: string;
+}
+
 export class MessageResponseDto {
   @ApiProperty({ example: "00000000-0000-4000-8000-000000000601" })
   id!: string;
@@ -157,6 +174,9 @@ export class MessageResponseDto {
 
   @ApiPropertyOptional({ example: null, nullable: true })
   deliveredAt!: null | string;
+
+  @ApiPropertyOptional({ type: [AttachmentResponseDto] })
+  attachments?: AttachmentResponseDto[];
 }
 
 export class MessageListResponseDto {
@@ -191,6 +211,36 @@ export interface MessageRow {
   sequence_number: number;
   status: string;
   type: string;
+  /** Агрегированные вложения сообщения (json_agg из таблицы attachments). */
+  attachments?: AttachmentRow[] | null;
+}
+
+export interface AttachmentRow {
+  id: string;
+  kind?: string;
+  mime?: null | string;
+  size?: number | string;
+  metadata?: Record<string, unknown> | null;
+}
+
+/** Путь backend-прокси, по которому менеджер лениво скачивает байты вложения. */
+export function attachmentContentUrl(attachmentId: string): string {
+  return `/api/v1/attachments/${attachmentId}/content`;
+}
+
+function mapAttachment(row: AttachmentRow): AttachmentResponseDto {
+  const metadata = (row.metadata ?? {}) as { filename?: unknown };
+  const name =
+    typeof metadata.filename === "string" && metadata.filename.trim() !== ""
+      ? metadata.filename
+      : row.id;
+  return {
+    id: row.id,
+    name,
+    contentType: typeof row.mime === "string" && row.mime !== "" ? row.mime : null,
+    sizeBytes: Number(row.size ?? 0),
+    url: attachmentContentUrl(row.id),
+  };
 }
 
 export function mapConversation(row: ConversationRow): ConversationResponseDto {
@@ -206,6 +256,9 @@ export function mapConversation(row: ConversationRow): ConversationResponseDto {
 }
 
 export function mapMessage(row: MessageRow): MessageResponseDto {
+  const attachments = Array.isArray(row.attachments)
+    ? row.attachments.filter((a): a is AttachmentRow => Boolean(a) && typeof a.id === "string").map(mapAttachment)
+    : [];
   return {
     channel: row.channel,
     content: row.content,
@@ -220,6 +273,7 @@ export function mapMessage(row: MessageRow): MessageResponseDto {
     sequenceNumber: Number(row.sequence_number),
     status: row.status,
     type: row.type,
+    ...(attachments.length > 0 ? { attachments } : {}),
   };
 }
 

@@ -15,7 +15,8 @@ import type {
   ClientProfile,
   Conversation,
   C7Event,
-  Message
+  Message,
+  MessageAttachment
 } from "../../api/client/types";
 import type { RealtimeConnectionStatus } from "../../api/client/realtime";
 import { useAuth } from "../../state/auth";
@@ -523,15 +524,59 @@ function MessageBubble({
       {message.attachments?.length ? (
         <div className="attachment-list">
           {message.attachments.map((attachment) => (
-            <a className="attachment-link" href={attachment.url} key={attachment.id} rel="noreferrer" target="_blank">
-              <span>{attachment.name}</span>
-              <small>{formatBytes(attachment.sizeBytes)}</small>
-            </a>
+            <AttachmentLink attachment={attachment} key={attachment.id} />
           ))}
         </div>
       ) : null}
       <small>{message.status}</small>
     </article>
+  );
+}
+
+function AttachmentLink({ attachment }: { attachment: MessageAttachment }) {
+  const api = useManagerWorkspaceApi();
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState(false);
+
+  // Скачиваем через API-клиент (blob), а не плоским <a href>: браузерная
+  // навигация не несёт tenant-заголовок, и backend-прокси вернул бы 400.
+  const handleClick = async () => {
+    if (downloading) {
+      return;
+    }
+    setDownloading(true);
+    setError(false);
+    try {
+      const blob = await api.attachments.download(attachment.id);
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = objectUrl;
+      anchor.download = attachment.name;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      // Освобождаем object URL после того, как браузер начал скачивание.
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 0);
+    } catch {
+      setError(true);
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <button
+      className="attachment-link"
+      disabled={downloading}
+      onClick={handleClick}
+      type="button"
+    >
+      <span>{attachment.name}</span>
+      <small>
+        {formatBytes(attachment.sizeBytes)}
+        {downloading ? " · загрузка…" : error ? " · ошибка" : ""}
+      </small>
+    </button>
   );
 }
 

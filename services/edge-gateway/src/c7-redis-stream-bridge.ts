@@ -131,24 +131,44 @@ function parseRedisStreamResponse(response: unknown): Array<{
   id: string;
   fields: Record<string, string>;
 }> {
-  if (!Array.isArray(response)) {
-    return [];
+  // Верхний уровень XREADGROUP имеет ДВА формата (W7-фикс): RESP2 —
+  // массив `[[streamName, entries], ...]`; node-redis v4+ (RESP3) — объект
+  // `{ [streamName]: entries }`. Раньше парсер понимал только массив, поэтому с
+  // боевым redis-клиентом (`redis` ^6) ответ не разбирался и события не доходили
+  // до WS (unit-тесты использовали fake с массивом и это маскировали).
+  const perStreamEntries: unknown[] = [];
+  if (Array.isArray(response)) {
+    for (const streamEntry of response) {
+      if (Array.isArray(streamEntry) && streamEntry.length >= 2 && Array.isArray(streamEntry[1])) {
+        perStreamEntries.push(streamEntry[1]);
+      }
+    }
+  } else if (response !== null && typeof response === "object") {
+    for (const entries of Object.values(response as Record<string, unknown>)) {
+      if (Array.isArray(entries)) {
+        perStreamEntries.push(entries);
+      }
+    }
   }
 
   const messages: Array<{ id: string; fields: Record<string, string> }> = [];
-  for (const streamEntry of response) {
-    if (!Array.isArray(streamEntry) || streamEntry.length < 2 || !Array.isArray(streamEntry[1])) {
+  for (const entries of perStreamEntries) {
+    if (!Array.isArray(entries)) {
       continue;
     }
-
-    for (const rawMessage of streamEntry[1]) {
-      if (!Array.isArray(rawMessage) || rawMessage.length < 2 || typeof rawMessage[0] !== "string") {
-        continue;
+    for (const rawMessage of entries) {
+      // Запись потока: RESP2 — `[id, [field, value, ...]]`; node-redis —
+      // `{ id, message: { field: value } }`. Поля нормализуются в обоих видах.
+      if (Array.isArray(rawMessage) && rawMessage.length >= 2 && typeof rawMessage[0] === "string") {
+        messages.push({ id: rawMessage[0], fields: normalizeFields(rawMessage[1]) });
+      } else if (
+        rawMessage !== null &&
+        typeof rawMessage === "object" &&
+        typeof (rawMessage as { id?: unknown }).id === "string"
+      ) {
+        const entry = rawMessage as { id: string; message?: unknown; fields?: unknown };
+        messages.push({ id: entry.id, fields: normalizeFields(entry.message ?? entry.fields) });
       }
-      messages.push({
-        id: rawMessage[0],
-        fields: normalizeFields(rawMessage[1]),
-      });
     }
   }
 

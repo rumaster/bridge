@@ -119,6 +119,11 @@ services:
       EMAIL_TLS_REJECT_UNAUTHORIZED: ${EMAIL_TLS_REJECT_UNAUTHORIZED:-1}
       EMAIL_INBOUND_POLL_INTERVAL_MS: ${EMAIL_INBOUND_POLL_INTERVAL_MS:-15000}
       EMAIL_INBOUND_REFRESH_INTERVAL_MS: ${EMAIL_INBOUND_REFRESH_INTERVAL_MS:-30000}
+      # Хранение вложений писем (§4.3): файловый том на RF (резидентность ПДн,
+      # 152-ФЗ). Байты остаются на Edge; менеджер тянет их лениво через
+      # backend-прокси. Пусто → вложения приезжают только метаданными.
+      EMAIL_ATTACHMENT_STORAGE_DIR: ${EMAIL_ATTACHMENT_STORAGE_DIR:-/var/lib/bridge/attachments}
+      EMAIL_ATTACHMENT_MAX_BYTES: ${EMAIL_ATTACHMENT_MAX_BYTES:-26214400}
       EDGE_VPN_APP_TCP_CLIENT_TLS_CA: ${EDGE_VPN_APP_TCP_CLIENT_TLS_CA:-}
       EDGE_VPN_APP_TCP_CLIENT_TLS_KEY: ${EDGE_VPN_APP_TCP_CLIENT_TLS_KEY:-}
       EDGE_VPN_APP_TCP_CLIENT_TLS_CERT: ${EDGE_VPN_APP_TCP_CLIENT_TLS_CERT:-}
@@ -127,6 +132,10 @@ services:
       EDGE_VPN_APP_WSS_CLIENT_TLS_CERT: ${EDGE_VPN_APP_WSS_CLIENT_TLS_CERT:-}
     ports:
       - "${EDGE_GATEWAY_PORT:-3000}:${EDGE_GATEWAY_PORT:-3000}"
+    volumes:
+      # Байты вложений писем на RF-стороне (§4.3), резидентно; переживает
+      # рестарт Edge (storage_ref детерминирован по content-hash).
+      - bridge-edge-attachments:/var/lib/bridge/attachments
     # Резолв публичного UDP-эндпоинта App-стороны на одном хосте (стенд): позволяет
     # AWG_ENDPOINT=host.docker.internal:51820. В проде AWG_ENDPOINT — публичный
     # DNS/IP App-кластера, и этот alias не используется.
@@ -237,6 +246,7 @@ services:
 
 volumes:
   bridge-edge-postgres-data:
+  bridge-edge-attachments:
   bridge-mail-data:
   bridge-mail-state:
   bridge-mail-logs:

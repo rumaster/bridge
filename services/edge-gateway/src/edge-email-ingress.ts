@@ -1,4 +1,4 @@
-import { stableEmailEndpointId, stableEmailMessageId } from "./edge-ids.js";
+import { stableEmailEndpointId, stableEmailMessageId, uuidFromText } from "./edge-ids.js";
 
 /**
  * Нормализация входящего письма в конверт C2.IngressMessage на Edge (Этап E3
@@ -31,6 +31,8 @@ export interface RawEmailAttachment {
   content_id?: string;
   filename?: string;
   storage_ref?: string;
+  /** sha256 сохранённых байтов (дедуп/аудит); едет в metadata вложения ядра. */
+  content_hash?: string;
   mime?: string;
   mime_type?: string;
   kind?: string;
@@ -80,14 +82,17 @@ export function buildEmailIngress({
     throw new NonIngestibleEmailError("email sender (from) is required");
   }
 
+  const messageIdHeader = firstNonEmptyString(email?.message_id, email?.id) ?? `${channelId}:${from}`;
+  const messageId = stableEmailMessageId(channelId, messageIdHeader);
+
   const text = firstNonEmptyString(email?.text, email?.text_body, email?.html, email?.subject);
-  const attachments = normalizeAttachments(email?.attachments ?? []);
+  // id вложения детерминирован по (messageId, ссылка вложения): повторная выборка
+  // того же письма даёт те же id — ядро (attachments PK) идемпотентно, дублей нет.
+  const attachments = normalizeAttachments(email?.attachments ?? [], messageId);
   if ((text ?? "") === "" && attachments.length === 0) {
     throw new NonIngestibleEmailError("email has neither text nor attachments");
   }
 
-  const messageIdHeader = firstNonEmptyString(email?.message_id, email?.id) ?? `${channelId}:${from}`;
-  const messageId = stableEmailMessageId(channelId, messageIdHeader);
   const conversationRef = firstNonEmptyString(email?.thread_id, from) as string;
   const occurredAt = firstNonEmptyString(email?.date) ?? now();
 
@@ -124,16 +129,20 @@ export function buildEmailIngress({
   };
 }
 
-function normalizeAttachments(attachments: RawEmailAttachment[]) {
+function normalizeAttachments(attachments: RawEmailAttachment[], messageId: string) {
   if (!Array.isArray(attachments)) {
     return [];
   }
 
-  return attachments.map((attachment) => {
+  return attachments.map((attachment, index) => {
     const mime = attachment.mime ?? attachment.mime_type ?? "application/octet-stream";
-    const id =
+    // Логическая ссылка вложения (стабильна в пределах письма); при отсутствии —
+    // позиция. Разворачиваем в UUID: ядро (attachments.id — uuid PK) не примет
+    // произвольную строку, а детерминизм сохраняет идемпотентность повторов.
+    const ref =
       firstNonEmptyString(attachment.id, attachment.content_id, attachment.filename) ??
-      `email-attachment-${Math.abs(hashString(JSON.stringify(attachment)))}`;
+      `index-${index}`;
+    const id = uuidFromText(`email-attachment:${messageId}:${ref}`);
     const kind = attachment.kind && ATTACHMENT_KINDS.has(attachment.kind)
       ? attachment.kind
       : attachmentKindFromMime(mime);
@@ -141,9 +150,12 @@ function normalizeAttachments(attachments: RawEmailAttachment[]) {
     return {
       id,
       kind,
+      // Реальный ref из хранилища Edge, либо (нет байтов/стора) — прежняя
+      // непрозрачная заглушка, которая просто не зарезолвится на выдаче.
       storage_ref: attachment.storage_ref ?? `email-attachment://${id}`,
       mime,
       ...(attachment.filename !== undefined ? { filename: attachment.filename } : {}),
+      ...(attachment.content_hash !== undefined ? { content_hash: attachment.content_hash } : {}),
       ...(attachment.size !== undefined ? { size: attachment.size } : {}),
     };
   });
@@ -169,13 +181,4 @@ function firstNonEmptyString(...values: unknown[]): string | undefined {
     }
   }
   return undefined;
-}
-
-function hashString(value: string): number {
-  let hash = 0;
-  for (let index = 0; index < value.length; index += 1) {
-    hash = (hash << 5) - hash + value.charCodeAt(index);
-    hash |= 0;
-  }
-  return hash;
 }

@@ -40,6 +40,11 @@ export function createMockManagerWorkspaceApiClient(): ManagerWorkspaceApiClient
         return backend.getMessage(messageId);
       }
     },
+    attachments: {
+      async download(attachmentId: string) {
+        return backend.downloadAttachment(attachmentId);
+      }
+    },
     clients: {
       async list() {
         return backend.listClients();

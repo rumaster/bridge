@@ -220,6 +220,10 @@ export interface ManagerWorkspaceApiClient {
     create: (request: SendMessageRequest) => Promise<Message>;
     get: (messageId: string) => Promise<Message>;
   };
+  attachments: {
+    /** Ленивое скачивание байтов вложения (blob) через backend-прокси к Edge. */
+    download: (attachmentId: string) => Promise<Blob>;
+  };
   clients: {
     list: () => Promise<ClientProfile[]>;
     get: (clientId: string) => Promise<ClientProfile>;

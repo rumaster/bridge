@@ -83,14 +83,27 @@ describe("edge email ingress builder", () => {
 
     assert.equal(body.message.content.type, "file");
     assert.equal(body.message.content.text, undefined);
-    assert.deepEqual(body.message.attachments[0], {
-      id: "invoice.pdf",
-      kind: "file",
-      storage_ref: "email-attachment://invoice.pdf",
-      mime: "application/pdf",
-      filename: "invoice.pdf",
-      size: 2048,
+    const attachment = body.message.attachments[0];
+    // id — детерминированный UUID (ядро: attachments.id — uuid PK), а не имя файла.
+    assert.match(attachment.id, UUID_PATTERN);
+    assert.equal(attachment.kind, "file");
+    assert.equal(attachment.mime, "application/pdf");
+    assert.equal(attachment.filename, "invoice.pdf");
+    assert.equal(attachment.size, 2048);
+    // Байтов/стора нет → storage_ref остаётся непрозрачной заглушкой по id.
+    assert.equal(attachment.storage_ref, `email-attachment://${attachment.id}`);
+    // Повторная сборка того же письма даёт тот же id вложения (идемпотентность).
+    const again = buildEmailIngress({
+      email: {
+        message_id: "<y@mail>",
+        from: "a@b.com",
+        attachments: [{ filename: "invoice.pdf", mime: "application/pdf", size: 2048 }],
+      },
+      organizationId: "org-1",
+      channelId: "chan-1",
+      now,
     });
+    assert.equal(again.message.attachments[0].id, attachment.id);
   });
 
   it("infers image attachment kind from the MIME type", () => {

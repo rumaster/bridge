@@ -203,6 +203,62 @@ describe("Внутренний messaging-путь (issue #189/#191)", () => {
     });
   });
 
+  it("сохраняет вложения письма и отдаёт их в read-path с url (§4.3)", async () => {
+    const attachmentMessageId = "20000000-0000-4000-8000-000000000651";
+    const attachmentId = "20000000-0000-4000-8000-0000000006a1";
+    const storageRef = `edge-attach://${ORG}/${"a".repeat(64)}`;
+    const envelope = {
+      contract: "C2.IngressMessage",
+      version: "1.0.0",
+      idempotency_key: attachmentMessageId,
+      message: {
+        message_id: attachmentMessageId,
+        organization_id: ORG,
+        channel_id: "email-chan-1",
+        channel_type: "email",
+        sender_ref: "client@example.com",
+        direction: "inbound",
+        occurred_at: "2026-07-13T09:00:00.000Z",
+        content: { type: "file", text: "смотри вложение" },
+        attachments: [
+          {
+            id: attachmentId,
+            kind: "file",
+            storage_ref: storageRef,
+            mime: "application/pdf",
+            filename: "счёт.pdf",
+            content_hash: "a".repeat(64),
+            size: 2048,
+          },
+        ],
+      },
+    };
+
+    await request(app.getHttpServer()).post("/internal/ingress/messages").send(envelope).expect(202);
+
+    // Персистентность: строка в таблице attachments с непрозрачным storage_ref.
+    await withClient(databaseUrl, async (client) => {
+      await setPlatformOperator(client);
+      const stored = await client.query(
+        "SELECT storage_ref, kind, mime, size, metadata FROM attachments WHERE id = $1 AND message_id = $2",
+        [attachmentId, attachmentMessageId],
+      );
+      expect(stored.rows).toHaveLength(1);
+      expect(stored.rows[0].storage_ref).toBe(storageRef);
+      expect(stored.rows[0].mime).toBe("application/pdf");
+      expect(Number(stored.rows[0].size)).toBe(2048);
+      expect(stored.rows[0].metadata).toMatchObject({ filename: "счёт.pdf", content_hash: "a".repeat(64) });
+    });
+
+    // Повторный приём того же письма не плодит дублей вложения (ON CONFLICT).
+    await request(app.getHttpServer()).post("/internal/ingress/messages").send(envelope).expect(202);
+    await withClient(databaseUrl, async (client) => {
+      await setPlatformOperator(client);
+      const count = await client.query("SELECT count(*)::int AS n FROM attachments WHERE id = $1", [attachmentId]);
+      expect(count.rows[0].n).toBe(1);
+    });
+  });
+
   it("отклоняет некорректный конверт (несовпадение idempotency_key)", async () => {
     await request(app.getHttpServer())
       .post("/internal/ingress/messages")

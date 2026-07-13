@@ -1,3 +1,7 @@
+import {
+  createFilesystemAttachmentStore,
+  type EdgeAttachmentStore,
+} from "./edge-attachment-store.js";
 import { createEdgeEmailTester } from "./edge-channel-tester.js";
 import { createEdgeControlPlane, type EdgeControlPlaneCipher } from "./edge-control-plane.js";
 import { createEdgeEmailInboundDriver } from "./edge-email-inbound-driver.js";
@@ -68,6 +72,15 @@ export function createEdgeChannelRuntime({
   // EMAIL_TLS_REJECT_UNAUTHORIZED=0 (дефолт — строгая проверка для боевых кред).
   const emailTlsRejectUnauthorized = (env.EMAIL_TLS_REJECT_UNAUTHORIZED ?? "1").trim() !== "0";
 
+  // Хранилище байтов вложений (§4.3): файловый том на RF (MVP). Пусто →
+  // вложения приезжают только метаданными (как раньше), приём не ломается.
+  const attachmentStore: EdgeAttachmentStore | undefined = env.EMAIL_ATTACHMENT_STORAGE_DIR?.trim()
+    ? createFilesystemAttachmentStore({
+        baseDir: env.EMAIL_ATTACHMENT_STORAGE_DIR.trim(),
+        maxBytes: numberEnv(env.EMAIL_ATTACHMENT_MAX_BYTES, 25 * 1024 * 1024),
+      })
+    : undefined;
+
   // Исходящее email (Этап E4/M1): боевой nodemailer SMTP-транспорт за сеамом
   // createTransport; инжектится в control-plane для egress_dispatch (email).
   const emailSender = createEdgeEmailSender({
@@ -122,7 +135,7 @@ export function createEdgeChannelRuntime({
     createMailbox: ({ credentials, channel }) =>
       createImapMailbox(
         { credentials, channel },
-        { tlsRejectUnauthorized: emailTlsRejectUnauthorized, logger },
+        { tlsRejectUnauthorized: emailTlsRejectUnauthorized, attachmentStore, logger },
       ),
     ingest: (body) => cluster.ingest(body),
     pollIntervalMs: numberEnv(env.EMAIL_INBOUND_POLL_INTERVAL_MS, 15_000),
@@ -155,6 +168,8 @@ export function createEdgeChannelRuntime({
     maxSender,
     emailDriver,
     emailSender,
+    /** Хранилище вложений для резолва на выдаче (server route). */
+    attachmentStore,
 
     async start(): Promise<void> {
       await maxDriver.start({
