@@ -71,6 +71,7 @@ export function createEdgeCluster({
     channel_down_total: 0,
     recovery_total: 0,
     expired_skipped_total: 0,
+    sequencer_restored_total: 0,
   };
 
   function aadFor(record) {
@@ -316,6 +317,32 @@ export function createEdgeCluster({
      */
     async drain() {
       return drainPending();
+    },
+
+    /**
+     * Рехидратирует секвенсор из RF-буфера (§7.10): восстанавливает счётчик
+     * `sequence_number` по максимуму уже зафиксированных записей на каждый
+     * endpoint. Вызывается на старте Edge ДО приёма входящих — иначе после
+     * рестарта нумерация начинается заново с 1 и конфликтует с существующими
+     * строками буфера (unique (endpoint_id, sequence_number)) → сбои `ingest`.
+     * Возвращает число восстановленных endpoint'ов.
+     */
+    async rehydrateSequencer() {
+      if (typeof bufferStore.listEndpointSequenceHighWater !== "function") {
+        return 0;
+      }
+      const highWater = await bufferStore.listEndpointSequenceHighWater();
+      let restored = 0;
+      for (const entry of highWater ?? []) {
+        const endpointId = entry?.endpoint_id;
+        const lastSequence = Number(entry?.sequence_number);
+        if (endpointId && Number.isInteger(lastSequence) && lastSequence > 0) {
+          sequencer.restore(endpointId, lastSequence);
+          restored += 1;
+        }
+      }
+      metrics.sequencer_restored_total += restored;
+      return restored;
     },
 
     isConnected() {

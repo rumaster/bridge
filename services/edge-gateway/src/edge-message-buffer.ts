@@ -304,6 +304,21 @@ export function createInMemoryEdgeMessageBufferStore(options = {}) {
       return (await this.listPendingDrain({ now })).length;
     },
 
+    /** Максимальный sequence_number по каждому endpoint (для рехидратации секвенсора). */
+    async listEndpointSequenceHighWater() {
+      const maxByEndpoint = new Map();
+      for (const record of byIdempotencyKey.values()) {
+        const current = maxByEndpoint.get(record.endpoint_id) ?? 0;
+        if (record.sequence_number > current) {
+          maxByEndpoint.set(record.endpoint_id, record.sequence_number);
+        }
+      }
+      return [...maxByEndpoint.entries()].map(([endpoint_id, sequence_number]) => ({
+        endpoint_id,
+        sequence_number,
+      }));
+    },
+
     getMetrics() {
       return { ...metrics };
     },
@@ -535,6 +550,21 @@ export function createPostgresEdgeMessageBufferStore(
         [now],
       );
       return result.rows[0].count;
+    },
+
+    /** Максимальный sequence_number по каждому endpoint (для рехидратации секвенсора). */
+    async listEndpointSequenceHighWater() {
+      const result = await client.query(
+        `
+          SELECT endpoint_id, MAX(sequence_number)::bigint AS sequence_number
+          FROM edge_message_buffer
+          GROUP BY endpoint_id
+        `,
+      );
+      return result.rows.map((row) => ({
+        endpoint_id: row.endpoint_id,
+        sequence_number: Number(row.sequence_number),
+      }));
     },
 
     getMetrics() {

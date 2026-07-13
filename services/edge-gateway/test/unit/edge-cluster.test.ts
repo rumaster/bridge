@@ -327,4 +327,38 @@ describe("Edge Cluster РФ — RF-first конвейер (§7.3/§7.9/§7.10/§
       EdgeClusterError,
     ); // нет id
   });
+
+  it("после рестарта рехидратирует sequence_number из RF-буфера и не конфликтует (§7.10)", async () => {
+    const first = buildCluster();
+    first.tunnel.connect();
+    await first.cluster.ingest(inbound({ id: IDS[1] })); // seq 1
+    await first.cluster.ingest(inbound({ id: IDS[2] })); // seq 2
+
+    const highWater = await first.bufferStore.listEndpointSequenceHighWater();
+    assert.deepEqual(highWater, [{ endpoint_id: ENDPOINT_A, sequence_number: 2 }]);
+
+    // «Рестарт»: новый кластер со СВЕЖИМ секвенсором поверх ТОГО ЖЕ RF-буфера.
+    const cluster2 = createEdgeCluster({
+      cipher: first.cipher,
+      tunnel: first.tunnel,
+      sequencer: createEdgeSequencer(),
+      bufferStore: first.bufferStore,
+      now,
+    });
+
+    // Без рехидратации новый ingest того же endpoint конфликтует (seq 1 уже занят) —
+    // это и есть корень «Edge ingest failed» после рестарта.
+    await assert.rejects(
+      () => cluster2.ingest(inbound({ id: IDS[3] })),
+      /нарушение уникальности \(endpoint_id, sequence_number\)/,
+    );
+
+    // Рехидратация из буфера → следующий ingest продолжает нумерацию (seq 3), без конфликта.
+    const restored = await cluster2.rehydrateSequencer();
+    assert.equal(restored, 1);
+    const ok = await cluster2.ingest(inbound({ id: IDS[4] }));
+    assert.equal(ok.sequence_number, 3);
+    assert.equal(ok.duplicate, false);
+    assert.equal(ok.fixed_in_rf, true);
+  });
 });

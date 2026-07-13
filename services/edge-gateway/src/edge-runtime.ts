@@ -115,6 +115,19 @@ export async function createEdgeGatewayRuntimeFromEnv(
     bufferTtlMs: numberEnv(env.EDGE_BUFFER_TTL_MS, undefined),
     region: env.EDGE_REGION ?? "RF",
   });
+  // Рехидратация секвенсора из RF-буфера ДО приёма входящих (§7.10): после
+  // рестарта Edge sequence_number должен продолжаться с максимума уже
+  // зафиксированных записей, иначе повторная нумерация с 1 конфликтует с
+  // существующими строками буфера (unique (endpoint_id, sequence_number)) →
+  // "Edge ingest failed" на входящем письме/апдейте.
+  try {
+    const restored = await cluster.rehydrateSequencer();
+    if (restored > 0) {
+      console.log(`edge sequencer rehydrated from RF buffer: ${restored} endpoints`);
+    }
+  } catch (error) {
+    console.error("edge sequencer rehydration failed", error);
+  }
   // Edge-owned канальные драйверы (Этап M5): бот MAX работает на Edge — приём
   // getUpdates → RF-first `cluster.ingest`, отправка через MAX Bot API; реестр
   // каналов и токены — из control-plane (creds-sync App→Edge). За гейтом
