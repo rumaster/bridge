@@ -334,6 +334,63 @@ describe("IntegrationGatewayFacade", () => {
       if (prev !== undefined) process.env.EDGE_CONTROL_URL = prev;
     }
   });
+
+  it("bulk-resync (Ш2) проталкивает креды всех connected email-каналов per-channel", async () => {
+    const prev = process.env.EDGE_CONTROL_URL;
+    process.env.EDGE_CONTROL_URL = "http://edge.test/internal/edge/control/messages";
+    try {
+      const serialized = JSON.stringify({ kind: "email_channel_credentials", version: 1, ...EMAIL_CREDENTIALS });
+      const rows = [
+        { id: "chan-a", organization_id: ORG_ID, credentials_ref: "secret://email/org-1/chan-a", config: {}, updated_at: "2026-07-03T09:00:00.000Z" },
+        { id: "chan-b", organization_id: "org-2", credentials_ref: "secret://email/org-2/chan-b", config: { note: "b" }, updated_at: "2026-07-03T10:00:00.000Z" },
+      ];
+      const database = {
+        async withTenant(_org: string, cb: (client: unknown) => unknown) {
+          return cb({ async query() { return { rowCount: rows.length, rows }; } });
+        },
+      };
+      const channelSecrets = {
+        buildCredentialsRef: () => "ref",
+        encrypt: () => ({}),
+        async resolveChannelSecret() { return serialized; },
+      };
+      const fetchImpl = jest.fn(async () => ({ ok: true, status: 200 }));
+      const facade = createFacade({
+        database: database as never,
+        channelSecrets: channelSecrets as never,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      });
+
+      const res = await facade.resyncEmailChannelCredentials();
+
+      expect(res).toEqual({ synced: 2, total: 2 });
+      expect(fetchImpl).toHaveBeenCalledTimes(2);
+      const bodies = fetchImpl.mock.calls.map((c) => JSON.parse((c[1] as RequestInit).body as string));
+      expect(bodies.map((b) => b.payload.channel_id).sort()).toEqual(["chan-a", "chan-b"]);
+      const a = bodies.find((b) => b.payload.channel_id === "chan-a");
+      expect(a.type).toBe("channel_credentials_sync");
+      expect(a.control_id).toBe("creds-chan-a-2026-07-03T09:00:00.000Z"); // стабилен по updated_at
+      expect(a.payload.credentials).toMatchObject({ imap: { host: "mailserver" }, from_email: "support@bridge.local" });
+      expect(typeof a.payload.credentials).toBe("object");
+    } finally {
+      if (prev === undefined) delete process.env.EDGE_CONTROL_URL;
+      else process.env.EDGE_CONTROL_URL = prev;
+    }
+  });
+
+  it("resync — no-op без EDGE_CONTROL_URL", async () => {
+    const prev = process.env.EDGE_CONTROL_URL;
+    delete process.env.EDGE_CONTROL_URL;
+    try {
+      const fetchImpl = jest.fn(async () => ({ ok: true, status: 200 }));
+      const facade = createFacade({ fetchImpl: fetchImpl as unknown as typeof fetch });
+      const res = await facade.resyncEmailChannelCredentials();
+      expect(res).toEqual({ synced: 0, total: 0 });
+      expect(fetchImpl).not.toHaveBeenCalled();
+    } finally {
+      if (prev !== undefined) process.env.EDGE_CONTROL_URL = prev;
+    }
+  });
 });
 
 function telegramResponse(body: Record<string, unknown>, status = 200) {

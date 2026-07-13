@@ -110,6 +110,7 @@ services:
       # На стенде Edge в отдельном RF-кластере → через host-порт edge-gateway.
       EDGE_CONTROL_URL: ${EDGE_CONTROL_URL:-}
       EDGE_CONTROL_TOKEN: ${EDGE_CONTROL_TOKEN:-}
+      EDGE_CREDENTIALS_RESYNC_INTERVAL_MS: ${EDGE_CREDENTIALS_RESYNC_INTERVAL_MS:-60000}
       # «Bridge Mail» (Этап M5): URL провижининг-агента почтовика (mail-provision
       # serve, рядом с mailserver). Задан — админка может заказывать ящики
       # (POST /api/v1/mail/mailboxes → агент создаёт ящик → авто-connect канала).

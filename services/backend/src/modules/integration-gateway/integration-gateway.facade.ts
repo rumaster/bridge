@@ -6,6 +6,8 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  type OnApplicationBootstrap,
+  type OnModuleDestroy,
   Optional,
   ServiceUnavailableException,
 } from "@nestjs/common";
@@ -15,6 +17,7 @@ import type { PgDatabase } from "../../common/database/database.service";
 import type { ChannelSecretEnvelope } from "../../common/secrets/channel-secret.store";
 import {
   type EmailChannelCredentials,
+  parseEmailChannelCredentials,
   serializeEmailChannelCredentials,
 } from "../../common/secrets/email-channel-credentials";
 import type { FacadeStatusDto } from "../ai-integration/ai-integration.facade";
@@ -276,7 +279,7 @@ const CHANNEL_CAPABILITY_PROFILES: Record<
 };
 
 @Injectable()
-export class IntegrationGatewayFacade {
+export class IntegrationGatewayFacade implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly clock: () => string;
   private readonly resilience: FacadeResilience;
   private readonly upstream: IntegrationGatewayUpstreamClient | null;
@@ -286,6 +289,7 @@ export class IntegrationGatewayFacade {
   private readonly telegramApiBaseUrl: string;
   private readonly maxApiBaseUrl: string;
   private readonly logger = new Logger(IntegrationGatewayFacade.name);
+  private credentialsResyncTimer?: ReturnType<typeof setInterval>;
 
   constructor(
     @Optional()
@@ -325,6 +329,45 @@ export class IntegrationGatewayFacade {
       serviceId: "SVC-INT",
       status: this.upstream ? "available" : "degraded",
     };
+  }
+
+  /**
+   * Периодический bulk-resync email-кред на Edge (Ш2 плана
+   * `docs/plan/email-inbound-edge-implementation.md`). Кэш кред на Edge —
+   * in-memory: при рестарте edge-gateway он обнуляется (`channels: 0`), а
+   * push-on-write (Ш1) срабатывает только при connect/update. Периодический
+   * resync повторно проталкивает креды всех `connected` email-каналов, поэтому
+   * Edge восстанавливает реестр в течение одного интервала после рестарта.
+   * Идемпотентно: Edge дедупит по `control_id` (стабилен по updated_at), пока его
+   * кэш жив, и заново сохраняет после рестарта (кэш обработанных id тоже обнулён).
+   *
+   * Стартует только в рантайме Nest (не в unit-тестах, где фасад создаётся через
+   * `new`) и только при заданном `EDGE_CONTROL_URL`.
+   */
+  onApplicationBootstrap(): void {
+    const rawInterval = process.env.EDGE_CREDENTIALS_RESYNC_INTERVAL_MS;
+    const parsedInterval = rawInterval && rawInterval.trim() !== "" ? Number(rawInterval) : NaN;
+    const intervalMs = Number.isFinite(parsedInterval) ? parsedInterval : 60_000;
+    const edgeControlUrl = process.env.EDGE_CONTROL_URL?.trim();
+    if (!edgeControlUrl || intervalMs <= 0 || !this.database || !this.channelSecrets) {
+      return;
+    }
+
+    const runResync = () => {
+      void this.resyncEmailChannelCredentials().catch((error) => {
+        this.logger.warn(`Периодический resync email-кред упал: ${String(error)}`);
+      });
+    };
+    runResync();
+    this.credentialsResyncTimer = setInterval(runResync, intervalMs);
+    this.credentialsResyncTimer.unref?.();
+  }
+
+  onModuleDestroy(): void {
+    if (this.credentialsResyncTimer) {
+      clearInterval(this.credentialsResyncTimer);
+      this.credentialsResyncTimer = undefined;
+    }
   }
 
   async listChannels(organizationId: string): Promise<ChannelFacade[]> {
@@ -481,7 +524,7 @@ export class IntegrationGatewayFacade {
         channelType,
         credentials: request.email_credentials,
         config,
-        issuedAt: timestamp,
+        credsVersion: timestamp,
       });
     }
     return channel;
@@ -620,7 +663,7 @@ export class IntegrationGatewayFacade {
           channelType: "email",
           credentials: request.email_credentials,
           config,
-          issuedAt: timestamp,
+          credsVersion: timestamp,
         });
       }
       return channel;
@@ -990,7 +1033,9 @@ export class IntegrationGatewayFacade {
    * Best-effort: недоступность/отказ Edge НЕ ломает connect/update канала (bulk-resync,
    * Ш2 плана, довосстановит; кэш Edge — in-memory и теряется при рестарте). `credentials`
    * идёт **объектом** (валидатор control-plane требует object, не сериализованную строку).
-   * Идемпотентность — `control_id = creds-<channel_id>-<issued_at>`; мультиканальность —
+   * Идемпотентность — `control_id = creds-<channel_id>-<credsVersion>` (`credsVersion` =
+   * `updated_at` канала): один и тот же push (connect/update/resync) для неизменного
+   * состояния канала дедупится Edge, ротация кред даёт новый id. Мультиканальность —
    * ключевание по `channel_id` (`edge-control-plane.storeCredentials`).
    */
   private async publishChannelCredentialsSync(input: {
@@ -999,7 +1044,8 @@ export class IntegrationGatewayFacade {
     channelType: ChannelType;
     credentials: EmailChannelCredentials;
     config: Record<string, unknown>;
-    issuedAt: string;
+    /** Стабильный маркер версии кред (`updated_at` канала) — основа `control_id`. */
+    credsVersion: string;
   }): Promise<void> {
     const edgeControlUrl = process.env.EDGE_CONTROL_URL?.trim();
     if (!edgeControlUrl) {
@@ -1009,10 +1055,10 @@ export class IntegrationGatewayFacade {
     const controlMessage = {
       contract: "C9.EdgeControlMessage",
       version: "1.0.0",
-      control_id: `creds-${input.channelId}-${input.issuedAt}`,
+      control_id: `creds-${input.channelId}-${input.credsVersion}`,
       type: "channel_credentials_sync",
       organization_id: input.organizationId,
-      issued_at: input.issuedAt,
+      issued_at: this.clock(),
       payload: {
         channel_id: input.channelId,
         channel_type: input.channelType,
@@ -1041,6 +1087,94 @@ export class IntegrationGatewayFacade {
         `Не удалось синхронизировать креды канала на Edge (${input.channelId}): ${String(error)}`,
       );
     }
+  }
+
+  /**
+   * Bulk-resync (Ш2): проталкивает креды ВСЕХ `connected` email-каналов на Edge —
+   * восстанавливает его in-memory реестр после рестарта edge-gateway. Резолв кред
+   * **по `channel_id`** (не `LIMIT 1`, как `resolveChannelDeliveryToken`), поэтому у
+   * организации может быть несколько email-ящиков. Best-effort: сбой одного канала
+   * не прерывает остальные. No-op без `EDGE_CONTROL_URL` / БД / секрет-стора.
+   */
+  async resyncEmailChannelCredentials(): Promise<{ synced: number; total: number }> {
+    if (!process.env.EDGE_CONTROL_URL?.trim() || !this.database || !this.channelSecrets) {
+      return { synced: 0, total: 0 };
+    }
+
+    const channels = await this.listConnectedEmailChannelsForSync();
+    let synced = 0;
+    for (const channel of channels) {
+      try {
+        const secret = await this.requireChannelSecrets().resolveChannelSecret({
+          credentialsRef: channel.credentials_ref,
+          organizationId: channel.organization_id,
+        });
+        if (!secret) {
+          continue;
+        }
+        const credentials = parseEmailChannelCredentials(secret);
+        await this.publishChannelCredentialsSync({
+          channelId: channel.id,
+          organizationId: channel.organization_id,
+          channelType: "email",
+          credentials,
+          config: channel.config,
+          credsVersion: channel.updated_at,
+        });
+        synced += 1;
+      } catch (error) {
+        this.logger.warn(`resync email-кред канала ${channel.id} пропущен: ${String(error)}`);
+      }
+    }
+
+    if (channels.length > 0) {
+      this.logger.log(`Email creds resync: ${synced}/${channels.length} каналов отправлено на Edge`);
+    }
+    return { synced, total: channels.length };
+  }
+
+  /**
+   * Кросс-тенантный список `connected` email-каналов с `credentials_ref` и
+   * `updated_at` для bulk-resync (platform operator, per-channel — не `LIMIT 1`).
+   */
+  private async listConnectedEmailChannelsForSync(): Promise<
+    Array<{
+      id: string;
+      organization_id: string;
+      credentials_ref: string;
+      config: Record<string, unknown>;
+      updated_at: string;
+    }>
+  > {
+    const result = await this.requireDatabase().withTenant(
+      "",
+      (client) =>
+        client.query<{
+          id: string;
+          organization_id: string;
+          credentials_ref: string;
+          config: Record<string, unknown> | null;
+          updated_at: Date | string;
+        }>(
+          `
+            SELECT id, organization_id, credentials_ref, config, updated_at
+            FROM channels
+            WHERE channel_type = 'email'
+              AND status = 'connected'
+              AND credentials_ref IS NOT NULL
+            ORDER BY organization_id ASC, id ASC
+          `,
+        ),
+      { isPlatformOperator: true },
+    );
+
+    return result.rows.map((row) => ({
+      id: row.id,
+      organization_id: row.organization_id,
+      credentials_ref: row.credentials_ref,
+      config: row.config ?? {},
+      updated_at: toIso(row.updated_at),
+    }));
   }
 
   private requireDatabase(): ChannelDatabasePort {

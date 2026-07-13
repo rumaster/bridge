@@ -85,7 +85,21 @@ organization_id, config, credentials: <объект EmailChannelCredentials>}` (
 идемпотентности. Мультиканальность обеспечена: `storeCredentials`/`listChannels`
 ключуют по `channel_id`.
 
-### Ш2 — Bulk-resync (кэш Edge in-memory, теряется при рестарте)
+### Ш2 — Bulk-resync (кэш Edge in-memory, теряется при рестарте) — ✅ РЕАЛИЗОВАНО
+
+> **Статус: реализовано** (backend). `IntegrationGatewayFacade.resyncEmailChannelCredentials`
+> проталкивает креды ВСЕХ `connected` email-каналов на Edge; запускается по таймеру
+> (`onApplicationBootstrap` → `setInterval`, интервал `EDGE_CREDENTIALS_RESYNC_INTERVAL_MS`,
+> дефолт 60с; сразу один прогон на старте), гейт — `EDGE_CONTROL_URL`. Резолв кред
+> **по `channel_id`** через новый `listConnectedEmailChannelsForSync` (кросс-тенантный
+> `SELECT … channel_type='email' AND status='connected'`) + `resolveChannelSecret` на
+> каждый канал — не `LIMIT 1`, поэтому у организации может быть несколько ящиков.
+> `control_id` стабилен по `updated_at` (общий с Ш1): пока кэш Edge жив — дедуп, после
+> рестарта Edge — повторное сохранение (кэш обработанных id тоже обнулён). Best-effort
+> по каналу. Тесты (jest): per-channel push двух каналов + no-op без `EDGE_CONTROL_URL`
+> (facade 15/15). Env добавлен в `.env.example` и `docker-compose.yml` (backend).
+
+Исходное описание шага:
 Push-on-write не покрывает рестарт Edge и «холодный» Edge. Нужен периодический/по-
 событию bulk-push всех `connected` email-каналов: backend берёт список
 (`listActiveChannelsByType("email")`) и per-channel креды и шлёт creds-sync на каждый.
