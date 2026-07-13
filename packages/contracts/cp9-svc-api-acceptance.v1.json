@@ -9,6 +9,12 @@
       "reason": "Осознанный пересмотр замороженного гейта: маршруты Email/Bridge Mail M5, добавленные в /api/v1 после заморозки (PUT /channels/{id}, POST /mail/mailboxes, GET /attachments/{id}/content), включены в опубликованную v1-поверхность согласно инварианту гейта «every actual Nest /api/v1 route is published». Обновлены generated_operation_count 72→75 и generated_path_count 60→63; добавлены surface-записи. Владелец контрактов: решение A (включить в v1).",
       "operation_count": "72 -> 75",
       "path_count": "60 -> 63"
+    },
+    {
+      "date": "2026-07-13",
+      "reason": "Исходящие вложения email (§4.3-bis follow-up п.2): добавлен маршрут POST /api/v1/attachments (загрузка байтов вложения менеджером → RF-том Edge) в /api/v1 после заморозки, включён в опубликованную v1-поверхность согласно инварианту «every actual Nest /api/v1 route is published». Обновлены generated_operation_count 75→76 и generated_path_count 63→64; добавлена surface-запись. Владелец контрактов: решение A (включить в v1).",
+      "operation_count": "75 -> 76",
+      "path_count": "63 -> 64"
     }
   ],
   "scope": {
@@ -39,8 +45,8 @@
       "base_path": "/api/v1",
       "openapi": {
         "artifact": "packages/contracts/openapi/backend-core/openapi.json",
-        "generated_operation_count": 75,
-        "generated_path_count": 63,
+        "generated_operation_count": 76,
+        "generated_path_count": 64,
         "metadata": {
           "x-contract-id": "C3",
           "x-owner": "SVC-API",
@@ -69,7 +75,8 @@
         { "method": "post", "path": "/api/v1/web-chat/email-code:verify" },
         { "method": "put", "path": "/api/v1/channels/{id}" },
         { "method": "post", "path": "/api/v1/mail/mailboxes" },
-        { "method": "get", "path": "/api/v1/attachments/{id}/content" }
+        { "method": "get", "path": "/api/v1/attachments/{id}/content" },
+        { "method": "post", "path": "/api/v1/attachments" }
       ],
       "versioning": {
         "strategy": "uri",
