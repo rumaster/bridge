@@ -803,14 +803,14 @@ export function createMockSaasAdminApiClient(
         const createdAt = "2026-07-03T12:00:00.000Z";
         const broadcast: BroadcastCampaign = {
           id: `broadcast-created-${nextBroadcastNumber++}`,
-          organization_id: request.organization_id,
+          organization_id: currentSession?.organization.id ?? "org-demo",
           name: request.name.trim(),
           status: "draft",
           template: cloneBroadcastTemplate(request.template),
           filter: cloneBroadcastFilter(request.filter),
           schedule: { ...request.schedule },
           rate_limit: { ...request.rate_limit },
-          created_by: request.created_by,
+          created_by: currentSession?.user.displayName ?? "Seeded Admin",
           created_at: createdAt,
           updated_at: createdAt
         };
@@ -977,7 +977,7 @@ export function createMockSaasAdminApiClient(
           version: "1.0.0",
           request_id: "notification-settings-update-req",
           organization_id: currentOrganization.id,
-          user_id: request.user_id,
+          user_id: currentSession?.user.id ?? "00000000-0000-4000-8000-000000000201",
           settings: cloneNotificationSettings(currentNotificationSettings)
         };
       }

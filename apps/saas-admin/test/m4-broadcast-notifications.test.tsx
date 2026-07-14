@@ -52,7 +52,6 @@ describe("SaaS Administration M4 Broadcast (C8, CP-6)", () => {
     expect(await screen.findByText(/Черновик кампании .*Осенняя рассылка.* создан/)).toBeInTheDocument();
     expect(createBroadcast).toHaveBeenCalledWith(
       expect.objectContaining({
-        organization_id: mockSession.organization.id,
         name: "Осенняя рассылка",
         template: expect.objectContaining({ type: "text", body: "Здравствуйте, друзья!" }),
         schedule: { mode: "manual" },
@@ -88,7 +87,6 @@ describe("SaaS Administration M4 Broadcast (C8, CP-6)", () => {
       expect(startBroadcast).toHaveBeenCalledWith(
         "broadcast-promo-july",
         expect.objectContaining({
-          organization_id: mockSession.organization.id,
           mode: "immediate"
         })
       );
@@ -175,8 +173,6 @@ describe("SaaS Administration M4 Notification (C10, CP-8)", () => {
     await waitFor(() => {
       expect(updateSettings).toHaveBeenCalledWith(
         expect.objectContaining({
-          organization_id: mockSession.organization.id,
-          user_id: mockSession.user.id,
           settings: expect.arrayContaining([
             expect.objectContaining({ category: "info", channel: "telegram", enabled: true })
           ])

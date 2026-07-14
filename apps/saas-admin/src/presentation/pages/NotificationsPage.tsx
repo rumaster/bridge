@@ -141,8 +141,6 @@ export default function NotificationsPage() {
       }));
 
       const response = await api.notifications.updateSettings({
-        organization_id: session.organization.id,
-        user_id: session.user.id,
         settings: nextSettings
       });
 
