@@ -216,6 +216,12 @@ export interface KnowledgeDocument {
   organization_id: string;
   title: string;
   content: string;
+  /**
+   * Ключевые (поисковые) фразы. Эмбеддинг считается по каждой фразе, а не по
+   * контенту: фраза задаёт, на какие запросы документ должен находиться.
+   * Пустой список — документ сохранён, но в семантическом поиске не участвует.
+   */
+  embedding_sources: string[];
   created_at: ISODateTime;
   updated_at: ISODateTime;
 }
@@ -224,11 +230,13 @@ export interface CreateKnowledgeDocumentRequest {
   organization_id: string;
   title: string;
   content: string;
+  embedding_sources?: string[];
 }
 
 export interface UpdateKnowledgeDocumentRequest {
   title?: string;
   content?: string;
+  embedding_sources?: string[];
 }
 
 export interface DeleteKnowledgeDocumentResponse {

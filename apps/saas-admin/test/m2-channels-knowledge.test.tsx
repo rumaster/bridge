@@ -274,6 +274,11 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
     const form = screen.getByRole("form", { name: "Новый документ" });
     await user.type(within(form).getByLabelText("Название документа"), "Политика гарантий");
     await user.type(within(form).getByLabelText(/Контент/), "Гарантия на технику — 12 месяцев.");
+    // Ключевые фразы — по одной на строку; уходят в API массивом.
+    await user.type(
+      within(form).getByLabelText(/Ключевые фразы/),
+      "гарантия на технику{enter}срок гарантии"
+    );
     await user.click(within(form).getByRole("button", { name: "Добавить документ" }));
 
     expect(await screen.findByRole("article", { name: /Политика гарантий/ })).toBeInTheDocument();
@@ -281,11 +286,16 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
       expect.objectContaining({
         organization_id: mockSession.organization.id,
         title: "Политика гарантий",
-        content: "Гарантия на технику — 12 месяцев."
+        content: "Гарантия на технику — 12 месяцев.",
+        embedding_sources: ["гарантия на технику", "срок гарантии"]
       })
     );
 
     const returnsCard = screen.getByRole("article", { name: /Политика возвратов/ });
+    // Фразы документа показаны по одной на строку и уходят обратно массивом.
+    expect(within(returnsCard).getByLabelText(/Ключевые фразы/)).toHaveValue(
+      "возврат товара\nкак вернуть покупку\nденьги за возврат"
+    );
     const returnsTitle = within(returnsCard).getByLabelText("Название документа");
     await user.clear(returnsTitle);
     await user.type(returnsTitle, "Политика возвратов v2");
@@ -294,7 +304,10 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
     expect(await screen.findByRole("article", { name: /Политика возвратов v2/ })).toBeInTheDocument();
     expect(updateDocument).toHaveBeenCalledWith(
       "kb-doc-returns",
-      expect.objectContaining({ title: "Политика возвратов v2" })
+      expect.objectContaining({
+        title: "Политика возвратов v2",
+        embedding_sources: ["возврат товара", "как вернуть покупку", "деньги за возврат"]
+      })
     );
 
     const deliveryCard = screen.getByRole("article", { name: /Регламент доставки/ });
