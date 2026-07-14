@@ -223,13 +223,13 @@ function readTenantHeaders(): HeadersInit {
 
 /**
  * Читает organization_id арендатора из сохранённой сессии менеджера
- * (localStorage). Используется и как tenant-заголовок REST-запросов, и как
- * scope C7-realtime подписки (organization_id в WS-URL): WS-сервер App-стороны
- * фильтрует события по organization_id, поэтому без него менеджер не получит ни
- * одного realtime-события. Возвращает undefined, если сессии нет или org не
- * прошёл валидацию UUID v4.
+ * (localStorage) БЕЗ валидации формата — «сырой» scope текущей сессии. Нужен для
+ * C7-realtime: WS-сервер фильтрует события по organization_id, поэтому подписке
+ * достаточно любого непустого tenant-scope. В mock/e2e сессии org — не UUID
+ * ("org-1"), и realtime всё равно должен подключаться; строгая UUID-проверка тут
+ * ломала бы e2e (сокет не открывался). Возвращает undefined, если сессии нет.
  */
-export function readStoredOrganizationId() {
+export function readStoredSessionOrganizationId(): string | undefined {
   if (typeof window === "undefined") {
     return undefined;
   }
@@ -243,10 +243,23 @@ export function readStoredOrganizationId() {
     const parsed = JSON.parse(storedSession) as Partial<ManagerSession>;
     const organizationId = parsed.organization?.id;
 
-    return organizationId && UUID_V4_PATTERN.test(organizationId) ? organizationId : undefined;
+    return typeof organizationId === "string" && organizationId.trim() !== ""
+      ? organizationId
+      : undefined;
   } catch {
     return undefined;
   }
+}
+
+/**
+ * organization_id для tenant-заголовка REST-запросов (`x-organization-id`): строгий
+ * UUID v4 — защита от отправки мусорного tenant-заголовка на боевой backend.
+ * Для C7-realtime scope используйте {@link readStoredSessionOrganizationId}.
+ */
+export function readStoredOrganizationId(): string | undefined {
+  const organizationId = readStoredSessionOrganizationId();
+
+  return organizationId && UUID_V4_PATTERN.test(organizationId) ? organizationId : undefined;
 }
 
 function extractItems<TItem>(response: TItem[] | PaginatedApiResponse<TItem>): TItem[] {

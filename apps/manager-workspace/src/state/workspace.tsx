@@ -1,7 +1,7 @@
 import { createContext, useContext, useMemo } from "react";
 import type { PropsWithChildren } from "react";
 
-import { createManagerWorkspaceApiClient, readStoredOrganizationId } from "../api/client/http";
+import { createManagerWorkspaceApiClient, readStoredSessionOrganizationId } from "../api/client/http";
 import { createC7RealtimeClient } from "../api/client/realtime";
 import type { C7RealtimeClient } from "../api/client/realtime";
 import type { ManagerWorkspaceApiClient } from "../api/client/types";
@@ -18,9 +18,10 @@ export interface ManagerWorkspaceProvidersProps extends PropsWithChildren {
 
 const defaultServices: ManagerWorkspaceServices = {
   api: createManagerWorkspaceApiClient(),
-  // organization_id арендатора C7-подписки резолвим лениво из сохранённой сессии:
-  // на старте (до логина) org ещё нет, клиент дождётся его на реконнекте.
-  realtime: createC7RealtimeClient({ organizationId: readStoredOrganizationId })
+  // organization_id арендатора C7-подписки резолвим лениво из сохранённой сессии
+  // (сырой scope, без UUID-строгости — чтобы mock-сессия "org-1" тоже открывала
+  // WS): на старте (до логина) org ещё нет, клиент дождётся его на реконнекте.
+  realtime: createC7RealtimeClient({ organizationId: readStoredSessionOrganizationId })
 };
 
 const WorkspaceContext = createContext<ManagerWorkspaceServices | null>(null);
