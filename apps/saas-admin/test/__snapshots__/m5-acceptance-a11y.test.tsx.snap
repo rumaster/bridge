@@ -57,15 +57,11 @@ exports[`SaaS Administration M5 acceptance and accessibility > фиксируе�
     },
     {
       "level": 2,
+      "name": "Документы",
+    },
+    {
+      "level": 2,
       "name": "Новый документ",
-    },
-    {
-      "level": 2,
-      "name": "Политика возвратов",
-    },
-    {
-      "level": 2,
-      "name": "Регламент доставки",
     },
   ],
   "/notifications": [

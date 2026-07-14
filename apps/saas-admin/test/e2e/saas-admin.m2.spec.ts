@@ -44,19 +44,42 @@ test("Knowledge Base: создание, редактирование и удал
   await loginAsAdmin(page, "/knowledge");
 
   await expect(page.getByRole("heading", { name: "Knowledge Base" })).toBeVisible();
-  await expect(page.getByRole("article", { name: /Политика возвратов/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Политика возвратов/ })).toBeVisible();
 
-  const createForm = page.getByRole("form", { name: "Новый документ" });
-  await createForm.getByLabel("Название документа").fill("Политика гарантий");
-  await createForm.getByLabel(/Контент/).fill("Гарантия на технику — 12 месяцев с даты покупки.");
+  const editor = page.getByRole("form", { name: "Редактор документа" });
+  await editor.getByLabel("Название документа").fill("Политика гарантий");
+  await editor.getByLabel(/Контент/).fill("Гарантия на технику — 12 месяцев с даты покупки.");
   // Ключевые фразы — по одной на строку; по каждой считается свой эмбеддинг.
-  await createForm.getByLabel(/Ключевые фразы/).fill("гарантия на технику\nсрок гарантии");
-  await createForm.getByRole("button", { name: "Добавить документ" }).click();
-  await expect(page.getByRole("article", { name: /Политика гарантий/ })).toBeVisible();
+  await editor.getByLabel(/Ключевые фразы/).fill("гарантия на технику\nсрок гарантии");
+  await editor.getByRole("button", { name: "Добавить документ" }).click();
+  await expect(page.getByRole("button", { name: /Политика гарантий/ })).toBeVisible();
 
-  await page
-    .getByRole("article", { name: /Регламент доставки/ })
-    .getByRole("button", { name: "Удалить" })
-    .click();
-  await expect(page.getByRole("article", { name: /Регламент доставки/ })).toHaveCount(0);
+  // Документ открыт в редакторе после сохранения — кнопка стала «Обновить документ».
+  await editor.getByLabel(/Контент/).fill("Гарантия на технику — 24 месяца с даты покупки.");
+  await editor.getByRole("button", { name: "Обновить документ" }).click();
+
+  // Переход к другому документу без несохранённых правок — без предупреждения.
+  await page.getByRole("button", { name: /Регламент доставки/ }).click();
+  await expect(editor.getByLabel("Название документа")).toHaveValue("Регламент доставки");
+  await editor.getByRole("button", { name: "Удалить" }).click();
+  await expect(page.getByRole("button", { name: /Регламент доставки/ })).toHaveCount(0);
+});
+
+test("Knowledge Base: предупреждение о несохранённых изменениях при переходе", async ({ page }) => {
+  await loginAsAdmin(page, "/knowledge");
+
+  await page.getByRole("button", { name: /Политика возвратов/ }).click();
+  const editor = page.getByRole("form", { name: "Редактор документа" });
+  await editor.getByLabel("Название документа").fill("Политика возвратов (правка)");
+
+  await page.getByRole("button", { name: /Регламент доставки/ }).click();
+  const guard = page.getByRole("dialog", { name: "Несохранённые изменения" });
+  await expect(guard).toBeVisible();
+
+  await guard.getByRole("button", { name: "Остаться в редакторе" }).click();
+  await expect(editor.getByLabel("Название документа")).toHaveValue("Политика возвратов (правка)");
+
+  await page.getByRole("button", { name: /Регламент доставки/ }).click();
+  await guard.getByRole("button", { name: "Потерять изменения и перейти" }).click();
+  await expect(editor.getByLabel("Название документа")).toHaveValue("Регламент доставки");
 });

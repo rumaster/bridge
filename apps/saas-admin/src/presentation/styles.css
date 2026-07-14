@@ -710,8 +710,7 @@ textarea {
 }
 
 .m2-form,
-.channel-card,
-.knowledge-card {
+.channel-card {
   display: grid;
   gap: 16px;
   padding: 18px;
@@ -735,15 +734,103 @@ textarea {
   margin-top: 4px;
 }
 
-.channel-grid,
-.knowledge-list {
+.channel-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
 }
 
-.channel-card,
-.knowledge-card {
+.channel-card {
+  align-content: start;
+}
+
+/* ── Knowledge Base: список документов слева, редактор справа ─────────── */
+.knowledge-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.knowledge-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  /* Список прокручивается сам, редактор справа остаётся на месте. */
+  max-height: calc(100vh - 220px);
+  position: sticky;
+  top: 16px;
+}
+
+.knowledge-sidebar-head {
+  display: grid;
+  gap: 10px;
+}
+
+.knowledge-sidebar-head h2 {
+  margin: 0;
+  color: #172331;
+  font-size: 1rem;
+}
+
+.knowledge-doc-list {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.knowledge-doc-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #172331;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.knowledge-doc-item svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: #116a7b;
+}
+
+.knowledge-doc-item:hover {
+  background: #eef2f6;
+}
+
+.knowledge-doc-item.active {
+  border-color: #116a7b;
+  background: #e6f1f3;
+}
+
+.knowledge-doc-item-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.knowledge-doc-item-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.knowledge-doc-empty {
+  padding: 10px;
+}
+
+.knowledge-editor {
   align-content: start;
 }
 
@@ -1076,11 +1163,17 @@ div.broadcast-stats {
 
   .form-grid,
   .channel-grid,
-  .knowledge-list,
+  .knowledge-layout,
   .broadcast-grid,
   .metadata-list,
   .compact-form-grid {
     grid-template-columns: 1fr;
+  }
+
+  /* На узких экранах список встаёт над редактором и не липнет к верху. */
+  .knowledge-sidebar {
+    position: static;
+    max-height: 320px;
   }
 
   .panel-heading-row {
