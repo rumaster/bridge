@@ -29,6 +29,13 @@ import type {
   OnboardingCommandResponse,
   Organization,
   OrganizationConfiguration,
+  OrganizationUser,
+  CreateUserRequest,
+  PatchUserRequest,
+  UserListResponse,
+  RevokeUserSessionsResponse,
+  Invitation,
+  CreateInvitationRequest,
   ReindexKnowledgeDocumentResponse,
   SaasAdminApiClient,
   SaveWorkflowDraftRequest,
@@ -104,6 +111,32 @@ export function createSaasAdminApiClient(options: SaasAdminApiClientOptions = {}
       ) =>
         requestJson<OrganizationConfiguration>(`/organizations/${organizationId}/configuration`, {
           method: "PUT",
+          body: JSON.stringify(request)
+        })
+    },
+    users: {
+      listUsers: (organizationId: string) =>
+        requestJson<UserListResponse>(`/organizations/${organizationId}/users`).then(
+          (response) => response.items
+        ),
+      createUser: (organizationId: string, request: CreateUserRequest) =>
+        requestJson<OrganizationUser>(`/organizations/${organizationId}/users`, {
+          method: "POST",
+          body: JSON.stringify(request)
+        }),
+      patchUser: (userId: string, request: PatchUserRequest) =>
+        requestJson<OrganizationUser>(`/users/${userId}`, {
+          method: "PATCH",
+          body: JSON.stringify(request)
+        }),
+      revokeSessions: (userId: string) =>
+        requestJson<RevokeUserSessionsResponse>(`/users/${userId}/sessions:revoke`, {
+          method: "POST",
+          body: JSON.stringify({})
+        }),
+      createInvitation: (request: CreateInvitationRequest) =>
+        requestJson<Invitation>("/invitations", {
+          method: "POST",
           body: JSON.stringify(request)
         })
     },

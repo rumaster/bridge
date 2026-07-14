@@ -67,6 +67,14 @@ describe("SVC-IDN M3 audit events", () => {
           status: "blocked",
         },
       }),
+      // Блокировка гасит активные сессии пользователя и фиксирует это в аудите.
+      expect.objectContaining({
+        action: "auth.session.revoke",
+        actorUserId: ACTOR_ID,
+        objectId: USER_ID,
+        objectType: "user",
+        organizationId: ORG_ID,
+      }),
     ]);
   });
 

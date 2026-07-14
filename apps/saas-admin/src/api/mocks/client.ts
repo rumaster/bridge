@@ -18,6 +18,10 @@ import type {
   OnboardingCommandRequest,
   Organization,
   OrganizationConfiguration,
+  OrganizationUser,
+  CreateUserRequest,
+  PatchUserRequest,
+  CreateInvitationRequest,
   SaasAdminApiClient,
   SaveWorkflowDraftRequest,
   StartBroadcastRequest,
@@ -97,6 +101,8 @@ export function createMockSaasAdminApiClient(
   let currentNotifications: Notification[] = mockNotifications.map(cloneNotification);
   let currentNotificationSettings: NotificationSetting[] =
     cloneNotificationSettings(mockNotificationSettings);
+  let currentUsers: OrganizationUser[] = cloneMockUsers();
+  let nextUserNumber = 1;
   let nextChannelNumber = 1;
   let nextDocumentNumber = 1;
   let nextVersionNumber = 1;
@@ -190,6 +196,99 @@ export function createMockSaasAdminApiClient(
         };
 
         return currentConfiguration;
+      }
+    },
+    users: {
+      async listUsers() {
+        return currentUsers.map(cloneOrganizationUser);
+      },
+      async createUser(_organizationId: string, request: CreateUserRequest) {
+        if (!request.displayName.trim()) {
+          throw new Error("displayName is required");
+        }
+        const now = "2026-07-03T10:20:00.000Z";
+        const user: OrganizationUser = {
+          id: `user-created-${nextUserNumber++}`,
+          organizationId: currentSession?.organization.id ?? "org-demo",
+          displayName: request.displayName.trim(),
+          email: request.email?.trim() || null,
+          telegramUsername: request.telegramUsername?.trim() || null,
+          telegramId: request.telegramId?.trim() || null,
+          status: request.status ?? "active",
+          roleCodes: request.roleCodes?.length ? [...request.roleCodes] : ["manager"],
+          createdAt: now,
+          updatedAt: now
+        };
+        currentUsers = [...currentUsers, user];
+        return cloneOrganizationUser(user);
+      },
+      async patchUser(userId: string, request: PatchUserRequest) {
+        const existing = currentUsers.find((user) => user.id === userId);
+        if (!existing) {
+          throw new Error("user not found");
+        }
+        const selfId = currentSession?.user.id;
+        const nextStatus = request.status ?? existing.status;
+        const nextRoles = request.roleCodes ?? existing.roleCodes;
+        const losesAdmin =
+          existing.roleCodes.includes("administrator") && !nextRoles.includes("administrator");
+        const becomesBlocked = nextStatus === "blocked" && existing.status !== "blocked";
+        if (selfId && selfId === userId) {
+          if (becomesBlocked) throw mockProblem("USER_SELF_MUTATION_FORBIDDEN", "Нельзя заблокировать себя.");
+          if (losesAdmin) throw mockProblem("USER_SELF_MUTATION_FORBIDDEN", "Нельзя снять роль с себя.");
+        }
+        const wasActiveAdmin = existing.status === "active" && existing.roleCodes.includes("administrator");
+        const willBeActiveAdmin = nextStatus === "active" && nextRoles.includes("administrator");
+        if (wasActiveAdmin && !willBeActiveAdmin) {
+          const others = currentUsers.filter(
+            (user) =>
+              user.id !== userId && user.status === "active" && user.roleCodes.includes("administrator")
+          ).length;
+          if (others === 0) {
+            throw mockProblem(
+              "LAST_ADMINISTRATOR_PROTECTED",
+              "Нельзя заблокировать или разжаловать последнего администратора."
+            );
+          }
+        }
+        const updated: OrganizationUser = {
+          ...existing,
+          displayName: request.displayName?.trim() || existing.displayName,
+          email: request.email === undefined ? existing.email : request.email?.trim() || null,
+          telegramUsername:
+            request.telegramUsername === undefined
+              ? existing.telegramUsername
+              : request.telegramUsername?.trim() || null,
+          telegramId:
+            request.telegramId === undefined ? existing.telegramId : request.telegramId?.trim() || null,
+          status: nextStatus,
+          roleCodes: [...nextRoles],
+          updatedAt: "2026-07-03T10:40:00.000Z"
+        };
+        currentUsers = currentUsers.map((user) => (user.id === userId ? updated : user));
+        return cloneOrganizationUser(updated);
+      },
+      async revokeSessions(userId: string) {
+        return {
+          userId,
+          organizationId: currentSession?.organization.id ?? "org-demo",
+          revokedCount: 0
+        };
+      },
+      async createInvitation(request: CreateInvitationRequest) {
+        const now = "2026-07-03T10:20:00.000Z";
+        return {
+          id: `invitation-${nextUserNumber++}`,
+          organizationId: request.organizationId,
+          contactType: request.contactType,
+          contactValue: request.contactValue,
+          roleCode: request.roleCode ?? "manager",
+          expiresAt: "2026-07-10T10:20:00.000Z",
+          acceptedAt: null,
+          createdBy: currentSession?.user.id ?? null,
+          createdAt: now,
+          token: `bri_mock_${request.contactValue.replace(/[^a-z0-9]/gi, "")}`
+        };
       }
     },
     channels: {
@@ -983,6 +1082,45 @@ function cloneChannel(channel: Channel): Channel {
     config: { ...channel.config },
     error_log: channel.error_log?.map((item) => ({ ...item }))
   };
+}
+
+function cloneOrganizationUser(user: OrganizationUser): OrganizationUser {
+  return { ...user, roleCodes: [...user.roleCodes] };
+}
+
+function cloneMockUsers(): OrganizationUser[] {
+  const now = "2026-01-01T00:00:00.000Z";
+  return [
+    {
+      id: "00000000-0000-4000-8000-000000000101",
+      organizationId: "org-demo",
+      displayName: "Демо Администратор",
+      email: "admin@example.bridge.local",
+      telegramUsername: "demo_admin",
+      telegramId: null,
+      status: "active",
+      roleCodes: ["administrator"],
+      createdAt: now,
+      updatedAt: now
+    },
+    {
+      id: "00000000-0000-4000-8000-000000000301",
+      organizationId: "org-demo",
+      displayName: "Менеджер Ольга",
+      email: "olga@example.bridge.local",
+      telegramUsername: "olga_support",
+      telegramId: null,
+      status: "active",
+      roleCodes: ["manager"],
+      createdAt: now,
+      updatedAt: now
+    }
+  ];
+}
+
+/** Ошибка мока в форме, совместимой с http-клиентом (error.body.code). */
+function mockProblem(code: string, humanMessage: string): Error & { body: { code: string; humanMessage: string } } {
+  return Object.assign(new Error(humanMessage), { body: { code, humanMessage } });
 }
 
 function cloneKnowledgeDocument(document: KnowledgeDocument): KnowledgeDocument {

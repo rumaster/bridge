@@ -129,6 +129,18 @@ exports[`SaaS Administration M5 acceptance and accessibility > фиксируе�
       "level": 1,
       "name": "Пользователи и роли",
     },
+    {
+      "level": 2,
+      "name": "Добавить менеджера",
+    },
+    {
+      "level": 2,
+      "name": "Пользователи организации",
+    },
+    {
+      "level": 2,
+      "name": "Пригласить по токену",
+    },
   ],
   "/workflow": [
     {
