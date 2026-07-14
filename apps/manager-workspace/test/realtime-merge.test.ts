@@ -101,6 +101,38 @@ describe("Manager Workspace C7 realtime merge", () => {
     expect(typing).toEqual(["client-1"]);
   });
 
+  it("coerces object content from live message.created events into a renderable string", () => {
+    // Ядро шлёт content ОБЪЕКТОМ ({type,text} или {text,subject} для email).
+    // Рендер {message.content} падал бы с React error #31, поэтому realtime-путь
+    // обязан привести content к строке (как REST-нормализатор).
+    const textEvent = createEvent("message.created", 2001, {
+      message: {
+        ...baseMessage,
+        content: { type: "text", text: "Здравствуйте, есть вопрос" } as unknown as string
+      }
+    });
+    const emailEvent = createEvent("message.created", 2002, {
+      message: {
+        ...baseMessage,
+        id: "msg-live-2",
+        conversationId: "conv-1",
+        content: { text: "Тело письма", subject: "Тема" } as unknown as string
+      }
+    });
+
+    const messages = applyC7EventToMessages([], textEvent);
+    expect(messages[0]?.content).toBe("Здравствуйте, есть вопрос");
+    expect(typeof messages[0]?.content).toBe("string");
+
+    const emailMessages = applyC7EventToMessages([], emailEvent);
+    expect(emailMessages[0]?.content).toBe("Тело письма");
+
+    // Превью диалога тоже должно быть строкой (иначе крешит очередь диалогов).
+    const conversations = applyC7EventToConversations([baseConversation], textEvent, new Set());
+    expect(conversations[0]?.lastMessagePreview).toBe("Здравствуйте, есть вопрос");
+    expect(typeof conversations[0]?.lastMessagePreview).toBe("string");
+  });
+
   it("tracks event_id redelivery and sequence gaps for reconnect catch-up", () => {
     const seenEventIds = new Set<string>();
     const firstEvent = createEvent("message.created", 10, {
