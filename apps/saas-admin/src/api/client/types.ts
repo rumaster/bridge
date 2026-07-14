@@ -541,9 +541,9 @@ export interface BroadcastStats {
   updated_at: ISODateTime;
 }
 
+// organization_id берётся сервером из заголовка x-organization-id, created_by — из
+// сессии; в теле запроса они запрещены (NestJS forbidNonWhitelisted → VALIDATION_FAILED).
 export interface CreateBroadcastRequest {
-  organization_id: string;
-  created_by: string;
   name: string;
   template: BroadcastTemplate;
   filter: BroadcastFilter;
@@ -574,9 +574,8 @@ export interface CreateBroadcastResponse {
 
 export type BroadcastStartMode = "immediate" | "scheduled";
 
+// organization_id — из заголовка, started_by — из сессии; в теле запрещены.
 export interface StartBroadcastRequest {
-  organization_id: string;
-  started_by: string;
   mode: BroadcastStartMode;
   scheduled_for?: ISODateTime;
   idempotency_key?: string;
@@ -657,9 +656,8 @@ export interface MarkNotificationReadResponse {
   notification: Notification;
 }
 
+// organization_id — из заголовка, user_id — из сессии; в теле запрещены.
 export interface UpdateNotificationSettingsRequest {
-  organization_id: string;
-  user_id: string;
   settings: NotificationSetting[];
 }
 

@@ -164,8 +164,6 @@ export default function BroadcastPage() {
 
     try {
       const request: CreateBroadcastRequest = {
-        organization_id: session.organization.id,
-        created_by: session.user.displayName,
         name: form.name.trim(),
         template: {
           type: "text",
@@ -226,8 +224,6 @@ export default function BroadcastPage() {
 
     try {
       const response = await api.broadcasts.startBroadcast(broadcast.id, {
-        organization_id: session.organization.id,
-        started_by: session.user.displayName,
         mode: control.mode,
         ...(control.mode === "scheduled"
           ? { scheduled_for: new Date(control.scheduledFor).toISOString() }

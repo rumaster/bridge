@@ -1009,14 +1009,14 @@ export const handlers = [
     const createdAt = "2026-07-03T12:00:00.000Z";
     const broadcast: BroadcastCampaign = {
       id: `broadcast-created-${nextBroadcastNumber++}`,
-      organization_id: body.organization_id ?? mockOrganization.id,
+      organization_id: mockOrganization.id,
       name: body.name!.trim(),
       status: "draft",
       template: cloneBroadcastTemplate(body.template as BroadcastTemplate),
       filter: cloneBroadcastFilter(body.filter ?? { mode: "all" }),
       schedule: { ...(body.schedule ?? { mode: "manual" }) },
       rate_limit: { ...(body.rate_limit ?? { messages_per_minute: 60 }) },
-      created_by: body.created_by ?? mockSession.user.displayName,
+      created_by: mockSession.user.displayName,
       created_at: createdAt,
       updated_at: createdAt
     };
@@ -1148,7 +1148,7 @@ export const handlers = [
       version: "1.0.0",
       request_id: "notification-settings-update-req",
       organization_id: currentOrganization.id,
-      user_id: body.user_id ?? mockSession.user.id,
+      user_id: mockSession.user.id,
       settings: cloneNotificationSettings(currentNotificationSettings)
     });
   }),
@@ -1396,10 +1396,6 @@ function cloneBroadcastStatsMap(stats: Record<string, BroadcastStats>): Record<s
 
 function validateCreateBroadcast(input: Partial<CreateBroadcastRequest>) {
   const errors: NonNullable<ProblemDetails["errors"]> = [];
-
-  if (!input.organization_id) {
-    errors.push({ field: "organization_id", message: "organization_id is required" });
-  }
 
   if (!input.name || input.name.trim().length < 2) {
     errors.push({ field: "name", message: "Название кампании должно содержать минимум 2 символа." });

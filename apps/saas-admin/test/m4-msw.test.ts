@@ -4,8 +4,6 @@ import { createSaasAdminApiClient } from "../src/api/client/http";
 import type { CreateBroadcastRequest } from "../src/api/client/types";
 
 const draftRequest: CreateBroadcastRequest = {
-  organization_id: "org-demo",
-  created_by: "Демо Администратор",
   name: "Осенняя рассылка",
   template: {
     type: "text",
@@ -64,8 +62,6 @@ describe("SaaS Administration MSW mocks — M4 Broadcast (C8, CP-6)", () => {
 
     // Немедленный запуск переводит кампанию в статус running и отдаёт core-черновик доставки.
     const started = await api.broadcasts.startBroadcast("broadcast-created-1", {
-      organization_id: "org-demo",
-      started_by: "Демо Администратор",
       mode: "immediate"
     });
     expect(started).toMatchObject({
@@ -82,8 +78,6 @@ describe("SaaS Administration MSW mocks — M4 Broadcast (C8, CP-6)", () => {
     const api = createSaasAdminApiClient({ baseUrl: "/api/v1" });
 
     const scheduled = await api.broadcasts.startBroadcast("broadcast-promo-july", {
-      organization_id: "org-demo",
-      started_by: "Демо Администратор",
       mode: "scheduled",
       scheduled_for: "2026-07-12T08:00:00.000Z"
     });
@@ -91,8 +85,6 @@ describe("SaaS Administration MSW mocks — M4 Broadcast (C8, CP-6)", () => {
 
     await expect(
       api.broadcasts.startBroadcast("broadcast-promo-july", {
-        organization_id: "org-demo",
-        started_by: "Демо Администратор",
         mode: "scheduled"
       })
     ).rejects.toThrow();
@@ -130,8 +122,6 @@ describe("SaaS Administration MSW mocks — M4 Notification (C10, CP-8)", () => 
     expect(settings).toMatchObject({ contract: "C10.NotificationSettingsResponse" });
 
     const updated = await api.notifications.updateSettings({
-      organization_id: "org-demo",
-      user_id: settings.user_id,
       settings: [
         { category: "info", channel: "telegram", enabled: true },
         { category: "info", channel: "email", enabled: false }
