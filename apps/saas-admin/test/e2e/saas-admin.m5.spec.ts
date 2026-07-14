@@ -15,11 +15,9 @@ async function loginAsUser(page: Page, targetPath: string, telegramUsername: str
 
 // Ключевые экраны приёмки (мастер §8.2): раздел → ожидаемый заголовок H1.
 const KEY_SCREENS = [
-  { section: "Обзор", heading: "Административная панель" },
   { section: "Организация", heading: "Организация и конфигурация" },
   { section: "Каналы", heading: "Каналы связи" },
   { section: "Knowledge Base", heading: "Knowledge Base" },
-  { section: "AI Onboarding", heading: "AI Onboarding" },
   { section: "Broadcast", heading: "Broadcast" },
   { section: "Уведомления", heading: "Notification" }
 ] as const;

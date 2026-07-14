@@ -14,7 +14,7 @@ export default function LoginPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const state = location.state as LoginLocationState | null;
-  const returnTo = state?.from?.pathname ?? "/overview";
+  const returnTo = state?.from?.pathname ?? "/";
   const [step, setStep] = useState<LoginStep>("username");
   const [telegramUsername, setTelegramUsername] = useState("");
   const [code, setCode] = useState("");

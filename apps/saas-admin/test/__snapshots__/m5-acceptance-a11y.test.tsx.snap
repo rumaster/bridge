@@ -94,20 +94,6 @@ exports[`SaaS Administration M5 acceptance and accessibility > фиксируе�
       "name": "Каналы доставки по категориям",
     },
   ],
-  "/onboarding": [
-    {
-      "level": 1,
-      "name": "AI Onboarding",
-    },
-    {
-      "level": 2,
-      "name": "Диалоговый помощник",
-    },
-    {
-      "level": 2,
-      "name": "Текущая конфигурация",
-    },
-  ],
   "/organization": [
     {
       "level": 1,

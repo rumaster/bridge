@@ -20,7 +20,6 @@ const UsersPage = lazy(() => import("../presentation/pages/UsersPage"));
 const ChannelsPage = lazy(() => import("../presentation/pages/ChannelsPage"));
 const KnowledgePage = lazy(() => import("../presentation/pages/KnowledgePage"));
 const WorkflowPage = lazy(() => import("../presentation/pages/WorkflowPage"));
-const OnboardingPage = lazy(() => import("../presentation/pages/OnboardingPage"));
 const BroadcastPage = lazy(() => import("../presentation/pages/BroadcastPage"));
 const NotificationsPage = lazy(() => import("../presentation/pages/NotificationsPage"));
 
@@ -57,10 +56,6 @@ function createRoutes(services?: SaasAdminServiceOverrides): RouteObject[] {
       ),
       children: [
         {
-          index: true,
-          element: <Navigate to="/overview" replace />
-        },
-        {
           path: "login",
           element: <LoginPage />
         },
@@ -71,8 +66,13 @@ function createRoutes(services?: SaasAdminServiceOverrides): RouteObject[] {
               element: <AppShell />,
               children: [
                 {
-                  path: "overview",
+                  index: true,
                   element: <OverviewPage />
+                },
+                {
+                  // Обратная совместимость: старый путь /overview ведёт на главную.
+                  path: "overview",
+                  element: <Navigate to="/" replace />
                 },
                 {
                   path: "organization",
@@ -95,8 +95,10 @@ function createRoutes(services?: SaasAdminServiceOverrides): RouteObject[] {
                   element: <WorkflowPage />
                 },
                 {
+                  // AI-ассистент переехал в боковую панель оболочки: старый путь
+                  // ведёт на главную, откуда панель открывается кнопкой у правого края.
                   path: "onboarding",
-                  element: <OnboardingPage />
+                  element: <Navigate to="/" replace />
                 },
                 {
                   path: "broadcast",
@@ -112,7 +114,7 @@ function createRoutes(services?: SaasAdminServiceOverrides): RouteObject[] {
         },
         {
           path: "*",
-          element: <Navigate to="/overview" replace />
+          element: <Navigate to="/" replace />
         }
       ]
     }

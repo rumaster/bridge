@@ -1,5 +1,6 @@
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { UserEvent } from "@testing-library/user-event";
 import { RouterProvider } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
@@ -16,6 +17,20 @@ function renderRoute(path: string, services: SaasAdminServiceOverrides) {
   };
 }
 
+/**
+ * AI-ассистент живёт в боковой панели оболочки (кнопка у правого края), а не на
+ * отдельном экране: открываем панель и, где нужна сводка конфигурации,
+ * раскрываем её широко.
+ */
+async function openAiPanel(user: UserEvent, { wide = false } = {}) {
+  await user.click(await screen.findByRole("button", { name: "Открыть панель AI-ассистента" }));
+  if (wide) {
+    await user.click(screen.getByRole("button", { name: "Расширить панель" }));
+  }
+
+  return screen.getByRole("dialog", { name: "AI-ассистент" });
+}
+
 // toHaveTextContent нормализует пробелы полученного текста через \s (сюда попадает NBSP из
 // toLocaleString("ru-RU")), поэтому и в ожидаемой строке заменяем неразрывные пробелы обычными.
 function ruNumber(value: number): string {
@@ -27,7 +42,9 @@ describe("SaaS Administration M3 AI Onboarding (C4)", () => {
     const api = createMockSaasAdminApiClient();
     const createCommand = vi.spyOn(api.onboarding, "createCommand");
     const applyCommand = vi.spyOn(api.onboarding, "applyCommand");
-    const { user } = renderRoute("/onboarding", { api, realtime: createMockC7RealtimeClient([]) });
+    const { user } = renderRoute("/", { api, realtime: createMockC7RealtimeClient([]) });
+
+    await openAiPanel(user, { wide: true });
 
     // Исходная конфигурация: лимит 10 000.
     const configPanel = await screen.findByRole("complementary", { name: "Текущая конфигурация" });
@@ -67,7 +84,7 @@ describe("SaaS Administration M3 AI Onboarding (C4)", () => {
     const resultCard = await screen.findByRole("region", { name: "Результат применения" });
     expect(within(resultCard).getByText("Изменения применены Backend.")).toBeInTheDocument();
 
-    // UI отражает обновлённую конфигурацию: лимит стал 50 000.
+    // Панель отражает обновлённую конфигурацию: лимит стал 50 000.
     await waitFor(() => {
       expect(configPanel).toHaveTextContent(ruNumber(50000));
     });
@@ -86,7 +103,9 @@ describe("SaaS Administration M3 AI Onboarding (C4)", () => {
       updatedAt: "2026-07-03T09:12:00.000Z"
     } as unknown as Awaited<ReturnType<typeof api.org.getConfiguration>>);
 
-    renderRoute("/onboarding", { api, realtime: createMockC7RealtimeClient([]) });
+    const { user } = renderRoute("/", { api, realtime: createMockC7RealtimeClient([]) });
+
+    await openAiPanel(user, { wide: true });
 
     const configPanel = await screen.findByRole("complementary", { name: "Текущая конфигурация" });
     const monthlyLimit = within(configPanel).getByText("Месячный лимит сообщений").closest("div");
@@ -98,9 +117,9 @@ describe("SaaS Administration M3 AI Onboarding (C4)", () => {
   it("не применяет изменения, если администратор отклоняет команду", async () => {
     const api = createMockSaasAdminApiClient();
     const applyCommand = vi.spyOn(api.onboarding, "applyCommand");
-    const { user } = renderRoute("/onboarding", { api, realtime: createMockC7RealtimeClient([]) });
+    const { user } = renderRoute("/", { api, realtime: createMockC7RealtimeClient([]) });
 
-    await screen.findByRole("complementary", { name: "Текущая конфигурация" });
+    await openAiPanel(user);
 
     await user.type(screen.getByLabelText("Опишите изменение"), "Отключи автоматизацию Workflow");
     await user.click(screen.getByRole("button", { name: "Сформировать команду" }));
@@ -121,9 +140,10 @@ describe("SaaS Administration M3 AI Onboarding (C4)", () => {
 
   it("сообщает, что команда требует подтверждения перед применением", async () => {
     const api = createMockSaasAdminApiClient();
-    const { user } = renderRoute("/onboarding", { api, realtime: createMockC7RealtimeClient([]) });
+    const { user } = renderRoute("/", { api, realtime: createMockC7RealtimeClient([]) });
 
-    await screen.findByRole("complementary", { name: "Текущая конфигурация" });
+    await openAiPanel(user);
+
     await user.type(screen.getByLabelText("Опишите изменение"), "Включи AI-ассистента");
     await user.click(screen.getByRole("button", { name: "Сформировать команду" }));
 
