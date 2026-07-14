@@ -162,19 +162,25 @@ jobs:
                 "$SSH_USER@$SSH_HOST" \
                 'docker login ghcr.io -u ${{ github.actor }} --password-stdin'
 
+      # Кавычки вокруг аргументов — ЧАСТЬ строки, которую видит удалённый шелл.
+      # ssh не передаёт argv: он склеивает аргументы через пробел, и удалённый
+      # шелл разбирает их заново. Без кавычек пустой аргумент (профили) просто
+      # исчезает, а следующие сдвигаются на позицию влево.
       - name: Деплой
+        env:
+          WORKDIR: ${{ needs.plan.outputs.workdir }}
+          COMPOSE_FILE: ${{ needs.plan.outputs.compose_file }}
+          ENV_FILE: ${{ needs.plan.outputs.env_file }}
+          SHA: ${{ needs.plan.outputs.sha }}
+          TAG_CSV: ${{ needs.plan.outputs.tag_csv }}
+          PROFILES: ${{ needs.plan.outputs.profiles }}
+          SERVICES: ${{ needs.plan.outputs.services }}
         run: |
           set -euo pipefail
           cat deploy/stand/remote-common.sh deploy/stand/remote-deploy.sh \
             | ssh -i ~/.ssh/id_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-                "$SSH_USER@$SSH_HOST" 'bash -s' -- \
-                '${{ needs.plan.outputs.workdir }}' \
-                '${{ needs.plan.outputs.compose_file }}' \
-                '${{ needs.plan.outputs.env_file }}' \
-                '${{ needs.plan.outputs.sha }}' \
-                '${{ needs.plan.outputs.tag_csv }}' \
-                '${{ needs.plan.outputs.profiles }}' \
-                '${{ needs.plan.outputs.services }}'
+                "$SSH_USER@$SSH_HOST" \
+                "bash -s -- '$WORKDIR' '$COMPOSE_FILE' '$ENV_FILE' '$SHA' '$TAG_CSV' '$PROFILES' '$SERVICES'"
 
       - name: Logout стенда из GHCR
         if: always()

@@ -171,20 +171,23 @@ jobs:
                 "$SSH_USER@$SSH_HOST" \
                 'docker login ghcr.io -u ${{ github.actor }} --password-stdin'
 
+      # Кавычки — часть строки для удалённого шелла, см. комментарий в deploy.yml.
       - name: Прогнать миграции
+        env:
+          WORKDIR: ${{ needs.plan.outputs.workdir }}
+          COMPOSE_FILE: ${{ needs.plan.outputs.compose_file }}
+          ENV_FILE: ${{ needs.plan.outputs.env_file }}
+          SHA: ${{ needs.plan.outputs.sha }}
+          TAG_CSV: ${{ needs.plan.outputs.tag_csv }}
+          MIGRATE_SERVICE: ${{ needs.plan.outputs.migrate_service }}
+          DIRECTION: ${{ inputs.direction }}
+          MIGRATE_TARGET: ${{ needs.plan.outputs.migrate_target }}
         run: |
           set -euo pipefail
           cat deploy/stand/remote-common.sh deploy/stand/remote-migrate.sh \
             | ssh -i ~/.ssh/id_deploy -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
-                "$SSH_USER@$SSH_HOST" 'bash -s' -- \
-                '${{ needs.plan.outputs.workdir }}' \
-                '${{ needs.plan.outputs.compose_file }}' \
-                '${{ needs.plan.outputs.env_file }}' \
-                '${{ needs.plan.outputs.sha }}' \
-                '${{ needs.plan.outputs.tag_csv }}' \
-                '${{ needs.plan.outputs.migrate_service }}' \
-                '${{ inputs.direction }}' \
-                '${{ needs.plan.outputs.migrate_target }}'
+                "$SSH_USER@$SSH_HOST" \
+                "bash -s -- '$WORKDIR' '$COMPOSE_FILE' '$ENV_FILE' '$SHA' '$TAG_CSV' '$MIGRATE_SERVICE' '$DIRECTION' '$MIGRATE_TARGET'"
 
       - name: Logout стенда из GHCR
         if: always()

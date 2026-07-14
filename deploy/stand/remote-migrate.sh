@@ -10,14 +10,20 @@
 #   $7 direction    — up | down
 #   $8 mig_target   — app | rf (каталог миграций внутри db-tools)
 
-WORKDIR=$1
-COMPOSE_FILE=$2
-ENV_FILE=$3
-SHA=$4
-TAG_CSV=$5
-SERVICE=$6
-DIRECTION=$7
-MIG_TARGET=$8
+# ${N:-} + явная проверка: см. комментарий в remote-deploy.sh.
+WORKDIR=${1:-}
+COMPOSE_FILE=${2:-}
+ENV_FILE=${3:-}
+SHA=${4:-}
+TAG_CSV=${5:-}
+SERVICE=${6:-}
+DIRECTION=${7:-}
+MIG_TARGET=${8:-}
+
+[ $# -eq 8 ] || die "ожидалось 8 аргументов, получено $#: [$*] (потерялись кавычки при передаче через ssh?)"
+for req in WORKDIR COMPOSE_FILE ENV_FILE SHA TAG_CSV SERVICE DIRECTION MIG_TARGET; do
+  [ -n "${!req}" ] || die "пустой аргумент $req"
+done
 
 cd "$WORKDIR" || die "нет каталога $WORKDIR"
 

@@ -10,13 +10,21 @@
 #   $6 profiles_csv — compose-профили, "" если не нужны
 #   $7 services_csv — сервисы к перезапуску
 
-WORKDIR=$1
-COMPOSE_FILE=$2
-ENV_FILE=$3
-SHA=$4
-TAG_CSV=$5
+# ${N:-} везде намеренно: ssh склеивает аргументы в строку, и стоит потерять
+# кавычки — пустой аргумент (профили) исчезнет, остальные сдвинутся, а `set -u`
+# упадёт невнятным «$7: unbound variable». Лучше проверить явно (см. ниже).
+WORKDIR=${1:-}
+COMPOSE_FILE=${2:-}
+ENV_FILE=${3:-}
+SHA=${4:-}
+TAG_CSV=${5:-}
 PROFILES_CSV=${6:-}
-SERVICES_CSV=$7
+SERVICES_CSV=${7:-}
+
+[ $# -eq 7 ] || die "ожидалось 7 аргументов, получено $#: [$*] (потерялись кавычки при передаче через ssh?)"
+for req in WORKDIR COMPOSE_FILE ENV_FILE SHA TAG_CSV SERVICES_CSV; do
+  [ -n "${!req}" ] || die "пустой аргумент $req"
+done
 
 cd "$WORKDIR" || die "нет каталога $WORKDIR"
 
