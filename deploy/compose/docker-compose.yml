@@ -371,6 +371,25 @@ services:
       backend:
         condition: service_started
 
+  # C7 realtime по туннелю (W3, web-chat-channel-production): backend публикует
+  # события `bridge:c7:events` в свой Redis; RF Edge (edge-gateway) читает этот
+  # СТРИМ и раздаёт виджетам по WS (ответ менеджера → визитёру вживую). Публикует
+  # app-Redis на ТУННЕЛЬНОМ IP awg0 (10.7.0.1:6379) внутри netns edge-vpn-app,
+  # чтобы edge читал стрим ПО туннелю (EDGE_REDIS_URL=redis://10.7.0.1:6379).
+  # Edge использует свою consumer-group (edge-gateway-c7) — не конкурирует с
+  # app-side потребителями (группы независимы). netns-восстановление — awg-watchdog.
+  redis-tunnel-fwd:
+    profiles: ["tunnel"]
+    image: ${SOCAT_IMAGE:-alpine/socat:latest}
+    restart: unless-stopped
+    network_mode: "service:edge-vpn-app"
+    command: ["TCP-LISTEN:6379,fork,reuseaddr", "TCP:redis:6379"]
+    depends_on:
+      edge-vpn-app:
+        condition: service_started
+      redis:
+        condition: service_started
+
   fbp-engine:
     build:
       context: ../..
