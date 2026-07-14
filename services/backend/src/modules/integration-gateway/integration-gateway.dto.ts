@@ -212,6 +212,15 @@ export class ConnectChannelResponseDto {
   channel!: ChannelResponseDto;
 }
 
+/** Ответ на удаление канала (DELETE /v1/channels/:id). */
+export class DeleteChannelResponseDto {
+  @ApiProperty({ example: true })
+  deleted!: true;
+
+  @ApiProperty({ example: "web-chat-91a9aaad-7ef7-4f65-9f6b-71ef7b1c4e61" })
+  channel_id!: string;
+}
+
 /** Заказ управляемого ящика «Bridge Mail» (Этап M5). */
 export class OrderMailboxRequestDto {
   @ApiProperty({ example: "support", description: "Локальная часть адреса (до @)" })

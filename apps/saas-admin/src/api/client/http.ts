@@ -7,6 +7,8 @@ import type {
   ChannelTestResult,
   ConnectChannelRequest,
   ConnectChannelResponse,
+  UpdateChannelRequest,
+  DeleteChannelResponse,
   OrderMailboxRequest,
   OrderMailboxResponse,
   CreateBroadcastRequest,
@@ -146,6 +148,15 @@ export function createSaasAdminApiClient(options: SaasAdminApiClientOptions = {}
         requestJson<ConnectChannelResponse>("/channels", {
           method: "POST",
           body: JSON.stringify(request)
+        }),
+      updateChannel: (channelId: string, request: UpdateChannelRequest) =>
+        requestJson<ConnectChannelResponse>(`/channels/${channelId}`, {
+          method: "PUT",
+          body: JSON.stringify(request)
+        }),
+      deleteChannel: (channelId: string) =>
+        requestJson<DeleteChannelResponse>(`/channels/${channelId}`, {
+          method: "DELETE"
         }),
       getCapabilities: (channelId: string) =>
         requestJson<ChannelCapabilityDescriptor>(`/channels/${channelId}/capabilities`),

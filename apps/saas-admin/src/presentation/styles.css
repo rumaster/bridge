@@ -328,6 +328,14 @@ textarea {
   background: #fdeaea;
 }
 
+.channel-edit-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;

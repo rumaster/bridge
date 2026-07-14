@@ -49,7 +49,7 @@ export const generatedOpenApiDocuments = [
     "title": "Bridge Backend Core API",
     "version": "1.0.0",
     "pathCount": 64,
-    "operationCount": 76
+    "operationCount": 77
   },
   {
     "artifact": "packages/contracts/openapi/broadcasts/c8.broadcasts.openapi.json",
@@ -353,6 +353,17 @@ export const generatedOpenApiOperations = [
     "path": "/api/v1/channels",
     "operationId": "ChannelsController_connectChannel_v1",
     "summary": "Connect an omnichannel adapter",
+    "tags": [
+      "channels"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "delete",
+    "path": "/api/v1/channels/{id}",
+    "operationId": "ChannelsController_deleteChannel_v1",
+    "summary": "Delete a channel and wipe its credentials",
     "tags": [
       "channels"
     ]

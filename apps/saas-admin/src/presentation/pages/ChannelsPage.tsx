@@ -6,9 +6,12 @@ import {
   Clock3,
   Mail,
   MessageCircle,
+  Pencil,
   PlugZap,
   Plus,
-  Send
+  Send,
+  Trash2,
+  X
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -19,7 +22,8 @@ import type {
   ChannelStatus,
   ConnectableChannelType,
   EmailChannelCredentials,
-  ProblemDetails
+  ProblemDetails,
+  UpdateChannelRequest
 } from "../../api/client/types";
 import { useC7RealtimeClient, useSaasAdminApi } from "../../state/admin";
 import { hasAnyRole, useAuth } from "../../state/auth";
@@ -174,6 +178,9 @@ export default function ChannelsPage() {
   const [saving, setSaving] = useState(false);
   const [testingChannelId, setTestingChannelId] = useState<string | null>(null);
   const [testMessages, setTestMessages] = useState<Record<string, string>>({});
+  const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
+  const [savingChannelId, setSavingChannelId] = useState<string | null>(null);
+  const [deletingChannelId, setDeletingChannelId] = useState<string | null>(null);
   const [realtimeStatus, setRealtimeStatus] = useState("offline");
   const [mailLocalPart, setMailLocalPart] = useState("");
   const [mailOrdering, setMailOrdering] = useState(false);
@@ -378,6 +385,54 @@ export default function ChannelsPage() {
     }
   }
 
+  async function handleUpdateChannel(channelId: string, request: UpdateChannelRequest) {
+    setSavingChannelId(channelId);
+    setAlert(null);
+    setSuccess(null);
+    try {
+      const response = await api.channels.updateChannel(channelId, request);
+      setChannels((current) =>
+        current.map((channel) => (channel.id === channelId ? response.channel : channel))
+      );
+      setEditingChannelId(null);
+      setSuccess(`Канал «${response.channel.name}» обновлён.`);
+    } catch (error) {
+      setAlert(getProblemMessage(error, "Не удалось сохранить изменения канала."));
+    } finally {
+      setSavingChannelId(null);
+    }
+  }
+
+  async function handleDeleteChannel(channelId: string) {
+    const channel = channels.find((item) => item.id === channelId);
+    const confirmed = window.confirm(
+      `Удалить канал «${channel?.name ?? channelId}»? Действие необратимо; сохранённые креды будут стёрты.`
+    );
+    if (!confirmed) {
+      return;
+    }
+    setDeletingChannelId(channelId);
+    setAlert(null);
+    setSuccess(null);
+    try {
+      await api.channels.deleteChannel(channelId);
+      setChannels((current) => current.filter((item) => item.id !== channelId));
+      setCapabilities((current) => {
+        const next = { ...current };
+        delete next[channelId];
+        return next;
+      });
+      if (editingChannelId === channelId) {
+        setEditingChannelId(null);
+      }
+      setSuccess(`Канал «${channel?.name ?? channelId}» удалён.`);
+    } catch (error) {
+      setAlert(getProblemMessage(error, "Не удалось удалить канал."));
+    } finally {
+      setDeletingChannelId(null);
+    }
+  }
+
   return (
     <section className="page-section">
       <div className="page-heading">
@@ -546,8 +601,15 @@ export default function ChannelsPage() {
               <ChannelCard
                 capabilities={capabilities[channel.id]}
                 channel={channel}
+                deleting={deletingChannelId === channel.id}
+                editing={editingChannelId === channel.id}
                 key={channel.id}
+                onCancelEdit={() => setEditingChannelId(null)}
+                onDelete={() => void handleDeleteChannel(channel.id)}
+                onStartEdit={() => setEditingChannelId(channel.id)}
+                onSubmitEdit={(request) => void handleUpdateChannel(channel.id, request)}
                 onTest={() => void handleTestChannel(channel.id)}
+                saving={savingChannelId === channel.id}
                 testMessage={testMessages[channel.id]}
                 testing={testingChannelId === channel.id}
               />
@@ -562,12 +624,32 @@ export default function ChannelsPage() {
 interface ChannelCardProps {
   capabilities?: ChannelCapabilityDescriptor;
   channel: Channel;
+  editing: boolean;
+  deleting: boolean;
+  saving: boolean;
   onTest: () => void;
+  onStartEdit: () => void;
+  onCancelEdit: () => void;
+  onSubmitEdit: (request: UpdateChannelRequest) => void;
+  onDelete: () => void;
   testing: boolean;
   testMessage?: string;
 }
 
-function ChannelCard({ capabilities, channel, onTest, testing, testMessage }: ChannelCardProps) {
+function ChannelCard({
+  capabilities,
+  channel,
+  editing,
+  deleting,
+  saving,
+  onTest,
+  onStartEdit,
+  onCancelEdit,
+  onSubmitEdit,
+  onDelete,
+  testing,
+  testMessage
+}: ChannelCardProps) {
   const supportedCapabilities = Object.entries(capabilities?.capabilities ?? {})
     .filter(([, value]) => value.supported)
     .map(([name]) => name);
@@ -626,15 +708,231 @@ function ChannelCard({ capabilities, channel, onTest, testing, testMessage }: Ch
         )}
       </div>
 
-      <div className="form-actions">
-        <Button disabled={testing} onClick={onTest} type="button" variant="secondary">
-          <PlugZap aria-hidden="true" size={16} />
-          Проверить подключение
-        </Button>
-        {testMessage ? <span className="inline-status">{testMessage}</span> : null}
-      </div>
+      {editing ? (
+        <ChannelEditForm
+          channel={channel}
+          onCancel={onCancelEdit}
+          onSubmit={onSubmitEdit}
+          saving={saving}
+        />
+      ) : (
+        <div className="form-actions">
+          <Button disabled={testing} onClick={onTest} type="button" variant="secondary">
+            <PlugZap aria-hidden="true" size={16} />
+            Проверить подключение
+          </Button>
+          <Button disabled={deleting} onClick={onStartEdit} type="button" variant="secondary">
+            <Pencil aria-hidden="true" size={16} />
+            Редактировать
+          </Button>
+          <Button disabled={deleting} onClick={onDelete} type="button" variant="danger">
+            <Trash2 aria-hidden="true" size={16} />
+            {deleting ? "Удаляем…" : "Удалить"}
+          </Button>
+          {testMessage ? <span className="inline-status">{testMessage}</span> : null}
+        </div>
+      )}
     </Panel>
   );
+}
+
+interface ChannelEditFormState {
+  name: string;
+  configValue: string;
+  credentials: string;
+  rotateEmail: boolean;
+  email: {
+    imapHost: string;
+    imapPort: string;
+    imapTls: boolean;
+    imapUsername: string;
+    imapPassword: string;
+    smtpHost: string;
+    smtpPort: string;
+    smtpTls: boolean;
+    smtpUsername: string;
+    smtpPassword: string;
+    fromEmail: string;
+    fromName: string;
+  };
+}
+
+interface ChannelEditFormProps {
+  channel: Channel;
+  saving: boolean;
+  onCancel: () => void;
+  onSubmit: (request: UpdateChannelRequest) => void;
+}
+
+/**
+ * Инлайн-форма редактирования канала. Бэкенд (PUT /channels/:id) принимает
+ * name/config и опциональную ротацию секрета (credentials для токен-каналов,
+ * email_credentials — для email). credentials_ref-каналы (web_chat) правят
+ * только name/config. Пустые секретные поля = «не менять».
+ */
+function ChannelEditForm({ channel, saving, onCancel, onSubmit }: ChannelEditFormProps) {
+  // Для типов, которых нет в channelConnectors (например sms/vk), getChannelConnector
+  // отдаёт web_chat как фолбэк — тогда правим только имя, чтобы не подставить чужой
+  // configKey и не затереть config.
+  const isKnownConnector = channelConnectors.some(
+    (item) => item.type === channel.channel_type
+  );
+  const connector = getChannelConnector(channel.channel_type as ConnectableChannelType);
+  const initialConfigValue =
+    !isKnownConnector || connector.secretKind === "email"
+      ? ""
+      : String((channel.config as Record<string, unknown>)[connector.configKey] ?? "");
+  const [state, setState] = useState<ChannelEditFormState>({
+    name: channel.name,
+    configValue: initialConfigValue,
+    credentials: "",
+    rotateEmail: false,
+    email: { ...emptyEmailCredentials }
+  });
+  const [error, setError] = useState<string | null>(null);
+
+  function updateEmail<TKey extends keyof ChannelEditFormState["email"]>(
+    field: TKey,
+    value: ChannelEditFormState["email"][TKey]
+  ) {
+    setState((current) => ({ ...current, email: { ...current.email, [field]: value } }));
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = state.name.trim();
+    if (!name) {
+      setError("Название канала обязательно.");
+      return;
+    }
+
+    const request: UpdateChannelRequest = { name };
+
+    if (!isKnownConnector) {
+      // Неизвестный коннектор — правим только имя, config/секрет не трогаем.
+      setError(null);
+      onSubmit(request);
+      return;
+    }
+
+    if (connector.secretKind === "email") {
+      if (state.rotateEmail) {
+        const emailForm = toChannelFormState(state.email);
+        const emailErrors = validateEmailCredentials(emailForm);
+        if (Object.keys(emailErrors).length > 0) {
+          setError("Проверьте креды IMAP/SMTP.");
+          return;
+        }
+        request.email_credentials = buildEmailCredentials(emailForm);
+      }
+    } else {
+      // Мержим в существующий config, чтобы не потерять ключи, выставленные
+      // сервером (например bot_id/bot_username после :test).
+      request.config = {
+        ...channel.config,
+        ...buildChannelConfig(connector, state.configValue)
+      };
+      if (connector.secretKind === "token" && state.credentials.trim()) {
+        const token = state.credentials.trim();
+        if (connector.tokenPattern && !connector.tokenPattern.test(token)) {
+          setError(connector.tokenHint ?? "Неверный формат токена.");
+          return;
+        }
+        request.credentials = token;
+      }
+    }
+
+    setError(null);
+    onSubmit(request);
+  }
+
+  return (
+    <form className="channel-edit-form" onSubmit={handleSubmit}>
+      {error ? (
+        <div className="form-alert" role="alert">
+          {error}
+        </div>
+      ) : null}
+      <TextInput
+        id={`channel-edit-name-${channel.id}`}
+        label="Название канала"
+        onChange={(event) => {
+          const value = event.currentTarget.value;
+          setState((current) => ({ ...current, name: value }));
+        }}
+        value={state.name}
+      />
+      {!isKnownConnector ? null : connector.secretKind === "email" ? (
+        <>
+          <label className="checkbox-field">
+            <input
+              checked={state.rotateEmail}
+              onChange={(event) => {
+                const checked = event.currentTarget.checked;
+                setState((current) => ({ ...current, rotateEmail: checked }));
+              }}
+              type="checkbox"
+            />
+            <span>Обновить креды IMAP/SMTP</span>
+          </label>
+          {state.rotateEmail ? (
+            <EmailCredentialsFields
+              errors={{}}
+              form={toChannelFormState(state.email)}
+              onChange={(field, value) =>
+                updateEmail(field as keyof ChannelEditFormState["email"], value as never)
+              }
+            />
+          ) : null}
+        </>
+      ) : (
+        <>
+          <TextInput
+            id={`channel-edit-config-${channel.id}`}
+            label={connector.configLabel}
+            onChange={(event) => {
+              const value = event.currentTarget.value;
+              setState((current) => ({ ...current, configValue: value }));
+            }}
+            placeholder={connector.configPlaceholder}
+            value={state.configValue}
+          />
+          {connector.secretKind === "token" ? (
+            <TextInput
+              autoComplete="off"
+              id={`channel-edit-token-${channel.id}`}
+              label={`${selectedSecretLabel(connector)} (пусто = не менять)`}
+              onChange={(event) => {
+                const value = event.currentTarget.value;
+                setState((current) => ({ ...current, credentials: value }));
+              }}
+              placeholder={connector.credentialsPlaceholder}
+              type="password"
+              value={state.credentials}
+            />
+          ) : null}
+        </>
+      )}
+      <div className="form-actions">
+        <Button disabled={saving} type="submit" variant="primary">
+          {saving ? "Сохраняем…" : "Сохранить"}
+        </Button>
+        <Button disabled={saving} onClick={onCancel} type="button" variant="secondary">
+          <X aria-hidden="true" size={16} />
+          Отмена
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function selectedSecretLabel(connector: ChannelConnector): string {
+  return connector.secretLabel;
+}
+
+/** Разворачивает локальные email-поля формы редактирования в ChannelFormState. */
+function toChannelFormState(email: ChannelEditFormState["email"]): ChannelFormState {
+  return { ...emptyChannelForm, channelType: "email", ...email };
 }
 
 interface EmailCredentialsFieldsProps {
