@@ -106,6 +106,42 @@ describe("WebChatService createOrResumeSession guards (W4)", () => {
     });
   });
 
+  it("новая сессия: клиентский conversation_id ИГНОРИРУЕТСЯ (свежий id, без PK-конфликта → без 500)", async () => {
+    const inserts: Array<{ sql: string; params: unknown[] }> = [];
+    const fake = {
+      withTenant: async (_org: string, cb: (c: unknown) => Promise<unknown>) =>
+        cb({
+          query: async (sql: string, params?: unknown[]) => {
+            if (sql.includes("FROM channels")) {
+              return { rowCount: 1, rows: [{ config: {} }] };
+            }
+            // Нет существующей сессии для visitor → ветка создания новой.
+            if (sql.includes("FROM communication_endpoints")) {
+              return { rowCount: 0, rows: [] };
+            }
+            if (sql.includes("INSERT INTO")) {
+              inserts.push({ sql, params: params ?? [] });
+            }
+            return { rowCount: 0, rows: [] };
+          },
+        }),
+    };
+    const svc = new WebChatService(fake as never, realtime as never, OK_LIMITER as never);
+
+    // Посетитель без visitor-сессии, но с плейсхолдер-conversation_id (как фронт-дефолт).
+    const CLIENT_CONV = "32345678-1234-4234-8234-123456789abc";
+    const result = await svc.createOrResumeSession(
+      { organization_id: ORG, conversation_id: CLIENT_CONV },
+      { clientIp: "1.1.1.1" },
+    );
+
+    const convInsert = inserts.find((i) => i.sql.includes("INSERT INTO conversations"));
+    expect(convInsert).toBeDefined();
+    // id для INSERT — сгенерированный, НЕ клиентский плейсхолдер (иначе PK-конфликт → 500).
+    expect(convInsert?.params[0]).not.toBe(CLIENT_CONV);
+    expect(result.conversationId).not.toBe(CLIENT_CONV);
+  });
+
   it("ForbiddenException/HttpException — корректные типы Nest", async () => {
     const disabled = service(
       (sql) => (sql.includes("FROM channels") ? { rowCount: 0, rows: [] } : null),

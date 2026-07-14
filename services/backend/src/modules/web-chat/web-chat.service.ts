@@ -162,7 +162,14 @@ export class WebChatService {
 
       const clientId = randomUUID();
       const endpointId = randomUUID();
-      const conversationId = input.conversation_id ?? randomUUID();
+      // Новая сессия (существующей для этого visitor нет): всегда СВЕЖИЙ
+      // conversation_id. Клиентский input.conversation_id здесь игнорируем —
+      // доверять ему нельзя: у только что созданного client_id нет прав на чужой
+      // диалог, а INSERT с уже существующим id даёт PK-конфликт → Unhandled 500
+      // (его ловил фронт-дефолт DEFAULT_CONVERSATION_ID у всех новых посетителей).
+      // Resume существующего диалога с проверкой владельца — только через ветку
+      // `if (existing)` выше (resolveConversation).
+      const conversationId = randomUUID();
 
       await client.query(
         `

@@ -28,6 +28,28 @@ describe("Bridge Web Chat — устойчивость через Edge (CP-7)", 
     server.resetHandlers();
   });
 
+  it("новый посетитель не выдаёт placeholder DEFAULT_CONVERSATION_ID за реальный диалог", async () => {
+    let capturedBody: Record<string, unknown> | null = null;
+    server.use(
+      http.post("*/api/v1/web-chat/sessions", async ({ request }) => {
+        capturedBody = (await request.clone().json()) as Record<string, unknown>;
+        return undefined; // передать управление дефолтному mock-хендлеру (201)
+      }),
+    );
+
+    const mountPoint = createMountPoint();
+    await renderWebChatWidget(mountPoint, {
+      apiBaseUrl: "http://localhost/api/v1",
+      organizationId: DEFAULT_ORGANIZATION_ID,
+      // conversationId не задаём → виджет берёт DEFAULT_CONVERSATION_ID (плейсхолдер).
+    });
+
+    await within(mountPoint).findByLabelText("Сообщение");
+    // Плейсхолдер НЕ уходит в тело запроса — иначе бэкенд упрётся в чужой диалог (500).
+    expect(capturedBody).not.toBeNull();
+    expect(capturedBody).not.toHaveProperty("conversation_id");
+  });
+
   it("ретраит инициализацию сессии при транзитивном сбое (502 обрыв туннеля Edge→App) и всё равно открывает чат", async () => {
     let sessionCalls = 0;
     // Первый POST /web-chat/sessions падает 502 (как при кратковременном разрыве
