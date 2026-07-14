@@ -53,6 +53,10 @@ import type {
   OnboardingCommandRequest,
   Organization,
   OrganizationConfiguration,
+  OrganizationUser,
+  CreateUserRequest,
+  PatchUserRequest,
+  CreateInvitationRequest,
   ProblemDetails,
   StartBroadcastRequest,
   UpdateKnowledgeDocumentRequest,
@@ -73,6 +77,33 @@ import { validateWorkflowSchema } from "../../shared/workflow";
 const API_PREFIX = "*/api/v1";
 const CONNECTABLE_CHANNEL_TYPES = new Set(["web_chat", "telegram", "max", "email"]);
 
+const mockUsers: OrganizationUser[] = [
+  {
+    id: "00000000-0000-4000-8000-000000000101",
+    organizationId: "org-demo",
+    displayName: "Демо Администратор",
+    email: "admin@example.bridge.local",
+    telegramUsername: "demo_admin",
+    telegramId: null,
+    status: "active",
+    roleCodes: ["administrator"],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z"
+  },
+  {
+    id: "00000000-0000-4000-8000-000000000301",
+    organizationId: "org-demo",
+    displayName: "Менеджер Ольга",
+    email: "olga@example.bridge.local",
+    telegramUsername: "olga_support",
+    telegramId: null,
+    status: "active",
+    roleCodes: ["manager"],
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z"
+  }
+];
+
 let currentSession: AdminSession | null = null;
 let currentOrganization: Organization = { ...mockOrganization };
 let currentConfiguration: OrganizationConfiguration = { ...mockConfiguration };
@@ -88,6 +119,8 @@ let currentBroadcastStats: Record<string, BroadcastStats> = cloneBroadcastStatsM
 let currentNotifications: Notification[] = mockNotifications.map(cloneNotification);
 let currentNotificationSettings: NotificationSetting[] =
   cloneNotificationSettings(mockNotificationSettings);
+let currentUsers: OrganizationUser[] = mockUsers.map((user) => ({ ...user, roleCodes: [...user.roleCodes] }));
+let nextUserNumber = 1;
 let nextChannelNumber = 1;
 let nextDocumentNumber = 1;
 let nextWorkflowVersionNumber = 1;
@@ -229,6 +262,80 @@ export const handlers = [
     };
 
     return HttpResponse.json(currentConfiguration);
+  }),
+
+  http.get(`${API_PREFIX}/organizations/:organizationId/users`, () => {
+    return HttpResponse.json({ items: currentUsers.map((user) => ({ ...user, roleCodes: [...user.roleCodes] })) });
+  }),
+
+  http.post(`${API_PREFIX}/organizations/:organizationId/users`, async ({ params, request }) => {
+    const body = (await request.json()) as Partial<CreateUserRequest>;
+    if (!body.displayName?.trim()) {
+      return validationProblem([{ field: "displayName", message: "displayName is required" }], "Invalid user.");
+    }
+    const now = "2026-07-03T10:20:00.000Z";
+    const user: OrganizationUser = {
+      id: `user-created-${nextUserNumber++}`,
+      organizationId: String(params.organizationId),
+      displayName: body.displayName.trim(),
+      email: body.email?.trim() || null,
+      telegramUsername: body.telegramUsername?.trim() || null,
+      telegramId: body.telegramId?.trim() || null,
+      status: body.status ?? "active",
+      roleCodes: body.roleCodes?.length ? [...body.roleCodes] : ["manager"],
+      createdAt: now,
+      updatedAt: now
+    };
+    currentUsers = [...currentUsers, user];
+    return HttpResponse.json({ ...user, roleCodes: [...user.roleCodes] }, { status: 201 });
+  }),
+
+  http.patch(`${API_PREFIX}/users/:id`, async ({ params, request }) => {
+    const existing = currentUsers.find((user) => user.id === params.id);
+    if (!existing) {
+      return problem(404, "Not Found", "User not found.");
+    }
+    const body = (await request.json()) as Partial<PatchUserRequest>;
+    const nextStatus = body.status ?? existing.status;
+    const nextRoles = body.roleCodes ?? existing.roleCodes;
+    const updated: OrganizationUser = {
+      ...existing,
+      displayName: body.displayName?.trim() || existing.displayName,
+      email: body.email === undefined ? existing.email : body.email?.trim() || null,
+      telegramUsername:
+        body.telegramUsername === undefined ? existing.telegramUsername : body.telegramUsername?.trim() || null,
+      telegramId: body.telegramId === undefined ? existing.telegramId : body.telegramId?.trim() || null,
+      status: nextStatus,
+      roleCodes: [...nextRoles],
+      updatedAt: "2026-07-03T10:40:00.000Z"
+    };
+    currentUsers = currentUsers.map((user) => (user.id === existing.id ? updated : user));
+    return HttpResponse.json({ ...updated, roleCodes: [...updated.roleCodes] });
+  }),
+
+  http.post(/\/api\/v1\/users\/([^/]+)\/sessions:revoke$/, ({ request }) => {
+    const userId = getLastPathMatch(request.url, /\/users\/([^/]+)\/sessions:revoke$/);
+    return HttpResponse.json({ userId, organizationId: currentOrganization.id, revokedCount: 0 });
+  }),
+
+  http.post(`${API_PREFIX}/invitations`, async ({ request }) => {
+    const body = (await request.json()) as Partial<CreateInvitationRequest>;
+    const now = "2026-07-03T10:20:00.000Z";
+    return HttpResponse.json(
+      {
+        id: `invitation-${nextUserNumber++}`,
+        organizationId: String(body.organizationId ?? currentOrganization.id),
+        contactType: body.contactType ?? "email",
+        contactValue: String(body.contactValue ?? ""),
+        roleCode: body.roleCode ?? "manager",
+        expiresAt: "2026-07-10T10:20:00.000Z",
+        acceptedAt: null,
+        createdBy: currentSession?.user.id ?? null,
+        createdAt: now,
+        token: `bri_mock_${String(body.contactValue ?? "").replace(/[^a-z0-9]/gi, "")}`
+      },
+      { status: 201 }
+    );
   }),
 
   http.get(`${API_PREFIX}/channels`, () => {
