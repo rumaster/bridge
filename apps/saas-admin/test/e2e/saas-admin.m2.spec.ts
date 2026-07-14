@@ -16,7 +16,11 @@ test("Каналы связи: список, realtime-статус, credentials_
   await loginAsAdmin(page, "/channels");
 
   await expect(page.getByRole("heading", { name: "Каналы связи" })).toBeVisible();
+  // Плитка показывает информативную идентичность (Widget origin), а не credentials_ref.
   await expect(page.getByRole("article", { name: /Основной Web Chat/ })).toContainText(
+    "https://demo.example.test"
+  );
+  await expect(page.getByRole("article", { name: /Основной Web Chat/ })).not.toContainText(
     "secret://web-chat/org-demo/main"
   );
   await expect(page.getByRole("article", { name: /Telegram Support/ })).toContainText("Подключен");
