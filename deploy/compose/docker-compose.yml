@@ -419,6 +419,31 @@ services:
       backend:
         condition: service_started
 
+  # C7 realtime WS-сервер App-стороны (docs/plan/manager-realtime-messages):
+  # раздаёт менеджеру события `bridge:c7:events` из ЛОКАЛЬНОГО app-Redis по WS
+  # (backend/NestJS сам WebSocket не отдаёт → /api/v1/ws был 404). Тот же образ,
+  # что edge-gateway, но энтрипойнт — c7-ws-main.ts (только C7-канал + Redis→WS
+  # мост + HTTP/WS-сервер, без RF-cluster/VPN/DATABASE_URL). Читает app-Redis
+  # напрямую (redis://redis:6379, без туннеля — события уже здесь). СВОЯ
+  # consumer-group manager-c7 (НЕ edge-gateway-c7): группы Redis независимы, иначе
+  # App- и Edge-потребители воровали бы события друг у друга. Порт наружу не
+  # публикуем — manager-workspace ходит по docker-DNS (c7-ws:3000).
+  c7-ws:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/edge-gateway/Dockerfile
+    restart: unless-stopped
+    command: ["node", "--import", "tsx", "src/c7-ws-main.ts"]
+    environment:
+      HOST: 0.0.0.0
+      PORT: ${C7_WS_PORT:-3000}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      C7_REALTIME_STREAM: ${C7_REALTIME_STREAM:-bridge:c7:events}
+      C7_REALTIME_GROUP: ${C7_MANAGER_REALTIME_GROUP:-manager-c7}
+    depends_on:
+      redis:
+        condition: service_healthy
+
   manager-workspace:
     build:
       context: ../..
@@ -426,10 +451,15 @@ services:
     restart: unless-stopped
     environment:
       BACKEND_INTERNAL_URL: ${BACKEND_INTERNAL_URL:-http://backend:3000}
+      # /api/v1/ws проксируется на отдельный C7 WS-сервер (см. сервис c7-ws), а не
+      # на backend — NestJS не отдаёт WebSocket.
+      C7_WS_INTERNAL_URL: ${C7_WS_INTERNAL_URL:-http://c7-ws:3000}
     ports:
       - "${MANAGER_WORKSPACE_PORT:-8082}:4173"
     depends_on:
       backend:
+        condition: service_started
+      c7-ws:
         condition: service_started
 
   web-chat:

@@ -221,7 +221,15 @@ function readTenantHeaders(): HeadersInit {
   return organizationId ? { [TENANT_HEADER]: organizationId } : {};
 }
 
-function readStoredOrganizationId() {
+/**
+ * Читает organization_id арендатора из сохранённой сессии менеджера
+ * (localStorage). Используется и как tenant-заголовок REST-запросов, и как
+ * scope C7-realtime подписки (organization_id в WS-URL): WS-сервер App-стороны
+ * фильтрует события по organization_id, поэтому без него менеджер не получит ни
+ * одного realtime-события. Возвращает undefined, если сессии нет или org не
+ * прошёл валидацию UUID v4.
+ */
+export function readStoredOrganizationId() {
   if (typeof window === "undefined") {
     return undefined;
   }

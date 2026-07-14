@@ -19,6 +19,15 @@ export interface C7RealtimeClientOptions {
   url?: string;
   reconnectDelayMs?: number;
   WebSocketCtor?: typeof WebSocket;
+  /**
+   * organization_id арендатора для scope C7-подписки. WS-сервер App-стороны
+   * фильтрует события по organization_id (изоляция тенантов, WG-9): подписка БЕЗ
+   * organization_id не матчит НИ ОДНОГО события, поэтому его обязательно нести в
+   * WS-URL. Передаётся как значение или как резолвер (читается заново при каждом
+   * (пере)открытии сокета) — так появление/смена org после логина подхватывается
+   * на ближайшем реконнекте без пересоздания клиента.
+   */
+  organizationId?: string | (() => string | undefined);
 }
 
 const DEFAULT_WS_PATH = "/api/v1/ws";
@@ -50,8 +59,19 @@ export function createC7RealtimeClient(options: C7RealtimeClientOptions = {}): C
           return;
         }
 
+        // organization_id резолвим на КАЖДОМ открытии сокета: до логина его ещё
+        // нет — тогда не открываем заведомо отклоняемый (400) сокет, а уходим в
+        // reconnecting и повторяем; после логина ближайшая попытка подхватит org.
+        const organizationId = resolveOrganizationId(options.organizationId);
+        if (!organizationId) {
+          scheduleReconnect();
+          return;
+        }
+
         onStatus?.("reconnecting");
-        socket = new WebSocketCtor(resolveC7WebSocketUrl(options.url ?? DEFAULT_WS_PATH, lastEventId));
+        socket = new WebSocketCtor(
+          resolveC7WebSocketUrl(options.url ?? DEFAULT_WS_PATH, lastEventId, organizationId)
+        );
 
         socket.addEventListener("open", () => {
           onStatus?.("connected");
@@ -146,15 +166,29 @@ function parseC7Event(data: unknown): C7Event | null {
   }
 }
 
-function resolveC7WebSocketUrl(pathOrUrl: string, lastEventId: string | null) {
+function resolveC7WebSocketUrl(
+  pathOrUrl: string,
+  lastEventId: string | null,
+  organizationId: string
+) {
   const base = globalThis.location?.href ?? "http://localhost";
   const url = new URL(pathOrUrl, base);
 
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+
+  // organization_id — scope тенанта: без него WS-сервер отклонит апгрейд (WG-9).
+  url.searchParams.set("organization_id", organizationId);
 
   if (lastEventId) {
     url.searchParams.set("last_event_id", lastEventId);
   }
 
   return url.toString();
+}
+
+function resolveOrganizationId(
+  source: string | (() => string | undefined) | undefined
+): string | undefined {
+  const value = typeof source === "function" ? source() : source;
+  return typeof value === "string" && value.trim() !== "" ? value : undefined;
 }
