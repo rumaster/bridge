@@ -144,6 +144,46 @@ describe("Edge Web Chat REST-транзит (W2)", () => {
   });
 });
 
+describe("Edge Web Chat REST-транзит — обрыв туннеля при чтении ответа", () => {
+  let flakyCore;
+  let flakyEdge;
+  let edgeUrl;
+
+  before(async () => {
+    // Ядро-дублёр: заголовки уходят (fetch успешен, статус 201 получен), но тело
+    // обрывается на полуслове — имитация разрыва VPN-туннеля Edge→App ПОСЛЕ ответа.
+    flakyCore = createServer((request, response) => {
+      response.writeHead(201, {
+        "content-type": "application/json; charset=utf-8",
+        "content-length": "100",
+      });
+      response.write('{"conversationId":');
+      response.socket.destroy();
+    });
+    const coreUrl = await listen(flakyCore);
+    flakyEdge = createEdgeGatewayServer({
+      now: () => "2026-07-13T09:00:00.000Z",
+      webChatBackendUrl: coreUrl,
+    });
+    edgeUrl = await listen(flakyEdge);
+  });
+
+  after(async () => {
+    await close(flakyEdge);
+    await close(flakyCore);
+  });
+
+  it("возвращает честный 502 (а не невнятный 500) при обрыве чтения ответа ядра", async () => {
+    const response = await fetch(`${edgeUrl}/api/v1/web-chat/sessions`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ organization_id: "org-1" }),
+    });
+    // Раньше сбой `arrayBuffer()` всплывал в общий catch → 500; теперь → 502.
+    assert.equal(response.status, 502);
+  });
+});
+
 describe("Edge Web Chat REST-транзит выключен без backend URL", () => {
   let edgeServer;
   let edgeBaseUrl;

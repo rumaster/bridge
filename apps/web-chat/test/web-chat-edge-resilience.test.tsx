@@ -28,6 +28,35 @@ describe("Bridge Web Chat — устойчивость через Edge (CP-7)", 
     server.resetHandlers();
   });
 
+  it("ретраит инициализацию сессии при транзитивном сбое (502 обрыв туннеля Edge→App) и всё равно открывает чат", async () => {
+    let sessionCalls = 0;
+    // Первый POST /web-chat/sessions падает 502 (как при кратковременном разрыве
+    // VPN-туннеля Edge→App), последующие — проходят в дефолтный mock (201).
+    server.use(
+      http.post("*/api/v1/web-chat/sessions", () => {
+        sessionCalls += 1;
+        if (sessionCalls === 1) {
+          return HttpResponse.json({ code: "BAD_GATEWAY" }, { status: 502 });
+        }
+        return undefined;
+      }),
+    );
+
+    const mountPoint = createMountPoint();
+    await renderWebChatWidget(mountPoint, {
+      apiBaseUrl: "http://localhost/api/v1",
+      conversationId: DEFAULT_CONVERSATION_ID,
+      organizationId: DEFAULT_ORGANIZATION_ID,
+    });
+
+    // Несмотря на первый 502, ретрай инициализации подтянул историю — лента
+    // загрузилась (пустой диалог), ошибка открытия посетителю не показана.
+    expect(
+      await within(mountPoint).findByText("Пока нет сообщений", undefined, { timeout: 3000 }),
+    ).toBeInTheDocument();
+    expect(sessionCalls).toBeGreaterThanOrEqual(2);
+  });
+
   it("переотправляет реплику после разрыва без дублей и подтягивает ответ менеджера", async () => {
     const user = userEvent.setup();
     const sockets: FakeWebSocket[] = [];

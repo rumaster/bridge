@@ -543,8 +543,15 @@ async function proxyWebChatRequest(request, response, backendBaseUrl) {
 
   const targetUrl = joinBackendUrl(backendBaseUrl, request.url ?? "/");
   let upstream;
+  let payload;
   try {
     upstream = await fetch(targetUrl, { method, headers, body });
+    // Тело ответа читаем ВНУТРИ try: при обрыве туннеля ПОСЛЕ получения заголовков
+    // (fetch уже успел, ядро вернуло, напр., 201) `arrayBuffer()` бросает исключение.
+    // Раньше оно всплывало в общий обработчик и превращалось в невнятный 502→500;
+    // теперь любой сбой связи с App на этапе запроса/ответа даёт честный 502
+    // (ретраибельно для клиента), а не 500. (см. issue: транзитивный 500 web-chat).
+    payload = Buffer.from(await upstream.arrayBuffer());
   } catch (error) {
     sendJson(
       response,
@@ -554,7 +561,6 @@ async function proxyWebChatRequest(request, response, backendBaseUrl) {
     return;
   }
 
-  const payload = Buffer.from(await upstream.arrayBuffer());
   response.writeHead(upstream.status, {
     "content-type": upstream.headers.get("content-type") ?? "application/json; charset=utf-8",
   });

@@ -96,36 +96,50 @@ export function WebChatWidget({
     let isActive = true;
 
     async function loadMessages() {
-      try {
-        const initializedSession = await client.createOrResumeSession({
-          organizationId,
-          visitorSessionId: loadStoredVisitorSession(),
-          conversationId,
-        });
-        const loadedPage = await client.getMessages(
-          initializedSession.conversationId,
-          {
-            limit: historyPageSize,
-            organizationId: initializedSession.organizationId,
-            visitorSessionId: initializedSession.visitorSessionId,
-          },
-        );
-        if (isActive) {
-          saveStoredVisitorSession(initializedSession.visitorSessionId);
-          sessionRef.current = initializedSession;
-          setSession(initializedSession);
-          replaceMessages(loadedPage.messages);
-          setHistoryCursor(loadedPage.nextCursor);
-          setHasMoreHistory(loadedPage.hasMore);
-          setError(null);
-        }
-      } catch (unknownError) {
-        if (isActive) {
+      // Ретрай инициализации чата на транзитивных сбоях (напр. кратковременный
+      // разрыв VPN-туннеля Edge→App даёт 502/сетевую ошибку) — чтобы посетитель
+      // не видел ошибку открытия и не перезагружал страницу вручную.
+      const backoffMs = [300, 800];
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          const initializedSession = await client.createOrResumeSession({
+            organizationId,
+            visitorSessionId: loadStoredVisitorSession(),
+            conversationId,
+          });
+          const loadedPage = await client.getMessages(
+            initializedSession.conversationId,
+            {
+              limit: historyPageSize,
+              organizationId: initializedSession.organizationId,
+              visitorSessionId: initializedSession.visitorSessionId,
+            },
+          );
+          if (isActive) {
+            saveStoredVisitorSession(initializedSession.visitorSessionId);
+            sessionRef.current = initializedSession;
+            setSession(initializedSession);
+            replaceMessages(loadedPage.messages);
+            setHistoryCursor(loadedPage.nextCursor);
+            setHasMoreHistory(loadedPage.hasMore);
+            setError(null);
+            setIsLoading(false);
+          }
+          return;
+        } catch (unknownError) {
+          if (!isActive) {
+            return;
+          }
+          if (attempt < backoffMs.length && isTransientError(unknownError)) {
+            await delay(backoffMs[attempt]);
+            if (!isActive) {
+              return;
+            }
+            continue;
+          }
           setError(getErrorMessage(unknownError));
-        }
-      } finally {
-        if (isActive) {
           setIsLoading(false);
+          return;
         }
       }
     }
@@ -533,6 +547,20 @@ function getErrorMessage(error: unknown): string {
   }
 
   return "Неизвестная ошибка Web Chat";
+}
+
+/**
+ * Транзитивный ли сбой (стоит ретраить). Нет HTTP-статуса → сетевой обрыв; 5xx
+ * (в т.ч. 502 «Edge не достучался до App» при кратковременном разрыве VPN-туннеля
+ * Edge→App) → транзитивно. 4xx (валидация 400 / rate-limit 429 / auth) — НЕ ретраим.
+ */
+function isTransientError(error: unknown): boolean {
+  const status = (error as { status?: number } | null)?.status;
+  return status === undefined || status >= 500;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function formatStatus(status: WebChatMessage["status"]): string {
