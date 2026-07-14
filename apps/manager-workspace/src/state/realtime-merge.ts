@@ -23,6 +23,40 @@ export function markC7EventSeen(seenEventIds: Set<string>, event: C7Event) {
   return true;
 }
 
+/**
+ * Приводит сообщение из C7-события к форме {@link Message}, пригодной для
+ * рендера. Ядро (MessageResponseDto) шлёт `content` ОБЪЕКТОМ (`{type, text}` или
+ * `{text, subject}` для email), тогда как UI ожидает строку и рендерит её как
+ * React-child — сырой объект даёт React error #31 («Objects are not valid as a
+ * React child»). REST-путь нормализует content в http-клиенте; realtime-путь
+ * раньше этого не делал (баг всплыл, когда realtime реально начал доставлять
+ * события менеджеру). Здесь повторяем ту же коэрцию content → строка.
+ */
+export function normalizeC7EventMessage(message: Message): Message {
+  return {
+    ...message,
+    content: normalizeC7MessageContent((message as { content: unknown }).content)
+  };
+}
+
+function normalizeC7MessageContent(content: unknown): string {
+  if (typeof content === "string") {
+    return content;
+  }
+
+  if (content === null || typeof content !== "object") {
+    return "";
+  }
+
+  const record = content as Record<string, unknown>;
+  const text = record.text ?? record.body;
+  if (typeof text === "string") {
+    return text;
+  }
+
+  return JSON.stringify(content);
+}
+
 export function mergeMessagesById(currentMessages: Message[], nextMessages: Message[]) {
   const messagesById = new Map(currentMessages.map((message) => [message.id, message]));
 
@@ -41,7 +75,7 @@ export function mergeMessagesById(currentMessages: Message[], nextMessages: Mess
 
 export function applyC7EventToMessages(messages: Message[], event: C7Event) {
   if (event.event === "message.created") {
-    return mergeMessagesById(messages, [event.payload.message]);
+    return mergeMessagesById(messages, [normalizeC7EventMessage(event.payload.message)]);
   }
 
   if (event.event === "message.status_changed") {
@@ -67,7 +101,7 @@ export function applyC7EventToConversations(
     return conversations;
   }
 
-  const { message } = event.payload;
+  const message = normalizeC7EventMessage(event.payload.message);
   const duplicateMessage = seenMessageIds?.has(message.id) ?? false;
 
   return conversations
