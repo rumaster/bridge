@@ -57,10 +57,6 @@ function createRoutes(services?: SaasAdminServiceOverrides): RouteObject[] {
       ),
       children: [
         {
-          index: true,
-          element: <Navigate to="/overview" replace />
-        },
-        {
           path: "login",
           element: <LoginPage />
         },
@@ -71,8 +67,13 @@ function createRoutes(services?: SaasAdminServiceOverrides): RouteObject[] {
               element: <AppShell />,
               children: [
                 {
-                  path: "overview",
+                  index: true,
                   element: <OverviewPage />
+                },
+                {
+                  // Обратная совместимость: старый путь /overview ведёт на главную.
+                  path: "overview",
+                  element: <Navigate to="/" replace />
                 },
                 {
                   path: "organization",
@@ -112,7 +113,7 @@ function createRoutes(services?: SaasAdminServiceOverrides): RouteObject[] {
         },
         {
           path: "*",
-          element: <Navigate to="/overview" replace />
+          element: <Navigate to="/" replace />
         }
       ]
     }

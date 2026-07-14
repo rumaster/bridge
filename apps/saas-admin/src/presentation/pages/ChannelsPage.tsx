@@ -4,6 +4,7 @@ import {
   Bot,
   CheckCircle2,
   Clock3,
+  Loader2,
   Mail,
   MessageCircle,
   Pencil,
@@ -716,18 +717,49 @@ function ChannelCard({
           saving={saving}
         />
       ) : (
-        <div className="form-actions">
-          <Button disabled={testing} onClick={onTest} type="button" variant="secondary">
-            <PlugZap aria-hidden="true" size={16} />
-            Проверить подключение
+        <div className="form-actions channel-card-actions">
+          <Button
+            aria-busy={testing}
+            aria-label="Проверить подключение"
+            className="button--icon"
+            disabled={testing}
+            onClick={onTest}
+            title="Проверить подключение"
+            type="button"
+            variant="secondary"
+          >
+            {testing ? (
+              <Loader2 aria-hidden="true" className="spin" size={16} />
+            ) : (
+              <PlugZap aria-hidden="true" size={16} />
+            )}
           </Button>
-          <Button disabled={deleting} onClick={onStartEdit} type="button" variant="secondary">
+          <Button
+            aria-label="Редактировать"
+            className="button--icon"
+            disabled={deleting}
+            onClick={onStartEdit}
+            title="Редактировать"
+            type="button"
+            variant="secondary"
+          >
             <Pencil aria-hidden="true" size={16} />
-            Редактировать
           </Button>
-          <Button disabled={deleting} onClick={onDelete} type="button" variant="danger">
-            <Trash2 aria-hidden="true" size={16} />
-            {deleting ? "Удаляем…" : "Удалить"}
+          <Button
+            aria-busy={deleting}
+            aria-label="Удалить"
+            className="button--icon"
+            disabled={deleting}
+            onClick={onDelete}
+            title="Удалить"
+            type="button"
+            variant="danger"
+          >
+            {deleting ? (
+              <Loader2 aria-hidden="true" className="spin" size={16} />
+            ) : (
+              <Trash2 aria-hidden="true" size={16} />
+            )}
           </Button>
           {testMessage ? <span className="inline-status">{testMessage}</span> : null}
         </div>

@@ -10,7 +10,7 @@ import {
   Users,
   Workflow
 } from "lucide-react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 
 import type { AdminRole } from "../../api/client/types";
 import { hasAnyRole, useAuth } from "../../state/auth";
@@ -27,7 +27,6 @@ const administratorRoles: AdminRole[] = ["administrator"];
 const platformOperatorRoles: AdminRole[] = ["platform_operator"];
 
 const navItems: NavItem[] = [
-  { to: "/overview", label: "Обзор", icon: LayoutDashboard },
   { to: "/organization", label: "Организация", icon: Building2, roles: administratorRoles },
   { to: "/users", label: "Пользователи", icon: Users, roles: administratorRoles },
   { to: "/channels", label: "Каналы", icon: Cable, roles: administratorRoles },
@@ -53,10 +52,10 @@ export function AppShell() {
         Перейти к содержимому
       </a>
       <header className="app-topbar" role="banner">
-        <div className="brand">
+        <Link aria-label="SaaS Administration — на главную" className="brand" to="/">
           <span className="brand-mark">SA</span>
           <span>SaaS Administration</span>
-        </div>
+        </Link>
 
         <nav aria-label="Администрирование организации" className="nav-list">
           {visibleNavItems.map(({ to, label, icon: Icon }) => (

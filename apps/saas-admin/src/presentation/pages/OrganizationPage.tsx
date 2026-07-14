@@ -8,7 +8,8 @@ import type {
 } from "../../api/client/types";
 import { hasAnyRole, useAuth } from "../../state/auth";
 import { useSaasAdminApi } from "../../state/admin";
-import { Badge, Button, Panel, SelectInput, TextAreaInput, TextInput } from "../../shared/ui-kit";
+import { Badge, Button, Panel, TextAreaInput, TextInput } from "../../shared/ui-kit";
+import { TimezoneSelect } from "../../shared/timezone-select";
 
 interface OrganizationFormState {
   name: string;
@@ -54,7 +55,7 @@ const TIMEZONE_OPTIONS = [
   "Asia/Dubai",
   "Asia/Shanghai",
   "Asia/Tokyo"
-].map((zone) => ({ label: zone, value: zone }));
+];
 
 const DEFAULT_CONFIGURATION_FORM_STATE = {
   defaultLanguage: "ru",
@@ -202,10 +203,10 @@ export default function OrganizationPage() {
                 required
                 value={form.name}
               />
-              <SelectInput
+              <TimezoneSelect
                 error={fieldErrors.timezone}
                 label="Часовой пояс"
-                onChange={(event) => updateField("timezone", event.currentTarget.value)}
+                onChange={(timezone) => updateField("timezone", timezone)}
                 options={buildTimezoneOptions(form.timezone)}
                 required
                 value={form.timezone}
@@ -334,8 +335,8 @@ function isOrganizationField(field: string): field is keyof OrganizationFormStat
 }
 
 function buildTimezoneOptions(current: string) {
-  if (current && !TIMEZONE_OPTIONS.some((option) => option.value === current)) {
-    return [{ label: current, value: current }, ...TIMEZONE_OPTIONS];
+  if (current && !TIMEZONE_OPTIONS.includes(current)) {
+    return [current, ...TIMEZONE_OPTIONS];
   }
 
   return TIMEZONE_OPTIONS;

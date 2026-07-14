@@ -107,7 +107,6 @@ describe("SaaS Administration M5 acceptance and accessibility", () => {
       .map((link) => link.textContent?.trim());
 
     expect(linkNames).toEqual([
-      "Обзор",
       "Организация",
       "Пользователи",
       "Каналы",
@@ -132,7 +131,7 @@ describe("SaaS Administration M5 acceptance and accessibility", () => {
       .getAllByRole("link")
       .map((link) => link.textContent?.trim());
 
-    expect(linkNames).toEqual(["Обзор", "Workflow"]);
+    expect(linkNames).toEqual(["Workflow"]);
   });
 
   it("фиксирует информационную архитектуру ключевых экранов (визуальная регрессия структуры)", async () => {
