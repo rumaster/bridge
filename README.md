@@ -15,7 +15,13 @@
   `node-pg-migrate` с `DATABASE_URL`.
 - `npm run db:seed` - детерминированные M0-сиды ролей, демо-организации и
   `seeded-admin`.
-- `npm run ci` - локальная последовательность `lint -> test -> build`.
+- `npm run ci` - полное локальное зеркало CI-workflow:
+  `lint -> test(unit) -> build -> test:integration -> test:contract -> test:e2e`
+  (те же команды, что и job'ы в `.github/workflows/ci.yml`; требует Docker/браузеры,
+  как и CI). Зелёный `npm run ci` ⇒ зелёный CI.
+- `npm run ci:quick` - быстрый Docker-free гейт для пуша:
+  `lint -> test -> build -> test:contract` (ловит рассинхрон OpenAPI/контрактов
+  без Docker и Playwright).
 
 Итог M0 integration gate и список входных задач M1 описаны в
 [`docs/plan/m0-readiness.md`](docs/plan/m0-readiness.md).
