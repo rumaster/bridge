@@ -105,7 +105,12 @@ export function WebChatWidget({
           const initializedSession = await client.createOrResumeSession({
             organizationId,
             visitorSessionId: loadStoredVisitorSession(),
-            conversationId,
+            // Плейсхолдер-дефолт не выдаём за реальный диалог: хостируемая страница
+            // /chat/<org> не привязана к conversation — его разрешает бэкенд по
+            // visitor-сессии. Иначе новый посетитель слал бы DEFAULT_CONVERSATION_ID
+            // и упирался в уже существующий чужой диалог (PK-конфликт → 500).
+            conversationId:
+              conversationId === DEFAULT_CONVERSATION_ID ? undefined : conversationId,
           });
           const loadedPage = await client.getMessages(
             initializedSession.conversationId,
