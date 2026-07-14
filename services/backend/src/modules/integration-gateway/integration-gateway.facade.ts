@@ -686,6 +686,42 @@ export class IntegrationGatewayFacade implements OnApplicationBootstrap, OnModul
     return mapRowToFacade(updated.rows[0]);
   }
 
+  /**
+   * Удаление подключённого канала (DELETE /v1/channels/:id). Строка `channels`
+   * удаляется целиком вместе с зашифрованным `credentials_envelope`; связанные
+   * `adapter_capabilities` уходят каскадом (FK ON DELETE CASCADE). 404, если
+   * канала нет у организации. RLS обязателен — только через `withTenant`.
+   *
+   * ЗАМЕЧАНИЕ (email): Edge держит IMAP-креды в in-memory реестре и продолжит
+   * опрос ящика до рестарта edge-gateway — специального control-сообщения
+   * «канал удалён» в C9 пока нет. Для управляемых ящиков это не оставляет
+   * доступа (креды в БД стёрты), но «висящий» опрос стоит закрыть отдельным
+   * этапом (тип `channel_removed` + обработчик в edge control-plane).
+   */
+  async deleteChannel(channelId: string, organizationId: string): Promise<ChannelFacade> {
+    const existing = await this.getChannel(channelId, organizationId);
+
+    const deleted = await this.requireDatabase().withTenant(organizationId, (client) =>
+      client.query<ChannelRow>(
+        `
+          DELETE FROM channels
+          WHERE id = $1 AND organization_id = $2
+          RETURNING id, organization_id, channel_type, name, status,
+                    credentials_ref, config, last_check_at, created_at, updated_at
+        `,
+        [channelId, organizationId],
+      ),
+    );
+
+    if (!deleted.rowCount || deleted.rowCount === 0) {
+      throwChannelNotFound();
+    }
+
+    // existing уже прочитан выше (getChannel) — гарантирует 404 для чужого канала.
+    void existing;
+    return mapRowToFacade(deleted.rows[0]);
+  }
+
   async getChannelCapabilities(
     channelId: string,
     organizationId?: string,

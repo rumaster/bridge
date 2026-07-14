@@ -40,6 +40,7 @@ import type {
   BroadcastTemplate,
   Channel,
   ConnectChannelRequest,
+  UpdateChannelRequest,
   CreateBroadcastRequest,
   CreateKnowledgeDocumentRequest,
   CreateWorkflowSubschemaRequest,
@@ -270,6 +271,32 @@ export const handlers = [
 
     currentChannels = [...currentChannels, channel];
     return HttpResponse.json({ channel: cloneChannel(channel) }, { status: 201 });
+  }),
+
+  http.put(`${API_PREFIX}/channels/:channelId`, async ({ params, request }) => {
+    const channel = currentChannels.find((item) => item.id === params.channelId);
+    if (!channel) {
+      return problem(404, "Not Found", "Channel not found.");
+    }
+    const body = (await request.json()) as Partial<UpdateChannelRequest>;
+    const updatedAt = "2026-07-03T10:40:00.000Z";
+    const updated: Channel = {
+      ...channel,
+      name: body.name?.trim() || channel.name,
+      config: body.config ?? channel.config,
+      updated_at: updatedAt
+    };
+    currentChannels = currentChannels.map((item) => (item.id === channel.id ? updated : item));
+    return HttpResponse.json({ channel: cloneChannel(updated) });
+  }),
+
+  http.delete(`${API_PREFIX}/channels/:channelId`, ({ params }) => {
+    const channel = currentChannels.find((item) => item.id === params.channelId);
+    if (!channel) {
+      return problem(404, "Not Found", "Channel not found.");
+    }
+    currentChannels = currentChannels.filter((item) => item.id !== channel.id);
+    return HttpResponse.json({ deleted: true, channel_id: channel.id });
   }),
 
   http.post(`${API_PREFIX}/mail/mailboxes`, async ({ request }) => {

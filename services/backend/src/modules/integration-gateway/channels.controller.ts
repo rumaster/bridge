@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Headers,
   HttpCode,
@@ -23,6 +24,7 @@ import {
   ChannelResponseDto,
   ConnectChannelRequestDto,
   ConnectChannelResponseDto,
+  DeleteChannelResponseDto,
   UpdateChannelRequestDto,
 } from "./integration-gateway.dto";
 import { IntegrationGatewayFacade } from "./integration-gateway.facade";
@@ -81,6 +83,21 @@ export class ChannelsController {
         config: dto.config,
       }),
     };
+  }
+
+  @Delete(":id")
+  @Version("1")
+  @ApiOperation({ summary: "Delete a channel and wipe its credentials" })
+  @ApiOkResponse({ type: DeleteChannelResponseDto })
+  async deleteChannel(
+    @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: string | string[] | undefined,
+    @Param("id") channelId: string,
+  ): Promise<DeleteChannelResponseDto> {
+    const channel = await this.integrationGateway.deleteChannel(
+      channelId,
+      getRequiredOrganizationId(organizationIdHeader),
+    );
+    return { deleted: true, channel_id: channel.id };
   }
 
   @Get(":id/capabilities")

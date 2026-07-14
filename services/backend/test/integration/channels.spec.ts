@@ -545,6 +545,61 @@ describe("C3.channels M2 omnichannel API", () => {
         expect(body.code).toBe("CHANNEL_NOT_FOUND");
       });
   });
+
+  it("deletes a channel via DELETE and removes it from the list (E0)", async () => {
+    const created = await request(app.getHttpServer())
+      .post("/api/v1/channels")
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
+      .send({
+        organization_id: ORG_ID,
+        channel_type: "web_chat",
+        name: "Web Chat To Delete",
+        credentials_ref: "secret://web-chat/tenant-a/delete-me",
+      })
+      .expect(201);
+    const channelId = created.body.channel.id;
+
+    await request(app.getHttpServer())
+      .delete(`/api/v1/channels/${channelId}`)
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body).toEqual({ deleted: true, channel_id: channelId });
+      });
+
+    // Канал исчез из списка организации.
+    await request(app.getHttpServer())
+      .get("/api/v1/channels")
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
+      .expect(200)
+      .expect(({ body }) => {
+        expect(body.map((channel: { id: string }) => channel.id)).not.toContain(channelId);
+      });
+
+    // Повторное удаление того же канала → 404.
+    await request(app.getHttpServer())
+      .delete(`/api/v1/channels/${channelId}`)
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
+      .expect(404)
+      .expect(({ body }) => {
+        expect(body.code).toBe("CHANNEL_NOT_FOUND");
+      });
+  });
+
+  it("returns 404 when deleting a channel that does not exist (E0)", async () => {
+    await request(app.getHttpServer())
+      .delete("/api/v1/channels/30000000-0000-4000-8000-0000000009fe")
+      .set("authorization", `Bearer ${ADMIN_TOKEN}`)
+      .set("x-organization-id", ORG_ID)
+      .expect(404)
+      .expect(({ body }) => {
+        expect(body.code).toBe("CHANNEL_NOT_FOUND");
+      });
+  });
 });
 
 function telegramResponse(body: Record<string, unknown>, status = 200) {
@@ -614,6 +669,18 @@ function createChannelsDatabaseStub(): Pick<PgDatabase, "withTenant"> {
 function runSql(channels: Map<string, StoredChannelRow>, text: string, values: readonly unknown[]) {
   if (text.includes("FROM auth_sessions")) {
     return { rowCount: 1, rows: [adminSessionRow()] };
+  }
+
+  // deleteChannel (DELETE /v1/channels/:id): удаляет строку, RETURNING projection.
+  // Проверяем раньше общих SELECT-веток — текст DELETE тоже содержит "FROM channels".
+  if (text.includes("DELETE FROM channels")) {
+    const [id, org] = values as [string, string];
+    const row = channels.get(id);
+    if (!row || row.organization_id !== org) {
+      return { rowCount: 0, rows: [] };
+    }
+    channels.delete(id);
+    return { rowCount: 1, rows: [selectProjection(row)] };
   }
 
   if (text.includes("INSERT INTO channels")) {
