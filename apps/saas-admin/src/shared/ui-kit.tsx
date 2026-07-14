@@ -6,6 +6,7 @@ import type {
   ElementType,
   InputHTMLAttributes,
   PropsWithChildren,
+  SelectHTMLAttributes,
   TextareaHTMLAttributes
 } from "react";
 import { Link } from "react-router-dom";
@@ -121,6 +122,49 @@ export const TextAreaInput = forwardRef<HTMLTextAreaElement, TextAreaInputProps>
     );
   }
 );
+
+export interface SelectOption {
+  label: string;
+  value: string;
+}
+
+export interface SelectInputProps extends SelectHTMLAttributes<HTMLSelectElement> {
+  label: string;
+  error?: string;
+  options: SelectOption[];
+}
+
+export const SelectInput = forwardRef<HTMLSelectElement, SelectInputProps>(function SelectInput(
+  { error, id, label, options, className, ...props },
+  ref
+) {
+  const inputId = id ?? label.toLowerCase().replaceAll(" ", "-");
+  const errorId = error ? `${inputId}-error` : undefined;
+
+  return (
+    <div className={`text-input ${className ?? ""}`}>
+      <label htmlFor={inputId}>{label}</label>
+      <select
+        aria-describedby={errorId}
+        aria-invalid={Boolean(error)}
+        id={inputId}
+        ref={ref}
+        {...props}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+      {error ? (
+        <span className="field-error" id={errorId}>
+          {error}
+        </span>
+      ) : null}
+    </div>
+  );
+});
 
 export interface CheckboxInputProps extends InputHTMLAttributes<HTMLInputElement> {
   label: string;

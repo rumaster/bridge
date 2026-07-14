@@ -374,8 +374,18 @@ textarea {
   background: #ffffff;
 }
 
+.text-input select {
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #c7d2de;
+  border-radius: 6px;
+  color: #1f2933;
+  background: #ffffff;
+}
+
 .text-input input[aria-invalid="true"],
-.text-input textarea[aria-invalid="true"] {
+.text-input textarea[aria-invalid="true"],
+.text-input select[aria-invalid="true"] {
   border-color: #b42318;
 }
 
