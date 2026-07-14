@@ -21,6 +21,12 @@
       "reason": "Управление каналами организации: добавлен маршрут DELETE /api/v1/channels/{id} (удаление канала связи) на существующий путь после заморозки, включён в опубликованную v1-поверхность согласно инварианту «every actual Nest /api/v1 route is published». Обновлён generated_operation_count 76→77; generated_path_count 64 без изменений (DELETE на уже опубликованном пути); добавлена surface-запись. Владелец контрактов: решение A (включить в v1).",
       "operation_count": "76 -> 77",
       "path_count": "64 -> 64"
+    },
+    {
+      "date": "2026-07-14",
+      "reason": "Редизайн Knowledge Base: документы — текстовые инструкции для AI Assistant (два поля: название и контент), эмбеддинг считается при сохранении. Убран маршрут POST /api/v1/knowledge/documents/{id}:reindex (индексация файлов больше не нужна). Обновлены generated_operation_count 77→76 и generated_path_count 64→63; surface-записи knowledge не затронуты (reindex не был опубликован в surface). Владелец контрактов: решение A (сузить v1-поверхность вместе с редизайном фичи).",
+      "operation_count": "77 -> 76",
+      "path_count": "64 -> 63"
     }
   ],
   "scope": {
@@ -51,8 +57,8 @@
       "base_path": "/api/v1",
       "openapi": {
         "artifact": "packages/contracts/openapi/backend-core/openapi.json",
-        "generated_operation_count": 77,
-        "generated_path_count": 64,
+        "generated_operation_count": 76,
+        "generated_path_count": 63,
         "metadata": {
           "x-contract-id": "C3",
           "x-owner": "SVC-API",

@@ -38,7 +38,6 @@ import type {
   RevokeUserSessionsResponse,
   Invitation,
   CreateInvitationRequest,
-  ReindexKnowledgeDocumentResponse,
   SaasAdminApiClient,
   SaveWorkflowDraftRequest,
   StartBroadcastRequest,
@@ -182,11 +181,6 @@ export function createSaasAdminApiClient(options: SaasAdminApiClientOptions = {}
         requestJson<KnowledgeDocument>(`/knowledge/documents/${documentId}`, {
           method: "PATCH",
           body: JSON.stringify(request)
-        }),
-      reindexDocument: (documentId: string) =>
-        requestJson<ReindexKnowledgeDocumentResponse>(`/knowledge/documents/${documentId}:reindex`, {
-          method: "POST",
-          body: JSON.stringify({})
         }),
       deleteDocument: (documentId: string) =>
         requestJson<DeleteKnowledgeDocumentResponse>(`/knowledge/documents/${documentId}`, {

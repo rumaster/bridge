@@ -132,42 +132,20 @@ export const mockKnowledgeDocuments: KnowledgeDocument[] = [
   {
     id: "kb-doc-returns",
     organization_id: "org-demo",
-    title: "FAQ возвратов",
-    source: "manual://returns",
-    status: "indexed",
-    indexed_at: "2026-07-03T09:30:00.000Z",
+    title: "Политика возвратов",
+    content:
+      "Возврат товара возможен в течение 14 дней при сохранении товарного вида и упаковки. Деньги возвращаются на карту в течение 5 рабочих дней после получения товара складом.",
     created_at: "2026-07-03T09:10:00.000Z",
-    updated_at: "2026-07-03T09:30:00.000Z",
-    file_name: "returns.md",
-    content_type: "text/markdown",
-    size_bytes: 4096
+    updated_at: "2026-07-03T09:30:00.000Z"
   },
   {
     id: "kb-doc-delivery",
     organization_id: "org-demo",
     title: "Регламент доставки",
-    source: "manual://delivery",
-    status: "indexing",
-    indexed_at: null,
+    content:
+      "Доставка по городу — 1–2 рабочих дня, курьером или в пункт выдачи. По России — 3–7 дней транспортной компанией. Стоимость рассчитывается при оформлении заказа.",
     created_at: "2026-07-03T09:35:00.000Z",
-    updated_at: "2026-07-03T09:36:00.000Z",
-    file_name: "delivery.pdf",
-    content_type: "application/pdf",
-    size_bytes: 8192
-  },
-  {
-    id: "kb-doc-prices",
-    organization_id: "org-demo",
-    title: "Прайс-лист",
-    source: "manual://prices",
-    status: "failed",
-    indexed_at: null,
-    created_at: "2026-07-03T09:15:00.000Z",
-    updated_at: "2026-07-03T09:20:00.000Z",
-    file_name: "prices.xlsx",
-    content_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    size_bytes: 10240,
-    error_message: "Файл содержит пустые обязательные колонки."
+    updated_at: "2026-07-03T09:36:00.000Z"
   }
 ];
 

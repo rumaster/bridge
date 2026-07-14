@@ -4,7 +4,6 @@ import {
   Delete,
   Get,
   Headers,
-  HttpCode,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -23,7 +22,6 @@ import {
   CreateKnowledgeDocumentDto,
   DeleteKnowledgeDocumentResponseDto,
   KnowledgeDocumentResponseDto,
-  ReindexKnowledgeDocumentResponseDto,
   UpdateKnowledgeDocumentDto,
 } from "./knowledge-base.dto";
 import { KnowledgeBaseService } from "./knowledge-base.service";
@@ -47,7 +45,7 @@ export class KnowledgeBaseController {
 
   @Post()
   @Version("1")
-  @ApiOperation({ summary: "Create a Knowledge Base document placeholder" })
+  @ApiOperation({ summary: "Create a Knowledge Base document and embed its content" })
   @ApiCreatedResponse({ type: KnowledgeDocumentResponseDto })
   createDocument(
     @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: HeaderValue,
@@ -69,21 +67,6 @@ export class KnowledgeBaseController {
       getRequiredOrganizationId(organizationIdHeader),
       documentId,
       body,
-    );
-  }
-
-  @Post(":id\\:reindex")
-  @Version("1")
-  @HttpCode(200)
-  @ApiOperation({ summary: "Queue a Knowledge Base document for reindexing" })
-  @ApiOkResponse({ type: ReindexKnowledgeDocumentResponseDto })
-  reindexDocument(
-    @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: HeaderValue,
-    @Param("id", new ParseUUIDPipe({ version: "4" })) documentId: string,
-  ): Promise<ReindexKnowledgeDocumentResponseDto> {
-    return this.knowledgeBase.reindexDocument(
-      getRequiredOrganizationId(organizationIdHeader),
-      documentId,
     );
   }
 

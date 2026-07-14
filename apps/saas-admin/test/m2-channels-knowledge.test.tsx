@@ -262,57 +262,47 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
     confirmSpy.mockRestore();
   });
 
-  it("uploads, updates, reindexes and deletes Knowledge Base documents", async () => {
+  it("creates, updates and deletes text Knowledge Base documents", async () => {
     const api = createMockSaasAdminApiClient();
     const createDocument = vi.spyOn(api.knowledge, "createDocument");
     const updateDocument = vi.spyOn(api.knowledge, "updateDocument");
-    const reindexDocument = vi.spyOn(api.knowledge, "reindexDocument");
     const deleteDocument = vi.spyOn(api.knowledge, "deleteDocument");
     const { user } = renderRoute("/knowledge", { api, realtime: createMockC7RealtimeClient([]) });
 
-    expect(await screen.findByRole("article", { name: /FAQ возвратов/ })).toBeInTheDocument();
+    expect(await screen.findByRole("article", { name: /Политика возвратов/ })).toBeInTheDocument();
 
-    await user.type(screen.getByLabelText("Название документа"), "Политика гарантий");
-    await user.type(screen.getByLabelText("Источник"), "manual://warranty");
-    await user.upload(
-      screen.getByLabelText("Файл документа"),
-      new File(["Гарантийные правила"], "warranty.md", { type: "text/markdown" })
-    );
-    await user.click(screen.getByRole("button", { name: "Загрузить документ" }));
+    const form = screen.getByRole("form", { name: "Новый документ" });
+    await user.type(within(form).getByLabelText("Название документа"), "Политика гарантий");
+    await user.type(within(form).getByLabelText(/Контент/), "Гарантия на технику — 12 месяцев.");
+    await user.click(within(form).getByRole("button", { name: "Добавить документ" }));
 
     expect(await screen.findByRole("article", { name: /Политика гарантий/ })).toBeInTheDocument();
     expect(createDocument).toHaveBeenCalledWith(
       expect.objectContaining({
         organization_id: mockSession.organization.id,
         title: "Политика гарантий",
-        source: "manual://warranty",
-        file_name: "warranty.md"
+        content: "Гарантия на технику — 12 месяцев."
       })
     );
 
-    const faqCard = screen.getByRole("article", { name: /FAQ возвратов/ });
-    const faqTitle = within(faqCard).getByLabelText("Название в KB");
-    await user.clear(faqTitle);
-    await user.type(faqTitle, "FAQ возвратов v2");
-    await user.click(within(faqCard).getByRole("button", { name: "Сохранить документ" }));
+    const returnsCard = screen.getByRole("article", { name: /Политика возвратов/ });
+    const returnsTitle = within(returnsCard).getByLabelText("Название документа");
+    await user.clear(returnsTitle);
+    await user.type(returnsTitle, "Политика возвратов v2");
+    await user.click(within(returnsCard).getByRole("button", { name: "Сохранить" }));
 
-    expect(await screen.findByRole("article", { name: /FAQ возвратов v2/ })).toBeInTheDocument();
+    expect(await screen.findByRole("article", { name: /Политика возвратов v2/ })).toBeInTheDocument();
     expect(updateDocument).toHaveBeenCalledWith(
       "kb-doc-returns",
-      expect.objectContaining({ title: "FAQ возвратов v2" })
+      expect.objectContaining({ title: "Политика возвратов v2" })
     );
 
-    const updatedFaqCard = screen.getByRole("article", { name: /FAQ возвратов v2/ });
-    await user.click(within(updatedFaqCard).getByRole("button", { name: "Переиндексировать" }));
-    expect(await within(updatedFaqCard).findByLabelText("Индексация FAQ возвратов v2")).toBeInTheDocument();
-    expect(reindexDocument).toHaveBeenCalledWith("kb-doc-returns");
-
-    const failedCard = screen.getByRole("article", { name: /Прайс-лист/ });
-    await user.click(within(failedCard).getByRole("button", { name: "Удалить документ" }));
+    const deliveryCard = screen.getByRole("article", { name: /Регламент доставки/ });
+    await user.click(within(deliveryCard).getByRole("button", { name: "Удалить" }));
 
     await waitFor(() => {
-      expect(screen.queryByRole("article", { name: /Прайс-лист/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole("article", { name: /Регламент доставки/ })).not.toBeInTheDocument();
     });
-    expect(deleteDocument).toHaveBeenCalledWith("kb-doc-prices");
+    expect(deleteDocument).toHaveBeenCalledWith("kb-doc-delivery");
   });
 });

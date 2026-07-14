@@ -397,28 +397,29 @@ export function createMockSaasAdminApiClient(
         if (!request.title.trim()) {
           throw new Error("Document title is required");
         }
+        if (!request.content.trim()) {
+          throw new Error("Document content is required");
+        }
 
         const createdAt = "2026-07-03T10:30:00.000Z";
         const document: KnowledgeDocument = {
           id: `kb-doc-created-${nextDocumentNumber++}`,
           organization_id: request.organization_id,
           title: request.title.trim(),
-          source: request.source?.trim() || null,
-          status: "indexing",
-          indexed_at: null,
+          content: request.content.trim(),
           created_at: createdAt,
-          updated_at: createdAt,
-          file_name: request.file_name,
-          content_type: request.content_type,
-          size_bytes: request.size_bytes
+          updated_at: createdAt
         };
 
         currentDocuments = [document, ...currentDocuments];
         return cloneKnowledgeDocument(document);
       },
       async updateDocument(documentId: string, request: UpdateKnowledgeDocumentRequest) {
-        if (!request.title.trim()) {
+        if (request.title !== undefined && !request.title.trim()) {
           throw new Error("Document title is required");
+        }
+        if (request.content !== undefined && !request.content.trim()) {
+          throw new Error("Document content is required");
         }
 
         let updated: KnowledgeDocument | null = null;
@@ -429,8 +430,8 @@ export function createMockSaasAdminApiClient(
 
           updated = {
             ...document,
-            title: request.title.trim(),
-            source: request.source?.trim() || null,
+            title: request.title !== undefined ? request.title.trim() : document.title,
+            content: request.content !== undefined ? request.content.trim() : document.content,
             updated_at: "2026-07-03T10:32:00.000Z"
           };
           return updated;
@@ -441,27 +442,6 @@ export function createMockSaasAdminApiClient(
         }
 
         return cloneKnowledgeDocument(updated);
-      },
-      async reindexDocument(documentId: string) {
-        const queuedAt = "2026-07-03T10:35:00.000Z";
-        currentDocuments = currentDocuments.map((document) =>
-          document.id === documentId
-            ? {
-                ...document,
-                status: "indexing",
-                indexed_at: null,
-                updated_at: queuedAt,
-                error_message: undefined
-              }
-            : document
-        );
-
-        return {
-          accepted: true,
-          document_id: documentId,
-          status: "indexing",
-          queued_at: queuedAt
-        };
       },
       async deleteDocument(documentId: string) {
         currentDocuments = currentDocuments.filter((document) => document.id !== documentId);

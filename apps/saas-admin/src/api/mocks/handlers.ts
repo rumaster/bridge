@@ -487,46 +487,13 @@ export const handlers = [
       id: `kb-doc-created-${nextDocumentNumber++}`,
       organization_id: body.organization_id ?? mockOrganization.id,
       title: body.title?.trim() ?? "",
-      source: body.source?.trim() || null,
-      status: "indexing",
-      indexed_at: null,
+      content: body.content?.trim() ?? "",
       created_at: createdAt,
-      updated_at: createdAt,
-      file_name: body.file_name,
-      content_type: body.content_type,
-      size_bytes: body.size_bytes
+      updated_at: createdAt
     };
 
     currentDocuments = [document, ...currentDocuments];
     return HttpResponse.json(cloneKnowledgeDocument(document), { status: 201 });
-  }),
-
-  http.post(/\/api\/v1\/knowledge\/documents\/([^/]+):reindex$/, ({ request }) => {
-    const documentId = getLastPathMatch(request.url, /\/knowledge\/documents\/([^/]+):reindex$/);
-    const document = currentDocuments.find((item) => item.id === documentId);
-    if (!document) {
-      return problem(404, "Not Found", "Knowledge document not found.");
-    }
-
-    const queuedAt = "2026-07-03T10:35:00.000Z";
-    currentDocuments = currentDocuments.map((item) =>
-      item.id === documentId
-        ? {
-            ...item,
-            status: "indexing",
-            indexed_at: null,
-            updated_at: queuedAt,
-            error_message: undefined
-          }
-        : item
-    );
-
-    return HttpResponse.json({
-      accepted: true,
-      document_id: documentId,
-      status: "indexing",
-      queued_at: queuedAt
-    });
   }),
 
   http.patch(`${API_PREFIX}/knowledge/documents/:documentId`, async ({ params, request }) => {
@@ -544,7 +511,7 @@ export const handlers = [
     const updated: KnowledgeDocument = {
       ...document,
       title: body.title?.trim() ?? document.title,
-      source: body.source?.trim() || null,
+      content: body.content?.trim() ?? document.content,
       updated_at: "2026-07-03T10:32:00.000Z"
     };
     currentDocuments = currentDocuments.map((item) => (item.id === updated.id ? updated : item));
@@ -1349,12 +1316,16 @@ function validateConnectChannel(input: Partial<ConnectChannelRequest>) {
 }
 
 function validateKnowledgeDocument(
-  input: Partial<CreateKnowledgeDocumentRequest | UpdateKnowledgeDocumentRequest>
+  input: Partial<CreateKnowledgeDocumentRequest & UpdateKnowledgeDocumentRequest>
 ) {
   const errors: NonNullable<ProblemDetails["errors"]> = [];
 
-  if (!input.title || input.title.trim().length < 2) {
+  if (input.title !== undefined && input.title.trim().length < 2) {
     errors.push({ field: "title", message: "Название документа должно содержать минимум 2 символа." });
+  }
+
+  if (input.content !== undefined && input.content.trim().length < 1) {
+    errors.push({ field: "content", message: "Контент документа не может быть пустым." });
   }
 
   return errors;

@@ -41,8 +41,8 @@ describe("SaaS Admin navigation API surface", () => {
           expect.objectContaining({
             id: "30000000-0000-4000-8000-000000000701",
             organization_id: ORG_ID,
-            title: "FAQ возвратов",
-            status: "indexed",
+            title: "Политика возвратов",
+            content: "Возврат товара возможен в течение 14 дней.",
           }),
         ]);
       });
@@ -105,13 +105,11 @@ function createNavigationDatabaseStub(): Pick<PgDatabase, "withTenant"> {
               rowCount: 1,
               rows: [
                 {
+                  content: "Возврат товара возможен в течение 14 дней.",
                   created_at: new Date("2026-07-04T10:01:00.000Z"),
                   id: "30000000-0000-4000-8000-000000000701",
-                  indexed_at: new Date("2026-07-04T10:02:00.000Z"),
                   organization_id: ORG_ID,
-                  source: "manual://returns",
-                  status: "indexed",
-                  title: "FAQ возвратов",
+                  title: "Политика возвратов",
                   updated_at: new Date("2026-07-04T10:02:00.000Z"),
                 },
               ],

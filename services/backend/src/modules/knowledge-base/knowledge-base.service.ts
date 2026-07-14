@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { Injectable, NotFoundException } from "@nestjs/common";
+import type { PoolClient } from "pg";
 
 import { PgDatabase } from "../../common/database/database.service";
 import {
@@ -8,20 +9,25 @@ import {
   DeleteKnowledgeDocumentResponseDto,
   KnowledgeDocumentResponseDto,
   KnowledgeDocumentRow,
-  ReindexKnowledgeDocumentResponseDto,
   UpdateKnowledgeDocumentDto,
   mapKnowledgeDocument,
 } from "./knowledge-base.dto";
+import { KnowledgeEmbeddingService } from "./knowledge-embedding.service";
+
+const DOCUMENT_COLUMNS = "id, organization_id, title, content, created_at, updated_at";
 
 @Injectable()
 export class KnowledgeBaseService {
-  constructor(private readonly database: PgDatabase) {}
+  constructor(
+    private readonly database: PgDatabase,
+    private readonly embedding: KnowledgeEmbeddingService,
+  ) {}
 
   async listDocuments(organizationId: string): Promise<KnowledgeDocumentResponseDto[]> {
     return this.database.withTenant(organizationId, async (client) => {
       const result = await client.query<KnowledgeDocumentRow>(
         `
-          SELECT id, organization_id, title, source, status, indexed_at, created_at, updated_at
+          SELECT ${DOCUMENT_COLUMNS}
           FROM knowledge_documents
           WHERE organization_id = $1
           ORDER BY updated_at DESC, id
@@ -37,24 +43,26 @@ export class KnowledgeBaseService {
     organizationId: string,
     payload: CreateKnowledgeDocumentDto,
   ): Promise<KnowledgeDocumentResponseDto> {
+    const title = payload.title.trim();
+    const content = payload.content.trim();
+    // Embed before opening the transaction so we never hold a DB txn across a
+    // network call to the embedding provider.
+    const embedding = await this.embedding.embed(`${title}\n\n${content}`);
+
     return this.database.withTenant(organizationId, async (client) => {
+      const documentId = randomUUID();
       const result = await client.query<KnowledgeDocumentRow>(
         `
           INSERT INTO knowledge_documents (
-            id,
-            organization_id,
-            title,
-            source,
-            status,
-            indexed_at,
-            created_at,
-            updated_at
+            id, organization_id, title, content, status, indexed_at, created_at, updated_at
           )
-          VALUES ($1, $2, $3, $4, 'indexing', NULL, now(), now())
-          RETURNING id, organization_id, title, source, status, indexed_at, created_at, updated_at
+          VALUES ($1, $2, $3, $4, 'indexed', now(), now(), now())
+          RETURNING ${DOCUMENT_COLUMNS}
         `,
-        [randomUUID(), organizationId, payload.title.trim(), normalizeSource(payload.source)],
+        [documentId, organizationId, title, content],
       );
+
+      await this.writeEmbedding(client, organizationId, documentId, content, embedding);
 
       return mapKnowledgeDocument(result.rows[0]);
     });
@@ -65,63 +73,40 @@ export class KnowledgeBaseService {
     documentId: string,
     payload: UpdateKnowledgeDocumentDto,
   ): Promise<KnowledgeDocumentResponseDto> {
+    const nextTitle = payload.title?.trim();
+    const nextContent = payload.content?.trim();
+    const hasTitle = nextTitle !== undefined;
+    const hasContent = nextContent !== undefined;
+
     return this.database.withTenant(organizationId, async (client) => {
-      const hasTitle = payload.title !== undefined;
-      const hasSource = Object.prototype.hasOwnProperty.call(payload, "source");
       const result = await client.query<KnowledgeDocumentRow>(
         `
           UPDATE knowledge_documents
           SET title = CASE WHEN $3 THEN $4 ELSE title END,
-              source = CASE WHEN $5 THEN $6 ELSE source END,
+              content = CASE WHEN $5 THEN $6 ELSE content END,
+              status = 'indexed',
+              indexed_at = now(),
               updated_at = now()
           WHERE organization_id = $1 AND id = $2
-          RETURNING id, organization_id, title, source, status, indexed_at, created_at, updated_at
+          RETURNING ${DOCUMENT_COLUMNS}
         `,
-        [
-          organizationId,
-          documentId,
-          hasTitle,
-          payload.title?.trim() ?? null,
-          hasSource,
-          normalizeSource(payload.source),
-        ],
+        [organizationId, documentId, hasTitle, nextTitle ?? null, hasContent, nextContent ?? null],
       );
 
       if (result.rowCount === 0) {
         throw documentNotFound(documentId);
       }
 
-      return mapKnowledgeDocument(result.rows[0]);
-    });
-  }
+      const document = result.rows[0];
 
-  async reindexDocument(
-    organizationId: string,
-    documentId: string,
-  ): Promise<ReindexKnowledgeDocumentResponseDto> {
-    return this.database.withTenant(organizationId, async (client) => {
-      const result = await client.query<Pick<KnowledgeDocumentRow, "id" | "updated_at">>(
-        `
-          UPDATE knowledge_documents
-          SET status = 'indexing',
-              indexed_at = NULL,
-              updated_at = now()
-          WHERE organization_id = $1 AND id = $2
-          RETURNING id, updated_at
-        `,
-        [organizationId, documentId],
-      );
-
-      if (result.rowCount === 0) {
-        throw documentNotFound(documentId);
+      // The embedding is a function of (title, content), so re-embed whenever
+      // either changed, against the final stored row.
+      if (hasTitle || hasContent) {
+        const embedding = await this.embedding.embed(`${document.title}\n\n${document.content}`);
+        await this.writeEmbedding(client, organizationId, documentId, document.content, embedding);
       }
 
-      return {
-        accepted: true,
-        document_id: result.rows[0].id,
-        queued_at: toIso(result.rows[0].updated_at),
-        status: "indexing",
-      };
+      return mapKnowledgeDocument(document);
     });
   }
 
@@ -130,6 +115,7 @@ export class KnowledgeBaseService {
     documentId: string,
   ): Promise<DeleteKnowledgeDocumentResponseDto> {
     return this.database.withTenant(organizationId, async (client) => {
+      // knowledge_chunks are removed by the ON DELETE CASCADE foreign key.
       const result = await client.query<{ id: string }>(
         `
           DELETE FROM knowledge_documents
@@ -149,11 +135,34 @@ export class KnowledgeBaseService {
       };
     });
   }
+
+  /** Replace the document's embedding with a single chunk carrying the whole content. */
+  private async writeEmbedding(
+    client: PoolClient,
+    organizationId: string,
+    documentId: string,
+    content: string,
+    embedding: number[],
+  ): Promise<void> {
+    await client.query(
+      `DELETE FROM knowledge_chunks WHERE organization_id = $1 AND document_id = $2`,
+      [organizationId, documentId],
+    );
+    await client.query(
+      `
+        INSERT INTO knowledge_chunks (
+          id, organization_id, document_id, chunk_no, content, embedding, metadata
+        )
+        VALUES ($1, $2, $3, 1, $4, $5::vector, '{}'::jsonb)
+      `,
+      [randomUUID(), organizationId, documentId, content, toVectorLiteral(embedding)],
+    );
+  }
 }
 
-function normalizeSource(source: string | undefined): null | string {
-  const normalized = source?.trim();
-  return normalized ? normalized : null;
+/** pgvector cannot bind arrays natively; pass a `[v1,v2,...]` literal cast with `::vector`. */
+function toVectorLiteral(embedding: number[]): string {
+  return `[${embedding.join(",")}]`;
 }
 
 function documentNotFound(documentId: string): NotFoundException {
@@ -162,8 +171,4 @@ function documentNotFound(documentId: string): NotFoundException {
     description: `Knowledge document ${documentId} was not found.`,
     humanMessage: "Документ базы знаний не найден.",
   });
-}
-
-function toIso(value: Date | string): string {
-  return value instanceof Date ? value.toISOString() : value;
 }

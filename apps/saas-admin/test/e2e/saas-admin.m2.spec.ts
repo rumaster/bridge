@@ -38,31 +38,23 @@ test("Каналы связи: список, realtime-статус, credentials_
   await expect(page.getByRole("article", { name: /Витрина Web Chat/ })).toBeVisible();
 });
 
-test("Knowledge Base: загрузка, переиндексация и удаление документа", async ({ page }) => {
+test("Knowledge Base: создание, редактирование и удаление текстового документа", async ({
+  page
+}) => {
   await loginAsAdmin(page, "/knowledge");
 
   await expect(page.getByRole("heading", { name: "Knowledge Base" })).toBeVisible();
-  await expect(page.getByRole("article", { name: /FAQ возвратов/ })).toBeVisible();
+  await expect(page.getByRole("article", { name: /Политика возвратов/ })).toBeVisible();
 
-  await page.getByLabel("Название документа").fill("Политика гарантий");
-  await page.getByLabel("Источник", { exact: true }).fill("manual://warranty");
-  await page.getByLabel("Файл документа").setInputFiles({
-    name: "warranty.md",
-    mimeType: "text/markdown",
-    buffer: Buffer.from("Гарантийные правила")
-  });
-  await page.getByRole("button", { name: "Загрузить документ" }).click();
+  const createForm = page.getByRole("form", { name: "Новый документ" });
+  await createForm.getByLabel("Название документа").fill("Политика гарантий");
+  await createForm.getByLabel(/Контент/).fill("Гарантия на технику — 12 месяцев с даты покупки.");
+  await createForm.getByRole("button", { name: "Добавить документ" }).click();
   await expect(page.getByRole("article", { name: /Политика гарантий/ })).toBeVisible();
 
   await page
-    .getByRole("article", { name: /FAQ возвратов/ })
-    .getByRole("button", { name: "Переиндексировать" })
+    .getByRole("article", { name: /Регламент доставки/ })
+    .getByRole("button", { name: "Удалить" })
     .click();
-  await expect(page.getByRole("article", { name: /FAQ возвратов/ })).toContainText("Индексация");
-
-  await page
-    .getByRole("article", { name: /Прайс-лист/ })
-    .getByRole("button", { name: "Удалить документ" })
-    .click();
-  await expect(page.getByRole("article", { name: /Прайс-лист/ })).toHaveCount(0);
+  await expect(page.getByRole("article", { name: /Регламент доставки/ })).toHaveCount(0);
 });
