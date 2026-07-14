@@ -164,10 +164,14 @@ textarea {
 }
 
 .workspace-main {
+  position: relative;
   display: flex;
   flex: 1;
   min-height: 0;
   min-width: 0;
+  /* AI-панель выезжает из-за правого края (translateX(100%)); без обрезки этот
+     кадр растягивал бы страницу и показывал горизонтальный скроллбар. */
+  overflow: hidden;
 }
 
 .workspace-content {
@@ -1763,17 +1767,113 @@ div.broadcast-stats {
 }
 
 /* ── AI Onboarding (C4) ───────────────────────────────────────────────── */
-.onboarding-layout {
+/*
+ * Боковая AI-панель: язычок у правого края и выезжающий слой поверх контента.
+ * Позиционируется внутри .workspace-main, поэтому не заезжает под верхнее меню
+ * и занимает всю высоту рабочей области.
+ */
+.ai-panel-tab {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  z-index: 15;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
-  align-items: start;
-  gap: 16px;
+  place-items: center;
+  width: 28px;
+  height: 56px;
+  transform: translateY(-50%);
+  border: 1px solid #c7d2de;
+  border-right: none;
+  border-radius: 6px 0 0 6px;
+  color: #22313f;
+  background: #ffffff;
+  cursor: pointer;
+  box-shadow: -2px 0 8px rgba(23, 35, 49, 0.1);
 }
 
-.onboarding-conversation {
+.ai-panel-tab:hover {
+  background: #eef4fb;
+}
+
+/* Подложка только в широком режиме — в узком контент под панелью остаётся рабочим. */
+.ai-panel-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  background: rgba(23, 35, 49, 0.32);
+}
+
+.ai-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  max-width: 100%;
+  border-left: 1px solid #c7d2de;
+  background: #f7f9fc;
+  box-shadow: -8px 0 24px rgba(23, 35, 49, 0.16);
+  transition: width 0.18s ease-out;
+  animation: ai-panel-in 0.18s ease-out;
+}
+
+.ai-panel--wide {
+  width: 640px;
+}
+
+@keyframes ai-panel-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.ai-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #dbe3ec;
+  background: #ffffff;
+}
+
+.ai-panel-header h2 {
+  font-size: 1rem;
+}
+
+.ai-panel-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.ai-panel-control {
   display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #22313f;
+  background: transparent;
+  cursor: pointer;
+}
+
+.ai-panel-control:hover {
+  background: #eef4fb;
+}
+
+.ai-panel-body {
+  display: grid;
+  align-content: start;
   gap: 16px;
-  min-width: 0;
+  padding: 16px;
+  overflow-y: auto;
 }
 
 .onboarding-dialog {
@@ -1973,11 +2073,6 @@ div.broadcast-stats {
   }
 }
 
-@media (max-width: 900px) {
-  .onboarding-layout {
-    grid-template-columns: 1fr;
-  }
-}
 
 /* Пользователи и роли (менеджеры организации) */
 .field {

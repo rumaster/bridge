@@ -32,7 +32,6 @@ const KEY_SCREENS: AdminScreen[] = [
   { path: "/channels", heading: "Каналы связи" },
   { path: "/knowledge", heading: "Knowledge Base" },
   { path: "/workflow", heading: "Workflow" },
-  { path: "/onboarding", heading: "AI Onboarding" },
   { path: "/broadcast", heading: "Broadcast" },
   { path: "/notifications", heading: "Notification" }
 ];
@@ -46,7 +45,6 @@ const SCREEN_READY_HEADINGS: Record<string, string[]> = {
     "Канал Telegram Support недоступен",
     "Использовано 80% месячного лимита сообщений"
   ],
-  "/onboarding": ["Текущая конфигурация"],
   // Дожидаемся полного рендера редактора (палитра + панель свойств/связей),
   // иначе снапшот заголовков нестабилен из-за асинхронной загрузки черновика.
   "/workflow": ["Автоответчик обращений", "Информация о схеме", "Свойства узла", "Связи узлов"]
@@ -111,7 +109,6 @@ describe("SaaS Administration M5 acceptance and accessibility", () => {
       "Пользователи",
       "Каналы",
       "Knowledge Base",
-      "AI Onboarding",
       "Broadcast",
       "Уведомления"
     ]);

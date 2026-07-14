@@ -1,12 +1,13 @@
+import { useState } from "react";
 import {
   Bell,
   BookOpen,
   Building2,
   Cable,
+  ChevronLeft,
   LayoutDashboard,
   LogOut,
   RadioTower,
-  Sparkles,
   Users,
   Workflow
 } from "lucide-react";
@@ -15,6 +16,8 @@ import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import type { AdminRole } from "../../api/client/types";
 import { hasAnyRole, useAuth } from "../../state/auth";
 import { Badge, Button } from "../../shared/ui-kit";
+import { AiAssistantPanel } from "./AiAssistantPanel";
+import type { AiPanelMode } from "./AiAssistantPanel";
 
 interface NavItem {
   to: string;
@@ -32,7 +35,6 @@ const navItems: NavItem[] = [
   { to: "/channels", label: "Каналы", icon: Cable, roles: administratorRoles },
   { to: "/knowledge", label: "Knowledge Base", icon: BookOpen, roles: administratorRoles },
   { to: "/workflow", label: "Workflow", icon: Workflow, roles: platformOperatorRoles },
-  { to: "/onboarding", label: "AI Onboarding", icon: Sparkles, roles: administratorRoles },
   { to: "/broadcast", label: "Broadcast", icon: RadioTower, roles: administratorRoles },
   { to: "/notifications", label: "Уведомления", icon: Bell, roles: administratorRoles }
 ];
@@ -40,8 +42,11 @@ const navItems: NavItem[] = [
 export function AppShell() {
   const { logout, session, status } = useAuth();
   const location = useLocation();
+  const [aiPanelMode, setAiPanelMode] = useState<AiPanelMode>("closed");
   const visibleNavItems = navItems.filter((item) => !item.roles || hasAnyRole(session, item.roles));
   const roleLabel = getRoleLabel(session?.roles[0]);
+  // AI-ассистент правит конфигурацию организации — доступен только администратору.
+  const canUseAiAssistant = hasAnyRole(session, administratorRoles);
   // Экраны с холстом-редактором (Workflow) занимают всю высоту окна без внутренних
   // отступов рабочей области — верхнее меню освобождает пространство под содержимое.
   const flush = location.pathname.startsWith("/workflow");
@@ -88,6 +93,29 @@ export function AppShell() {
         >
           <Outlet />
         </div>
+
+        {canUseAiAssistant ? (
+          aiPanelMode === "closed" ? (
+            <button
+              aria-expanded={false}
+              aria-label="Открыть панель AI-ассистента"
+              className="ai-panel-tab"
+              onClick={() => setAiPanelMode("half")}
+              title="AI-ассистент"
+              type="button"
+            >
+              <ChevronLeft aria-hidden="true" size={18} />
+            </button>
+          ) : (
+            <>
+              {/* Подложка только в широком режиме: в узком контент остаётся рабочим. */}
+              {aiPanelMode === "wide" ? (
+                <div className="ai-panel-backdrop" onClick={() => setAiPanelMode("closed")} />
+              ) : null}
+              <AiAssistantPanel mode={aiPanelMode} onModeChange={setAiPanelMode} />
+            </>
+          )
+        ) : null}
       </main>
     </div>
   );

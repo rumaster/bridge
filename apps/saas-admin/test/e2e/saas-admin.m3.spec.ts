@@ -94,9 +94,13 @@ test("Оператор платформы правит Workflow: безопас�
 });
 
 test("AI Onboarding применяет конфиг: команда, подтверждение и обновление UI", async ({ page }) => {
-  await loginAsUser(page, "/onboarding", "@admin_demo");
+  await loginAsUser(page, "/", "@admin_demo");
 
-  await expect(page.getByRole("heading", { name: "AI Onboarding", level: 1 })).toBeVisible();
+  // Ассистент живёт в боковой панели: язычок у правого края раскрывает чат,
+  // широкий режим добавляет сводку конфигурации.
+  await page.getByRole("button", { name: "Открыть панель AI-ассистента" }).click();
+  await expect(page.getByRole("dialog", { name: "AI-ассистент" })).toBeVisible();
+  await page.getByRole("button", { name: "Расширить панель" }).click();
 
   const configPanel = page.getByRole("complementary", { name: "Текущая конфигурация" });
   await expect(configPanel).toContainText(/10[  \s]?000/);

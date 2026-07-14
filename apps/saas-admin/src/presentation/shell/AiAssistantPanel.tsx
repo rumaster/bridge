@@ -1,5 +1,14 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
-import { Bot, CircleCheckBig, Send, ShieldAlert, Sparkles } from "lucide-react";
+import {
+  Bot,
+  ChevronLeft,
+  ChevronRight,
+  CircleCheckBig,
+  Send,
+  ShieldAlert,
+  Sparkles,
+  X
+} from "lucide-react";
 
 import type {
   OnboardingApplyResponse,
@@ -11,8 +20,25 @@ import type {
   OrganizationConfiguration
 } from "../../api/client/types";
 import { useSaasAdminApi } from "../../state/admin";
-import { hasAnyRole, useAuth } from "../../state/auth";
 import { Badge, Button, Panel, TextAreaInput } from "../../shared/ui-kit";
+import { useAuth } from "../../state/auth";
+
+/**
+ * Степени раскрытия боковой AI-панели:
+ * closed — свёрнута, у правого края видна только кнопка-язычок «<»;
+ * half   — диалог с ассистентом поверх контента, контент остаётся доступен;
+ * wide   — то же плюс сводка текущей конфигурации организации.
+ */
+export type AiPanelMode = "closed" | "half" | "wide";
+
+type OpenAiPanelMode = Exclude<AiPanelMode, "closed">;
+
+const PROMPT_SUGGESTIONS = [
+  "Подними месячный лимит сообщений до 50000",
+  "Включи AI-ассистента",
+  "Отключи автоматизацию Workflow",
+  'Переименуй организацию в «Северный ветер»'
+];
 
 type ConversationRole = "user" | "assistant" | "system";
 
@@ -22,17 +48,23 @@ interface ConversationMessage {
   text: string;
 }
 
-const PROMPT_SUGGESTIONS = [
-  "Подними месячный лимит сообщений до 50000",
-  "Включи AI-ассистента",
-  "Отключи автоматизацию Workflow",
-  'Переименуй организацию в «Северный ветер»'
-];
+interface AiAssistantPanelProps {
+  mode: OpenAiPanelMode;
+  onModeChange: (mode: AiPanelMode) => void;
+}
 
-export default function OnboardingPage() {
+/**
+ * Диалоговый помощник (ТЗ §16.8) формирует структурированную команду. После
+ * подтверждения администратором Backend проверяет полномочия и применяет
+ * изменения — панель отражает результат.
+ *
+ * Панель монтируется только в раскрытом состоянии, поэтому история диалога
+ * живёт до закрытия: конфигурация перечитывается при каждом открытии и не
+ * устаревает.
+ */
+export function AiAssistantPanel({ mode, onModeChange }: AiAssistantPanelProps) {
   const { session } = useAuth();
   const api = useSaasAdminApi();
-  const canEdit = hasAnyRole(session, ["administrator"]);
   const messageSeq = useRef(0);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [configuration, setConfiguration] = useState<OrganizationConfiguration | null>(null);
@@ -49,7 +81,7 @@ export default function OnboardingPage() {
   useEffect(() => {
     let active = true;
 
-    if (!session || !canEdit) {
+    if (!session) {
       setLoading(false);
       return () => {
         active = false;
@@ -83,7 +115,19 @@ export default function OnboardingPage() {
     return () => {
       active = false;
     };
-  }, [api, canEdit, session]);
+  }, [api, session]);
+
+  // Esc закрывает панель — привычный выход из наложенного слоя.
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        onModeChange("closed");
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onModeChange]);
 
   function appendMessage(role: ConversationRole, text: string) {
     messageSeq.current += 1;
@@ -148,118 +192,121 @@ export default function OnboardingPage() {
     appendMessage("system", "Команда отклонена администратором. Изменения не применялись.");
   }
 
+  const wide = mode === "wide";
+
   return (
-    <section className="page-section">
-      <div className="page-heading">
-        <Badge tone="neutral">AI Onboarding</Badge>
-        <h1>AI Onboarding</h1>
-        <p>
-          Диалоговый помощник (ТЗ §16.8) формирует структурированную команду. После подтверждения
-          администратором Backend проверяет полномочия и применяет изменения — UI отражает результат.
-        </p>
+    <aside aria-label="AI-ассистент" className={`ai-panel ai-panel--${mode}`} role="dialog">
+      <div className="ai-panel-header">
+        <div className="channel-title">
+          <Bot aria-hidden="true" size={20} />
+          <h2>AI-ассистент</h2>
+        </div>
+        <div className="ai-panel-controls">
+          <button
+            aria-label={wide ? "Сузить панель" : "Расширить панель"}
+            className="ai-panel-control"
+            onClick={() => onModeChange(wide ? "half" : "wide")}
+            title={wide ? "Сузить панель" : "Расширить панель"}
+            type="button"
+          >
+            {wide ? (
+              <ChevronRight aria-hidden="true" size={16} />
+            ) : (
+              <ChevronLeft aria-hidden="true" size={16} />
+            )}
+          </button>
+          <button
+            aria-label="Закрыть панель AI-ассистента"
+            className="ai-panel-control"
+            onClick={() => onModeChange("closed")}
+            title="Закрыть"
+            type="button"
+          >
+            <X aria-hidden="true" size={16} />
+          </button>
+        </div>
       </div>
 
-      {!canEdit ? (
-        <Panel className="empty-state">
-          <Badge tone="warning">Роль</Badge>
-          <h2>Раздел скрыт для текущей роли</h2>
-        </Panel>
-      ) : null}
-
-      {alert ? (
-        <div className="form-alert" role="alert">
-          {alert}
-        </div>
-      ) : null}
-
-      {canEdit ? (
-        <>
-          {loading ? <div className="route-loader">Загрузка конфигурации...</div> : null}
-
-          <div className="onboarding-layout">
-            <div className="onboarding-conversation">
-              <Panel aria-label="Диалог с AI Onboarding" as="section" className="onboarding-dialog">
-                <div className="panel-heading-row">
-                  <div className="channel-title">
-                    <Bot aria-hidden="true" size={22} />
-                    <div>
-                      <h2>Диалоговый помощник</h2>
-                      <p>Опишите желаемое изменение конфигурации или организации.</p>
-                    </div>
-                  </div>
-                </div>
-
-                <ol className="onboarding-thread" aria-label="История диалога">
-                  {messages.length === 0 ? (
-                    <li className="onboarding-empty muted">
-                      Начните диалог, например: «Подними месячный лимит до 50000».
-                    </li>
-                  ) : (
-                    messages.map((message) => (
-                      <li className={`onboarding-message ${message.role}`} key={message.id}>
-                        <span className="onboarding-message-role">{roleLabel(message.role)}</span>
-                        <span className="onboarding-message-text">{message.text}</span>
-                      </li>
-                    ))
-                  )}
-                </ol>
-
-                <form className="onboarding-form" onSubmit={(event) => void handleGenerate(event)}>
-                  <TextAreaInput
-                    error={promptError ?? undefined}
-                    id="onboarding-prompt"
-                    label="Опишите изменение"
-                    onChange={(event) => {
-                      setPrompt(event.currentTarget.value);
-                      setPromptError(null);
-                    }}
-                    placeholder="Например: включи AI-ассистента"
-                    rows={3}
-                    value={prompt}
-                  />
-                  <div className="onboarding-suggestions" aria-label="Подсказки">
-                    {PROMPT_SUGGESTIONS.map((suggestion) => (
-                      <button
-                        className="onboarding-suggestion"
-                        key={suggestion}
-                        onClick={() => {
-                          setPrompt(suggestion);
-                          setPromptError(null);
-                        }}
-                        type="button"
-                      >
-                        <Sparkles aria-hidden="true" size={12} />
-                        {suggestion}
-                      </button>
-                    ))}
-                  </div>
-                  <Button disabled={generating} type="submit">
-                    <Send aria-hidden="true" size={16} />
-                    Сформировать команду
-                  </Button>
-                </form>
-              </Panel>
-
-              {pendingCommand ? (
-                <OnboardingCommandCard
-                  applying={applying}
-                  command={pendingCommand}
-                  onApply={() => void handleApply()}
-                  onDiscard={handleDiscard}
-                />
-              ) : null}
-
-              {lastResult ? <OnboardingResultCard result={lastResult} /> : null}
-            </div>
-
-            <OnboardingConfigurationPanel
-              configuration={configuration}
-              organization={organization}
-            />
+      <div className="ai-panel-body">
+        {alert ? (
+          <div className="form-alert" role="alert">
+            {alert}
           </div>
-        </>
-      ) : null}
-    </section>
+        ) : null}
+
+        {loading ? <div className="route-loader">Загрузка конфигурации...</div> : null}
+
+        <Panel aria-label="Диалог с AI-ассистентом" as="section" className="onboarding-dialog">
+          <p className="muted">Опишите желаемое изменение конфигурации или организации.</p>
+
+          <ol className="onboarding-thread" aria-label="История диалога">
+            {messages.length === 0 ? (
+              <li className="onboarding-empty muted">
+                Начните диалог, например: «Подними месячный лимит до 50000».
+              </li>
+            ) : (
+              messages.map((message) => (
+                <li className={`onboarding-message ${message.role}`} key={message.id}>
+                  <span className="onboarding-message-role">{roleLabel(message.role)}</span>
+                  <span className="onboarding-message-text">{message.text}</span>
+                </li>
+              ))
+            )}
+          </ol>
+
+          <form className="onboarding-form" onSubmit={(event) => void handleGenerate(event)}>
+            <TextAreaInput
+              error={promptError ?? undefined}
+              id="onboarding-prompt"
+              label="Опишите изменение"
+              onChange={(event) => {
+                setPrompt(event.currentTarget.value);
+                setPromptError(null);
+              }}
+              placeholder="Например: включи AI-ассистента"
+              rows={3}
+              value={prompt}
+            />
+            <div className="onboarding-suggestions" aria-label="Подсказки">
+              {PROMPT_SUGGESTIONS.map((suggestion) => (
+                <button
+                  className="onboarding-suggestion"
+                  key={suggestion}
+                  onClick={() => {
+                    setPrompt(suggestion);
+                    setPromptError(null);
+                  }}
+                  type="button"
+                >
+                  <Sparkles aria-hidden="true" size={12} />
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+            <Button disabled={generating} type="submit">
+              <Send aria-hidden="true" size={16} />
+              Сформировать команду
+            </Button>
+          </form>
+        </Panel>
+
+        {pendingCommand ? (
+          <OnboardingCommandCard
+            applying={applying}
+            command={pendingCommand}
+            onApply={() => void handleApply()}
+            onDiscard={handleDiscard}
+          />
+        ) : null}
+
+        {lastResult ? <OnboardingResultCard result={lastResult} /> : null}
+
+        {/* Сводка конфигурации — только в широком режиме: в узком панель остаётся чатом. */}
+        {wide ? (
+          <OnboardingConfigurationPanel configuration={configuration} organization={organization} />
+        ) : null}
+      </div>
+    </aside>
   );
 }
 
@@ -277,7 +324,7 @@ function OnboardingCommandCard({ applying, command, onApply, onDiscard }: Onboar
     <Panel aria-label="Подготовленная команда" as="section" className="onboarding-command">
       <div className="panel-heading-row">
         <div>
-          <h2>Подготовленная команда</h2>
+          <h3>Подготовленная команда</h3>
           <p>{summary}</p>
         </div>
         <Badge tone={degraded ? "warning" : "success"}>
@@ -346,7 +393,7 @@ function OnboardingResultCard({ result }: OnboardingResultCardProps) {
         <div className="channel-title">
           <CircleCheckBig aria-hidden="true" size={20} />
           <div>
-            <h2>Результат применения</h2>
+            <h3>Результат применения</h3>
             <p>{applyStatusLabel(applyResult.status)}</p>
           </div>
         </div>
@@ -387,8 +434,8 @@ function OnboardingConfigurationPanel({
 }: OnboardingConfigurationPanelProps) {
   return (
     <Panel aria-label="Текущая конфигурация" as="aside" className="onboarding-config">
-      <h2>Текущая конфигурация</h2>
-      <p className="muted">UI отражает изменения после применения команды.</p>
+      <h3>Текущая конфигурация</h3>
+      <p className="muted">Панель отражает изменения после применения команды.</p>
 
       <dl className="metadata-list onboarding-config-list">
         <div>
