@@ -572,6 +572,7 @@ function ChannelCard({ capabilities, channel, onTest, testing, testMessage }: Ch
     .filter(([, value]) => value.supported)
     .map(([name]) => name);
   const errors = channel.error_log ?? [];
+  const identity = getChannelIdentity(channel);
 
   return (
     <Panel
@@ -592,8 +593,8 @@ function ChannelCard({ capabilities, channel, onTest, testing, testMessage }: Ch
 
       <dl className="metadata-list">
         <div>
-          <dt>credentials_ref</dt>
-          <dd>{channel.credentials_ref ?? "Не задан"}</dd>
+          <dt>{identity.label}</dt>
+          <dd>{identity.value}</dd>
         </div>
         <div>
           <dt>Последняя проверка</dt>
@@ -936,6 +937,39 @@ function getChannelIcon(status: ChannelStatus) {
       return <AlertTriangle aria-hidden="true" size={22} />;
     case "disabled":
       return <Clock3 aria-hidden="true" size={22} />;
+  }
+}
+
+/**
+ * Заголовок и значение информативной строки плитки в зависимости от типа канала.
+ * credentials_ref не несёт смысла для бизнеса, поэтому показываем публичную
+ * идентичность из config: bot_username (Telegram/MAX), widget_origin (Web Chat),
+ * from_email + имя отправителя (Email). Значения кладёт бэкенд в channel.config.
+ */
+function getChannelIdentity(channel: Channel): { label: string; value: string } {
+  const config = channel.config ?? {};
+  const read = (key: string) => (typeof config[key] === "string" ? (config[key] as string).trim() : "");
+
+  switch (channel.channel_type) {
+    case "telegram":
+    case "max": {
+      const username = read("bot_username");
+      return { label: "Bot username", value: username ? `@${username}` : "Не задан" };
+    }
+    case "web_chat": {
+      const origin = read("widget_origin");
+      return { label: "Widget origin", value: origin || "Не задан" };
+    }
+    case "email": {
+      const fromEmail = read("from_email");
+      const fromName = read("from_name");
+      if (!fromEmail) {
+        return { label: "От кого", value: "Не задан" };
+      }
+      return { label: "От кого", value: fromName ? `${fromName} <${fromEmail}>` : fromEmail };
+    }
+    default:
+      return { label: "Идентификатор", value: "Не задан" };
   }
 }
 
