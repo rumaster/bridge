@@ -12,14 +12,25 @@ import { Badge, Button, Panel, TextAreaInput, TextInput } from "../../shared/ui-
 interface DocumentDraft {
   title: string;
   content: string;
+  /** Ключевые фразы, по одной на строку (в API уходит массивом). */
+  sources: string;
 }
 
 type DraftFieldErrors = Partial<Record<keyof DocumentDraft, string>>;
 
 const emptyDraft: DocumentDraft = {
   title: "",
-  content: ""
+  content: "",
+  sources: ""
 };
+
+/** Текстовое поле «по одной фразе на строку» ⇄ массив фраз API. */
+function splitLines(value: string): string[] {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
 
 export default function KnowledgePage() {
   const { session } = useAuth();
@@ -113,7 +124,8 @@ export default function KnowledgePage() {
       const created = await api.knowledge.createDocument({
         organization_id: session.organization.id,
         title: createForm.title.trim(),
-        content: createForm.content.trim()
+        content: createForm.content.trim(),
+        embedding_sources: splitLines(createForm.sources)
       });
 
       setDocuments((current) => [created, ...current]);
@@ -151,7 +163,8 @@ export default function KnowledgePage() {
     try {
       const updated = await api.knowledge.updateDocument(document.id, {
         title: draft.title.trim(),
-        content: draft.content.trim()
+        content: draft.content.trim(),
+        embedding_sources: splitLines(draft.sources)
       });
       setDocuments((current) => replaceDocument(current, updated));
       setDrafts((current) => ({
@@ -192,8 +205,9 @@ export default function KnowledgePage() {
         <Badge tone="neutral">Знания</Badge>
         <h1>Knowledge Base</h1>
         <p>
-          Текстовые инструкции для AI Assistant. Каждый документ подтягивается в промпт через
-          семантический поиск (RAG); эмбеддинг вычисляется при сохранении.
+          Текстовые инструкции для AI Assistant. Контент подставляется в промпт, а находится
+          документ по ключевым фразам: эмбеддинг вычисляется при сохранении для каждой фразы
+          отдельно. Документ без ключевых фраз сохранится, но в поиск не попадёт.
         </p>
       </div>
 
@@ -254,6 +268,15 @@ export default function KnowledgePage() {
                 placeholder="Текст, который будет добавлен в промпт при релевантном запросе."
                 rows={6}
                 value={createForm.content}
+              />
+              <TextAreaInput
+                error={createErrors.sources}
+                id="knowledge-create-sources"
+                label="Ключевые фразы — по одной на строку"
+                onChange={(event) => updateCreateField("sources", event.currentTarget.value)}
+                placeholder={"возврат товара\nкак вернуть покупку\nденьги за возврат"}
+                rows={4}
+                value={createForm.sources}
               />
             </div>
           </Panel>
@@ -322,6 +345,13 @@ function KnowledgeDocumentCard({
           rows={6}
           value={draft.content}
         />
+        <TextAreaInput
+          id={`knowledge-sources-${document.id}`}
+          label="Ключевые фразы — по одной на строку (пересчитают эмбеддинги)"
+          onChange={(event) => onDraftChange("sources", event.currentTarget.value)}
+          rows={4}
+          value={draft.sources}
+        />
       </div>
 
       <div className="form-actions">
@@ -359,7 +389,8 @@ function toDrafts(documents: KnowledgeDocument[]) {
 function toDraft(document: KnowledgeDocument): DocumentDraft {
   return {
     title: document.title,
-    content: document.content
+    content: document.content,
+    sources: (document.embedding_sources ?? []).join("\n")
   };
 }
 

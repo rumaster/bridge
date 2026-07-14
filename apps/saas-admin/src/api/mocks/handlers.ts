@@ -488,6 +488,7 @@ export const handlers = [
       organization_id: body.organization_id ?? mockOrganization.id,
       title: body.title?.trim() ?? "",
       content: body.content?.trim() ?? "",
+      embedding_sources: normalizeKnowledgeSources(body.embedding_sources),
       created_at: createdAt,
       updated_at: createdAt
     };
@@ -512,6 +513,10 @@ export const handlers = [
       ...document,
       title: body.title?.trim() ?? document.title,
       content: body.content?.trim() ?? document.content,
+      embedding_sources:
+        body.embedding_sources !== undefined
+          ? normalizeKnowledgeSources(body.embedding_sources)
+          : document.embedding_sources,
       updated_at: "2026-07-03T10:32:00.000Z"
     };
     currentDocuments = currentDocuments.map((item) => (item.id === updated.id ? updated : item));
@@ -1383,7 +1388,14 @@ function cloneChannel(channel: Channel): Channel {
 }
 
 function cloneKnowledgeDocument(document: KnowledgeDocument): KnowledgeDocument {
-  return { ...document };
+  return { ...document, embedding_sources: [...(document.embedding_sources ?? [])] };
+}
+
+/** Тримминг, удаление пустых и дублей с сохранением порядка (как на бэкенде). */
+function normalizeKnowledgeSources(sources: string[] | undefined): string[] {
+  return Array.from(
+    new Set((sources ?? []).map((source) => source.trim()).filter((source) => source.length > 0))
+  );
 }
 
 function cloneBroadcastStatsMap(stats: Record<string, BroadcastStats>): Record<string, BroadcastStats> {

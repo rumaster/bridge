@@ -49,6 +49,8 @@ test("Knowledge Base: создание, редактирование и удал
   const createForm = page.getByRole("form", { name: "Новый документ" });
   await createForm.getByLabel("Название документа").fill("Политика гарантий");
   await createForm.getByLabel(/Контент/).fill("Гарантия на технику — 12 месяцев с даты покупки.");
+  // Ключевые фразы — по одной на строку; по каждой считается свой эмбеддинг.
+  await createForm.getByLabel(/Ключевые фразы/).fill("гарантия на технику\nсрок гарантии");
   await createForm.getByRole("button", { name: "Добавить документ" }).click();
   await expect(page.getByRole("article", { name: /Политика гарантий/ })).toBeVisible();
 

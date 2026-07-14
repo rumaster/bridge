@@ -94,18 +94,23 @@ describe("SaaS Administration MSW mocks", () => {
     const createdDocument = await api.knowledge.createDocument({
       organization_id: "org-demo",
       title: "Политика гарантий",
-      content: "Гарантия на технику — 12 месяцев с даты покупки."
+      content: "Гарантия на технику — 12 месяцев с даты покупки.",
+      // Фразы нормализуются: тримминг, удаление пустых и дублей.
+      embedding_sources: ["  гарантия на технику ", "", "гарантия на технику", "срок гарантии"]
     });
     expect(createdDocument.content).toContain("Гарантия");
+    expect(createdDocument.embedding_sources).toEqual(["гарантия на технику", "срок гарантии"]);
 
     await expect(
       api.knowledge.updateDocument(createdDocument.id, {
         title: "Политика гарантий v2",
-        content: "Гарантия — 24 месяца."
+        content: "Гарантия — 24 месяца.",
+        embedding_sources: ["гарантия 24 месяца"]
       })
     ).resolves.toMatchObject({
       title: "Политика гарантий v2",
-      content: "Гарантия — 24 месяца."
+      content: "Гарантия — 24 месяца.",
+      embedding_sources: ["гарантия 24 месяца"]
     });
 
     await expect(api.knowledge.deleteDocument(createdDocument.id)).resolves.toMatchObject({
