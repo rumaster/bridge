@@ -70,7 +70,6 @@ export function createWebChatApiClient(
         method: "POST",
         body: JSON.stringify(
           omitUndefined({
-            channel: "web_chat",
             organization_id: input.organizationId,
             visitor_session_id: input.visitorSessionId ?? undefined,
             conversation_id: input.conversationId,
@@ -110,7 +109,6 @@ export function createWebChatApiClient(
       const response = await requestJson<unknown>("/web-chat/messages", {
         method: "POST",
         body: JSON.stringify({
-          channel: "web_chat",
           conversation_id: input.conversationId,
           endpoint_id: input.endpointId,
           idempotency_key: input.idempotencyKey,

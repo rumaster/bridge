@@ -28,7 +28,6 @@ describe("Bridge Web Chat API client M1", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]?.input).toBe("http://localhost/api/v1/web-chat/sessions");
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
-      channel: "web_chat",
       organization_id: "22345678-1234-4234-8234-123456789abc",
       visitor_session_id: "visitor-session-1",
       conversation_id: "32345678-1234-4234-8234-123456789abc",
@@ -78,7 +77,6 @@ describe("Bridge Web Chat API client M1", () => {
       "12345678-1234-4234-8234-123456789abc",
     );
     expect(JSON.parse(String(calls[0]?.init?.body))).toEqual({
-      channel: "web_chat",
       conversation_id: "32345678-1234-4234-8234-123456789abc",
       endpoint_id: "42345678-1234-4234-8234-123456789abc",
       idempotency_key: "12345678-1234-4234-8234-123456789abc",
