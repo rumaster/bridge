@@ -56,10 +56,12 @@ export class WebChatMessagesQueryDto {
   @IsOptional()
   cursor?: string;
 
-  @ApiPropertyOptional({ minimum: 1 })
+  // 0 допустим и означает «с начала» (нумерация с 1) — клиент присылал его на
+  // догрузке в пустом диалоге; @Min(1) отбивал такой запрос 400-й ошибкой.
+  @ApiPropertyOptional({ minimum: 0 })
   @Type(() => Number)
   @IsInt()
-  @Min(1)
+  @Min(0)
   @IsOptional()
   after_sequence_number?: number;
 }
