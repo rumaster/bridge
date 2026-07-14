@@ -350,6 +350,27 @@ services:
       edge-vpn-app:
         condition: service_started
 
+  # Web Chat REST-транзит по туннелю (issue #257 / web-chat-channel-production).
+  # Публикует app-ядро (backend:3000) на ТУННЕЛЬНОМ IP awg0 (10.7.0.1:3000) внутри
+  # network namespace edge-vpn-app, чтобы RF Edge ходил к ядру ПО AmneziaWG-туннелю
+  # (edge-gateway: EDGE_WEB_CHAT_BACKEND_URL=http://10.7.0.1:3000 → /api/v1/web-chat/*).
+  # Делит namespace ноды (как awg-server), поэтому bind попадает на awg0; наружу
+  # ничего не публикуется. Раньше поднимался ad-hoc `docker run` — теперь штатный
+  # сервис под профилем tunnel. При пересоздании edge-vpn-app сервис теряет netns
+  # (как awg-server) — авто-восстановление берёт на себя awg-watchdog role=app
+  # (AWG_FWD_CONTAINER=bridge-saas-webchat-tunnel-fwd-1).
+  webchat-tunnel-fwd:
+    profiles: ["tunnel"]
+    image: ${SOCAT_IMAGE:-alpine/socat:latest}
+    restart: unless-stopped
+    network_mode: "service:edge-vpn-app"
+    command: ["TCP-LISTEN:3000,fork,reuseaddr", "TCP:backend:3000"]
+    depends_on:
+      edge-vpn-app:
+        condition: service_started
+      backend:
+        condition: service_started
+
   fbp-engine:
     build:
       context: ../..

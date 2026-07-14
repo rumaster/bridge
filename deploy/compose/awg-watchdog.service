@@ -7,6 +7,7 @@
 # Прод (кластеры на РАЗНЫХ хостах) — ставьте роль под хост через systemctl edit
 # или отдельные drop-in Environment=:
 #   app-хост:  AWG_WATCHDOG_ROLE=app   REPO=/root/git/bridge
+#              AWG_FWD_CONTAINER=bridge-saas-webchat-tunnel-fwd-1  # web-chat транзит
 #   edge-хост: AWG_WATCHDOG_ROLE=edge  REPO=/home/ubuntu/git/bridge
 #              AWG_RF_ENV_FILES="--env-file /home/ubuntu/git/bridge/.env.rf"
 #              AWG_RF_UP_FLAGS=--no-build   # на edge сборка запрещена (память)
