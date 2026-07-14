@@ -86,7 +86,13 @@ export function createWebChatApiClient(
       if (getMessagesOptions.cursor) {
         query.set("cursor", getMessagesOptions.cursor);
       }
-      if (typeof getMessagesOptions.afterSequenceNumber === "number") {
+      // after_sequence_number=0 бессмыслен как фильтр (нумерация с 1) и его
+      // отбивал бэкенд-валидатор (@Min(1)) → 400 на догрузке в пустом диалоге.
+      // Шлём только положительное значение (как realtimeClient).
+      if (
+        typeof getMessagesOptions.afterSequenceNumber === "number" &&
+        getMessagesOptions.afterSequenceNumber > 0
+      ) {
         query.set("after_sequence_number", String(getMessagesOptions.afterSequenceNumber));
       }
       if (getMessagesOptions.organizationId) {

@@ -90,6 +90,17 @@ describe("Web Chat public API", () => {
       });
   });
 
+  it("принимает after_sequence_number=0 на догрузке истории (раньше @Min(1) → 400)", async () => {
+    await request(app.getHttpServer())
+      .get(`/api/v1/web-chat/conversations/${CONVERSATION_ID}/messages`)
+      .query({
+        organization_id: ORGANIZATION_ID,
+        visitor_session_id: VISITOR_SESSION_ID,
+        after_sequence_number: 0,
+      })
+      .expect(200);
+  });
+
   it("поддерживает optional email/code auth для Web Chat visitor", async () => {
     const start = await request(app.getHttpServer())
       .post("/api/v1/web-chat/email-code")

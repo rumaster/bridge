@@ -158,4 +158,20 @@ describe("Bridge Web Chat API client M1", () => {
       },
     ]);
   });
+
+  it("не отправляет after_sequence_number=0 (бессмысленный фильтр → бэкенд отбивал 400)", async () => {
+    const calls: Array<{ input: RequestInfo | URL; init?: RequestInit }> = [];
+    const fetcher: typeof fetch = async (input, init) => {
+      calls.push({ input, init });
+      return Response.json({ items: [], page: { limit: 20 } });
+    };
+    const client = createWebChatApiClient({ baseUrl: "http://localhost/api/v1", fetcher });
+
+    await client.getMessages("32345678-1234-4234-8234-123456789abc", {
+      afterSequenceNumber: 0,
+      limit: 20,
+    });
+
+    expect(String(calls[0]?.input)).not.toContain("after_sequence_number");
+  });
 });
