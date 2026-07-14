@@ -8,16 +8,15 @@ import type {
 } from "../../api/client/types";
 import { hasAnyRole, useAuth } from "../../state/auth";
 import { useSaasAdminApi } from "../../state/admin";
-import { Badge, Button, CheckboxInput, Panel, TextAreaInput, TextInput } from "../../shared/ui-kit";
+import { Badge, Button, Panel, SelectInput, TextAreaInput, TextInput } from "../../shared/ui-kit";
 
 interface OrganizationFormState {
   name: string;
   description: string;
   timezone: string;
+  // Preserved for the update payload but not editable in the UI.
   locale: string;
   defaultLanguage: string;
-  aiAssistantEnabled: boolean;
-  workflowAutomationEnabled: boolean;
   monthlyMessageLimit: string;
   notificationEmail: string;
   retentionDays: string;
@@ -25,10 +24,40 @@ interface OrganizationFormState {
 
 type FieldErrors = Partial<Record<keyof OrganizationFormState, string>>;
 
+// AI Assistant and Workflow automation are treated as always-on base
+// functionality, so the UI no longer exposes toggles for them.
+const AI_ASSISTANT_ALWAYS_ENABLED = true;
+const WORKFLOW_AUTOMATION_ALWAYS_ENABLED = true;
+
+const TIMEZONE_OPTIONS = [
+  "UTC",
+  "Europe/Kaliningrad",
+  "Europe/Moscow",
+  "Europe/Samara",
+  "Asia/Yekaterinburg",
+  "Asia/Omsk",
+  "Asia/Novosibirsk",
+  "Asia/Krasnoyarsk",
+  "Asia/Irkutsk",
+  "Asia/Yakutsk",
+  "Asia/Vladivostok",
+  "Asia/Magadan",
+  "Asia/Kamchatka",
+  "Europe/Kyiv",
+  "Europe/Minsk",
+  "Asia/Almaty",
+  "Asia/Tashkent",
+  "Europe/London",
+  "Europe/Berlin",
+  "America/New_York",
+  "America/Los_Angeles",
+  "Asia/Dubai",
+  "Asia/Shanghai",
+  "Asia/Tokyo"
+].map((zone) => ({ label: zone, value: zone }));
+
 const DEFAULT_CONFIGURATION_FORM_STATE = {
   defaultLanguage: "ru",
-  aiAssistantEnabled: false,
-  workflowAutomationEnabled: false,
   monthlyMessageLimit: "10000",
   notificationEmail: "",
   retentionDays: "90"
@@ -108,8 +137,8 @@ export default function OrganizationPage() {
         }),
         api.org.updateConfiguration(session.organization.id, {
           defaultLanguage: form.defaultLanguage,
-          aiAssistantEnabled: form.aiAssistantEnabled,
-          workflowAutomationEnabled: form.workflowAutomationEnabled,
+          aiAssistantEnabled: AI_ASSISTANT_ALWAYS_ENABLED,
+          workflowAutomationEnabled: WORKFLOW_AUTOMATION_ALWAYS_ENABLED,
           monthlyMessageLimit: Number(form.monthlyMessageLimit),
           notificationEmail: form.notificationEmail,
           retentionDays: Number(form.retentionDays)
@@ -173,19 +202,13 @@ export default function OrganizationPage() {
                 required
                 value={form.name}
               />
-              <TextInput
+              <SelectInput
                 error={fieldErrors.timezone}
                 label="Часовой пояс"
                 onChange={(event) => updateField("timezone", event.currentTarget.value)}
+                options={buildTimezoneOptions(form.timezone)}
                 required
                 value={form.timezone}
-              />
-              <TextInput
-                error={fieldErrors.locale}
-                label="Локаль"
-                onChange={(event) => updateField("locale", event.currentTarget.value)}
-                required
-                value={form.locale}
               />
               <TextAreaInput
                 error={fieldErrors.description}
@@ -200,14 +223,6 @@ export default function OrganizationPage() {
           <fieldset disabled={saving || loading}>
             <legend>Конфигурация</legend>
             <div className="form-grid">
-              <TextInput
-                error={fieldErrors.defaultLanguage}
-                label="Язык по умолчанию"
-                maxLength={2}
-                onChange={(event) => updateField("defaultLanguage", event.currentTarget.value)}
-                required
-                value={form.defaultLanguage}
-              />
               <TextInput
                 error={fieldErrors.notificationEmail}
                 label="Email уведомлений"
@@ -234,20 +249,6 @@ export default function OrganizationPage() {
                 type="number"
                 value={form.retentionDays}
               />
-              <div className="checkbox-grid">
-                <CheckboxInput
-                  checked={form.aiAssistantEnabled}
-                  label="AI Assistant"
-                  onChange={(event) => updateField("aiAssistantEnabled", event.currentTarget.checked)}
-                />
-                <CheckboxInput
-                  checked={form.workflowAutomationEnabled}
-                  label="Workflow"
-                  onChange={(event) =>
-                    updateField("workflowAutomationEnabled", event.currentTarget.checked)
-                  }
-                />
-              </div>
             </div>
           </fieldset>
 
@@ -278,11 +279,6 @@ function toFormState(
     timezone: organization.timezone,
     locale: organization.locale,
     defaultLanguage: configuration.defaultLanguage ?? DEFAULT_CONFIGURATION_FORM_STATE.defaultLanguage,
-    aiAssistantEnabled:
-      configuration.aiAssistantEnabled ?? DEFAULT_CONFIGURATION_FORM_STATE.aiAssistantEnabled,
-    workflowAutomationEnabled:
-      configuration.workflowAutomationEnabled ??
-      DEFAULT_CONFIGURATION_FORM_STATE.workflowAutomationEnabled,
     monthlyMessageLimit:
       configuration.monthlyMessageLimit != null
         ? String(configuration.monthlyMessageLimit)
@@ -331,12 +327,18 @@ function isOrganizationField(field: string): field is keyof OrganizationFormStat
     "timezone",
     "locale",
     "defaultLanguage",
-    "aiAssistantEnabled",
-    "workflowAutomationEnabled",
     "monthlyMessageLimit",
     "notificationEmail",
     "retentionDays"
   ].includes(field);
+}
+
+function buildTimezoneOptions(current: string) {
+  if (current && !TIMEZONE_OPTIONS.some((option) => option.value === current)) {
+    return [{ label: current, value: current }, ...TIMEZONE_OPTIONS];
+  }
+
+  return TIMEZONE_OPTIONS;
 }
 
 function getProblemMessage(error: unknown, fallback: string) {

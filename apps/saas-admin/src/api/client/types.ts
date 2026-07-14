@@ -731,6 +731,78 @@ export interface ProblemDetails {
   }>;
 }
 
+// ── Пользователи / менеджеры организации (C3 users, SVC-API) ──────────────
+// Администратор организации управляет менеджерами: список, создание, изменение
+// (роли/статус/контакты), блокировка (status=blocked → бэкенд гасит сессии),
+// приглашения. organizationId в теле patch/revoke не нужен — берётся из заголовка.
+
+export type OrganizationUserStatus = "active" | "blocked";
+
+export interface OrganizationUser {
+  id: string;
+  organizationId: string;
+  displayName: string;
+  email: string | null;
+  telegramUsername: string | null;
+  telegramId: string | null;
+  status: OrganizationUserStatus;
+  roleCodes: string[];
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+}
+
+export interface CreateUserRequest {
+  displayName: string;
+  email?: string;
+  telegramUsername?: string;
+  telegramId?: string;
+  status?: OrganizationUserStatus;
+  roleCodes?: string[];
+}
+
+export interface PatchUserRequest {
+  displayName?: string;
+  email?: string | null;
+  telegramUsername?: string | null;
+  telegramId?: string | null;
+  status?: OrganizationUserStatus;
+  roleCodes?: string[];
+}
+
+export interface UserListResponse {
+  items: OrganizationUser[];
+}
+
+export interface RevokeUserSessionsResponse {
+  userId: string;
+  organizationId: string;
+  revokedCount: number;
+}
+
+export interface Invitation {
+  id: string;
+  organizationId: string;
+  contactType: "email" | "telegram";
+  contactValue: string;
+  roleCode: string;
+  expiresAt: ISODateTime;
+  acceptedAt: ISODateTime | null;
+  createdBy: string | null;
+  createdAt: ISODateTime;
+  /** Сырой токен приглашения — показывается админу для передачи менеджеру
+   * (автодоставка письма/сообщения пока не подключена). */
+  token: string;
+}
+
+export interface CreateInvitationRequest {
+  organizationId: string;
+  contactType: "email" | "telegram";
+  contactValue: string;
+  roleCode?: "administrator" | "manager";
+  displayName?: string;
+  expiresInSeconds?: number;
+}
+
 export interface SaasAdminApiClient {
   auth: {
     getSession: () => Promise<AdminSession>;
@@ -761,6 +833,13 @@ export interface SaasAdminApiClient {
     getCapabilities: (channelId: string) => Promise<ChannelCapabilityDescriptor>;
     testChannel: (channelId: string) => Promise<ChannelTestResult>;
     orderMailbox: (request: OrderMailboxRequest) => Promise<OrderMailboxResponse>;
+  };
+  users: {
+    listUsers: (organizationId: string) => Promise<OrganizationUser[]>;
+    createUser: (organizationId: string, request: CreateUserRequest) => Promise<OrganizationUser>;
+    patchUser: (userId: string, request: PatchUserRequest) => Promise<OrganizationUser>;
+    revokeSessions: (userId: string) => Promise<RevokeUserSessionsResponse>;
+    createInvitation: (request: CreateInvitationRequest) => Promise<Invitation>;
   };
   knowledge: {
     listDocuments: () => Promise<KnowledgeDocument[]>;

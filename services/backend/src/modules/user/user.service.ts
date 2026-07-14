@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 
 import { PgDatabase } from "../../common/database/database.service";
 import type { Queryable } from "../../common/database/database.service";
@@ -21,8 +27,14 @@ import type {
 
 export interface UserMutationContext {
   actorUserId?: string;
+  /** Аутентифицированный пользователь сессии (из SessionAuthGuard) — источник
+   * истины для защит от самоблокировки/самопонижения (в отличие от actorUserId,
+   * который берётся из заголовка и служит для аудита). */
+  authenticatedUserId?: string;
   requestId?: string;
 }
+
+const ADMINISTRATOR_ROLE = "administrator";
 
 @Injectable()
 export class UserService {
@@ -137,6 +149,44 @@ export class UserService {
   ): Promise<UserResponseDto> {
     return this.database.withTenant(organizationId, async (client) => {
       const before = await this.getUserInTransaction(client, organizationId, userId);
+
+      const nextStatus = payload.status ?? before.status;
+      const nextRoles = payload.roleCodes
+        ? [...new Set(payload.roleCodes.map((code) => code.trim()))]
+        : before.roleCodes;
+      const wasActiveAdministrator =
+        before.status === "active" && before.roleCodes.includes(ADMINISTRATOR_ROLE);
+      const willBeActiveAdministrator =
+        nextStatus === "active" && nextRoles.includes(ADMINISTRATOR_ROLE);
+      const losesAdministrator =
+        before.roleCodes.includes(ADMINISTRATOR_ROLE) && !nextRoles.includes(ADMINISTRATOR_ROLE);
+      const becomesBlocked = nextStatus === "blocked" && before.status !== "blocked";
+
+      // Защита от самоблокировки/самопонижения: администратор не может заблокировать
+      // себя или снять с себя роль administrator (частый footgun → потеря доступа).
+      if (context.authenticatedUserId && context.authenticatedUserId === userId) {
+        if (becomesBlocked) {
+          throw selfMutationForbidden("нельзя заблокировать собственную учётную запись");
+        }
+        if (losesAdministrator) {
+          throw selfMutationForbidden("нельзя снять роль администратора с самого себя");
+        }
+      }
+
+      // Защита последнего администратора: если изменение выводит активного
+      // администратора из строя (блок или потеря роли) и других активных
+      // администраторов не остаётся — запрещаем, чтобы организация не осталась без админа.
+      if (wasActiveAdministrator && !willBeActiveAdministrator) {
+        const otherActiveAdministrators = await this.countActiveAdministratorsExcluding(
+          client,
+          organizationId,
+          userId,
+        );
+        if (otherActiveAdministrators === 0) {
+          throw lastAdministratorProtected();
+        }
+      }
+
       const result = await client.query(
         `
           UPDATE users
@@ -212,8 +262,65 @@ export class UserService {
         });
       }
 
+      // Блокировка обрывает доступ сразу: гасим активные сессии в той же транзакции
+      // (иначе выданная сессия жила бы до следующего запроса, где guard вернёт
+      // USER_INACTIVE).
+      if (becomesBlocked) {
+        const revoked = await client.query<{ id: string }>(
+          `
+            UPDATE auth_sessions
+            SET revoked_at = now()
+            WHERE organization_id = $1
+              AND user_id = $2
+              AND revoked_at IS NULL
+              AND expires_at > now()
+            RETURNING id
+          `,
+          [organizationId, userId],
+        );
+        if (revoked.rowCount && revoked.rowCount > 0) {
+          await this.audit.record(client, {
+            action: "auth.session.revoke",
+            actorUserId: context.actorUserId,
+            metadata: {
+              reason: "user_blocked",
+              revokedCount: revoked.rowCount,
+              revokedSessionIds: revoked.rows.map((row) => row.id),
+            },
+            objectId: userId,
+            objectType: "user",
+            organizationId,
+            requestId: context.requestId,
+          });
+        }
+      }
+
       return this.getUserInTransaction(client, organizationId, userId);
     });
+  }
+
+  /** Число активных администраторов организации, кроме указанного пользователя. */
+  private async countActiveAdministratorsExcluding(
+    queryable: Queryable,
+    organizationId: string,
+    excludedUserId: string,
+  ): Promise<number> {
+    const result = await queryable.query<{ count: number }>(
+      `
+        SELECT count(DISTINCT u.id)::int AS count
+        FROM users u
+        JOIN user_roles ur
+          ON ur.user_id = u.id AND ur.organization_id = u.organization_id
+        JOIN roles r ON r.id = ur.role_id
+        WHERE u.organization_id = $1
+          AND u.status = 'active'
+          AND r.code = 'administrator'
+          AND u.id <> $2
+      `,
+      [organizationId, excludedUserId],
+    );
+
+    return result.rows[0].count;
   }
 
   async revokeUserSessions(
@@ -392,5 +499,22 @@ function notFound(objectType: string, id: string): NotFoundException {
     code: "RESOURCE_NOT_FOUND",
     description: `${objectType} ${id} was not found`,
     humanMessage: "Ресурс не найден.",
+  });
+}
+
+function selfMutationForbidden(reason: string): ForbiddenException {
+  return new ForbiddenException({
+    code: "USER_SELF_MUTATION_FORBIDDEN",
+    description: `Self-mutation forbidden: ${reason}.`,
+    humanMessage: "Нельзя применить это действие к собственной учётной записи.",
+  });
+}
+
+function lastAdministratorProtected(): ConflictException {
+  return new ConflictException({
+    code: "LAST_ADMINISTRATOR_PROTECTED",
+    description:
+      "Cannot block or demote the last active administrator of the organization.",
+    humanMessage: "Нельзя заблокировать или разжаловать последнего администратора организации.",
   });
 }
