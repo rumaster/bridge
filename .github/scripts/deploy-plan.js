@@ -34,6 +34,19 @@ function summary(markdown) {
   console.log(markdown);
 }
 
+// Реестра нет → почти наверняка workflow запущен с ветки main. Она в этом
+// репозитории заморожена на древнем коммите (в дереве только docs/) и мейнлайном
+// НЕ является — сами воркфлоу лежат там лишь потому, что workflow_dispatch
+// регистрируется только с дефолтной ветки. Говорим это прямо, иначе пользователь
+// получит невнятный ENOENT.
+if (!fs.existsSync("deploy/components.json")) {
+  fail(
+    "Не найден deploy/components.json. Похоже, workflow запущен с ветки main — " +
+      "она заморожена и мейнлайном не является. Выберите ветку разработки " +
+      "(issue-1-17113a10fe0c) в поле «Use workflow from» или задайте её в ref.",
+  );
+}
+
 const reg = JSON.parse(fs.readFileSync("deploy/components.json", "utf8"));
 
 const targetName = (process.env.TARGET || "").trim();
