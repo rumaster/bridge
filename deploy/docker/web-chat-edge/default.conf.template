@@ -1,0 +1,28 @@
+# nginx-конфиг хостируемой страницы Web Chat на RF Edge (W5).
+# Обрабатывается envsubst образа nginx:alpine при старте: подставляется только
+# ${EDGE_GATEWAY_URL} (переменные nginx вида $uri/$host/$http_upgrade — НЕ в
+# окружении, поэтому сохраняются). См. deploy/docker/web-chat-edge/Dockerfile.
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Прозрачный транзит REST/WS в ядро через edge-gateway (по AmneziaWG-туннелю):
+    # /api/v1/web-chat/* — REST-сессии/сообщения; /api/v1/ws — C7 realtime (WS).
+    location /api/ {
+        proxy_pass ${EDGE_GATEWAY_URL};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 60s;
+    }
+
+    # SPA history-fallback: /chat/<organizationId> отдаёт index.html.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
