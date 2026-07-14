@@ -197,6 +197,29 @@ services:
       edge-gateway:
         condition: service_started
 
+  # Хостируемая страница Web Chat на RF Edge (W5, web-chat-channel-production).
+  # Раздаёт `/chat/<organizationId>` (SPA) и встраиваемый бандл через nginx +
+  # проксирует `/api/*` на edge-gateway, который транзитом отдаёт web-chat REST и
+  # C7 realtime (WS) в ядро ПО AmneziaWG-туннелю. Лёгкий рантайм (nginx+статика)
+  # вместо node/vite-preview app-стороны — под память edge. Профиль `webchat`
+  # опционален (RF-кластер без него поднимается как раньше). Сборка образа —
+  # тяжёлая (npm) и делается на CI/сборочном хосте; на edge переносится готовый
+  # образ и запускается с `--no-build`.
+  web-chat:
+    profiles: ["webchat"]
+    build:
+      context: ../..
+      dockerfile: deploy/docker/web-chat-edge/Dockerfile
+    restart: unless-stopped
+    environment:
+      # База edge-gateway в RF docker-сети (куда nginx проксирует /api/*).
+      EDGE_GATEWAY_URL: ${WEB_CHAT_EDGE_GATEWAY_URL:-http://edge-gateway:${EDGE_GATEWAY_PORT:-3060}}
+    ports:
+      - "${WEB_CHAT_PORT:-8083}:80"
+    depends_on:
+      edge-gateway:
+        condition: service_started
+
   # Смежная услуга: self-hosted почтовый сервер (docs/plan/mail-service-selfhosted.md).
   # Профиль `mail` опционален (по умолчанию выключен — RF-кластер поднимается как
   # раньше). M1: тест-мишень для edge email-драйверов — edge-gateway ходит по
