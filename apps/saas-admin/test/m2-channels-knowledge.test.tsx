@@ -49,7 +49,10 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
     });
 
     const webChatCard = screen.getByRole("article", { name: /Основной Web Chat/ });
-    expect(within(webChatCard).getByText("secret://web-chat/org-demo/main")).toBeInTheDocument();
+    // Плитка показывает информативную идентичность (Widget origin), а не credentials_ref.
+    expect(within(webChatCard).getByText("Widget origin")).toBeInTheDocument();
+    expect(within(webChatCard).getByText("https://demo.example.test")).toBeInTheDocument();
+    expect(within(webChatCard).queryByText("secret://web-chat/org-demo/main")).not.toBeInTheDocument();
     expect(screen.queryByText(/bot-token|access_token/i)).not.toBeInTheDocument();
     expect(within(webChatCard).getByText("text")).toBeInTheDocument();
     expect(within(webChatCard).getByText("read_receipt")).toBeInTheDocument();

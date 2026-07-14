@@ -487,7 +487,7 @@ export class IntegrationGatewayFacade implements OnApplicationBootstrap, OnModul
       envelope = secrets.encrypt(plaintext);
     }
 
-    const config = request.config ?? {};
+    const config = withEmailIdentityConfig(request.config ?? {}, channelType, request.email_credentials);
 
     const inserted = await this.requireDatabase().withTenant(
       request.organization_id,
@@ -613,7 +613,11 @@ export class IntegrationGatewayFacade implements OnApplicationBootstrap, OnModul
     const existing = await this.getChannel(request.channel_id, request.organization_id);
     const timestamp = this.clock();
     const name = request.name?.trim() || existing.name;
-    const config = request.config ?? existing.config;
+    const config = withEmailIdentityConfig(
+      request.config ?? existing.config,
+      existing.channel_type,
+      request.email_credentials,
+    );
 
     const plaintext = this.resolveSecretPlaintext({
       channelType: existing.channel_type,
@@ -1320,6 +1324,32 @@ export class IntegrationGatewayFacade implements OnApplicationBootstrap, OnModul
 
     return this.channelSecrets;
   }
+}
+
+/**
+ * Кладёт в config публичную идентичность email-отправителя (`from_email`,
+ * опционально `from_name`) из структурных кред. Это не секрет — он нужен плитке
+ * канала, чтобы показать «От кого» без расшифровки credentials_envelope. Для не-email
+ * каналов или когда креды не переданы (например обновление без ротации) config
+ * возвращается как есть.
+ */
+function withEmailIdentityConfig(
+  config: Record<string, unknown>,
+  channelType: ChannelType,
+  emailCredentials: EmailChannelCredentials | undefined,
+): Record<string, unknown> {
+  if (channelType !== "email" || !emailCredentials) {
+    return config;
+  }
+
+  const next: Record<string, unknown> = { ...config, from_email: emailCredentials.from_email };
+  const fromName = emailCredentials.from_name?.trim();
+  if (fromName) {
+    next.from_name = fromName;
+  } else {
+    delete next.from_name;
+  }
+  return next;
 }
 
 function mapRowToFacade(row: ChannelRow): ChannelFacade {
