@@ -39,7 +39,8 @@ const KEY_SCREENS: AdminScreen[] = [
 const SCREEN_READY_HEADINGS: Record<string, string[]> = {
   "/broadcast": ["Приветственная серия", "Июльская акция"],
   "/channels": ["Telegram Support"],
-  "/knowledge": ["Политика возвратов", "Регламент доставки"],
+  // Документы KB — список слева, а не заголовки плиток: ждём панели списка и редактора.
+  "/knowledge": ["Документы", "Новый документ"],
   "/notifications": [
     "Кампания «Приветственная серия» завершена",
     "Канал Telegram Support недоступен",

@@ -262,26 +262,31 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
     confirmSpy.mockRestore();
   });
 
-  it("creates, updates and deletes text Knowledge Base documents", async () => {
+  it("creates, updates and deletes text Knowledge Base documents from the single editor", async () => {
     const api = createMockSaasAdminApiClient();
     const createDocument = vi.spyOn(api.knowledge, "createDocument");
     const updateDocument = vi.spyOn(api.knowledge, "updateDocument");
     const deleteDocument = vi.spyOn(api.knowledge, "deleteDocument");
     const { user } = renderRoute("/knowledge", { api, realtime: createMockC7RealtimeClient([]) });
 
-    expect(await screen.findByRole("article", { name: /Политика возвратов/ })).toBeInTheDocument();
+    // Документы — список слева, а не плитки с формой в каждой.
+    expect(await screen.findByRole("button", { name: /Политика возвратов/ })).toBeInTheDocument();
+    expect(screen.queryByRole("article", { name: /Политика возвратов/ })).not.toBeInTheDocument();
 
-    const form = screen.getByRole("form", { name: "Новый документ" });
-    await user.type(within(form).getByLabelText("Название документа"), "Политика гарантий");
-    await user.type(within(form).getByLabelText(/Контент/), "Гарантия на технику — 12 месяцев.");
+    const editor = screen.getByRole("form", { name: "Редактор документа" });
+    // Пустой редактор — режим создания.
+    expect(within(editor).getByRole("button", { name: "Добавить документ" })).toBeInTheDocument();
+
+    await user.type(within(editor).getByLabelText("Название документа"), "Политика гарантий");
+    await user.type(within(editor).getByLabelText(/Контент/), "Гарантия на технику — 12 месяцев.");
     // Ключевые фразы — по одной на строку; уходят в API массивом.
     await user.type(
-      within(form).getByLabelText(/Ключевые фразы/),
+      within(editor).getByLabelText(/Ключевые фразы/),
       "гарантия на технику{enter}срок гарантии"
     );
-    await user.click(within(form).getByRole("button", { name: "Добавить документ" }));
+    await user.click(within(editor).getByRole("button", { name: "Добавить документ" }));
 
-    expect(await screen.findByRole("article", { name: /Политика гарантий/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Политика гарантий/ })).toBeInTheDocument();
     expect(createDocument).toHaveBeenCalledWith(
       expect.objectContaining({
         organization_id: mockSession.organization.id,
@@ -290,18 +295,21 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
         embedding_sources: ["гарантия на технику", "срок гарантии"]
       })
     );
+    // Созданный документ остаётся открытым — кнопка переключилась на обновление.
+    expect(within(editor).getByRole("button", { name: "Обновить документ" })).toBeInTheDocument();
 
-    const returnsCard = screen.getByRole("article", { name: /Политика возвратов/ });
+    await user.click(screen.getByRole("button", { name: /Политика возвратов/ }));
+
     // Фразы документа показаны по одной на строку и уходят обратно массивом.
-    expect(within(returnsCard).getByLabelText(/Ключевые фразы/)).toHaveValue(
+    expect(within(editor).getByLabelText(/Ключевые фразы/)).toHaveValue(
       "возврат товара\nкак вернуть покупку\nденьги за возврат"
     );
-    const returnsTitle = within(returnsCard).getByLabelText("Название документа");
+    const returnsTitle = within(editor).getByLabelText("Название документа");
     await user.clear(returnsTitle);
     await user.type(returnsTitle, "Политика возвратов v2");
-    await user.click(within(returnsCard).getByRole("button", { name: "Сохранить" }));
+    await user.click(within(editor).getByRole("button", { name: "Обновить документ" }));
 
-    expect(await screen.findByRole("article", { name: /Политика возвратов v2/ })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Политика возвратов v2/ })).toBeInTheDocument();
     expect(updateDocument).toHaveBeenCalledWith(
       "kb-doc-returns",
       expect.objectContaining({
@@ -310,12 +318,94 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
       })
     );
 
-    const deliveryCard = screen.getByRole("article", { name: /Регламент доставки/ });
-    await user.click(within(deliveryCard).getByRole("button", { name: "Удалить" }));
+    await user.click(screen.getByRole("button", { name: /Регламент доставки/ }));
+    await user.click(within(editor).getByRole("button", { name: "Удалить" }));
 
     await waitFor(() => {
-      expect(screen.queryByRole("article", { name: /Регламент доставки/ })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Регламент доставки/ })).not.toBeInTheDocument();
     });
     expect(deleteDocument).toHaveBeenCalledWith("kb-doc-delivery");
+    // После удаления редактор возвращается в режим создания.
+    expect(within(editor).getByRole("button", { name: "Добавить документ" })).toBeInTheDocument();
+  });
+
+  it("resets the Knowledge Base editor on «Новый документ»", async () => {
+    const { user } = renderRoute("/knowledge");
+
+    await user.click(await screen.findByRole("button", { name: /Политика возвратов/ }));
+
+    const editor = screen.getByRole("form", { name: "Редактор документа" });
+    expect(within(editor).getByLabelText("Название документа")).toHaveValue("Политика возвратов");
+
+    await user.click(screen.getByRole("button", { name: "Новый документ" }));
+
+    expect(within(editor).getByLabelText("Название документа")).toHaveValue("");
+    expect(within(editor).getByLabelText(/Контент/)).toHaveValue("");
+    expect(within(editor).getByLabelText(/Ключевые фразы/)).toHaveValue("");
+    expect(within(editor).getByRole("button", { name: "Добавить документ" })).toBeInTheDocument();
+  });
+
+  it("warns about unsaved Knowledge Base edits before switching documents", async () => {
+    const { user } = renderRoute("/knowledge");
+
+    await screen.findByRole("button", { name: /Политика возвратов/ });
+    const editor = screen.getByRole("form", { name: "Редактор документа" });
+    await user.type(within(editor).getByLabelText("Название документа"), "Черновик");
+
+    await user.click(screen.getByRole("button", { name: /Политика возвратов/ }));
+
+    // Отмена перехода — черновик остаётся в редакторе.
+    const dialog = await screen.findByRole("dialog", { name: "Несохранённые изменения" });
+    await user.click(within(dialog).getByRole("button", { name: "Остаться в редакторе" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(within(editor).getByLabelText("Название документа")).toHaveValue("Черновик");
+
+    // Подтверждение — изменения теряются, открывается выбранный документ.
+    await user.click(screen.getByRole("button", { name: /Политика возвратов/ }));
+    await user.click(
+      within(await screen.findByRole("dialog")).getByRole("button", {
+        name: "Потерять изменения и перейти"
+      })
+    );
+
+    expect(within(editor).getByLabelText("Название документа")).toHaveValue("Политика возвратов");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("warns about unsaved Knowledge Base edits before «Новый документ» and before leaving the page", async () => {
+    const { user } = renderRoute("/knowledge");
+
+    await user.click(await screen.findByRole("button", { name: /Политика возвратов/ }));
+    const editor = screen.getByRole("form", { name: "Редактор документа" });
+    await user.type(within(editor).getByLabelText(/Контент/), " Правка.");
+
+    // Переход к созданию нового документа предупреждает и отменяется.
+    await user.click(screen.getByRole("button", { name: "Новый документ" }));
+    await user.click(
+      within(await screen.findByRole("dialog", { name: "Несохранённые изменения" })).getByRole(
+        "button",
+        { name: "Остаться в редакторе" }
+      )
+    );
+    expect(within(editor).getByLabelText("Название документа")).toHaveValue("Политика возвратов");
+
+    // Уход со страницы блокируется до подтверждения.
+    await user.click(screen.getByRole("link", { name: "Каналы" }));
+    await user.click(
+      within(await screen.findByRole("dialog", { name: "Несохранённые изменения" })).getByRole(
+        "button",
+        { name: "Остаться в редакторе" }
+      )
+    );
+    expect(screen.getByRole("heading", { level: 1, name: "Knowledge Base" })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("link", { name: "Каналы" }));
+    await user.click(
+      within(await screen.findByRole("dialog", { name: "Несохранённые изменения" })).getByRole(
+        "button",
+        { name: "Потерять изменения и перейти" }
+      )
+    );
+    expect(await screen.findByRole("heading", { level: 1, name: "Каналы связи" })).toBeInTheDocument();
   });
 });
