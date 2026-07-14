@@ -104,11 +104,12 @@ export class UserController {
     @Headers(ACTOR_USER_ID_HEADER) actorUserIdHeader: string | string[] | undefined,
     @Param("id", new ParseUUIDPipe({ version: "4" })) id: string,
     @Body() body: PatchUserDto,
-    @Req() request: Request,
+    @Req() request: AuthenticatedRequest & RequestWithRequestId,
   ): Promise<UserResponseDto> {
     return this.users.patchUser(getRequiredOrganizationId(organizationIdHeader), id, body, {
       actorUserId: getOptionalActorUserId(actorUserIdHeader),
-      requestId: (request as RequestWithRequestId).requestId,
+      authenticatedUserId: request.auth?.user.id,
+      requestId: request.requestId,
     });
   }
 
