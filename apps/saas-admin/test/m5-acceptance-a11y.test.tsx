@@ -40,7 +40,7 @@ const KEY_SCREENS: AdminScreen[] = [
 const SCREEN_READY_HEADINGS: Record<string, string[]> = {
   "/broadcast": ["Приветственная серия", "Июльская акция"],
   "/channels": ["Telegram Support"],
-  "/knowledge": ["FAQ возвратов", "Регламент доставки", "Прайс-лист"],
+  "/knowledge": ["Политика возвратов", "Регламент доставки"],
   "/notifications": [
     "Кампания «Приветственная серия» завершена",
     "Канал Telegram Support недоступен",
