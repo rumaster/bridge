@@ -3533,6 +3533,17 @@
             "type": "string",
             "example": "Возврат товара возможен в течение 14 дней..."
           },
+          "embedding_sources": {
+            "example": [
+              "возврат товара",
+              "как вернуть покупку",
+              "деньги за возврат"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "created_at": {
             "type": "string",
             "example": "2026-07-04T10:01:00.000Z"
@@ -3547,6 +3558,7 @@
           "organization_id",
           "title",
           "content",
+          "embedding_sources",
           "created_at",
           "updated_at"
         ]
@@ -3565,6 +3577,17 @@
           "content": {
             "type": "string",
             "example": "Возврат товара возможен в течение 14 дней при сохранении товарного вида. Деньги возвращаются на карту в течение 5 рабочих дней."
+          },
+          "embedding_sources": {
+            "example": [
+              "возврат товара",
+              "как вернуть покупку",
+              "деньги за возврат"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -3582,6 +3605,17 @@
           "content": {
             "type": "string",
             "example": "Обновлённая инструкция для ассистента."
+          },
+          "embedding_sources": {
+            "example": [
+              "возврат товара",
+              "как вернуть покупку",
+              "деньги за возврат"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

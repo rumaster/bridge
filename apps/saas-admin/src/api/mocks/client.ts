@@ -407,6 +407,7 @@ export function createMockSaasAdminApiClient(
           organization_id: request.organization_id,
           title: request.title.trim(),
           content: request.content.trim(),
+          embedding_sources: normalizeSources(request.embedding_sources),
           created_at: createdAt,
           updated_at: createdAt
         };
@@ -432,6 +433,10 @@ export function createMockSaasAdminApiClient(
             ...document,
             title: request.title !== undefined ? request.title.trim() : document.title,
             content: request.content !== undefined ? request.content.trim() : document.content,
+            embedding_sources:
+              request.embedding_sources !== undefined
+                ? normalizeSources(request.embedding_sources)
+                : document.embedding_sources,
             updated_at: "2026-07-03T10:32:00.000Z"
           };
           return updated;
@@ -1124,5 +1129,12 @@ function mockProblem(code: string, humanMessage: string): Error & { body: { code
 }
 
 function cloneKnowledgeDocument(document: KnowledgeDocument): KnowledgeDocument {
-  return { ...document };
+  return { ...document, embedding_sources: [...(document.embedding_sources ?? [])] };
+}
+
+/** Тримминг, удаление пустых и дублей с сохранением порядка (как на бэкенде). */
+function normalizeSources(sources: string[] | undefined): string[] {
+  return Array.from(
+    new Set((sources ?? []).map((source) => source.trim()).filter((source) => source.length > 0))
+  );
 }

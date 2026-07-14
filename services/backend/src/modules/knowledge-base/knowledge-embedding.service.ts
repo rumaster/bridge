@@ -35,25 +35,46 @@ export class KnowledgeEmbeddingService {
   private readonly logger = new Logger(KnowledgeEmbeddingService.name);
 
   /**
-   * Embed a document's instruction text. Returns a `KB_EMBEDDING_DIMENSIONS`
-   * vector. When a remote provider is configured but fails, the error propagates
-   * so the save fails visibly rather than persisting a vector that won't match
-   * ai-platform's query embeddings.
+   * Embed a single text. Returns a `KB_EMBEDDING_DIMENSIONS` vector.
    */
   async embed(text: string): Promise<number[]> {
-    const provider = this.resolveProvider();
-    if (!provider) {
-      return embedTextDeterministic(text, KB_EMBEDDING_DIMENSIONS);
+    const [vector] = await this.embedMany([text]);
+    return vector;
+  }
+
+  /**
+   * Embed a batch of texts (the document's key phrases) in one provider call —
+   * mirrors fbp-engine, which embeds the whole `embeddingSources` array at once.
+   * Returns one vector per input, in the same order.
+   *
+   * When a remote provider is configured but fails, the error propagates so the
+   * save fails visibly rather than persisting vectors that won't match
+   * ai-platform's query embeddings.
+   */
+  async embedMany(texts: string[]): Promise<number[][]> {
+    if (texts.length === 0) {
+      return [];
     }
 
-    const vector = await this.remoteEmbed(text, provider);
-    if (vector.length !== KB_EMBEDDING_DIMENSIONS) {
+    const provider = this.resolveProvider();
+    const vectors = provider
+      ? await this.remoteEmbed(texts, provider)
+      : texts.map((text) => embedTextDeterministic(text, KB_EMBEDDING_DIMENSIONS));
+
+    if (vectors.length !== texts.length) {
       throw new Error(
-        `Embedding provider returned ${vector.length} dimensions, expected ${KB_EMBEDDING_DIMENSIONS}. ` +
-          `Set LLM_EMBEDDING_MODEL_NAME to a 1536-dimension model (e.g. ${DEFAULT_EMBEDDING_MODEL}).`,
+        `Embedding provider returned ${vectors.length} vectors for ${texts.length} inputs.`,
       );
     }
-    return vector;
+    for (const vector of vectors) {
+      if (vector.length !== KB_EMBEDDING_DIMENSIONS) {
+        throw new Error(
+          `Embedding provider returned ${vector.length} dimensions, expected ${KB_EMBEDDING_DIMENSIONS}. ` +
+            `Set LLM_EMBEDDING_MODEL_NAME to a 1536-dimension model (e.g. ${DEFAULT_EMBEDDING_MODEL}).`,
+        );
+      }
+    }
+    return vectors;
   }
 
   private resolveProvider(): EmbeddingProviderConfig | null {
@@ -95,13 +116,16 @@ export class KnowledgeEmbeddingService {
     return null;
   }
 
-  private async remoteEmbed(text: string, provider: EmbeddingProviderConfig): Promise<number[]> {
+  private async remoteEmbed(
+    texts: string[],
+    provider: EmbeddingProviderConfig,
+  ): Promise<number[][]> {
     let response: Response;
     try {
       response = await fetch(provider.endpoint, {
         method: "POST",
         headers: { "content-type": "application/json", ...provider.headers },
-        body: JSON.stringify({ model: provider.model, input: [text] }),
+        body: JSON.stringify({ model: provider.model, input: texts }),
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
     } catch (error) {
@@ -112,12 +136,22 @@ export class KnowledgeEmbeddingService {
       throw new Error(`Knowledge embedding request returned HTTP ${response.status}`);
     }
 
-    const body = (await response.json()) as { data?: Array<{ embedding?: number[] }> };
-    const embedding = body?.data?.[0]?.embedding;
-    if (!Array.isArray(embedding)) {
-      throw new Error("Knowledge embedding response did not contain a vector");
+    const body = (await response.json()) as {
+      data?: Array<{ embedding?: number[]; index?: number }>;
+    };
+    const data = body?.data;
+    if (!Array.isArray(data)) {
+      throw new Error("Knowledge embedding response did not contain vectors");
     }
-    return embedding;
+
+    // The API may return items out of order — restore the input order via `index`.
+    const ordered = [...data].sort((left, right) => (left.index ?? 0) - (right.index ?? 0));
+    return ordered.map((item) => {
+      if (!Array.isArray(item?.embedding)) {
+        throw new Error("Knowledge embedding response did not contain a vector");
+      }
+      return item.embedding;
+    });
   }
 }
 
