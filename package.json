@@ -29,7 +29,8 @@
     "db:migrate:rf:up": "node --import tsx scripts/db-migrate.ts up rf",
     "db:migrate:rf:down": "node --import tsx scripts/db-migrate.ts down rf",
     "db:seed": "node --import tsx scripts/db-seed.ts",
-    "ci": "npm run lint && npm test && npm run build"
+    "ci": "npm run lint && npm test && npm run build && npm run test:integration && npm run test:contract && npm run test:e2e",
+    "ci:quick": "npm run lint && npm test && npm run build && npm run test:contract"
   },
   "msw": {
     "workerDirectory": [

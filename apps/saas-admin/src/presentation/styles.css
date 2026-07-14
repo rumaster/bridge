@@ -322,6 +322,20 @@ textarea {
   background: transparent;
 }
 
+.button.danger {
+  border-color: #e5a3a3;
+  color: #8a1f1f;
+  background: #fdeaea;
+}
+
+.channel-edit-form {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;

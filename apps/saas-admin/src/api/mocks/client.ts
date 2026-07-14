@@ -5,6 +5,7 @@ import type {
   Channel,
   ChannelStatus,
   ConnectChannelRequest,
+  UpdateChannelRequest,
   OrderMailboxRequest,
   CreateBroadcastRequest,
   CreateKnowledgeDocumentRequest,
@@ -222,6 +223,25 @@ export function createMockSaasAdminApiClient(
         return {
           channel: cloneChannel(channel)
         };
+      },
+      async updateChannel(channelId: string, request: UpdateChannelRequest) {
+        const existing = findChannel(currentChannels, channelId);
+        const updatedAt = "2026-07-03T10:40:00.000Z";
+        const updated: Channel = {
+          ...existing,
+          name: request.name?.trim() || existing.name,
+          config: request.config ?? existing.config,
+          updated_at: updatedAt
+        };
+        currentChannels = currentChannels.map((channel) =>
+          channel.id === channelId ? updated : channel
+        );
+        return { channel: cloneChannel(updated) };
+      },
+      async deleteChannel(channelId: string) {
+        const existing = findChannel(currentChannels, channelId);
+        currentChannels = currentChannels.filter((channel) => channel.id !== existing.id);
+        return { deleted: true as const, channel_id: existing.id };
       },
       async getCapabilities(channelId: string) {
         const channel = findChannel(currentChannels, channelId);

@@ -163,6 +163,23 @@ export interface ConnectChannelResponse {
   channel: Channel;
 }
 
+/**
+ * Обновление канала (PUT /channels/:id). Все поля опциональны — шлём только
+ * изменяемые. Секрет (`credentials`/`email_credentials`) перешифровывается на
+ * бэкенде и не возвращается. organization_id берётся из заголовка, в тело не идёт.
+ */
+export interface UpdateChannelRequest {
+  name?: string;
+  credentials?: string;
+  email_credentials?: EmailChannelCredentials;
+  config?: Record<string, unknown>;
+}
+
+export interface DeleteChannelResponse {
+  deleted: true;
+  channel_id: string;
+}
+
 export interface OrderMailboxRequest {
   local_part: string;
   name?: string;
@@ -736,6 +753,11 @@ export interface SaasAdminApiClient {
   channels: {
     listChannels: () => Promise<Channel[]>;
     createChannel: (request: ConnectChannelRequest) => Promise<ConnectChannelResponse>;
+    updateChannel: (
+      channelId: string,
+      request: UpdateChannelRequest
+    ) => Promise<ConnectChannelResponse>;
+    deleteChannel: (channelId: string) => Promise<DeleteChannelResponse>;
     getCapabilities: (channelId: string) => Promise<ChannelCapabilityDescriptor>;
     testChannel: (channelId: string) => Promise<ChannelTestResult>;
     orderMailbox: (request: OrderMailboxRequest) => Promise<OrderMailboxResponse>;

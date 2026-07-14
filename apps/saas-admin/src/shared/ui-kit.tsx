@@ -11,7 +11,7 @@ import type {
 } from "react";
 import { Link } from "react-router-dom";
 
-type ButtonVariant = "primary" | "secondary" | "ghost";
+type ButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 
 type NativeButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   asLink?: false;

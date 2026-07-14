@@ -212,6 +212,56 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
     expect(createChannel).not.toHaveBeenCalled();
   });
 
+  it("edits a channel name from its card (PUT /channels/:id)", async () => {
+    const api = createMockSaasAdminApiClient();
+    const updateChannel = vi.spyOn(api.channels, "updateChannel");
+    const { user } = renderRoute("/channels", { api, realtime: createMockC7RealtimeClient([]) });
+
+    const webChatCard = await screen.findByRole("article", { name: /Основной Web Chat/ });
+    await user.click(within(webChatCard).getByRole("button", { name: "Редактировать" }));
+
+    const nameInput = within(webChatCard).getByLabelText("Название канала");
+    await user.clear(nameInput);
+    await user.type(nameInput, "Web Chat переименован");
+    await user.click(within(webChatCard).getByRole("button", { name: "Сохранить" }));
+
+    expect(await screen.findByRole("article", { name: /Web Chat переименован/ })).toBeInTheDocument();
+    expect(updateChannel).toHaveBeenCalledWith(
+      "channel-web-chat-main",
+      expect.objectContaining({ name: "Web Chat переименован" })
+    );
+  });
+
+  it("deletes a channel from its card after confirmation (DELETE /channels/:id)", async () => {
+    const api = createMockSaasAdminApiClient();
+    const deleteChannel = vi.spyOn(api.channels, "deleteChannel");
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const { user } = renderRoute("/channels", { api, realtime: createMockC7RealtimeClient([]) });
+
+    const webChatCard = await screen.findByRole("article", { name: /Основной Web Chat/ });
+    await user.click(within(webChatCard).getByRole("button", { name: /Удалить/ }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole("article", { name: /Основной Web Chat/ })).not.toBeInTheDocument();
+    });
+    expect(deleteChannel).toHaveBeenCalledWith("channel-web-chat-main");
+    confirmSpy.mockRestore();
+  });
+
+  it("does not delete a channel when confirmation is declined", async () => {
+    const api = createMockSaasAdminApiClient();
+    const deleteChannel = vi.spyOn(api.channels, "deleteChannel");
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const { user } = renderRoute("/channels", { api, realtime: createMockC7RealtimeClient([]) });
+
+    const webChatCard = await screen.findByRole("article", { name: /Основной Web Chat/ });
+    await user.click(within(webChatCard).getByRole("button", { name: /Удалить/ }));
+
+    expect(deleteChannel).not.toHaveBeenCalled();
+    expect(screen.getByRole("article", { name: /Основной Web Chat/ })).toBeInTheDocument();
+    confirmSpy.mockRestore();
+  });
+
   it("uploads, updates, reindexes and deletes Knowledge Base documents", async () => {
     const api = createMockSaasAdminApiClient();
     const createDocument = vi.spyOn(api.knowledge, "createDocument");
