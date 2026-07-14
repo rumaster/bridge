@@ -1,32 +1,24 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { BookOpen, FileUp, RefreshCw, Save, Trash2 } from "lucide-react";
+import { BookOpen, Plus, Save, Trash2 } from "lucide-react";
 
 import type {
   KnowledgeDocument,
-  KnowledgeDocumentStatus,
   ProblemDetails
 } from "../../api/client/types";
 import { useSaasAdminApi } from "../../state/admin";
 import { hasAnyRole, useAuth } from "../../state/auth";
-import { Badge, Button, Panel, TextInput } from "../../shared/ui-kit";
-
-interface UploadFormState {
-  title: string;
-  source: string;
-  file: File | null;
-}
+import { Badge, Button, Panel, TextAreaInput, TextInput } from "../../shared/ui-kit";
 
 interface DocumentDraft {
   title: string;
-  source: string;
+  content: string;
 }
 
-type UploadFieldErrors = Partial<Record<keyof UploadFormState, string>>;
+type DraftFieldErrors = Partial<Record<keyof DocumentDraft, string>>;
 
-const emptyUploadForm: UploadFormState = {
+const emptyDraft: DocumentDraft = {
   title: "",
-  source: "",
-  file: null
+  content: ""
 };
 
 export default function KnowledgePage() {
@@ -35,13 +27,13 @@ export default function KnowledgePage() {
   const canEdit = hasAnyRole(session, ["administrator"]);
   const [documents, setDocuments] = useState<KnowledgeDocument[]>([]);
   const [drafts, setDrafts] = useState<Record<string, DocumentDraft>>({});
-  const [uploadForm, setUploadForm] = useState<UploadFormState>(emptyUploadForm);
-  const [fieldErrors, setFieldErrors] = useState<UploadFieldErrors>({});
+  const [createForm, setCreateForm] = useState<DocumentDraft>(emptyDraft);
+  const [createErrors, setCreateErrors] = useState<DraftFieldErrors>({});
   const [alert, setAlert] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingDocumentId, setSavingDocumentId] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -79,19 +71,11 @@ export default function KnowledgePage() {
     };
   }, [api, canEdit, session]);
 
-  const summary = useMemo(() => {
-    const indexed = documents.filter((document) => document.status === "indexed").length;
-    const indexing = documents.filter((document) => document.status === "indexing").length;
-    const failed = documents.filter((document) => document.status === "failed").length;
-    return { failed, indexed, indexing, total: documents.length };
-  }, [documents]);
+  const total = useMemo(() => documents.length, [documents]);
 
-  function updateUploadField<TKey extends keyof UploadFormState>(
-    field: TKey,
-    value: UploadFormState[TKey]
-  ) {
-    setUploadForm((current) => ({ ...current, [field]: value }));
-    setFieldErrors((current) => ({ ...current, [field]: undefined }));
+  function updateCreateField(field: keyof DocumentDraft, value: string) {
+    setCreateForm((current) => ({ ...current, [field]: value }));
+    setCreateErrors((current) => ({ ...current, [field]: undefined }));
     setSuccess(null);
   }
 
@@ -106,37 +90,30 @@ export default function KnowledgePage() {
     setSuccess(null);
   }
 
-  async function handleUpload(event: FormEvent<HTMLFormElement>) {
+  async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!session) {
       return;
     }
 
-    const errors = validateUploadForm(uploadForm);
+    const errors = validateDraft(createForm);
     if (Object.keys(errors).length > 0) {
-      setFieldErrors(errors);
-      setAlert("Проверьте параметры документа.");
+      setCreateErrors(errors);
+      setAlert("Заполните название и контент документа.");
       return;
     }
 
-    setUploading(true);
+    setCreating(true);
     setAlert(null);
     setSuccess(null);
-    setFieldErrors({});
+    setCreateErrors({});
 
     try {
       const created = await api.knowledge.createDocument({
         organization_id: session.organization.id,
-        title: uploadForm.title.trim(),
-        ...(uploadForm.source.trim() ? { source: uploadForm.source.trim() } : {}),
-        ...(uploadForm.file
-          ? {
-              file_name: uploadForm.file.name,
-              content_type: uploadForm.file.type || "application/octet-stream",
-              size_bytes: uploadForm.file.size
-            }
-          : {})
+        title: createForm.title.trim(),
+        content: createForm.content.trim()
       });
 
       setDocuments((current) => [created, ...current]);
@@ -144,14 +121,14 @@ export default function KnowledgePage() {
         ...current,
         [created.id]: toDraft(created)
       }));
-      setUploadForm(emptyUploadForm);
-      setSuccess("Документ поставлен на индексацию");
+      setCreateForm(emptyDraft);
+      setSuccess("Документ добавлен и проиндексирован");
     } catch (error) {
       const problem = getProblemDetails(error);
-      setFieldErrors(toUploadFieldErrors(problem));
-      setAlert(problem?.detail ?? getProblemMessage(error, "Не удалось загрузить документ."));
+      setCreateErrors(toDraftFieldErrors(problem));
+      setAlert(problem?.detail ?? getProblemMessage(error, "Не удалось сохранить документ."));
     } finally {
-      setUploading(false);
+      setCreating(false);
     }
   }
 
@@ -161,51 +138,29 @@ export default function KnowledgePage() {
       return;
     }
 
+    const errors = validateDraft(draft);
+    if (Object.keys(errors).length > 0) {
+      setAlert("Название и контент документа не могут быть пустыми.");
+      return;
+    }
+
     setSavingDocumentId(document.id);
     setAlert(null);
     setSuccess(null);
 
     try {
       const updated = await api.knowledge.updateDocument(document.id, {
-        title: draft.title,
-        source: draft.source
+        title: draft.title.trim(),
+        content: draft.content.trim()
       });
       setDocuments((current) => replaceDocument(current, updated));
       setDrafts((current) => ({
         ...current,
         [updated.id]: toDraft(updated)
       }));
-      setSuccess("Документ обновлен");
+      setSuccess("Документ обновлён и переиндексирован");
     } catch (error) {
       setAlert(getProblemMessage(error, "Не удалось обновить документ."));
-    } finally {
-      setSavingDocumentId(null);
-    }
-  }
-
-  async function handleReindexDocument(document: KnowledgeDocument) {
-    setSavingDocumentId(document.id);
-    setAlert(null);
-    setSuccess(null);
-
-    try {
-      const result = await api.knowledge.reindexDocument(document.id);
-      setDocuments((current) =>
-        current.map((item) =>
-          item.id === document.id
-            ? {
-                ...item,
-                status: result.status,
-                indexed_at: null,
-                updated_at: result.queued_at,
-                error_message: undefined
-              }
-            : item
-        )
-      );
-      setSuccess("Переиндексация поставлена в очередь");
-    } catch (error) {
-      setAlert(getProblemMessage(error, "Не удалось поставить переиндексацию."));
     } finally {
       setSavingDocumentId(null);
     }
@@ -223,7 +178,7 @@ export default function KnowledgePage() {
         const { [document.id]: _deleted, ...rest } = current;
         return rest;
       });
-      setSuccess("Документ удален");
+      setSuccess("Документ удалён");
     } catch (error) {
       setAlert(getProblemMessage(error, "Не удалось удалить документ."));
     } finally {
@@ -236,7 +191,10 @@ export default function KnowledgePage() {
       <div className="page-heading">
         <Badge tone="neutral">Знания</Badge>
         <h1>Knowledge Base</h1>
-        <p>Документы управляются через C3.kb, статус индексации отражает очередь reindex.</p>
+        <p>
+          Текстовые инструкции для AI Assistant. Каждый документ подтягивается в промпт через
+          семантический поиск (RAG); эмбеддинг вычисляется при сохранении.
+        </p>
       </div>
 
       {!canEdit ? (
@@ -259,54 +217,44 @@ export default function KnowledgePage() {
           <div className="summary-grid m2-summary">
             <Panel className="summary-panel">
               <span className="metric-label">Документов</span>
-              <strong>{summary.total}</strong>
-            </Panel>
-            <Panel className="summary-panel">
-              <span className="metric-label">Проиндексировано</span>
-              <strong>{summary.indexed}</strong>
-            </Panel>
-            <Panel className="summary-panel">
-              <span className="metric-label">Требуют внимания</span>
-              <strong>{summary.failed}</strong>
+              <strong>{total}</strong>
             </Panel>
           </div>
 
-          <Panel as="form" className="m2-form" onSubmit={(event) => void handleUpload(event)}>
+          <Panel
+            aria-label="Новый документ"
+            as="form"
+            className="m2-form"
+            onSubmit={(event) => void handleCreate(event)}
+          >
             <div className="panel-heading-row">
               <div>
-                <h2>Загрузка документа</h2>
-                <p>Новый файл сразу получает статус индексации.</p>
+                <h2>Новый документ</h2>
+                <p>Название описывает суть, контент встраивается в промпт ассистента.</p>
               </div>
-              <Button disabled={uploading} type="submit">
-                <FileUp aria-hidden="true" size={16} />
-                Загрузить документ
+              <Button disabled={creating} type="submit">
+                <Plus aria-hidden="true" size={16} />
+                Добавить документ
               </Button>
             </div>
             <div className="form-grid">
               <TextInput
-                error={fieldErrors.title}
-                id="knowledge-upload-title"
+                error={createErrors.title}
+                id="knowledge-create-title"
                 label="Название документа"
-                onChange={(event) => updateUploadField("title", event.currentTarget.value)}
-                value={uploadForm.title}
+                onChange={(event) => updateCreateField("title", event.currentTarget.value)}
+                placeholder="Например: Политика возвратов"
+                value={createForm.title}
               />
-              <TextInput
-                error={fieldErrors.source}
-                id="knowledge-upload-source"
-                label="Источник"
-                onChange={(event) => updateUploadField("source", event.currentTarget.value)}
-                placeholder="manual://returns"
-                value={uploadForm.source}
+              <TextAreaInput
+                error={createErrors.content}
+                id="knowledge-create-content"
+                label="Контент (инструкция для ассистента)"
+                onChange={(event) => updateCreateField("content", event.currentTarget.value)}
+                placeholder="Текст, который будет добавлен в промпт при релевантном запросе."
+                rows={6}
+                value={createForm.content}
               />
-              <label className="text-input file-input" htmlFor="knowledge-file">
-                <span>Файл документа</span>
-                <input
-                  id="knowledge-file"
-                  onChange={(event) => updateUploadField("file", event.currentTarget.files?.[0] ?? null)}
-                  type="file"
-                />
-                {uploadForm.file ? <span className="muted">{uploadForm.file.name}</span> : null}
-              </label>
             </div>
           </Panel>
 
@@ -320,7 +268,6 @@ export default function KnowledgePage() {
                 key={document.id}
                 onDelete={() => void handleDeleteDocument(document)}
                 onDraftChange={(field, value) => updateDraft(document.id, field, value)}
-                onReindex={() => void handleReindexDocument(document)}
                 onSave={() => void handleSaveDocument(document)}
                 saving={savingDocumentId === document.id}
               />
@@ -337,7 +284,6 @@ interface KnowledgeDocumentCardProps {
   draft: DocumentDraft;
   onDelete: () => void;
   onDraftChange: (field: keyof DocumentDraft, value: string) => void;
-  onReindex: () => void;
   onSave: () => void;
   saving: boolean;
 }
@@ -347,7 +293,6 @@ function KnowledgeDocumentCard({
   draft,
   onDelete,
   onDraftChange,
-  onReindex,
   onSave,
   saving
 }: KnowledgeDocumentCardProps) {
@@ -358,82 +303,50 @@ function KnowledgeDocumentCard({
           <BookOpen aria-hidden="true" size={22} />
           <div>
             <h2>{document.title}</h2>
-            <span className="muted">{document.file_name ?? "без файла"}</span>
+            <span className="muted">Обновлён: {document.updated_at}</span>
           </div>
         </div>
-        <Badge tone={getDocumentStatusTone(document.status)}>
-          {getDocumentStatusLabel(document.status)}
-        </Badge>
       </div>
 
-      <div className="form-grid compact-form-grid">
+      <div className="form-grid">
         <TextInput
           id={`knowledge-title-${document.id}`}
-          label="Название в KB"
+          label="Название документа"
           onChange={(event) => onDraftChange("title", event.currentTarget.value)}
           value={draft.title}
         />
-        <TextInput
-          id={`knowledge-source-${document.id}`}
-          label="Источник в KB"
-          onChange={(event) => onDraftChange("source", event.currentTarget.value)}
-          value={draft.source}
+        <TextAreaInput
+          id={`knowledge-content-${document.id}`}
+          label="Контент"
+          onChange={(event) => onDraftChange("content", event.currentTarget.value)}
+          rows={6}
+          value={draft.content}
         />
       </div>
-
-      <dl className="metadata-list">
-        <div>
-          <dt>Индексирован</dt>
-          <dd>{document.indexed_at ?? "Нет"}</dd>
-        </div>
-        <div>
-          <dt>Размер</dt>
-          <dd>{document.size_bytes ? `${document.size_bytes} bytes` : "Нет данных"}</dd>
-        </div>
-      </dl>
-
-      <IndexingIndicator document={document} />
-
-      {document.error_message ? (
-        <div className="form-alert" role="alert">
-          {document.error_message}
-        </div>
-      ) : null}
 
       <div className="form-actions">
         <Button disabled={saving} onClick={onSave} type="button" variant="secondary">
           <Save aria-hidden="true" size={16} />
-          Сохранить документ
-        </Button>
-        <Button disabled={saving} onClick={onReindex} type="button" variant="secondary">
-          <RefreshCw aria-hidden="true" size={16} />
-          Переиндексировать
+          Сохранить
         </Button>
         <Button disabled={saving} onClick={onDelete} type="button" variant="ghost">
           <Trash2 aria-hidden="true" size={16} />
-          Удалить документ
+          Удалить
         </Button>
       </div>
     </Panel>
   );
 }
 
-function IndexingIndicator({ document }: { document: KnowledgeDocument }) {
-  return (
-    <div className={`indexing-indicator ${document.status}`} aria-label={`Индексация ${document.title}`}>
-      <span>{getDocumentStatusLabel(document.status)}</span>
-      <div>
-        <span style={{ width: `${getDocumentStatusProgress(document.status)}%` }} />
-      </div>
-    </div>
-  );
-}
+function validateDraft(draft: DocumentDraft): DraftFieldErrors {
+  const errors: DraftFieldErrors = {};
 
-function validateUploadForm(form: UploadFormState): UploadFieldErrors {
-  const errors: UploadFieldErrors = {};
-
-  if (!form.title.trim()) {
+  if (!draft.title.trim()) {
     errors.title = "Название документа обязательно.";
+  }
+
+  if (!draft.content.trim()) {
+    errors.content = "Контент документа обязателен.";
   }
 
   return errors;
@@ -446,7 +359,7 @@ function toDrafts(documents: KnowledgeDocument[]) {
 function toDraft(document: KnowledgeDocument): DocumentDraft {
   return {
     title: document.title,
-    source: document.source ?? ""
+    content: document.content
   };
 }
 
@@ -454,42 +367,16 @@ function replaceDocument(documents: KnowledgeDocument[], nextDocument: Knowledge
   return documents.map((document) => (document.id === nextDocument.id ? nextDocument : document));
 }
 
-function getDocumentStatusLabel(status: KnowledgeDocumentStatus) {
-  switch (status) {
-    case "indexed":
-      return "Проиндексирован";
-    case "indexing":
-      return "Индексация";
-    case "failed":
-      return "Ошибка индекса";
-  }
-}
-
-function getDocumentStatusTone(status: KnowledgeDocumentStatus) {
-  return status === "indexed" ? "success" : "warning";
-}
-
-function getDocumentStatusProgress(status: KnowledgeDocumentStatus) {
-  switch (status) {
-    case "indexed":
-      return 100;
-    case "indexing":
-      return 55;
-    case "failed":
-      return 20;
-  }
-}
-
-function toUploadFieldErrors(problem: ProblemDetails | null): UploadFieldErrors {
-  const errors: UploadFieldErrors = {};
+function toDraftFieldErrors(problem: ProblemDetails | null): DraftFieldErrors {
+  const errors: DraftFieldErrors = {};
 
   for (const error of problem?.errors ?? []) {
     if (error.field === "title") {
       errors.title = error.message;
     }
 
-    if (error.field === "source") {
-      errors.source = error.message;
+    if (error.field === "content") {
+      errors.content = error.message;
     }
   }
 

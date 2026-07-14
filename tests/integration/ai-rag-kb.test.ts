@@ -97,9 +97,9 @@ async function seedTenant(client, organizationId, suffix) {
   );
 
   await client.query(
-    `INSERT INTO knowledge_documents (id, organization_id, title, source, status, indexed_at, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, 'indexed', '2026-01-01T00:01:00.000Z', '2026-01-01T00:00:00.000Z', '2026-01-01T00:01:00.000Z')`,
-    [fixture.document, organizationId, `Knowledge ${suffix}`, `manual://kb/${suffix}`],
+    `INSERT INTO knowledge_documents (id, organization_id, title, content, source, status, indexed_at, created_at, updated_at)
+     VALUES ($1, $2, $3, $4, $5, 'indexed', '2026-01-01T00:01:00.000Z', '2026-01-01T00:00:00.000Z', '2026-01-01T00:01:00.000Z')`,
+    [fixture.document, organizationId, `Knowledge ${suffix}`, `Knowledge ${suffix} instruction content`, `manual://kb/${suffix}`],
   );
 
   for (const chunk of fixture.chunks) {

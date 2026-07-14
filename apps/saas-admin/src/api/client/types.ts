@@ -211,42 +211,24 @@ export interface ChannelTestResult {
   error?: ChannelErrorLogItem;
 }
 
-export type KnowledgeDocumentStatus = "indexing" | "indexed" | "failed";
-
 export interface KnowledgeDocument {
   id: string;
   organization_id: string;
   title: string;
-  source: string | null;
-  status: KnowledgeDocumentStatus;
-  indexed_at: ISODateTime | null;
+  content: string;
   created_at: ISODateTime;
   updated_at: ISODateTime;
-  file_name?: string;
-  content_type?: string;
-  size_bytes?: number;
-  error_message?: string;
 }
 
 export interface CreateKnowledgeDocumentRequest {
   organization_id: string;
   title: string;
-  source?: string;
-  file_name?: string;
-  content_type?: string;
-  size_bytes?: number;
+  content: string;
 }
 
 export interface UpdateKnowledgeDocumentRequest {
-  title: string;
-  source?: string;
-}
-
-export interface ReindexKnowledgeDocumentResponse {
-  accepted: true;
-  document_id: string;
-  status: "indexing";
-  queued_at: ISODateTime;
+  title?: string;
+  content?: string;
 }
 
 export interface DeleteKnowledgeDocumentResponse {
@@ -846,7 +828,6 @@ export interface SaasAdminApiClient {
       documentId: string,
       request: UpdateKnowledgeDocumentRequest
     ) => Promise<KnowledgeDocument>;
-    reindexDocument: (documentId: string) => Promise<ReindexKnowledgeDocumentResponse>;
     deleteDocument: (documentId: string) => Promise<DeleteKnowledgeDocumentResponse>;
   };
   workflows: {

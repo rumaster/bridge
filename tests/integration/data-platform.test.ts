@@ -918,6 +918,7 @@ async function insertM1TenantSlice(client, organizationId) {
         id,
         organization_id,
         title,
+        content,
         source,
         status,
         indexed_at,
@@ -929,6 +930,7 @@ async function insertM1TenantSlice(client, organizationId) {
         $2,
         $3,
         $4,
+        $5,
         'indexed',
         '2026-01-01T00:02:00.000Z',
         '2026-01-01T00:00:00.000Z',
@@ -939,6 +941,7 @@ async function insertM1TenantSlice(client, organizationId) {
       fixture.knowledgeDocument,
       organizationId,
       `Knowledge ${suffix.toUpperCase()}`,
+      `Knowledge ${suffix.toUpperCase()} instruction content`,
       `manual://kb/${suffix}`,
     ],
   );

@@ -882,7 +882,7 @@
             }
           }
         },
-        "summary": "Create a Knowledge Base document placeholder",
+        "summary": "Create a Knowledge Base document and embed its content",
         "tags": [
           "knowledge"
         ]
@@ -953,37 +953,6 @@
           }
         },
         "summary": "Delete a Knowledge Base document",
-        "tags": [
-          "knowledge"
-        ]
-      }
-    },
-    "/api/v1/knowledge/documents/{id}:reindex": {
-      "post": {
-        "operationId": "KnowledgeBaseController_reindexDocument_v1",
-        "parameters": [
-          {
-            "name": "id",
-            "required": true,
-            "in": "path",
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ReindexKnowledgeDocumentResponseDto"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Queue a Knowledge Base document for reindexing",
         "tags": [
           "knowledge"
         ]
@@ -3558,26 +3527,11 @@
           },
           "title": {
             "type": "string",
-            "example": "FAQ возвратов"
+            "example": "Политика возвратов"
           },
-          "source": {
-            "type": "object",
-            "example": "manual://returns",
-            "nullable": true
-          },
-          "status": {
+          "content": {
             "type": "string",
-            "enum": [
-              "failed",
-              "indexed",
-              "indexing"
-            ],
-            "example": "indexed"
-          },
-          "indexed_at": {
-            "type": "object",
-            "example": "2026-07-04T10:02:00.000Z",
-            "nullable": true
+            "example": "Возврат товара возможен в течение 14 дней..."
           },
           "created_at": {
             "type": "string",
@@ -3592,7 +3546,7 @@
           "id",
           "organization_id",
           "title",
-          "status",
+          "content",
           "created_at",
           "updated_at"
         ]
@@ -3606,28 +3560,16 @@
           },
           "title": {
             "type": "string",
-            "example": "FAQ возвратов"
+            "example": "Политика возвратов"
           },
-          "source": {
+          "content": {
             "type": "string",
-            "example": "manual://returns"
-          },
-          "file_name": {
-            "type": "string",
-            "example": "returns.md"
-          },
-          "content_type": {
-            "type": "string",
-            "example": "text/markdown"
-          },
-          "size_bytes": {
-            "type": "number",
-            "example": 4096,
-            "minimum": 0
+            "example": "Возврат товара возможен в течение 14 дней при сохранении товарного вида. Деньги возвращаются на карту в течение 5 рабочих дней."
           }
         },
         "required": [
-          "title"
+          "title",
+          "content"
         ]
       },
       "UpdateKnowledgeDocumentDto": {
@@ -3635,40 +3577,13 @@
         "properties": {
           "title": {
             "type": "string",
-            "example": "FAQ возвратов"
+            "example": "Политика возвратов"
           },
-          "source": {
+          "content": {
             "type": "string",
-            "example": "manual://returns"
+            "example": "Обновлённая инструкция для ассистента."
           }
         }
-      },
-      "ReindexKnowledgeDocumentResponseDto": {
-        "type": "object",
-        "properties": {
-          "accepted": {
-            "type": "boolean",
-            "example": true
-          },
-          "document_id": {
-            "type": "string",
-            "example": "30000000-0000-4000-8000-000000000701"
-          },
-          "status": {
-            "type": "string",
-            "example": "indexing"
-          },
-          "queued_at": {
-            "type": "string",
-            "example": "2026-07-04T10:02:00.000Z"
-          }
-        },
-        "required": [
-          "accepted",
-          "document_id",
-          "status",
-          "queued_at"
-        ]
       },
       "DeleteKnowledgeDocumentResponseDto": {
         "type": "object",

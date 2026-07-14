@@ -89,30 +89,23 @@ describe("SaaS Administration MSW mocks", () => {
     });
 
     const documents = await api.knowledge.listDocuments();
-    expect(documents.map((document) => document.title)).toContain("FAQ возвратов");
+    expect(documents.map((document) => document.title)).toContain("Политика возвратов");
 
     const createdDocument = await api.knowledge.createDocument({
       organization_id: "org-demo",
       title: "Политика гарантий",
-      source: "manual://warranty",
-      file_name: "warranty.md",
-      content_type: "text/markdown",
-      size_bytes: 19
+      content: "Гарантия на технику — 12 месяцев с даты покупки."
     });
-    expect(createdDocument.status).toBe("indexing");
+    expect(createdDocument.content).toContain("Гарантия");
 
     await expect(
       api.knowledge.updateDocument(createdDocument.id, {
         title: "Политика гарантий v2",
-        source: "manual://warranty-v2"
+        content: "Гарантия — 24 месяца."
       })
     ).resolves.toMatchObject({
-      title: "Политика гарантий v2"
-    });
-
-    await expect(api.knowledge.reindexDocument(createdDocument.id)).resolves.toMatchObject({
-      accepted: true,
-      status: "indexing"
+      title: "Политика гарантий v2",
+      content: "Гарантия — 24 месяца."
     });
 
     await expect(api.knowledge.deleteDocument(createdDocument.id)).resolves.toMatchObject({
