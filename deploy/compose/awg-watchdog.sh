@@ -19,6 +19,12 @@
 # edge, где сборка запрещена из-за памяти):
 #   AWG_APP_ENV_FILES / AWG_RF_ENV_FILES  — аргументы --env-file (через пробел);
 #   AWG_APP_UP_FLAGS  / AWG_RF_UP_FLAGS   — доп. флаги `compose up` (напр. --no-build).
+#
+# Web Chat REST-транзит forwarder (socat в netns edge-vpn-app, публикует
+# backend на туннельном IP 10.7.0.1:3000): у него та же netns-хрупкость, что и у
+# awg-server. При role=app/both watchdog держит его поднятым, если задан
+# AWG_FWD_CONTAINER (имя контейнера) и AWG_FWD_SERVICE (compose-сервис, дефолт
+# webchat-tunnel-fwd). Пусто → не следим (обратная совместимость).
 set -uo pipefail
 
 REPO="${REPO:-$(cd "$(dirname "$0")/../.." && pwd)}"
@@ -27,6 +33,10 @@ INTERVAL="${AWG_WATCHDOG_INTERVAL:-30}"
 MAX_HANDSHAKE_AGE="${AWG_MAX_HANDSHAKE_AGE:-180}"
 APP_SERVER="${AWG_SERVER_CONTAINER:-bridge-saas-awg-server-1}"
 RF_CLIENT="${AWG_CLIENT_CONTAINER:-bridge-edge-rf-awg-client-1}"
+# Web Chat REST-транзит forwarder (socat, netns edge-vpn-app). Пусто → не следим
+# (обратная совместимость). role=app/both: держим его поднятым как awg-server.
+FWD_CONTAINER="${AWG_FWD_CONTAINER:-}"
+FWD_SERVICE="${AWG_FWD_SERVICE:-webchat-tunnel-fwd}"
 
 # Переопределяемые аргументы compose (по умолчанию — стендовые пути/поведение).
 read -r -a APP_ENVFILES <<<"${AWG_APP_ENV_FILES:---env-file $REPO/.env --env-file $REPO/deploy/compose/.env.awg.app}"
@@ -44,6 +54,15 @@ running() { [ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" = "tr
 
 recreate_server() { "${DC_APP[@]}" up -d --no-deps --force-recreate "${APP_UPFLAGS[@]}" awg-server >/dev/null 2>&1 || true; }
 recreate_client() { "${DC_RF[@]}" up -d --no-deps --force-recreate "${RF_UPFLAGS[@]}" awg-client >/dev/null 2>&1 || true; }
+recreate_fwd() { "${DC_APP[@]}" up -d --no-deps --force-recreate "${APP_UPFLAGS[@]}" "$FWD_SERVICE" >/dev/null 2>&1 || true; }
+
+# Поднять forwarder web-chat транзита, если за ним следим и он упал (потерял netns).
+ensure_fwd() {
+  [ -z "$FWD_CONTAINER" ] && return 0
+  if ! running "$FWD_CONTAINER"; then
+    log "web-chat forwarder down → пересоздаю"; recreate_fwd
+  fi
+}
 
 # true, если у указанного awg-контейнера нет свежего хендшейка с пиром.
 handshake_stale() {
@@ -57,11 +76,11 @@ handshake_stale() {
 
 check_app() {
   if ! running "$APP_SERVER"; then
-    log "awg-server down → пересоздаю"; recreate_server; sleep 3; return
-  fi
-  if handshake_stale "$APP_SERVER"; then
+    log "awg-server down → пересоздаю"; recreate_server; sleep 3
+  elif handshake_stale "$APP_SERVER"; then
     log "хендшейк awg-server протух → пересоздаю awg-server"; recreate_server
   fi
+  ensure_fwd
 }
 
 check_edge() {
@@ -81,6 +100,7 @@ check_both() {
     log "хендшейк протух → пересоздаю awg-server и awg-client"
     recreate_server; sleep 2; recreate_client
   fi
+  ensure_fwd
 }
 
 check() {
