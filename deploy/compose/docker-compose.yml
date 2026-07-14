@@ -97,6 +97,20 @@ services:
       CHANNEL_SECRET_KEY_ID: ${CHANNEL_SECRET_KEY_ID:-env:CHANNEL_SECRET_ENCRYPTION_KEY}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       AI_GRPC_TARGET: ${AI_GRPC_TARGET:-ai-platform:3106}
+      # Эмбеддинги Knowledge Base: backend считает эмбеддинг документа при
+      # сохранении, ai-platform — эмбеддинг поискового запроса. ИНВАРИАНТ: обе
+      # стороны обязаны использовать одну и ту же модель и размерность (1536),
+      # иначе расстояния в pgvector бессмысленны и RAG молча возвращает мусор.
+      # Значения и дефолты держим идентичными блоку ai-platform ниже.
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-mock}
+      LLM_EMBEDDING_MODEL_NAME: ${LLM_EMBEDDING_MODEL_NAME:-text-embedding-3-small}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      AZURE_OPENAI_API_KEY: ${AZURE_OPENAI_API_KEY:-}
+      AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT:-}
+      AZURE_OPENAI_API_VERSION: ${AZURE_OPENAI_API_VERSION:-2024-10-21}
+      AZURE_OPENAI_EMBEDDING_DEPLOYMENT: ${AZURE_OPENAI_EMBEDDING_DEPLOYMENT:-}
       INTEGRATION_GATEWAY_URL: ${INTEGRATION_GATEWAY_URL:-http://integration-platform:3005}
       FBP_GRPC_TARGET: ${FBP_GRPC_TARGET:-fbp-engine:3105}
       BROADCAST_GRPC_TARGET: ${BROADCAST_GRPC_TARGET:-broadcast-platform:3108}
