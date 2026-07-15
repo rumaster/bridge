@@ -1,7 +1,7 @@
-import { FBP_BACKEND_API_METHODS, configPortRows } from "@bridge/contracts/c5-workflow";
+import { getBackendApiOperation } from "@bridge/contracts/backend-api-catalog";
+import { configPortRows } from "@bridge/contracts/c5-workflow";
 import { WorkflowExecutionError } from "../core/errors.js";
 
-const METHODS = new Set(FBP_BACKEND_API_METHODS);
 const PLACEHOLDER = /\{([A-Za-z0-9_]+)\}/g;
 const RESERVED_INPUT_PORTS = new Set(["body", "query"]);
 
@@ -21,35 +21,26 @@ export const backendApiNode = {
   type: "backend-api",
 
   validate(config, { path, errors }) {
-    if (typeof config?.method !== "string" || !METHODS.has(config.method)) {
-      errors.push({
-        path: `${path}.method`,
-        message: `method должен быть одним из ${[...METHODS].join(", ")}.`,
-      });
-    }
-    validateApiPath(config?.path, `${path}.path`, errors);
+    // operation_id и порты под плейсхолдеры проверяет контракт C5 по каталогу.
     if (config?.timeout_ms !== undefined) {
       if (!Number.isInteger(config.timeout_ms) || config.timeout_ms < 1 || config.timeout_ms > 30000) {
         errors.push({ path: `${path}.timeout_ms`, message: "timeout_ms должен быть целым числом от 1 до 30000." });
-      }
-    }
-    // Плейсхолдеры пути обязаны иметь одноимённые входные порты, иначе узел
-    // гарантированно упадёт в рантайме — ловим это на сохранении.
-    const declared = new Set(configPortRows(config?.inputs).map((row) => row.name));
-    for (const name of pathPlaceholders(config?.path)) {
-      if (!declared.has(name)) {
-        errors.push({
-          path: `${path}.inputs`,
-          message: `Плейсхолдер {${name}} в path требует одноимённый входной порт.`,
-        });
       }
     }
   },
 
   async execute({ node, input, ctx, backendClient }) {
     const config = node.config ?? {};
-    const method = config.method;
-    const path = resolvePath(config.path, input);
+    const operation = getBackendApiOperation(config.operation_id);
+    if (!operation) {
+      throw new WorkflowExecutionError(
+        "unknown_operation",
+        `Вызова "${String(config.operation_id)}" нет в каталоге Backend API.`,
+        { nodeId: node.id, nodeType: "backend-api" },
+      );
+    }
+    const method = operation.method;
+    const path = resolvePath(operation.path, input);
     const query = asQuery(input.query);
     const body = method === "GET" ? null : resolveBody(input);
 
@@ -67,7 +58,7 @@ export const backendApiNode = {
       outputs: resolveOutputs(config, response),
       log: {
         backend_request: { method, path },
-        operation_id: config.operation_id ?? null,
+        operation_id: operation.operation_id,
         status_code: response?.status_code ?? null,
       },
     };
@@ -105,23 +96,8 @@ function resolveBody(input) {
   return rest;
 }
 
-function pathPlaceholders(template) {
-  if (typeof template !== "string") return [];
-  return [...template.matchAll(PLACEHOLDER)].map((match) => match[1]).filter((name) => name !== "");
-}
-
-function validateApiPath(value, path, errors) {
-  if (typeof value !== "string" || value.trim() === "") {
-    errors.push({ path, message: "path должен быть непустой строкой." });
-    return;
-  }
-  if (value !== "/api/v1" && !value.startsWith("/api/v1/")) {
-    errors.push({ path, message: "path должен указывать на публичный Backend API под /api/v1." });
-  }
-  if (/\{\}/.test(value)) {
-    errors.push({ path, message: "Пустой плейсхолдер {} в path недопустим." });
-  }
-}
+// Проверка вида пути («под /api/v1», без пустых плейсхолдеров) больше не нужна:
+// path приходит из каталога, сгенерированного из OpenAPI Backend, а не из конфига.
 
 function resolvePath(template, input) {
   return String(template).replace(PLACEHOLDER, (_, key) => {

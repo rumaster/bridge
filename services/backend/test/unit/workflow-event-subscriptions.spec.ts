@@ -7,7 +7,16 @@ import {
   workflowEventUnavailableReason,
 } from "@bridge/contracts/workflow-events";
 
-import { collectWaitEventNodes } from "../../src/modules/workflow/workflow-schema.validator";
+import {
+  BACKEND_API_OPERATIONS,
+  getBackendApiOperation,
+  isBackendApiOperationId,
+} from "@bridge/contracts/backend-api-catalog";
+
+import {
+  collectBackendApiOperationIds,
+  collectWaitEventNodes,
+} from "../../src/modules/workflow/workflow-schema.validator";
 
 function node(id: string, type: string, config: Record<string, unknown> = {}) {
   return { id, type, position: { x: 0, y: 0 }, config };
@@ -84,5 +93,64 @@ describe("сбор узлов «Ожидание события» для под�
     expect(collectWaitEventNodes(null)).toEqual([]);
     expect(collectWaitEventNodes({ nodes: "нет" })).toEqual([]);
     expect(collectWaitEventNodes(workflow([]))).toEqual([]);
+  });
+});
+
+describe("каталог вызовов Backend API", () => {
+  it("сгенерирован из OpenAPI и не пуст", () => {
+    expect(BACKEND_API_OPERATIONS.length).toBeGreaterThan(50);
+  });
+
+  it("все пути лежат под публичным /api/v1", () => {
+    // Узел backend-api ходит только в публичный API (ТЗ §13.5) — если в каталог
+    // просочился внутренний маршрут, это дыра, а не удобство.
+    const outside = BACKEND_API_OPERATIONS.filter((op) => !op.path.startsWith("/api/v1"));
+    expect(outside).toEqual([]);
+  });
+
+  it("operation_id уникальны — иначе выбор в редакторе неоднозначен", () => {
+    const ids = BACKEND_API_OPERATIONS.map((op) => op.operation_id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("плейсхолдеры пути разобраны в path_params", () => {
+    const withParams = BACKEND_API_OPERATIONS.find((op) => op.path.includes("{"));
+    expect(withParams).toBeTruthy();
+    expect(withParams!.path_params.length).toBeGreaterThan(0);
+    for (const name of withParams!.path_params) {
+      expect(withParams!.path).toContain(`{${name}}`);
+    }
+  });
+
+  it("резолвит операцию по id", () => {
+    const first = BACKEND_API_OPERATIONS[0];
+    expect(isBackendApiOperationId(first.operation_id)).toBe(true);
+    expect(getBackendApiOperation(first.operation_id)?.path).toBe(first.path);
+    expect(isBackendApiOperationId("выдумка")).toBe(false);
+    expect(getBackendApiOperation("выдумка")).toBeNull();
+  });
+});
+
+describe("сбор вызовов Backend API для проверки витрины", () => {
+  it("собирает operation_id, включая инлайн-граф субсхемы", () => {
+    const schema = {
+      schema_version: "2.0.0",
+      kind: "workflow",
+      connections: [],
+      nodes: [
+        node("a", "backend-api", { operation_id: "opB" }),
+        node("s", "sub_schema", {
+          subSchemaSlug: "x",
+          graph: { nodes: [node("b", "backend-api", { operation_id: "opA" })] },
+        }),
+      ],
+    };
+    expect(collectBackendApiOperationIds(schema)).toEqual(["opA", "opB"]);
+  });
+
+  it("не собирает узлы без выбранного вызова", () => {
+    const schema = { schema_version: "2.0.0", kind: "workflow", connections: [], nodes: [node("a", "backend-api", {})] };
+    expect(collectBackendApiOperationIds(schema)).toEqual([]);
+    expect(collectBackendApiOperationIds(null)).toEqual([]);
   });
 });

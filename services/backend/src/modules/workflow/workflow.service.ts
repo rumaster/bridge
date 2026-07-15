@@ -32,6 +32,7 @@ import {
   mapWorkflowVersion,
 } from "./workflow.dto";
 import {
+  collectBackendApiOperationIds,
   collectWaitEventNodes,
   collectWorkflowSubSchemaSlugs,
   createWorkflowSchemaValidationException,
@@ -547,7 +548,43 @@ export class WorkflowService {
     if (!validation.valid) {
       throw createWorkflowSchemaValidationException(validation.errors);
     }
+    await this.requireAllowedBackendApiCalls(client, schema);
     await this.requireActiveSubSchemas(client, organizationId, schema);
+  }
+
+  /**
+   * Витрина вызовов Backend API (решение A3). Контракт уже проверил, что вызов
+   * ЕСТЬ в каталоге, сгенерированном из OpenAPI; здесь — что его РАЗРЕШИЛ
+   * platform_operator. Проверка живёт на Backend, а не в контракте, потому что
+   * витрина — состояние БД, редактируемое без деплоя.
+   *
+   * Проверяется при каждом сохранении, а не только при выборе в редакторе: иначе
+   * операцию можно было бы закрыть в витрине, а уже сохранённые схемы продолжили
+   * бы её дёргать.
+   */
+  private async requireAllowedBackendApiCalls(client: Queryable, schema: unknown): Promise<void> {
+    const operationIds = collectBackendApiOperationIds(schema);
+    if (operationIds.length === 0) return;
+
+    const result = await client.query<{ operation_id: string }>(
+      `
+        SELECT operation_id
+        FROM workflow_backend_api_allowlist
+        WHERE enabled AND operation_id = ANY($1::text[])
+      `,
+      [operationIds],
+    );
+
+    const allowed = new Set(result.rows.map((row) => row.operation_id));
+    const forbidden = operationIds.filter((id) => !allowed.has(id));
+    if (forbidden.length > 0) {
+      throw createWorkflowSchemaValidationException(
+        forbidden.map((id) => ({
+          path: "$.nodes",
+          message: `Вызов Backend API «${id}» не разрешён в витрине. Откройте его на странице вызовов Backend API.`,
+        })),
+      );
+    }
   }
 
   private async requireWorkflowVersion(

@@ -130,6 +130,29 @@ export function collectWorkflowSubSchemaSlugs(schema: unknown): string[] {
   return [...slugs].sort();
 }
 
+/**
+ * Вызовы Backend API, на которые ссылается схема. По ним проверяется витрина
+ * (`workflow_backend_api_allowlist`) перед сохранением.
+ */
+export function collectBackendApiOperationIds(schema: unknown): string[] {
+  const ids = new Set<string>();
+  collectOperationIdsFromSchema(schema, ids);
+  return [...ids].sort();
+}
+
+function collectOperationIdsFromSchema(schema: unknown, ids: Set<string>): void {
+  if (!isRecord(schema) || !Array.isArray(schema.nodes)) return;
+  for (const node of schema.nodes) {
+    if (!isRecord(node)) continue;
+    const config = isRecord(node.config) ? node.config : {};
+    if (node.type === "backend-api" && typeof config.operation_id === "string" && config.operation_id.trim()) {
+      ids.add(config.operation_id.trim());
+    }
+    // Инлайн-граф субсхемы тоже может вызывать Backend API.
+    if (isRecord(config.graph)) collectOperationIdsFromSchema(config.graph, ids);
+  }
+}
+
 export interface WorkflowWaitEventNode {
   nodeId: string;
   eventType: string;

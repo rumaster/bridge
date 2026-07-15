@@ -16,5 +16,9 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "files": ["src/c5-workflow.ts", "src/workflow-events.ts"]
+  "files": [
+    "src/c5-workflow.ts",
+    "src/workflow-events.ts",
+    "src/backend-api-catalog.generated.ts"
+  ]
 }

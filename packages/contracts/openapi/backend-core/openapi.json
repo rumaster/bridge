@@ -2348,6 +2348,72 @@
         ]
       }
     },
+    "/api/v1/workflow-backend-api-allowlist": {
+      "get": {
+        "operationId": "WorkflowBackendApiAllowlistController_listOperations_v1",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BackendApiAllowlistEntryDto"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "summary": "List Backend API operations available to Workflow nodes",
+        "tags": [
+          "workflow-backend-api-allowlist"
+        ]
+      }
+    },
+    "/api/v1/workflow-backend-api-allowlist/{operationId}": {
+      "patch": {
+        "operationId": "WorkflowBackendApiAllowlistController_updateOperation_v1",
+        "parameters": [
+          {
+            "name": "operationId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateBackendApiAllowlistDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BackendApiAllowlistEntryDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Allow or forbid a Backend API operation for Workflow nodes",
+        "tags": [
+          "workflow-backend-api-allowlist"
+        ]
+      }
+    },
     "/api/v1/ai/onboarding:apply": {
       "post": {
         "operationId": "BackendApiController_applyOnboarding_v1",
@@ -5409,6 +5475,85 @@
           "status",
           "created_at",
           "updated_at"
+        ]
+      },
+      "BackendApiAllowlistEntryDto": {
+        "type": "object",
+        "properties": {
+          "operation_id": {
+            "type": "string",
+            "example": "CommunicationCoreController_createConversation_v1"
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE"
+            ],
+            "example": "POST"
+          },
+          "path": {
+            "type": "string",
+            "example": "/api/v1/conversations"
+          },
+          "summary": {
+            "type": "string",
+            "example": "Create a conversation"
+          },
+          "tag": {
+            "type": "string",
+            "example": "communication-core"
+          },
+          "mutates": {
+            "type": "boolean",
+            "description": "Вызов изменяет данные (не GET).",
+            "example": true
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Разрешён ли вызов узлу схемы.",
+            "example": false
+          },
+          "curated_at": {
+            "type": "object",
+            "nullable": true,
+            "example": "2026-07-15T12:00:00.000Z"
+          },
+          "note": {
+            "type": "object",
+            "nullable": true,
+            "example": "Нужен для авто-ответа"
+          }
+        },
+        "required": [
+          "operation_id",
+          "method",
+          "path",
+          "summary",
+          "tag",
+          "mutates",
+          "enabled",
+          "curated_at",
+          "note"
+        ]
+      },
+      "UpdateBackendApiAllowlistDto": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "example": true
+          },
+          "note": {
+            "type": "string",
+            "example": "Нужен для авто-ответа"
+          }
+        },
+        "required": [
+          "enabled"
         ]
       },
       "OnboardingApplyDto": {

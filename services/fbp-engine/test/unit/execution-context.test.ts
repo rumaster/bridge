@@ -48,52 +48,104 @@ describe("ExecutionContext: мультиарендность по построе
   });
 });
 
-describe("ExecutionContext: сборка входа узла из проводки", () => {
-  it("источник params читает параметры Workflow по пути", () => {
+/**
+ * Ревизия 2026-07-15: `assembleInput`/`resolveSource` удалены вместе с
+ * декларативной проводкой — вход узла собирает исполнитель по data-связям. От
+ * контекста осталось хранилище переменных для пары variable_read/variable_write.
+ */
+describe("ExecutionContext: переменные экземпляра", () => {
+  it("setVariable/getVariable хранят значение, неизвестная переменная — null", () => {
     const ctx = makeContext();
-    const input = ctx.assembleInput({
-      sum: { kind: "params", path: ["amount"] },
-      name: { kind: "params", path: ["customer", "name"] },
-    });
-    assert.deepEqual(input, { sum: 150, name: "Иван" });
+    ctx.setVariable("stage", "новый");
+    assert.equal(ctx.getVariable("stage"), "новый");
+    assert.equal(ctx.getVariable("никогда-не-писали"), null);
   });
 
-  it("источник const клонируется (изоляция от схемы)", () => {
+  it("значения клонируются на входе и на выходе (мутация не протекает в контекст)", () => {
     const ctx = makeContext();
-    const source = { kind: "const", value: { nested: [1, 2] } };
-    const input = ctx.assembleInput({ c: source });
-    input.c.nested.push(3);
-    assert.deepEqual(source.value.nested, [1, 2]);
+    const written = { list: [1, 2] };
+    ctx.setVariable("data", written);
+    written.list.push(3);
+    assert.deepEqual(ctx.getVariable("data"), { list: [1, 2] }, "мутация после записи не должна менять переменную");
+
+    const read = ctx.getVariable("data");
+    read.list.push(99);
+    assert.deepEqual(ctx.getVariable("data"), { list: [1, 2] }, "мутация прочитанного не должна менять переменную");
   });
 
-  it("источник node читает результат ранее исполненного узла", () => {
+  it("опасные и пустые имена переменных отвергаются (защита от загрязнения прототипа)", () => {
     const ctx = makeContext();
-    ctx.setNodeOutput("prev", { status_code: 201, body: { id: "x1" } });
-    const input = ctx.assembleInput({ id: { kind: "node", node: "prev", path: ["body", "id"] } });
-    assert.deepEqual(input, { id: "x1" });
-  });
-
-  it("ссылка на неисполненный узел бросает unknown_node_reference", () => {
-    const ctx = makeContext();
-    assert.throws(
-      () => ctx.assembleInput({ x: { kind: "node", node: "not-yet", path: [] } }),
-      (error) => error instanceof WorkflowExecutionError && error.reason === "unknown_node_reference",
-    );
-  });
-
-  it("неизвестный тип источника бросает invalid_input_source", () => {
-    const ctx = makeContext();
-    assert.throws(
-      () => ctx.assembleInput({ x: { kind: "env", path: [] } }),
-      (error) => error instanceof WorkflowExecutionError && error.reason === "invalid_input_source",
-    );
-  });
-
-  it("опасные ключи входа игнорируются (защита от загрязнения прототипа)", () => {
-    const ctx = makeContext();
-    const input = ctx.assembleInput({ __proto__: { kind: "const", value: { polluted: true } } });
+    for (const name of ["__proto__", "prototype", "constructor", ""]) {
+      assert.throws(
+        () => ctx.setVariable(name, { polluted: true }),
+        (error) => error instanceof WorkflowExecutionError && error.reason === "invalid_variable_name",
+        `имя "${name}" должно быть отклонено`,
+      );
+    }
     assert.equal((Object.prototype as any).polluted, undefined);
-    assert.equal(input.polluted, undefined);
+    assert.equal(ctx.getVariable("__proto__"), null);
+  });
+
+  it("переменные из конструктора принимаются, опасные ключи отбрасываются молча", () => {
+    // Ключ вычисляемый, а не литеральный: литеральный `__proto__:` задаёт прототип
+    // объекта и собственным свойством не становится — проверка была бы холостой.
+    const ctx = makeContext({ variables: { seeded: 7, ["__proto__"]: { polluted: true } } });
+    assert.equal(ctx.getVariable("seeded"), 7);
+    assert.equal(ctx.getVariable("__proto__"), null);
+    assert.equal((Object.prototype as any).polluted, undefined);
+  });
+});
+
+describe("ExecutionContext: изоляция субсхемы (createChild)", () => {
+  it("дочерний контекст наследует арендатора/актора, но НЕ переменные родителя", () => {
+    const ctx = makeContext();
+    ctx.setVariable("secret", "тайна");
+
+    const child = ctx.createChild({ input: { query: "вопрос" } });
+    assert.equal(child.organizationId, ORG);
+    assert.deepEqual(child.toCallContext(), ctx.toCallContext());
+    assert.deepEqual(child.params, { query: "вопрос" });
+    // Переменные родителя внутрь субсхемы не протекают: иначе субсхема молча
+    // зависела бы от вызывающего графа и перестала быть переиспользуемой.
+    assert.equal(child.getVariable("secret"), null);
+  });
+
+  it("запись переменной в субсхеме не видна родителю", () => {
+    const ctx = makeContext();
+    const child = ctx.createChild({ input: {} });
+    child.setVariable("inner", "значение");
+    assert.equal(ctx.getVariable("inner"), null);
+  });
+});
+
+describe("ExecutionContext: разрешение субсхем", () => {
+  it("callback получает арендатора из контекста, результат клонируется", async () => {
+    const seen: any[] = [];
+    const schema = { kind: "subschema", nodes: [] };
+    const ctx = makeContext({
+      resolveSubSchema: (args: any) => {
+        seen.push(args);
+        return schema;
+      },
+    });
+
+    const resolved = await ctx.resolveSubSchema(" answer ");
+    assert.deepEqual(seen, [{ organizationId: ORG, slug: "answer" }], "slug тримится, арендатор — из контекста");
+    assert.deepEqual(resolved, schema);
+    assert.notEqual(resolved, schema, "схема отдаётся копией, а не общим объектом");
+  });
+
+  it("без callback берёт схему из реестра, иначе бросает subschema_not_found", async () => {
+    const ctx = makeContext({ resolvedSubSchemas: { known: { kind: "subschema", nodes: [] } } });
+    assert.deepEqual(await ctx.resolveSubSchema("known"), { kind: "subschema", nodes: [] });
+    await assert.rejects(
+      () => ctx.resolveSubSchema("unknown"),
+      (error) => error instanceof WorkflowExecutionError && error.reason === "subschema_not_found",
+    );
+    await assert.rejects(
+      () => ctx.resolveSubSchema("  "),
+      (error) => error instanceof WorkflowExecutionError && error.reason === "invalid_subschema_ref",
+    );
   });
 });
 
@@ -122,10 +174,21 @@ describe("ExecutionContext: журнал исполнения", () => {
   });
 });
 
+describe("ExecutionContext: монотонные часы трассы", () => {
+  it("elapsedMs() считает от старта контекста по инъецированным часам", () => {
+    let tick = 100;
+    const ctx = makeContext({ monotonic: () => tick });
+    assert.equal(ctx.elapsedMs(), 0, "на старте прошло 0 мс");
+    tick = 142;
+    assert.equal(ctx.elapsedMs(), 42);
+  });
+});
+
 describe("ExecutionContext: внешнее состояние (workflow_instance_state, ТЗ §25.3)", () => {
-  it("snapshot() содержит всё для продолжения на другом узле, но НЕ журнал", () => {
+  it("snapshot() содержит всё для восстановления, но НЕ журнал", () => {
     const ctx = makeContext();
     ctx.setNodeOutput("n1", { status_code: 201, body: { id: "x1" } });
+    ctx.setVariable("stage", "готово");
     ctx.appendJournal("node.completed", { nodeId: "n1" });
 
     const snapshot = ctx.snapshot();
@@ -133,25 +196,24 @@ describe("ExecutionContext: внешнее состояние (workflow_instance
     assert.equal(snapshot.instance_id, "instance-1");
     assert.deepEqual(snapshot.input, { amount: 150, customer: { name: "Иван" } });
     assert.deepEqual(snapshot.outputs.n1, { status_code: 201, body: { id: "x1" } });
+    assert.deepEqual(snapshot.variables, { stage: "готово" });
     assert.equal(snapshot.seq, 1, "порядковый счётчик журнала сохранён");
     assert.equal("journal" in snapshot, false, "журнал уходит в workflow_execution_logs, не в состояние");
   });
 
-  it("fromSnapshot() восстанавливает результаты узлов и продолжает нумерацию журнала", () => {
+  it("fromSnapshot() восстанавливает выходы, переменные и продолжает нумерацию журнала", () => {
     const ctx = makeContext();
     ctx.setNodeOutput("n1", { body: { id: "x1" } });
+    ctx.setVariable("stage", "готово");
     const firstEntryId = ctx.appendJournal("node.completed", { nodeId: "n1" }).id;
     const snapshot = ctx.snapshot();
 
-    // Другой узел-исполнитель поднимает контекст из внешнего состояния.
     const restored = ExecutionContext.fromSnapshot(snapshot, { now: () => "2026-07-04T00:00:00.000Z" });
     assert.equal(restored.organizationId, ORG);
     assert.equal(restored.instanceId, "instance-1");
     assert.equal(restored.hasNodeOutput("n1"), true);
-    assert.deepEqual(
-      restored.assembleInput({ id: { kind: "node", node: "n1", path: ["body", "id"] } }),
-      { id: "x1" },
-    );
+    assert.deepEqual(restored.getNodeOutput("n1"), { body: { id: "x1" } });
+    assert.equal(restored.getVariable("stage"), "готово");
     // Нумерация журнала продолжается с сохранённого seq — id не коллизируют.
     const next = restored.appendJournal("node.started", { nodeId: "n2" });
     assert.notEqual(next.id, firstEntryId, "seq продолжен → id новой записи отличается от seq=1");
@@ -174,12 +236,15 @@ describe("ExecutionContext: внешнее состояние (workflow_instance
         organization_id: ORG,
         instance_id: "instance-1",
         input: {},
-        outputs: { __proto__: { polluted: true }, safe: { ok: 1 } },
+        // Вычисляемый ключ, а не литеральный `__proto__:` — иначе свойство ушло бы
+        // в прототип и цикл восстановления его вовсе не увидел бы.
+        outputs: { ["__proto__"]: { polluted: true }, safe: { ok: 1 } },
         seq: 0,
       },
       { now: () => "2026-07-04T00:00:00.000Z" },
     );
     assert.equal((Object.prototype as any).polluted, undefined);
+    assert.equal(restored.hasNodeOutput("__proto__"), false, "опасный ключ не восстанавливается");
     assert.equal(restored.hasNodeOutput("safe"), true);
   });
 

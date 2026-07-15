@@ -454,3 +454,48 @@ function nullableIso(value: Date | null | string): null | string {
 function toIso(value: Date | string): string {
   return value instanceof Date ? value.toISOString() : value;
 }
+
+/**
+ * Запись витрины вызовов Backend API (решение A3). Строится ОТ каталога,
+ * сгенерированного из OpenAPI: операция без строки в таблице считается
+ * запрещённой — закрыто по умолчанию.
+ */
+export class BackendApiAllowlistEntryDto {
+  @ApiProperty({ example: "CommunicationCoreController_createConversation_v1" })
+  operation_id!: string;
+
+  @ApiProperty({ enum: ["GET", "POST", "PUT", "PATCH", "DELETE"], example: "POST" })
+  method!: string;
+
+  @ApiProperty({ example: "/api/v1/conversations" })
+  path!: string;
+
+  @ApiProperty({ example: "Create a conversation" })
+  summary!: string;
+
+  @ApiProperty({ example: "communication-core" })
+  tag!: string;
+
+  @ApiProperty({ description: "Вызов изменяет данные (не GET).", example: true })
+  mutates!: boolean;
+
+  @ApiProperty({ description: "Разрешён ли вызов узлу схемы.", example: false })
+  enabled!: boolean;
+
+  @ApiProperty({ nullable: true, example: "2026-07-15T12:00:00.000Z" })
+  curated_at!: null | string;
+
+  @ApiProperty({ nullable: true, example: "Нужен для авто-ответа" })
+  note!: null | string;
+}
+
+export class UpdateBackendApiAllowlistDto {
+  @ApiProperty({ example: true })
+  @IsBoolean()
+  enabled!: boolean;
+
+  @ApiPropertyOptional({ example: "Нужен для авто-ответа" })
+  @IsOptional()
+  @IsString()
+  note?: string;
+}

@@ -19,6 +19,12 @@
       "import": "./src/workflow-events.ts",
       "default": "./src/workflow-events.ts"
     },
+    "./backend-api-catalog": {
+      "types": "./dist/cjs/backend-api-catalog.generated.d.ts",
+      "require": "./dist/cjs/backend-api-catalog.generated.js",
+      "import": "./src/backend-api-catalog.generated.ts",
+      "default": "./src/backend-api-catalog.generated.ts"
+    },
     "./c4": "./src/c4.ts",
     "./c6": "./src/c6.ts",
     "./c7": "./src/c7.ts",
@@ -29,8 +35,10 @@
   },
   "scripts": {
     "prepare": "node scripts/build-cjs.mjs",
+    "generate": "node scripts/generate-backend-api-catalog.mjs",
+    "generate:check": "node scripts/generate-backend-api-catalog.mjs --check",
     "lint": "tsc -p tsconfig.json",
     "test": "node --import tsx --test message-model/*.test.ts test/*.test.ts test/unit/*.test.ts",
-    "build": "node --import tsx scripts/verify-auth-contract.ts && tsc -p tsconfig.json && node scripts/build-cjs.mjs"
+    "build": "node --import tsx scripts/verify-auth-contract.ts && node scripts/generate-backend-api-catalog.mjs --check && tsc -p tsconfig.json && node scripts/build-cjs.mjs"
   }
 }

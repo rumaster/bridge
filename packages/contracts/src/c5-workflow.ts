@@ -11,6 +11,7 @@
  *  - `variable_write` — побочный эффект, поэтому exec-порты получает.
  */
 
+import { getBackendApiOperation, isBackendApiOperationId } from "./backend-api-catalog.generated.js";
 import { isWorkflowEventType, workflowEventUnavailableReason } from "./workflow-events.js";
 
 /** Версия схемы Workflow (форма графа Node/Connection). */
@@ -733,6 +734,11 @@ const VALIDATION_ERROR_MESSAGES: Record<string, (details: ErrorDetails) => strin
   invalid_branch_operator: ({ nodeId }) => `Узлу ветвления ${String(nodeId)} нужен корректный config.operator`,
   invalid_event_type: ({ nodeId }) => `Узлу ${String(nodeId)} нужен непустой config.event_type`,
   unknown_event_type: ({ nodeId, reason }) => `Узел ${String(nodeId)}: ${String(reason)}`,
+  invalid_operation_id: ({ nodeId }) => `Узлу ${String(nodeId)} нужен config.operation_id — вызов Backend API`,
+  unknown_operation_id: ({ nodeId, operationId }) =>
+    `Узел ${String(nodeId)}: вызова «${String(operationId)}» нет в каталоге Backend API`,
+  missing_path_param_port: ({ nodeId, param }) =>
+    `Узлу ${String(nodeId)} нужен входной порт «${String(param)}» для плейсхолдера пути`,
   invalid_sub_schema_slug: ({ nodeId }) => `Узлу субсхемы ${String(nodeId)} нужен непустой config.subSchemaSlug`,
   invalid_boundary_port_id: ({ nodeId, portId }) =>
     `Граничный порт ${String(nodeId)}.${String(portId)} имеет недопустимый id (нужен ^[A-Za-z0-9_]{1,40}$)`,
@@ -874,6 +880,24 @@ function validateNodeConfig(node: WorkflowNode, kind: FbpGraphKind): void {
   if (node.type === "backend-api") {
     for (const key of FORBIDDEN_CONFIG_KEYS) {
       if (config[key] !== undefined) throw contractError("forbidden_config_key", { nodeId: node.id, key });
+    }
+    // Узел хранит только operation_id: method и path выводятся из каталога, а не
+    // дублируются в конфиге, — иначе схема разъехалась бы с API при первом же
+    // переименовании маршрута, и никто бы этого не заметил.
+    if (typeof config.operation_id !== "string" || !config.operation_id.trim()) {
+      throw contractError("invalid_operation_id", { nodeId: node.id });
+    }
+    if (!isBackendApiOperationId(config.operation_id)) {
+      throw contractError("unknown_operation_id", { nodeId: node.id, operationId: config.operation_id });
+    }
+    // Каждый плейсхолдер пути обязан иметь одноимённый входной порт, иначе узел
+    // гарантированно упадёт в рантайме.
+    const operation = getBackendApiOperation(config.operation_id);
+    const declared = new Set(configPortRows(config.inputs).map((row) => row.name));
+    for (const name of operation?.path_params ?? []) {
+      if (!declared.has(name)) {
+        throw contractError("missing_path_param_port", { nodeId: node.id, param: name });
+      }
     }
   }
 

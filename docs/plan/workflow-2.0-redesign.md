@@ -135,8 +135,21 @@ evaluateTransformCode(code, inputs, ctx) →
 ### Этап 2. Реестр событий и подписки
 `packages/contracts/src/events-registry.ts`: `{ event_type, label, payload_schema, sample_payload, correlation_fields }`. База — `C7_EVENT_TYPES` (9 типов) плюс реально публикуемые. Миграция: таблица `workflow_event_subscriptions` (`organization_id`, `workflow_id`, `version_id`, `node_id`, `event_type`, `correlation`, UNIQUE, RLS). Синхронизация подписок при promote.
 
-### Этап 3. Каталог Backend API + витрина
-Генератор `packages/contracts/src/backend-api-catalog.ts` из `openapi/backend-core/openapi.json` (operationId, method, path, path-параметры, requestBody, response) со сверкой `generate:check`. Миграция: таблица allowlist. Эндпоинты + экран курирования в админке под `platform_operator`. Узел хранит `operation_id`, порты выводятся из схемы операции.
+### Этап 3. Каталог Backend API + витрина — сделано (кроме экрана)
+
+Каталог генерируется в `packages/contracts/src/backend-api-catalog.generated.ts` из `openapi/backend-core/openapi.json` (81 операция: operationId, method, path, path-параметры, query-параметры, наличие тела). Выкладывается статическим TS-модулем, а не читается из JSON в рантайме: его грузит браузер, где `c5.ts` с `node:fs` непригоден. Сверка `generate:check` вшита в build пакета — добавление маршрута `/api/v1` без перегенерации падает в CI, а не у оператора в редакторе.
+
+**Узел хранит только `operation_id`**: `method` и `path` выводятся из каталога, а не дублируются в конфиге, — иначе схема разъехалась бы с API при первом переименовании маршрута, и никто бы этого не заметил. Контракт проверяет, что вызов есть в каталоге и что у каждого плейсхолдера пути есть одноимённый входной порт.
+
+Разделение ответственности:
+- **каталог** (код, из OpenAPI) — «что вообще существует»;
+- **витрина** `workflow_backend_api_allowlist` (БД, курирует platform_operator) — «что разрешено дёргать из схемы».
+
+Витрина глобальная, без `organization_id` и без RLS: она не содержит данных арендатора, читать её должен любой арендатор при валидации, а запись закрыта ролью на уровне API. Операция без строки считается запрещённой — закрыто по умолчанию. Проверка витрины идёт при каждом сохранении, а не только при выборе в редакторе: иначе операцию можно было бы закрыть, а сохранённые схемы продолжили бы её дёргать.
+
+Эндпоинты `GET/PATCH /api/v1/workflow-backend-api-allowlist` под `@Roles("platform_operator")`. Проверено: 16/16 юнит-тестов, Backend типизируется и собирается.
+
+**Экран курирования в админке отнесён к этапу 7** — это фронтенд, и он делается вместе с редактором.
 
 ### Этап 4. Движок 2.0
 `services/fbp-engine`: executor — FIFO-очередь по exec + ленивый pull данных с мемоизацией, `merge`-барьер по числу входящих exec-рёбер, ветвление по порту `true`/`false`, transform-песочница, `variable_read` / `variable_write`, `sub_schema` с границей start/end и изоляцией переменных, трассировка вида `SchemaNodeTraceEntry` (`via: 'flow' | 'data'`, `durationMs`, снимки inputs/outputs, `nodePath`, `depth`). Удаление `entry` и `bodyGraph` — закрывает D6.
