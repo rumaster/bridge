@@ -79,10 +79,15 @@ export function createFbpEngineGrpcServer({
         const schema = parseJsonObjectField(request.schema_json, "schema_json");
         const context = parseJsonObjectField(request.context_json, "context_json");
         const input = parseJsonObjectField(request.input_json || "{}", "input_json");
+        // Узел-триггер едет в context_json, а не отдельным полем proto: с ревизии
+        // 2026-07-15 точка входа — сработавший узел «Ожидание события», и это часть
+        // контекста запуска наравне с trigger/actor. Так проводной контракт C5
+        // остаётся замороженным на 1.0.0 — новых полей в сообщении не появляется.
         const result = await engine.runWorkflow({
           context,
           input,
           schema,
+          startNodeId: typeof context.start_node_id === "string" ? context.start_node_id : undefined,
         });
         const createdAt = now();
         const status = result.status ?? "failed";

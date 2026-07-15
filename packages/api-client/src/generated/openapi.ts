@@ -48,8 +48,8 @@ export const generatedOpenApiDocuments = [
     "openapi": "3.0.0",
     "title": "Bridge Backend Core API",
     "version": "1.0.0",
-    "pathCount": 66,
-    "operationCount": 79
+    "pathCount": 68,
+    "operationCount": 81
   },
   {
     "artifact": "packages/contracts/openapi/broadcasts/c8.broadcasts.openapi.json",
@@ -905,6 +905,28 @@ export const generatedOpenApiOperations = [
     "summary": "Create or resume anonymous Web Chat session",
     "tags": [
       "web-chat"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "get",
+    "path": "/api/v1/workflow-backend-api-allowlist",
+    "operationId": "WorkflowBackendApiAllowlistController_listOperations_v1",
+    "summary": "List Backend API operations available to Workflow nodes",
+    "tags": [
+      "workflow-backend-api-allowlist"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "patch",
+    "path": "/api/v1/workflow-backend-api-allowlist/{operationId}",
+    "operationId": "WorkflowBackendApiAllowlistController_updateOperation_v1",
+    "summary": "Allow or forbid a Backend API operation for Workflow nodes",
+    "tags": [
+      "workflow-backend-api-allowlist"
     ]
   },
   {

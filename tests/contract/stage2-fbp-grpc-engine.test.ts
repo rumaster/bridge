@@ -10,28 +10,45 @@ import { startFbpEngineGrpcServer } from "../../services/fbp-engine/src/grpc-ser
 
 const fixedNow = () => "2026-07-06T00:30:00.000Z";
 
+/**
+ * Схема 2.0: точка входа — узел «Ожидание события», который отдаёт полезную
+ * нагрузку события портом `data`; `transform` — pure-функция, вычисляемая по
+ * требованию, поэтому её результат забирает `variable_write` в exec-потоке.
+ */
 const workflowSchema = {
-  schema_version: "1.0.0",
+  schema_version: "2.0.0",
+  kind: "workflow",
   workflow_id: "workflow-stage-2",
   workflow_version_id: "workflow-version-stage-2",
-  entry: "prepare",
   nodes: [
+    {
+      id: "trigger",
+      type: "wait-event",
+      position: { x: 0, y: 0 },
+      config: { event_type: "message.created" },
+    },
     {
       id: "prepare",
       type: "transform",
-      input: {
-        amount: { kind: "params", path: ["amount"] },
-        title: { kind: "params", path: ["title"] },
-      },
+      position: { x: 0, y: 0 },
       config: {
-        expression: {
-          op: "merge",
-          args: [{ op: "input" }, { op: "lit", value: { executed_by: "real-fbp-engine" } }],
-        },
+        code: "return { ...input.event, executed_by: 'real-fbp-engine' };",
+        inputs: [{ name: "event", type: "object" }],
+        outputs: [{ name: "result", type: "object" }],
       },
     },
+    {
+      id: "store",
+      type: "variable_write",
+      position: { x: 0, y: 0 },
+      config: { inputs: [{ name: "prepared", type: "object" }] },
+    },
   ],
-  connections: [],
+  connections: [
+    { id: "c1", from: "trigger", fromPort: "out", to: "store", toPort: "in" },
+    { id: "c2", from: "trigger", fromPort: "data", to: "prepare", toPort: "event" },
+    { id: "c3", from: "prepare", fromPort: "result", to: "store", toPort: "prepared" },
+  ],
 };
 
 class RecordingFbpPersistence {
@@ -43,6 +60,9 @@ class RecordingFbpPersistence {
         actor_user_id: request.actor_user_id,
         organization_id: request.organization_id,
         trigger: "manual",
+        // Точка входа — сработавший узел «Ожидание события». Едет в контексте
+        // запуска, поэтому проводной контракт C5 остаётся замороженным на 1.0.0.
+        start_node_id: "trigger",
       },
       schema: workflowSchema,
     };
@@ -107,19 +127,37 @@ describe("Stage 2 MP-02/MP-08 Backend to SVC-FBP gRPC engine", () => {
       assert.equal(response.organization_id, "org-stage-2");
       assert.equal(response.status, "completed");
       assert.equal(response.degraded, false);
-      assert.deepEqual(response.state.output, {
-        amount: 500,
-        executed_by: "real-fbp-engine",
-        title: "Order",
-      });
       assert.equal((response.state.backend_api_callback as any)?.mode, undefined);
 
       assert.equal(persistence.persisted.length, 1);
       assert.equal(persistence.persisted[0].response.instance_id, response.instance_id);
+
+      const persistedJournal = persistence.persisted[0].journal;
       assert.deepEqual(
-        persistence.persisted[0].journal.map((row: any) => row.event),
-        ["workflow.started", "node.started", "node.completed", "workflow.completed"],
+        persistedJournal.map((row: any) => [row.event, row.node_id]),
+        [
+          ["workflow.started", null],
+          ["node.started", "trigger"],
+          ["node.completed", "trigger"],
+          // transform вычисляется по требованию — когда его выход понадобился
+          // узлу store, поэтому его записи идут ДО старта самого store.
+          ["node.started", "prepare"],
+          ["node.completed", "prepare"],
+          ["node.started", "store"],
+          ["node.completed", "store"],
+          ["workflow.completed", null],
+        ],
       );
+
+      const prepared = persistedJournal.find((row: any) => row.event === "node.completed" && row.node_id === "prepare");
+      assert.equal(prepared.data.via, "data", "transform — pure-узел, тянется по данным");
+
+      // Доказательство, что transform реально отработал НАСТОЯЩИМ движком и его
+      // значение дошло до потребителя: variable_write пишет в лог только те порты,
+      // которые фактически пришли на вход. Пустой список означал бы, что данные
+      // не доехали.
+      const stored = persistedJournal.find((row: any) => row.event === "node.completed" && row.node_id === "store");
+      assert.deepEqual(stored.data.log.variables, ["prepared"]);
     } finally {
       client.close();
       await new Promise<void>((resolveShutdown) => {

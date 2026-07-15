@@ -37,6 +37,7 @@ import {
   collectWorkflowSubSchemaSlugs,
   createWorkflowSchemaValidationException,
   validateWorkflowSchema,
+  validateWorkflowSchemaShape,
 } from "./workflow-schema.validator";
 import { WorkflowSubschemaService } from "./workflow-subschema.service";
 
@@ -135,7 +136,16 @@ export class WorkflowService {
   ): Promise<WorkflowDraftResponseDto> {
     return this.database.withTenant(organizationId, async (client) => {
       await this.requireWorkflow(client, organizationId, workflowId);
-      await this.assertWorkflowSchemaPersistable(client, organizationId, payload.schema);
+      // Драфт проверяется ТОЛЬКО по форме графа (решение A10). Редактор сохраняет
+      // его автоматически при выходе и при переходе к другой схеме, поэтому полная
+      // валидация здесь означала бы потерю недостроенной работы: у узла ещё не
+      // выбрано событие, порт висит — и автосохранение молча отвергается. Полная
+      // проверка контракта живёт в promoteDraft, где драфт копируется в рабочую
+      // версию.
+      const shape = validateWorkflowSchemaShape(payload.schema);
+      if (!shape.valid) {
+        throw createWorkflowSchemaValidationException(shape.errors);
+      }
 
       const result = await client.query<WorkflowDraftRow>(
         `

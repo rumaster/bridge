@@ -5,11 +5,14 @@ import { describe, it } from "node:test";
 
 const root = process.cwd();
 
+// Порядок значим, а не косметичен: npm запускает скрипты воркспейсов в порядке
+// этого массива. `packages/*` идут первыми (Ревизия 2026-07-15, решение A9),
+// иначе `apps/*` собирались бы раньше `@bridge/contracts` и не находили его типы.
 const expectedWorkspaceGlobs = [
+  "packages/*",
   "apps/*",
   "services/*",
   "clients/*",
-  "packages/*",
 ];
 
 const expectedWorkspacePackages = [

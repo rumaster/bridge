@@ -1,3 +1,4 @@
+import { FBP_NODE_TYPES } from "@bridge/contracts/c5-workflow";
 import { describe, expect, it } from "vitest";
 
 import type { WorkflowNode, WorkflowNodeType, WorkflowSchema } from "../src/api/client/types";
@@ -22,16 +23,13 @@ function node(overrides: Partial<WorkflowNode> & { id: string }): WorkflowNode {
 }
 
 describe("safe workflow node set (ТЗ §13.13)", () => {
+  // Список сверяется с каталогом контракта, а не переписывается сюда руками:
+  // именно расхождение копий каталога и породило дефект D8. Каталог 2.0 добавил
+  // variable_read/variable_write/merge и границы субсхем start/end.
   it("ограничивает палитру каноническими типами C5", () => {
-    expect(SAFE_WORKFLOW_NODE_TYPES).toEqual([
-      "backend-api",
-      "llm",
-      "knowledge-base-search",
-      "branch",
-      "transform",
-      "sub_schema",
-      "wait-event"
-    ]);
+    expect(SAFE_WORKFLOW_NODE_TYPES).toEqual([...FBP_NODE_TYPES]);
+    expect(SAFE_WORKFLOW_NODE_TYPES).toContain("wait-event");
+    expect(SAFE_WORKFLOW_NODE_TYPES).not.toContain("db_write");
   });
 
   it("считает узел изменяющим данные только для вызова Backend API (ТЗ §13.5)", () => {
