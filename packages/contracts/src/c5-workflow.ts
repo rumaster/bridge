@@ -11,6 +11,8 @@
  *  - `variable_write` — побочный эффект, поэтому exec-порты получает.
  */
 
+import { isWorkflowEventType, workflowEventUnavailableReason } from "./workflow-events.js";
+
 /** Версия схемы Workflow (форма графа Node/Connection). */
 export const WORKFLOW_SCHEMA_VERSION = "2.0.0";
 
@@ -730,6 +732,7 @@ const VALIDATION_ERROR_MESSAGES: Record<string, (details: ErrorDetails) => strin
   invalid_transform_code: ({ nodeId }) => `transform-узлу ${String(nodeId)} нужен непустой config.code`,
   invalid_branch_operator: ({ nodeId }) => `Узлу ветвления ${String(nodeId)} нужен корректный config.operator`,
   invalid_event_type: ({ nodeId }) => `Узлу ${String(nodeId)} нужен непустой config.event_type`,
+  unknown_event_type: ({ nodeId, reason }) => `Узел ${String(nodeId)}: ${String(reason)}`,
   invalid_sub_schema_slug: ({ nodeId }) => `Узлу субсхемы ${String(nodeId)} нужен непустой config.subSchemaSlug`,
   invalid_boundary_port_id: ({ nodeId, portId }) =>
     `Граничный порт ${String(nodeId)}.${String(portId)} имеет недопустимый id (нужен ^[A-Za-z0-9_]{1,40}$)`,
@@ -894,8 +897,18 @@ function validateNodeConfig(node: WorkflowNode, kind: FbpGraphKind): void {
     throw contractError("invalid_branch_operator", { nodeId: node.id });
   }
 
-  if (node.type === "wait-event" && (typeof config.event_type !== "string" || !config.event_type.trim())) {
-    throw contractError("invalid_event_type", { nodeId: node.id });
+  if (node.type === "wait-event") {
+    if (typeof config.event_type !== "string" || !config.event_type.trim()) {
+      throw contractError("invalid_event_type", { nodeId: node.id });
+    }
+    // Тип обязан быть из реестра: подписка на объявленное, но никем не
+    // публикуемое событие никогда бы не сработала — молча и без следов.
+    if (!isWorkflowEventType(config.event_type)) {
+      throw contractError("unknown_event_type", {
+        nodeId: node.id,
+        reason: workflowEventUnavailableReason(config.event_type),
+      });
+    }
   }
 
   if (node.type === "sub_schema" && (typeof config.subSchemaSlug !== "string" || !config.subSchemaSlug.trim())) {

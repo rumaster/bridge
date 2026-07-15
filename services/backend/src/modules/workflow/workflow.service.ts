@@ -32,6 +32,7 @@ import {
   mapWorkflowVersion,
 } from "./workflow.dto";
 import {
+  collectWaitEventNodes,
   collectWorkflowSubSchemaSlugs,
   createWorkflowSchemaValidationException,
   validateWorkflowSchema,
@@ -189,8 +190,55 @@ export class WorkflowService {
         [organizationId, workflowId, version.id],
       );
 
+      await this.syncEventSubscriptions(client, organizationId, workflowId, version.id, workflow.draft_schema);
+
       return mapWorkflowVersion(version);
     });
+  }
+
+  /**
+   * Регистрация и разрегистрация подписок на события (Ревизия 2026-07-15).
+   *
+   * Узлы «Ожидание события» — точки входа схемы, поэтому подписки существуют
+   * только у рабочей версии: у драфта их нет, иначе недостроенная схема
+   * запускалась бы на боевых событиях.
+   *
+   * Синхронизация именно «снести и записать заново», а не доливка: узел могли
+   * удалить, переименовать или сменить ему тип события — при доливке осиротевшая
+   * подписка продолжила бы запускать схему с несуществующего узла. Всё идёт в той
+   * же транзакции, что и сам promote: рассогласование версии и её подписок
+   * означало бы запуск чужой схемы.
+   */
+  private async syncEventSubscriptions(
+    client: Queryable,
+    organizationId: string,
+    workflowId: string,
+    versionId: string,
+    schema: unknown,
+  ): Promise<void> {
+    await client.query(
+      `DELETE FROM workflow_event_subscriptions WHERE organization_id = $1 AND workflow_id = $2`,
+      [organizationId, workflowId],
+    );
+
+    for (const node of collectWaitEventNodes(schema)) {
+      await client.query(
+        `
+          INSERT INTO workflow_event_subscriptions
+            (id, organization_id, workflow_id, version_id, node_id, event_type, correlation)
+          VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+        `,
+        [
+          randomUUID(),
+          organizationId,
+          workflowId,
+          versionId,
+          node.nodeId,
+          node.eventType,
+          JSON.stringify(node.correlation),
+        ],
+      );
+    }
   }
 
   async exportWorkflow(

@@ -16,5 +16,5 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "files": ["src/c5-workflow.ts"]
+  "files": ["src/c5-workflow.ts", "src/workflow-events.ts"]
 }

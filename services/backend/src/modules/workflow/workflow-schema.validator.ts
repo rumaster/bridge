@@ -130,6 +130,35 @@ export function collectWorkflowSubSchemaSlugs(schema: unknown): string[] {
   return [...slugs].sort();
 }
 
+export interface WorkflowWaitEventNode {
+  nodeId: string;
+  eventType: string;
+  correlation: Record<string, unknown>;
+}
+
+/**
+ * Узлы «Ожидание события» схемы — источники исполнения. По ним при копировании
+ * драфта в рабочую версию заводятся подписки (`workflow_event_subscriptions`).
+ *
+ * Субсхемы не обходим: событий в них нет по контракту, и `sub_schema` в схеме
+ * хранит только ссылку на slug.
+ */
+export function collectWaitEventNodes(schema: unknown): WorkflowWaitEventNode[] {
+  if (!isRecord(schema) || !Array.isArray(schema.nodes)) return [];
+  const nodes: WorkflowWaitEventNode[] = [];
+  for (const node of schema.nodes) {
+    if (!isRecord(node) || node.type !== "wait-event" || typeof node.id !== "string") continue;
+    const config = isRecord(node.config) ? node.config : {};
+    if (typeof config.event_type !== "string" || !config.event_type.trim()) continue;
+    nodes.push({
+      nodeId: node.id,
+      eventType: config.event_type.trim(),
+      correlation: isRecord(config.correlation) ? config.correlation : {},
+    });
+  }
+  return nodes;
+}
+
 /** Лимиты песочницы — единственное, чего контракт знать не может. */
 function validateNodeLimits(
   node: unknown,
