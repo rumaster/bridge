@@ -76,6 +76,7 @@ import { validateWorkflowSchema } from "../../shared/workflow";
 
 const API_PREFIX = "*/api/v1";
 const CONNECTABLE_CHANNEL_TYPES = new Set(["web_chat", "telegram", "max", "email"]);
+const MOCK_REGISTRATION_REQUEST_ID = "00000000-0000-4000-8000-000000000501";
 
 const mockUsers: OrganizationUser[] = [
   {
@@ -188,6 +189,75 @@ export const handlers = [
     }
 
     currentSession = createSessionForTelegramUsername(body.telegramUsername);
+    return HttpResponse.json(currentSession);
+  }),
+
+  // Регистрация: в моке шага «нажми Start у бота» нет, поэтому заявка сразу
+  // переходит в code_sent — deep-link отдаётся только для полноты ответа.
+  http.post(`${API_PREFIX}/auth/register/start`, async ({ request }) => {
+    const body = (await request.json()) as {
+      telegramUsername?: string;
+      email?: string;
+      organizationName?: string;
+    };
+    const errors: NonNullable<ProblemDetails["errors"]> = [];
+
+    if (!body.telegramUsername) {
+      errors.push({ field: "telegramUsername", message: "telegramUsername is required" });
+    }
+
+    if (!body.email) {
+      errors.push({ field: "email", message: "email is required" });
+    }
+
+    if (!body.organizationName) {
+      errors.push({ field: "organizationName", message: "organizationName is required" });
+    }
+
+    if (errors.length > 0) {
+      return validationProblem(errors, "Request payload does not match C3.auth DTO.");
+    }
+
+    return HttpResponse.json(
+      {
+        requestId: MOCK_REGISTRATION_REQUEST_ID,
+        status: "code_sent",
+        deepLink: "https://t.me/bridge_mock_bot?start=brr_mock",
+        botUsername: "bridge_mock_bot",
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        note: null
+      },
+      { status: 202 }
+    );
+  }),
+
+  http.get(`${API_PREFIX}/auth/register/status/:requestId`, ({ params }) => {
+    return HttpResponse.json({
+      requestId: params.requestId,
+      status: "code_sent",
+      codeExpiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+      note: null
+    });
+  }),
+
+  http.post(`${API_PREFIX}/auth/register/verify`, async ({ request }) => {
+    const body = (await request.json()) as { requestId?: string; code?: string };
+    const errors: NonNullable<ProblemDetails["errors"]> = [];
+
+    if (!body.requestId) {
+      errors.push({ field: "requestId", message: "requestId is required" });
+    }
+
+    if (!body.code || !/^[0-9]{6}$/.test(body.code)) {
+      errors.push({ field: "code", message: "Registration code must contain exactly 6 digits." });
+    }
+
+    if (errors.length > 0) {
+      return validationProblem(errors, "Request payload does not match C3.auth DTO.");
+    }
+
+    currentSession = createSessionForTelegramUsername("mock_registered_admin");
     return HttpResponse.json(currentSession);
   }),
 

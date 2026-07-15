@@ -35,19 +35,22 @@ interface TelegramApiResponse {
  * связка «числовой id ↔ @username», чтобы доставлять код приватным пользователям
  * по их chat_id (по @username Bot API писать приватным адресатам не умеет).
  */
-interface TelegramPeer {
+export interface TelegramPeer {
+  first_name?: string;
   id?: number;
+  last_name?: string;
   type?: string;
   username?: string;
 }
 
-interface TelegramUpdate {
+export interface TelegramUpdate {
   callback_query?: { from?: TelegramPeer };
   channel_post?: { chat?: TelegramPeer };
   chat_member?: { chat?: TelegramPeer; from?: TelegramPeer };
   edited_message?: { chat?: TelegramPeer; from?: TelegramPeer };
-  message?: { chat?: TelegramPeer; from?: TelegramPeer };
+  message?: { chat?: TelegramPeer; from?: TelegramPeer; text?: string };
   my_chat_member?: { chat?: TelegramPeer; from?: TelegramPeer };
+  update_id: number;
 }
 
 /**
@@ -67,6 +70,7 @@ class TelegramDeliveryError extends Error {
 }
 
 const TELEGRAM_BOT_TOKEN_ENV = "TELEGRAM_BOT_TOKEN";
+const TELEGRAM_BOT_USERNAME_ENV = "TELEGRAM_BOT_USERNAME";
 const TELEGRAM_API_BASE_ENV = "TELEGRAM_API_BASE_URL";
 const DEFAULT_TELEGRAM_API_BASE = "https://api.telegram.org";
 const MAX_RETAINED_DELIVERIES = 50;
@@ -95,9 +99,115 @@ export class TelegramCodeDeliveryService {
   private readonly retained: TelegramCodeDelivery[] = [];
   /** Кэш «нормализованный @username → числовой chat_id», наполняется getUpdates. */
   private readonly chatIdByUsername = new Map<string, string>();
+  /** Выставляется поллером: у Bot API может быть только один потребитель getUpdates. */
+  private updatesConsumerAttached = false;
+  private botUsername?: null | string;
 
   get configured(): boolean {
     return Boolean(this.botToken);
+  }
+
+  /**
+   * Заявляет поллер единственным потребителем getUpdates. Telegram отдаёт
+   * обновления ровно одному читателю: параллельный getUpdates отвечает
+   * 409 Conflict и ворует апдейты, поэтому best-effort резолвинг в
+   * {@link refreshChatIdCache} при подключённом поллере отключается — кэш
+   * наполняет сам поллер через {@link rememberChatId}.
+   */
+  attachUpdatesConsumer(): () => void {
+    this.updatesConsumerAttached = true;
+
+    return () => {
+      this.updatesConsumerAttached = false;
+    };
+  }
+
+  /** Запоминает связку «@username → chat_id», подсмотренную поллером в апдейте. */
+  rememberChatId(username: string, chatId: number | string): void {
+    this.chatIdByUsername.set(normalizeUsername(username), String(chatId));
+  }
+
+  /**
+   * Читает обновления бота. Используется только поллером: offset подтверждает
+   * предыдущую порцию, поэтому вызывать метод из другого места нельзя.
+   */
+  async fetchUpdates(
+    offset: number | undefined,
+    timeoutSeconds: number,
+    signal?: AbortSignal,
+  ): Promise<TelegramUpdate[]> {
+    const params = new URLSearchParams({
+      limit: String(GET_UPDATES_LIMIT),
+      timeout: String(timeoutSeconds),
+    });
+    if (offset !== undefined) {
+      params.set("offset", String(offset));
+    }
+
+    const response = await fetch(`${this.apiBase}/bot${this.botToken}/getUpdates?${params}`, {
+      method: "GET",
+      signal,
+    });
+    const payload = await readTelegramPayload(response);
+
+    if (!response.ok || payload?.ok === false) {
+      throw new TelegramDeliveryError(
+        `Telegram getUpdates failed (HTTP ${response.status}${
+          payload?.error_code ? `, error_code ${payload.error_code}` : ""
+        }): ${payload?.description ?? response.statusText ?? "unknown error"}`,
+        { note: "telegram_get_updates_failed" },
+      );
+    }
+
+    return Array.isArray(payload?.result) ? (payload.result as TelegramUpdate[]) : [];
+  }
+
+  /**
+   * @username бота для deep-link `t.me/<bot>?start=<token>`. Берётся из
+   * TELEGRAM_BOT_USERNAME, иначе разрешается через getMe и кэшируется.
+   */
+  async getBotUsername(): Promise<null | string> {
+    const configured = process.env[TELEGRAM_BOT_USERNAME_ENV]?.trim().replace(/^@/, "");
+    if (configured) {
+      return configured;
+    }
+
+    if (this.botUsername !== undefined) {
+      return this.botUsername;
+    }
+
+    if (!this.configured) {
+      this.botUsername = null;
+
+      return null;
+    }
+
+    try {
+      const response = await fetch(`${this.apiBase}/bot${this.botToken}/getMe`, { method: "GET" });
+      const payload = await readTelegramPayload(response);
+      const username = (payload?.result as TelegramPeer | undefined)?.username;
+
+      this.botUsername = username ?? null;
+
+      if (!username) {
+        this.logger.warn(
+          `Telegram getMe did not return a bot username (HTTP ${response.status}): ${
+            payload?.description ?? "unknown error"
+          }. Set ${TELEGRAM_BOT_USERNAME_ENV} to build registration deep links.`,
+        );
+      }
+    } catch (cause) {
+      // Не кэшируем сетевой сбой: следующая попытка должна повторить getMe.
+      this.logger.warn(
+        `Could not resolve the bot username via getMe: ${
+          cause instanceof Error ? cause.message : String(cause)
+        }`,
+      );
+
+      return null;
+    }
+
+    return this.botUsername;
   }
 
   async deliver(delivery: TelegramCodeDelivery): Promise<TelegramDeliveryResult> {
@@ -288,6 +398,12 @@ export class TelegramCodeDeliveryService {
    * усилий», доставка деградирует до fallback на @username.
    */
   private async refreshChatIdCache(): Promise<void> {
+    // Апдейты уже читает поллер; второй getUpdates получил бы 409 и отобрал бы у
+    // него часть обновлений. Кэш в этом режиме наполняется через rememberChatId.
+    if (this.updatesConsumerAttached) {
+      return;
+    }
+
     const url = `${this.apiBase}/bot${this.botToken}/getUpdates?limit=${GET_UPDATES_LIMIT}`;
 
     let response: Response;
@@ -429,6 +545,15 @@ function buildDeliveryHint(chatId: string, description: string): string | undefi
 }
 
 function composeMessage(delivery: TelegramCodeDelivery): string {
+  if (delivery.purpose === "registration") {
+    return (
+      `Bridge SaaS: код подтверждения регистрации — ${delivery.code}. ` +
+      `Он действует до ${delivery.expiresAt}. ` +
+      `Введите его на странице регистрации, чтобы создать организацию. ` +
+      `Если вы не начинали регистрацию, проигнорируйте это сообщение.`
+    );
+  }
+
   return (
     `Bridge SaaS: код для входа — ${delivery.code}. ` +
     `Он действует до ${delivery.expiresAt}. ` +

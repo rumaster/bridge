@@ -1006,6 +1006,13 @@ textarea {
   background: #78d7c9;
 }
 
+.login-alt-action {
+  margin: 0;
+  text-align: center;
+  font-size: 14px;
+  color: #5a6572;
+}
+
 .route-loader {
   padding: 24px;
 }

@@ -32,6 +32,10 @@ import type {
   Organization,
   OrganizationConfiguration,
   OrganizationUser,
+  RegistrationStartRequest,
+  RegistrationStartResponse,
+  RegistrationStatusResponse,
+  RegistrationVerifyRequest,
   CreateUserRequest,
   PatchUserRequest,
   UserListResponse,
@@ -88,6 +92,20 @@ export function createSaasAdminApiClient(options: SaasAdminApiClientOptions = {}
         }),
       verifyTelegramLogin: (request: TelegramLoginVerifyRequest) =>
         requestJson<AdminSession>("/auth/login/telegram/verify", {
+          method: "POST",
+          body: JSON.stringify(request)
+        }),
+      startRegistration: (request: RegistrationStartRequest) =>
+        requestJson<RegistrationStartResponse>("/auth/register/start", {
+          method: "POST",
+          body: JSON.stringify(request)
+        }),
+      getRegistrationStatus: (requestId: string) =>
+        requestJson<RegistrationStatusResponse>(
+          `/auth/register/status/${encodeURIComponent(requestId)}`
+        ),
+      verifyRegistration: (request: RegistrationVerifyRequest) =>
+        requestJson<AdminSession>("/auth/register/verify", {
           method: "POST",
           body: JSON.stringify(request)
         }),

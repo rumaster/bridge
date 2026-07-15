@@ -1,13 +1,14 @@
-import { LogIn, Send, ShieldCheck } from "lucide-react";
+import { Building2, LogIn, Send, ShieldCheck } from "lucide-react";
 import { FormEvent, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
-import type { ProblemDetails } from "../../api/client/types";
+import type { LoginOrganizationChoice } from "../../api/client/types";
 import type { LoginLocationState } from "../../routing/router";
+import { getApiErrorCode, getApiErrorDiagnostics, getApiErrorMessage } from "../../shared/api-error";
 import { useAuth } from "../../state/auth";
 import { Button, Panel, TextInput } from "../../shared/ui-kit";
 
-type LoginStep = "username" | "code";
+type LoginStep = "username" | "code" | "organization";
 
 export default function LoginPage() {
   const { startTelegramLogin, status, verifyTelegramLogin } = useAuth();
@@ -19,6 +20,7 @@ export default function LoginPage() {
   const [telegramUsername, setTelegramUsername] = useState("");
   const [code, setCode] = useState("");
   const [expiresInSeconds, setExpiresInSeconds] = useState<number | null>(null);
+  const [organizations, setOrganizations] = useState<LoginOrganizationChoice[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -33,7 +35,29 @@ export default function LoginPage() {
       setExpiresInSeconds(login.expiresInSeconds);
       setStep("code");
     } catch (nextError) {
-      setError(getErrorMessage(nextError));
+      setError(getApiErrorMessage(nextError, "Не удалось выполнить вход."));
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function submitCode(organizationId?: string) {
+    setSubmitting(true);
+    setError(null);
+
+    try {
+      await verifyTelegramLogin({ code, organizationId, telegramUsername });
+      navigate(returnTo, { replace: true });
+    } catch (nextError) {
+      // Код верен, но аккаунт администрирует несколько организаций: бэкенд не
+      // расходует код и возвращает список — показываем выбор.
+      if (getApiErrorCode(nextError) === "ORGANIZATION_SELECTION_REQUIRED") {
+        setOrganizations(readOrganizationChoices(nextError));
+        setStep("organization");
+        return;
+      }
+
+      setError(getApiErrorMessage(nextError, "Не удалось выполнить вход."));
     } finally {
       setSubmitting(false);
     }
@@ -41,20 +65,7 @@ export default function LoginPage() {
 
   async function handleVerifyLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSubmitting(true);
-    setError(null);
-
-    try {
-      await verifyTelegramLogin({
-        telegramUsername,
-        code
-      });
-      navigate(returnTo, { replace: true });
-    } catch (nextError) {
-      setError(getErrorMessage(nextError));
-    } finally {
-      setSubmitting(false);
-    }
+    await submitCode();
   }
 
   return (
@@ -74,6 +85,26 @@ export default function LoginPage() {
           </div>
         ) : null}
 
+        {step === "organization" ? (
+          <div className="stack-form">
+            <div className="inline-status">
+              Ваш Telegram-аккаунт администрирует несколько организаций. Выберите, куда войти.
+            </div>
+            {organizations.map((organization) => (
+              <Button
+                disabled={submitting}
+                key={organization.id}
+                onClick={() => void submitCode(organization.id)}
+                type="button"
+                variant="secondary"
+              >
+                <Building2 aria-hidden="true" size={16} />
+                {organization.name}
+              </Button>
+            ))}
+          </div>
+        ) : null}
+
         {step === "username" ? (
           <form className="stack-form" onSubmit={(event) => void handleStartLogin(event)}>
             <TextInput
@@ -90,7 +121,9 @@ export default function LoginPage() {
               Отправить код
             </Button>
           </form>
-        ) : (
+        ) : null}
+
+        {step === "code" ? (
           <form className="stack-form" onSubmit={(event) => void handleVerifyLogin(event)}>
             <div className="inline-status">
               Код отправлен в Telegram
@@ -125,31 +158,18 @@ export default function LoginPage() {
               </Button>
             </div>
           </form>
-        )}
+        ) : null}
+
+        <p className="login-alt-action">
+          Нет организации? <Link to="/register">Зарегистрировать</Link>
+        </p>
       </Panel>
     </main>
   );
 }
 
-function getErrorMessage(error: unknown) {
-  if (isProblemError(error)) {
-    return error.body.detail;
-  }
+function readOrganizationChoices(error: unknown): LoginOrganizationChoice[] {
+  const organizations = getApiErrorDiagnostics(error)?.organizations;
 
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return "Не удалось выполнить вход.";
-}
-
-function isProblemError(error: unknown): error is { body: ProblemDetails } {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "body" in error &&
-    typeof (error as { body?: unknown }).body === "object" &&
-    (error as { body?: { detail?: unknown } }).body !== null &&
-    typeof (error as { body: { detail?: unknown } }).body.detail === "string"
-  );
+  return Array.isArray(organizations) ? (organizations as LoginOrganizationChoice[]) : [];
 }

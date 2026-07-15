@@ -27,6 +27,12 @@
       "reason": "Редизайн Knowledge Base: документы — текстовые инструкции для AI Assistant (два поля: название и контент), эмбеддинг считается при сохранении. Убран маршрут POST /api/v1/knowledge/documents/{id}:reindex (индексация файлов больше не нужна). Обновлены generated_operation_count 77→76 и generated_path_count 64→63; surface-записи knowledge не затронуты (reindex не был опубликован в surface). Владелец контрактов: решение A (сузить v1-поверхность вместе с редизайном фичи).",
       "operation_count": "77 -> 76",
       "path_count": "64 -> 63"
+    },
+    {
+      "date": "2026-07-15",
+      "reason": "Самостоятельная регистрация администратора организации (SVC-ADMIN /register): добавлены три неаутентифицированных маршрута POST /api/v1/auth/register/start, GET /api/v1/auth/register/status/{requestId}, POST /api/v1/auth/register/verify после заморозки, включены в опубликованную v1-поверхность согласно инварианту «every actual Nest /api/v1 route is published». Обновлены generated_operation_count 76→79 и generated_path_count 63→66; surface-записи не добавлялись (маршруты auth в surface не публикуются — там принятая M5-поверхность). Владелец контрактов: решение A (включить в v1).",
+      "operation_count": "76 -> 79",
+      "path_count": "63 -> 66"
     }
   ],
   "scope": {
@@ -57,8 +63,8 @@
       "base_path": "/api/v1",
       "openapi": {
         "artifact": "packages/contracts/openapi/backend-core/openapi.json",
-        "generated_operation_count": 76,
-        "generated_path_count": 63,
+        "generated_operation_count": 79,
+        "generated_path_count": 66,
         "metadata": {
           "x-contract-id": "C3",
           "x-owner": "SVC-API",
@@ -125,7 +131,8 @@
         "services/backend/src/modules/web-chat/web-chat.controller.ts",
         "services/backend/src/modules/integration-gateway/channels.controller.ts",
         "services/backend/src/modules/integration-gateway/mail.controller.ts",
-        "services/backend/src/modules/communication-core/attachment.controller.ts"
+        "services/backend/src/modules/communication-core/attachment.controller.ts",
+        "services/backend/src/modules/identity/registration.controller.ts"
       ],
       "evidence": [
         "services/backend/test/unit/openapi-decorators.spec.ts",

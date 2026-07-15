@@ -14,6 +14,7 @@ import { SaasAdminProviders } from "../state/admin";
 import type { SaasAdminServiceOverrides } from "../state/admin";
 
 const LoginPage = lazy(() => import("../presentation/pages/LoginPage"));
+const RegisterPage = lazy(() => import("../presentation/pages/RegisterPage"));
 const OverviewPage = lazy(() => import("../presentation/pages/OverviewPage"));
 const OrganizationPage = lazy(() => import("../presentation/pages/OrganizationPage"));
 const UsersPage = lazy(() => import("../presentation/pages/UsersPage"));
@@ -58,6 +59,10 @@ function createRoutes(services?: SaasAdminServiceOverrides): RouteObject[] {
         {
           path: "login",
           element: <LoginPage />
+        },
+        {
+          path: "register",
+          element: <RegisterPage />
         },
         {
           element: <ProtectedRoute />,

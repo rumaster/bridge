@@ -48,8 +48,8 @@ export const generatedOpenApiDocuments = [
     "openapi": "3.0.0",
     "title": "Bridge Backend Core API",
     "version": "1.0.0",
-    "pathCount": 63,
-    "operationCount": 76
+    "pathCount": 66,
+    "operationCount": 79
   },
   {
     "artifact": "packages/contracts/openapi/broadcasts/c8.broadcasts.openapi.json",
@@ -276,6 +276,39 @@ export const generatedOpenApiOperations = [
     "path": "/api/v1/auth/logout",
     "operationId": "AuthSessionController_logout_v1",
     "summary": "Logout current server session",
+    "tags": [
+      "auth"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "post",
+    "path": "/api/v1/auth/register/start",
+    "operationId": "RegistrationController_startRegistration_v1",
+    "summary": "Start a self-service organization registration and return the bot deep link",
+    "tags": [
+      "auth"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "get",
+    "path": "/api/v1/auth/register/status/{requestId}",
+    "operationId": "RegistrationController_getStatus_v1",
+    "summary": "Poll a registration request until the Telegram code is delivered",
+    "tags": [
+      "auth"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "post",
+    "path": "/api/v1/auth/register/verify",
+    "operationId": "RegistrationController_verifyRegistration_v1",
+    "summary": "Verify the registration code, create the organization and sign the administrator in",
     "tags": [
       "auth"
     ]

@@ -44,6 +44,54 @@ export interface TelegramLoginStartResponse {
 export interface TelegramLoginVerifyRequest {
   telegramUsername: string;
   code: string;
+  /**
+   * Требуется, только если Telegram-аккаунт администрирует несколько организаций:
+   * verify отвечает 409 ORGANIZATION_SELECTION_REQUIRED со списком в
+   * diagnostics.organizations, и запрос повторяется с выбранной организацией.
+   */
+  organizationId?: string;
+}
+
+export interface LoginOrganizationChoice {
+  id: string;
+  name: string;
+  role: string;
+}
+
+// ── Самостоятельная регистрация администратора организации (SVC-ADMIN /register) ──
+// Telegram Bot API не пишет приватному пользователю первым, поэтому код нельзя
+// отправить сразу после формы: start отдаёт deep-link на бота, пользователь жмёт
+// Start, и только тогда бот узнаёт chat_id и шлёт код. Страница опрашивает status,
+// пока он не станет code_sent. Организация создаётся лишь на шаге verify.
+
+export type RegistrationStatus = "pending" | "code_sent" | "completed";
+
+export interface RegistrationStartRequest {
+  telegramUsername: string;
+  email: string;
+  organizationName: string;
+}
+
+export interface RegistrationStartResponse {
+  requestId: string;
+  status: RegistrationStatus;
+  deepLink: string | null;
+  botUsername: string | null;
+  expiresAt: string;
+  note?: string | null;
+}
+
+export interface RegistrationStatusResponse {
+  requestId: string;
+  status: RegistrationStatus;
+  codeExpiresAt: string | null;
+  expiresAt: string;
+  note?: string | null;
+}
+
+export interface RegistrationVerifyRequest {
+  requestId: string;
+  code: string;
 }
 
 export interface LogoutResponse {
@@ -796,6 +844,9 @@ export interface SaasAdminApiClient {
     getSession: () => Promise<AdminSession>;
     startTelegramLogin: (request: TelegramLoginStartRequest) => Promise<TelegramLoginStartResponse>;
     verifyTelegramLogin: (request: TelegramLoginVerifyRequest) => Promise<AdminSession>;
+    startRegistration: (request: RegistrationStartRequest) => Promise<RegistrationStartResponse>;
+    getRegistrationStatus: (requestId: string) => Promise<RegistrationStatusResponse>;
+    verifyRegistration: (request: RegistrationVerifyRequest) => Promise<AdminSession>;
     logout: () => Promise<LogoutResponse>;
   };
   org: {

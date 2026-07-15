@@ -4,6 +4,10 @@ import type { PropsWithChildren } from "react";
 import type {
   AdminRole,
   AdminSession,
+  RegistrationStartRequest,
+  RegistrationStartResponse,
+  RegistrationStatusResponse,
+  RegistrationVerifyRequest,
   SaasAdminApiClient,
   TelegramLoginStartRequest,
   TelegramLoginStartResponse,
@@ -19,6 +23,9 @@ interface AuthContextValue {
   status: AuthStatus;
   startTelegramLogin: (request: TelegramLoginStartRequest) => Promise<TelegramLoginStartResponse>;
   verifyTelegramLogin: (request: TelegramLoginVerifyRequest) => Promise<AdminSession>;
+  startRegistration: (request: RegistrationStartRequest) => Promise<RegistrationStartResponse>;
+  getRegistrationStatus: (requestId: string) => Promise<RegistrationStatusResponse>;
+  verifyRegistration: (request: RegistrationVerifyRequest) => Promise<AdminSession>;
   refreshSession: () => Promise<AdminSession>;
   logout: () => Promise<void>;
 }
@@ -86,6 +93,21 @@ export function AuthProvider({ api, children }: AuthProviderProps) {
     return applySession(nextSession);
   }, [api, applySession]);
 
+  const startRegistration = useCallback(
+    (request: RegistrationStartRequest) => api.auth.startRegistration(request),
+    [api]
+  );
+
+  const getRegistrationStatus = useCallback(
+    (requestId: string) => api.auth.getRegistrationStatus(requestId),
+    [api]
+  );
+
+  const verifyRegistration = useCallback(async (request: RegistrationVerifyRequest) => {
+    const nextSession = await api.auth.verifyRegistration(request);
+    return applySession(nextSession);
+  }, [api, applySession]);
+
   const refreshSession = useCallback(async () => {
     const nextSession = await api.auth.getSession();
     return applySession(nextSession);
@@ -119,10 +141,23 @@ export function AuthProvider({ api, children }: AuthProviderProps) {
       status,
       startTelegramLogin,
       verifyTelegramLogin,
+      startRegistration,
+      getRegistrationStatus,
+      verifyRegistration,
       refreshSession,
       logout
     }),
-    [logout, refreshSession, session, startTelegramLogin, status, verifyTelegramLogin]
+    [
+      getRegistrationStatus,
+      logout,
+      refreshSession,
+      session,
+      startRegistration,
+      startTelegramLogin,
+      status,
+      verifyRegistration,
+      verifyTelegramLogin
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsOptional, IsString, Matches, MaxLength } from "class-validator";
+import { IsOptional, IsString, IsUUID, Matches, MaxLength } from "class-validator";
 
 const TELEGRAM_USERNAME_PATTERN = /^@?[A-Za-z0-9_]{5,32}$/;
 const LOGIN_CODE_PATTERN = /^\d{4,8}$/;
@@ -33,6 +33,27 @@ export class TelegramLoginVerifyDto {
   })
   @IsOptional()
   telegramUsername?: string;
+
+  /**
+   * Обязателен, только если один Telegram-аккаунт — администратор нескольких
+   * организаций. В этом случае verify отвечает 409 со списком организаций, и
+   * клиент повторяет запрос с выбранной.
+   */
+  @ApiPropertyOptional({ example: "00000000-0000-4000-8000-000000000101" })
+  @IsUUID("4")
+  @IsOptional()
+  organizationId?: string;
+}
+
+export class TelegramLoginOrganizationChoiceDto {
+  @ApiProperty({ example: "00000000-0000-4000-8000-000000000101" })
+  id!: string;
+
+  @ApiProperty({ example: "Acme Support" })
+  name!: string;
+
+  @ApiProperty({ example: "administrator" })
+  role!: string;
 }
 
 export class TelegramLoginStartResponseDto {
