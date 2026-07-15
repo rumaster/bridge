@@ -7,7 +7,12 @@
     ".": "./src/index.ts",
     "./registry": "./src/registry.ts",
     "./c5": "./src/c5.ts",
-    "./c5-workflow": "./src/c5-workflow.ts",
+    "./c5-workflow": {
+      "types": "./dist/cjs/c5-workflow.d.ts",
+      "require": "./dist/cjs/c5-workflow.js",
+      "import": "./src/c5-workflow.ts",
+      "default": "./src/c5-workflow.ts"
+    },
     "./c4": "./src/c4.ts",
     "./c6": "./src/c6.ts",
     "./c7": "./src/c7.ts",
@@ -17,8 +22,9 @@
     "./mobile": "./src/mobile.ts"
   },
   "scripts": {
+    "prepare": "node scripts/build-cjs.mjs",
     "lint": "tsc -p tsconfig.json",
     "test": "node --import tsx --test message-model/*.test.ts test/*.test.ts test/unit/*.test.ts",
-    "build": "node --import tsx scripts/verify-auth-contract.ts && tsc -p tsconfig.json"
+    "build": "node --import tsx scripts/verify-auth-contract.ts && tsc -p tsconfig.json && node scripts/build-cjs.mjs"
   }
 }

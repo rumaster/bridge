@@ -1,0 +1,166 @@
+# Workflow 2.0 — переработка редактора, контракта и движка схем
+
+**Дата:** 2026-07-15
+**Ветка:** `issue-1-17113a10fe0c`
+**Образец:** schema engine в публичном репозитории `rumaster/fbp-engine` (локально `C:\prog\tg-games`)
+
+## Зачем
+
+Текущая реализация workflow расходится с требованиями R1-R8 из `docs/MessengerBridge_TZ_Workflow_Schemas.md` в шести местах и содержит три дефекта, из-за которых часть заявленной функциональности физически не работает. Ниже — постановка на переработку и решения, снятые с владельца продукта 2026-07-15.
+
+## Что сломано сегодня (проверено по коду)
+
+| # | Дефект | Где |
+|---|---|---|
+| D1 | Бэкенд-валидатор читает `connection.port`, а формат — `fromPort`. Ключ дедупликации схлопывает все исходящие связи узла в `from+"out"` → **узел `branch` с обеими ветками через API сохранить нельзя** | `services/backend/src/modules/workflow/workflow-schema.validator.ts:383` |
+| D2 | UI не умеет выбирать порты: `createWorkflowConnection` жёстко ставит `fromPort="out"`, `toPort="in"`. Ветку `false` задать невозможно | `apps/saas-admin/src/shared/workflow.ts:111` |
+| D3 | Субсхемы: UI зовёт `POST/PATCH /workflow-subschemas`, но контроллер реализует только `GET` → **404 в проде**, работает лишь против MSW-моков | `apps/saas-admin/src/api/client/http.ts:195` vs `workflow-subschema.controller.ts` |
+| D4 | Узел `backend-api` в бою получает **401**: HTTP-клиент шлёт только `x-organization-id`/`x-actor-user-id`, а `SessionAuthGuard` требует `Authorization: Bearer` или cookie. Сервисного токена нет, `x-actor-user-id` бэкендом не читается | `services/fbp-engine/src/backend/client.ts:66` vs `services/backend/src/common/auth/session-auth.guard.ts:57` |
+| D5 | «Тестовый прогон» ничего не исполняет — печатает `completed` для каждого узла в порядке массива, без ветвлений и без движка | `apps/saas-admin/src/presentation/pages/WorkflowPage.tsx:1931` |
+| D6 | `bodyGraph` — мёртвый концепт: фронт создаёт и валидирует, бэкенд молча пропускает, движок игнорирует | `apps/saas-admin/src/shared/workflow.ts:99` |
+| D7 | `resume` не сверяет `event_type`/`correlation` вообще; роутинга «событие → инстанс» не существует; таблица `outbox_events` заведена, но ни писателя, ни читателя нет | `services/fbp-engine/src/runtime/instance-runtime.ts:110` |
+| D8 | **Три** независимые реализации валидации схемы (бэкенд 978 стр., движок, фронт) уже разошлись — см. D1 | `workflow-schema.validator.ts` vs `services/fbp-engine/src/schema/validate-workflow.ts` vs `apps/saas-admin/src/shared/workflow.ts` |
+
+### Почему D8 возник и почему не чинился
+
+Это не разгильдяйство, а следствие сборки. `services/backend` — CommonJS с `rootDir: "src"`, а `packages/contracts` — ESM TS-исходники. Импорт исходников контракта из Backend падает на `TS6059: File is not under rootDir` плюс несовместимость ESM/CJS. Поэтому Backend **физически не мог** переиспользовать контракт и копировал правила руками — в коде это прямо задокументировано («Портирована из packages/contracts»).
+
+Отсюда следует: пока `@bridge/contracts` не собирается в пакет, любой «единый контракт» остаётся на словах, а D1 будет возникать снова.
+
+Отдельно: `FBP_BACKEND_API_METHODS` — это `["GET","POST","PUT","PATCH","DELETE"]`, то есть HTTP-глаголы, а не каталог вызовов. `path` — свободная строка, ни с чем не сверяется.
+
+## Принятые решения (2026-07-15)
+
+| № | Решение | Обоснование |
+|---|---|---|
+| A1 | **Модель графа — гибрид push/pull, как в образце.** `transform` и другие узлы-функции exec-портов не имеют и вычисляются лениво по требованию с мемоизацией. Дополнительно вводятся pure-узлы `variable_read` / `variable_write` и `merge` для схождения потоков | Граф короче: не надо протаскивать exec через каждое преобразование |
+| A2 | **События — только контур.** Реестр событий + таблица подписок + запись/снятие при сохранении + тест-прогон. Реальный запуск по живому событию — отдельный этап | Сегодня реально публикуются два события, outbox мёртв, роутинга нет. Полный рантайм тянет за собой переписывание доставки целиком |
+| A3 | **Каталог Backend API генерируется из OpenAPI, витрину курирует platform_operator в админке.** Полный список 79 операций → таблица allowlist → отдельный экран с галочками | Список едет за API и не устаревает; оператор решает, что вообще можно дёргать из схемы |
+| A4 | **Ломаем формат: `schema_version` 2.0.0.** Сиды переписываем, старые `draft_schema` и `workflow_versions` дропаем миграцией | Workflow заводятся только сидом (R1), продовых схем нет — мигрировать нечего |
+| A5 | **Тест — реальный прогон драфта без создания инстанса**, трасса по узлам возвращается в ответе и подсвечивается на канве | Обходит FK журнала на `workflow_instances`; тестовые прогоны не мешаются с боевыми |
+| A6 | **Payload события для теста — выбор wait-event узла + редактируемый JSON** с предзаполнением примера из реестра и валидацией по payload-схеме | Иначе не проверить ветвления на разных данных |
+| A7 | **Дефект D4 (401) чиним в рамках этой работы** | Иначе селектбокс вызовов и тест-прогон остаются непроверяемыми |
+| A8 | **У `transform` остаётся только JS-текст.** Режим `expression` (JSON-AST по whitelist) и весь его аппарат удаляются | Режим `code` уже существовал и уже был разрешён, так что удаление `expression` ничего нового не открывает; образец устроен так же. Уносит ~700 строк AST-валидатора, продублированных дважды |
+| A9 | **`@bridge/contracts` собирается в CommonJS**, Backend зависит от пакета и импортирует `@bridge/contracts/c5-workflow` | Единственный способ сделать контракт общим (см. врезку про D8). Сборка вешается на `prepare`, а не на `build`: в CI `lint` идёт раньше `build`, а типы нужны уже на линте |
+| A10 | **Драфт валидируется только по форме графа**, полная проверка контракта — при копировании в рабочую версию | Драфт сохраняется автоматически при выходе из редактора: если требовать полной валидности, автосохранение будет терять недостроенную работу |
+
+## Целевая модель
+
+### Порты
+
+```ts
+PORT_TYPES = ['exec', 'string', 'number', 'boolean', 'object',
+              'string_array', 'object_array', 'any']
+
+arePortTypesCompatible(from, to):
+  exec соединяется только с exec
+  иначе: from === to || from === 'any' || to === 'any'
+```
+
+Ключевой принцип образца, который переносим: **порты и на фронте, и на бэкенде считает одна и та же функция** `getNodePortDefinitions(node, graph)` из `packages/contracts`. Редактор физически не может нарисовать порт, которого не будет в рантайме. Это же снимает D8 — валидация становится общей.
+
+Инварианты валидации:
+- на data-input порт заводится ровно одно ребро; на exec-input — сколько угодно;
+- ребро не смешивает exec и data;
+- нет циклов в exec-графе;
+- типы портов совместимы.
+
+### Каталог узлов 2.0
+
+| Узел | exec | Data-входы | Data-выходы | Свойства |
+|---|---|---|---|---|
+| `wait-event` | **только выход** (источник exec) | — | `data: object` | `event_type` — селектбокс из реестра, `correlation` |
+| `backend-api` | in / out | по схеме операции | по схеме ответа | `operation_id` — селектбокс из курируемого каталога |
+| `knowledge-base-search` | in / out | `keys: string_array`, `tags: string_array` | `documents: object_array` | `top_k` |
+| `llm` | in / out | по конфигу портов | по конфигу портов | промпт, модель |
+| `branch` | in; выходы `true` / `false` | `value: any`, `right: any` | — | `operator` (истина, существует, =, !=, >, >=, <, <=), переопределение `right` |
+| `transform` | **нет** (pure) | произвольные, из `config.inputs` | произвольные, из `config.outputs` | многострочный JS |
+| `variable_read` | **нет** (pure) | — | `value: any` | имя переменной |
+| `variable_write` | in / out (side-effect) | `value: any` | — | имя переменной |
+| `merge` | входы `exec_1..exec_N`, выход | — | — | — |
+| `sub_schema` | in / out | зеркалят `start`-порты субсхемы | зеркалят `end`-порты | `subSchemaSlug` |
+| `start` / `end` | только в субсхемах | границы из `config.outputs` / `config.inputs` | | |
+
+`schema.entry` **упраздняется**: точки входа — все узлы `wait-event`. В субсхемах событий нет, но `start` и `end` обязательны ровно по одному.
+
+`bodyGraph` удаляется полностью — у `transform` и `branch` его нет ни в каком виде.
+
+### Контракт transform
+
+Как в образце: код оборачивается в IIFE, пользователь пишет тело и делает `return`.
+
+```js
+// в песочнице доступны: input, variables
+// input — объект, ключи = имена входных портов
+evaluateTransformCode(code, inputs, ctx) →
+  runInSandbox(`(() => { "use strict"; ${code} })()`, { input, variables })
+```
+
+Выходы читаются путём от `{ result }`: порт с `path: "result.name"` получает `result.name`. Значение проверяется на соответствие типу порта в рантайме. Порты объявляются декларативно в `config.inputs` / `config.outputs`, а не выводятся из кода.
+
+Песочница — три эшелона (как в образце): regex-фильтр запрещённых токенов, `vm.createContext` без Node-глобалей, таймаут V8. Существующий режим `expression` с whitelist-AST остаётся для узлов, где не нужен полный JS.
+
+### Версии
+
+Модель уже почти та, что нужна, — доводим до постановки:
+
+- редактор всегда открывает **драфт**;
+- автосохранение драфта при выходе из редактора и при переходе к другой схеме (сейчас есть только на unmount);
+- кнопка **«Сохранить» = promote**: драфт копируется в рабочую версию;
+- **при promote** ищем в схеме узлы `wait-event` и синхронизируем подписки (регистрация/разрегистрация). Драфт подписок не создаёт;
+- тест гоняется **над драфтом, открытым в редакторе**.
+
+## Этапы
+
+Зависимости: 1 → {2, 3, 4} → {5, 6} → 7 → 8.
+
+### Этап 1. Контракт 2.0.0 — сделано
+
+`packages/contracts/src/c5-workflow.ts` переписан по образцу `packages/schema-contract/index.mjs`: `FBP_PORT_TYPES`, `arePortTypesCompatible`, `getNodePortDefinitions(node, graph)`, `DATA_ONLY_NODE_TYPES`, `execInputPortIds` / `execOutputPortIds`, каталог узлов 2.0, `validateWorkflowGraphContract` с кодами ошибок, `canConnectPorts` для подсветки в редакторе.
+
+Порты вычисляются функцией, а не берутся из статического списка, — иначе `merge` не мог бы зависеть от рёбер, а `transform` от конфига.
+
+Пакетирование (решение A9):
+- `packages/contracts/tsconfig.cjs.json` + `scripts/build-cjs.mjs` → `dist/cjs/c5-workflow.{js,d.ts}` плюс `dist/cjs/package.json` с `type: commonjs` (обязателен: у пакета `type: module`, иначе Node прочитал бы вывод как ESM);
+- `exports["./c5-workflow"]`: `require` → dist/cjs, `import` → src (vite и tsx продолжают брать TS-исходник), `types` → dist d.ts;
+- сборка повешена на `prepare` — срабатывает на `npm ci`, поэтому Dockerfile'ы менять не пришлось;
+- в корневом `package.json` `packages/*` переставлены в начало списка workspaces: npm запускает скрипты в порядке массива, а раньше `apps/*` собирались раньше контрактов.
+
+Собирается только `c5-workflow.ts`: он не имеет ни одного импорта, тогда как `c5.ts` тянет `node:fs` и `c4.ts` и потому непригоден ни для браузера, ни для CJS. Туда же переехали `TRANSFORM_DEFAULT_LIMITS`.
+
+Валидаторы схлопнуты в вызов контракта: Backend — с 978 строк до ~150 (осталось только то, чего контракт знать не может: лимиты песочницы, форма HTTP-исключения, сбор slug'ов субсхем), движок — до ~90. Закрывает D1 и D8.
+
+Проверено: `npm run lint` зелёный по всему монорепозиторию; Backend собирается и `require('@bridge/contracts/c5-workflow')` работает в рантайме; saas-admin собирается (vite резолвит `import` → TS); 11/11 в переписанной спеке Backend, включая регрессию D1 — узел ветвления с обеими ветками теперь сохраняется.
+
+### Этап 2. Реестр событий и подписки
+`packages/contracts/src/events-registry.ts`: `{ event_type, label, payload_schema, sample_payload, correlation_fields }`. База — `C7_EVENT_TYPES` (9 типов) плюс реально публикуемые. Миграция: таблица `workflow_event_subscriptions` (`organization_id`, `workflow_id`, `version_id`, `node_id`, `event_type`, `correlation`, UNIQUE, RLS). Синхронизация подписок при promote.
+
+### Этап 3. Каталог Backend API + витрина
+Генератор `packages/contracts/src/backend-api-catalog.ts` из `openapi/backend-core/openapi.json` (operationId, method, path, path-параметры, requestBody, response) со сверкой `generate:check`. Миграция: таблица allowlist. Эндпоинты + экран курирования в админке под `platform_operator`. Узел хранит `operation_id`, порты выводятся из схемы операции.
+
+### Этап 4. Движок 2.0
+`services/fbp-engine`: executor — FIFO-очередь по exec + ленивый pull данных с мемоизацией, `merge`-барьер по числу входящих exec-рёбер, ветвление по порту `true`/`false`, transform-песочница, `variable_read` / `variable_write`, `sub_schema` с границей start/end и изоляцией переменных, трассировка вида `SchemaNodeTraceEntry` (`via: 'flow' | 'data'`, `durationMs`, снимки inputs/outputs, `nodePath`, `depth`). Удаление `entry` и `bodyGraph` — закрывает D6.
+
+Сюда же отнесено удаление режима `expression` (решение A8) — оно неотделимо от переписывания узлов. Выяснилось, что `expression` был не только режимом transform, а **общим механизмом «проводки»**: `backend-api.body`/`query`, `branch.condition`, `llm.prompt`/`params`, `knowledge-base-search.query`, `wait-event.correlation` — всё это Transform-выражения. В 2.0 их заменяют порты, поэтому удаляются: `transform/{evaluator,operations,validate-expression}.ts`, whitelist в `packages/contracts/src/c5.ts` (`TRANSFORM_STRUCTURAL_OPERATIONS`, `TRANSFORM_FUNCTION_OPERATIONS`, `TRANSFORM_ALLOWED_OPERATIONS`), AST-лимиты из `TRANSFORM_DEFAULT_LIMITS` и тесты `transform-{evaluator,fuzz,validate}`. Остаются `code-sandbox.ts` и его лимиты.
+
+Здесь же — синхронизация реестра `services/fbp-engine/src/nodes/registry.ts` с каталогом 2.0 (`assertRegistryMatchesCatalog` роняет движок на старте, пока этого нет).
+
+### Этап 5. Сервисный токен (D4)
+Аутентификация fbp-engine → backend с актором из контекста инстанса. Роли берутся из реальной сессии, а не из контекста Workflow, — существующая защита от эскалации в `backend-api.controller.ts:121` сохраняется.
+
+### Этап 6. Тест-прогон драфта (D5)
+`POST /api/v1/workflows/:workflowId/draft:test` — движок исполняет драфт без записи в `workflow_instances`, принимает `{ node_id, event_payload }`, возвращает трассу по узлам.
+
+### Этап 7. Редактор на `@xyflow/react` (R6, D2, D3)
+`Handle` на каждый порт с цветом по типу (`portColor` из контракта), `isValidConnection` → `canConnectPorts` подсвечивает недопустимые цели во время перетаскивания, `onConnect` → общая валидация из контракта. Панель свойств: многострочный JS-редактор с подсветкой, редактор строк портов, селектбоксы operator / event_type / operation_id. Автосейв драфта, «Сохранить» = promote, подсветка трассы теста на канве. Плюс недостающие write-эндпоинты субсхем — закрывает D3.
+
+Здесь же дочищается третья копия валидации: `apps/saas-admin/src/shared/workflow.ts` переводится на контракт целиком (на этапе 1 сделана только точечная правка под новую сигнатуру портов), а `WorkflowSchema` во фронтовом `api/client/types.ts` приводится к 2.0 — сейчас там ещё живёт `entry` и нет `kind`.
+
+### Этап 8. Сиды, ТЗ, CP-9
+Переписать `db/seeds/workflow-definitions/stage2-workflows.ts` под 2.0.0. Обновить `docs/MessengerBridge_TZ_Workflow_Schemas.md` пометкой «Ревизия (2026-07-15)» по каждому затронутому разделу — по CLAUDE.md спецификация правится вместе с кодом. Обновить `generated_operation_count` / `generated_path_count` в `packages/contracts/cp9-svc-api-acceptance.v1.json` и добавить запись в `x-revisions` (новые маршруты `/api/v1`: `draft:test`, allowlist, субсхемы).
+
+## Что осознанно не делаем
+
+- **Реальный запуск схемы по живому событию** (A2). Диспетчер, оживление `outbox_events`, матчинг correlation — отдельная задача. После этого этапа подписки существуют в БД, но их никто не читает.
+- **R8** (своя копия схемы на организацию) — вне объёма.
+- Доменные типы портов образца (`expertise`, `memory`) — специфика игрового движка, здесь не нужны.

@@ -5,7 +5,11 @@ import {
   arePortTypesCompatible,
   getFbpNodePortDefinition
 } from "@bridge/contracts/c5-workflow";
-import type { FbpNodeTypeDefinition } from "@bridge/contracts/c5-workflow";
+import type {
+  FbpNodeTypeDefinition,
+  WorkflowNode as ContractWorkflowNode,
+  WorkflowSchema as ContractWorkflowSchema
+} from "@bridge/contracts/c5-workflow";
 
 import type {
   WorkflowConnection,
@@ -199,8 +203,15 @@ export function validateWorkflowSchema(schema: WorkflowSchema): WorkflowSchemaVa
 
     const fromNode = nodesById.get(connection.from);
     const toNode = nodesById.get(connection.to);
-    const fromPort = fromNode ? getFbpNodePortDefinition(fromNode.type, "output", connection.fromPort) : null;
-    const toPort = toNode ? getFbpNodePortDefinition(toNode.type, "input", connection.toPort) : null;
+    // Порты считает контракт: с 2.0.0 они зависят от узла и графа (config
+    // transform, границы субсхемы, динамические входы merge), а не от типа узла.
+    const graph = schema as unknown as ContractWorkflowSchema;
+    const fromPort = fromNode
+      ? getFbpNodePortDefinition(fromNode as unknown as ContractWorkflowNode, "output", connection.fromPort, graph)
+      : null;
+    const toPort = toNode
+      ? getFbpNodePortDefinition(toNode as unknown as ContractWorkflowNode, "input", connection.toPort, graph)
+      : null;
 
     if (!fromPort || !toPort) {
       errors.push("Связь ссылается на несуществующий порт.");

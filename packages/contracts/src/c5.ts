@@ -77,21 +77,64 @@ export function validateWorkflowStateChangedEvent(event) {
 // ---------------------------------------------------------------------------
 
 export {
+  FBP_BRANCH_OPERATORS,
+  FBP_GRAPH_KINDS,
   FBP_NODE_TYPE_DEFINITIONS,
   FBP_NODE_TYPES,
   FBP_PORT_TYPES,
+  PORT_COLORS,
   WORKFLOW_SCHEMA_VERSION,
+  WorkflowContractError,
   arePortTypesCompatible,
+  assertWorkflowGraphShape,
+  boundaryEndPorts,
+  boundaryPortRows,
+  boundaryStartPorts,
+  branchOperatorNeedsRight,
+  canConnectPorts,
+  configPortRows,
+  execInputPortIds,
+  execOutputPortIds,
+  formatWorkflowContractError,
   getFbpNodePortDefinition,
   getFbpNodeTypeDefinition,
+  getNodeInputPortType,
+  getNodeOutputPortType,
+  getNodePaletteForKind,
+  getNodePortDefinitions,
+  isBoundaryPortType,
+  isBranchOperator,
+  isDataOnlyNodeType,
+  isExecPortId,
+  isExecSideEffectNode,
+  isFbpGraphKind,
+  isFbpNodeType,
+  isMergeExecInputId,
+  isNodeTypeAllowedInKind,
+  isPortType,
+  isWorkflowGraphShape,
+  nodeBoundaryPorts,
+  portColor,
+  subSchemaNodePorts,
+  validateWorkflowGraphContract,
 } from "./c5-workflow.js";
 export type {
+  ConnectAttempt,
+  ConnectCheckResult,
+  FbpBoundaryPort,
+  FbpBranchOperator,
+  FbpConfigPortRow,
+  FbpGraphKind,
   FbpNodePortDefinition,
   FbpNodePrimaryFieldDefinition,
   FbpNodeType,
   FbpNodeTypeDefinition,
   FbpPortDirection,
   FbpPortType,
+  ValidateWorkflowGraphOptions,
+  WorkflowConnection,
+  WorkflowNode,
+  WorkflowSchema,
 } from "./c5-workflow.js";
 
 /** HTTP-методы, доступные узлу Backend API (совпадают с DTO C5). */
@@ -104,15 +147,11 @@ export const FBP_BACKEND_API_METHODS = Object.freeze([
 ]);
 
 /**
- * Источники данных для входных портов узла (декларативная «проводка» графа).
- * Разрешает исполнителю собрать `input` узла из Execution Context, при этом сам
- * Transform Node видит ТОЛЬКО собранный `input`, а не весь контекст (§13.4).
+ * Ревизия 2026-07-15: декларативная «проводка» входов (FBP_INPUT_SOURCE_KINDS со
+ * значениями params/node/const) удалена — её роль полностью взяли на себя порты и
+ * связи графа. Изоляция §13.4 сохранена: узел по-прежнему видит ТОЛЬКО собранный
+ * `input`, но собирается он теперь по входящим data-связям, а не по конфигу.
  */
-export const FBP_INPUT_SOURCE_KINDS = Object.freeze([
-  "params", // входные параметры Workflow (Parameters, §13.4)
-  "node", // результат ранее исполненного узла
-  "const", // литеральная константа схемы
-]);
 
 /**
  * Структурные операции грамматики Transform Node. Задают форму AST и не
@@ -233,30 +272,10 @@ export const TRANSFORM_ALLOWED_OPERATIONS = Object.freeze([
 ]);
 
 /**
- * Значения по умолчанию для ограничений ресурсов Transform Node (§13.4):
- * бюджет шагов для декларативного `expression`, лимиты AST/коллекций/результата
- * и runtime-бюджеты для sandbox-режима `code`.
+ * Ревизия 2026-07-15: TRANSFORM_DEFAULT_LIMITS переехали в `c5-workflow.ts` и
+ * реэкспортируются отсюда для совместимости. Причина: `c5.ts` тянет `node:fs` и
+ * `c4.ts`, поэтому не импортируется ни браузером, ни CommonJS-сборкой Backend, —
+ * а лимиты нужны обеим сторонам. `c5-workflow.ts` не имеет импортов вовсе.
  */
-export interface TransformDefaultLimits {
-  codeMemoryMb: number;
-  codeTimeoutMs: number;
-  maxArrayLength: number;
-  maxAstDepth: number;
-  maxAstNodes: number;
-  maxCodeLength: number;
-  maxResultBytes: number;
-  maxSteps: number;
-  maxStringLength: number;
-}
-
-export const TRANSFORM_DEFAULT_LIMITS: Readonly<TransformDefaultLimits> = Object.freeze({
-  codeMemoryMb: 16,
-  codeTimeoutMs: 200,
-  maxSteps: 100000,
-  maxAstNodes: 2000,
-  maxAstDepth: 64,
-  maxCodeLength: 65536,
-  maxStringLength: 65536,
-  maxArrayLength: 100000,
-  maxResultBytes: 262144,
-});
+export { TRANSFORM_DEFAULT_LIMITS } from "./c5-workflow.js";
+export type { TransformDefaultLimits } from "./c5-workflow.js";

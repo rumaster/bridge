@@ -1,66 +1,85 @@
 import {
-  FBP_INPUT_SOURCE_KINDS,
   TRANSFORM_DEFAULT_LIMITS,
-  WORKFLOW_SCHEMA_VERSION,
-  arePortTypesCompatible,
-  getFbpNodePortDefinition,
+  WorkflowContractError,
+  validateWorkflowGraphContract,
 } from "../../../../packages/contracts/src/c5.js";
 import { WorkflowSchemaValidationError } from "../core/errors.js";
-import { findCycle } from "../core/graph.js";
 import { getNodeDefinition } from "../nodes/registry.js";
-
-const DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"]);
-const INPUT_KINDS = new Set(FBP_INPUT_SOURCE_KINDS);
 
 /** Опции валидации схемы Workflow. */
 export interface ValidateWorkflowOptions {
   limits?: Record<string, unknown>;
 }
 
+interface ValidationError {
+  path: string;
+  message: string;
+}
+
+/**
+ * Ошибки контракта — про форму графа, порты и связи; ошибки реестра — про конфиг
+ * конкретного узла. Разделение путей нужно, чтобы редактор мог подсветить либо
+ * связь, либо панель свойств.
+ */
+const CONTRACT_ERROR_PATHS: Record<string, string> = {
+  invalid_graph_shape: "$",
+  invalid_graph_kind: "$.kind",
+  unsupported_schema_version: "$.schema_version",
+  single_start: "$.nodes",
+  single_end: "$.nodes",
+  missing_event_source: "$.nodes",
+  exec_cycle: "$.connections",
+};
+
+function contractErrorPath(error: WorkflowContractError): string {
+  const known = CONTRACT_ERROR_PATHS[error.code];
+  if (known) return known;
+  if (typeof error.details.connectionId === "string") return "$.connections";
+  if (typeof error.details.nodeId === "string") return `$.nodes[id=${error.details.nodeId}]`;
+  return "$";
+}
+
 /**
  * Валидация схемы Workflow НА ЭТАПЕ СОХРАНЕНИЯ (ТЗ §13.13-п.5, §16.7). Всё, что
- * можно проверить статически, проверяется до создания новой версии: версия
- * схемы, уникальность и типы узлов, конфигурация каждого узла (в т.ч. запрет
- * операций Transform вне whitelist и запрет подмены арендатора), корректность
- * «проводки» входов, соединения и ОТСУТСТВИЕ ЦИКЛОВ (граф обязан быть DAG —
- * гарантия завершимости исполнения).
+ * можно проверить статически, проверяется до создания новой версии.
+ *
+ * Ревизия 2026-07-15: форма графа, порты, совместимость типов и отсутствие
+ * циклов больше здесь не дублируются — это делает контракт C5
+ * (`validateWorkflowGraphContract`), единый для движка, Backend и редактора.
+ * Здесь остаётся только то, чего контракт знать не может: конфигурация узла по
+ * правилам реестра движка (whitelist операций Transform, лимиты песочницы).
  *
  * Возвращает `{ valid, errors: [{ path, message }] }`.
  */
-export function validateWorkflowSchema(schema, options: ValidateWorkflowOptions = {}) {
+export function validateWorkflowSchema(schema: unknown, options: ValidateWorkflowOptions = {}) {
   const limits = { ...TRANSFORM_DEFAULT_LIMITS, ...(options.limits ?? {}) };
-  const errors = [];
+  const errors: ValidationError[] = [];
 
   if (!isRecord(schema)) {
     return { valid: false, errors: [{ path: "$", message: "Схема должна быть JSON-объектом." }] };
   }
 
-  if (schema.schema_version !== WORKFLOW_SCHEMA_VERSION) {
-    errors.push({
-      path: "$.schema_version",
-      message: `schema_version должен быть "${WORKFLOW_SCHEMA_VERSION}".`,
+  try {
+    validateWorkflowGraphContract(schema);
+  } catch (error) {
+    if (!(error instanceof WorkflowContractError)) throw error;
+    errors.push({ path: contractErrorPath(error), message: error.message });
+  }
+
+  if (Array.isArray(schema.nodes)) {
+    schema.nodes.forEach((node: unknown, index: number) => {
+      if (!isRecord(node) || typeof node.type !== "string") return;
+      // Неизвестный тип уже отверг контракт; start/end исполняет ядро, а не узел реестра.
+      const definition = getNodeDefinition(node.type);
+      if (!definition) return;
+      definition.validate(node.config ?? {}, { path: `$.nodes[${index}].config`, errors, limits });
     });
   }
-
-  if (!Array.isArray(schema.nodes) || schema.nodes.length === 0) {
-    errors.push({ path: "$.nodes", message: "nodes должен быть непустым массивом узлов." });
-    return { valid: false, errors };
-  }
-
-  const nodeIds = collectNodeIds(schema.nodes, errors);
-
-  schema.nodes.forEach((node, index) => {
-    validateNode(node, index, nodeIds, errors, limits);
-  });
-
-  validateEntry(schema.entry, nodeIds, errors);
-  validateConnections(schema.connections, schema.nodes, nodeIds, errors);
-  validateAcyclic(schema, errors);
 
   return { valid: errors.length === 0, errors };
 }
 
-export function assertWorkflowSchema(schema, options: ValidateWorkflowOptions = {}) {
+export function assertWorkflowSchema(schema: unknown, options: ValidateWorkflowOptions = {}) {
   const result = validateWorkflowSchema(schema, options);
   if (!result.valid) {
     throw new WorkflowSchemaValidationError(result.errors);
@@ -68,195 +87,6 @@ export function assertWorkflowSchema(schema, options: ValidateWorkflowOptions = 
   return schema;
 }
 
-function collectNodeIds(nodes, errors) {
-  const ids = new Set();
-  nodes.forEach((node, index) => {
-    const id = isRecord(node) ? node.id : undefined;
-    if (typeof id !== "string" || id.trim() === "") {
-      errors.push({ path: `$.nodes[${index}].id`, message: "id узла должен быть непустой строкой." });
-      return;
-    }
-    if (ids.has(id)) {
-      errors.push({ path: `$.nodes[${index}].id`, message: `Дублирующийся id узла "${id}".` });
-      return;
-    }
-    ids.add(id);
-  });
-  return ids;
-}
-
-function validateNode(node, index, nodeIds, errors, limits) {
-  const path = `$.nodes[${index}]`;
-  if (!isRecord(node)) {
-    errors.push({ path, message: "Узел должен быть объектом." });
-    return;
-  }
-
-  const definition = getNodeDefinition(node.type);
-  if (!definition) {
-    errors.push({ path: `${path}.type`, message: `Неизвестный тип узла "${node.type}".` });
-  } else {
-    definition.validate(node.config ?? {}, { path: `${path}.config`, errors, limits });
-  }
-
-  if (node.input !== undefined) {
-    validateInputSpec(node.input, `${path}.input`, node.id, nodeIds, errors);
-  }
-}
-
-function validateInputSpec(inputSpec: Record<string, any>, path, selfId, nodeIds, errors) {
-  if (!isRecord(inputSpec)) {
-    errors.push({ path, message: "input должен быть объектом отображения порт → источник." });
-    return;
-  }
-  for (const [key, source] of Object.entries(inputSpec)) {
-    const sourcePath = `${path}.${key}`;
-    if (DANGEROUS_KEYS.has(key)) {
-      errors.push({ path: sourcePath, message: `Ключ входа "${key}" запрещён.` });
-      continue;
-    }
-    if (!isRecord(source) || typeof source.kind !== "string" || !INPUT_KINDS.has(source.kind)) {
-      errors.push({
-        path: `${sourcePath}.kind`,
-        message: `Источник входа должен иметь kind из ${[...INPUT_KINDS].join(", ")}.`,
-      });
-      continue;
-    }
-    if (source.kind === "node") {
-      if (source.node === selfId) {
-        errors.push({ path: `${sourcePath}.node`, message: "Узел не может ссылаться на собственный результат." });
-      } else if (!nodeIds.has(source.node)) {
-        errors.push({ path: `${sourcePath}.node`, message: `Ссылка на несуществующий узел "${source.node}".` });
-      }
-    }
-    if (source.kind !== "const" && source.path !== undefined) {
-      validatePathSegments(source.path, `${sourcePath}.path`, errors);
-    }
-  }
-}
-
-function validatePathSegments(segments, path, errors) {
-  if (!Array.isArray(segments)) {
-    errors.push({ path, message: "path должен быть массивом сегментов." });
-    return;
-  }
-  segments.forEach((segment, index) => {
-    const segmentPath = `${path}[${index}]`;
-    if (typeof segment === "number") {
-      if (!Number.isSafeInteger(segment) || segment < 0) {
-        errors.push({ path: segmentPath, message: "Числовой сегмент должен быть неотрицательным целым." });
-      }
-      return;
-    }
-    if (typeof segment === "string") {
-      if (DANGEROUS_KEYS.has(segment)) {
-        errors.push({ path: segmentPath, message: `Сегмент "${segment}" запрещён.` });
-      }
-      return;
-    }
-    errors.push({ path: segmentPath, message: "Сегмент пути должен быть строкой или неотрицательным целым." });
-  });
-}
-
-function validateEntry(entry, nodeIds, errors) {
-  if (typeof entry !== "string" || entry.trim() === "") {
-    errors.push({ path: "$.entry", message: "entry должен быть непустой строкой (id стартового узла)." });
-    return;
-  }
-  if (!nodeIds.has(entry)) {
-    errors.push({ path: "$.entry", message: `entry ссылается на несуществующий узел "${entry}".` });
-  }
-}
-
-function validateConnections(connections, nodes, nodeIds, errors) {
-  if (connections === undefined) {
-    return;
-  }
-  if (!Array.isArray(connections)) {
-    errors.push({ path: "$.connections", message: "connections должен быть массивом соединений." });
-    return;
-  }
-
-  const seen = new Set();
-  const nodesById = new Map();
-  nodes.forEach((node) => {
-    if (isRecord(node) && typeof node.id === "string") {
-      nodesById.set(node.id, node);
-    }
-  });
-  connections.forEach((connection, index) => {
-    const path = `$.connections[${index}]`;
-    if (!isRecord(connection)) {
-      errors.push({ path, message: "Соединение должно быть объектом." });
-      return;
-    }
-    const fromNode = nodesById.get(connection.from);
-    const toNode = nodesById.get(connection.to);
-    if (!nodeIds.has(connection.from)) {
-      errors.push({ path: `${path}.from`, message: `Соединение исходит из несуществующего узла "${connection.from}".` });
-    }
-    if (!nodeIds.has(connection.to)) {
-      errors.push({ path: `${path}.to`, message: `Соединение ведёт в несуществующий узел "${connection.to}".` });
-    }
-
-    const fromPortId = validateConnectionPortId(connection.fromPort, `${path}.fromPort`, errors);
-    const toPortId = validateConnectionPortId(connection.toPort, `${path}.toPort`, errors);
-    if (!fromPortId || !toPortId) {
-      return;
-    }
-
-    const fromPort = fromNode
-      ? getFbpNodePortDefinition(fromNode.type, "output", fromPortId)
-      : null;
-    const toPort = toNode
-      ? getFbpNodePortDefinition(toNode.type, "input", toPortId)
-      : null;
-
-    if (fromNode && !fromPort) {
-      errors.push({
-        path: `${path}.fromPort`,
-        message: `У узла "${connection.from}" нет выходного порта "${fromPortId}".`,
-      });
-    }
-    if (toNode && !toPort) {
-      errors.push({
-        path: `${path}.toPort`,
-        message: `У узла "${connection.to}" нет входного порта "${toPortId}".`,
-      });
-    }
-    if (fromPort && toPort && !arePortTypesCompatible(fromPort.type, toPort.type)) {
-      errors.push({
-        path: `${path}.toPort`,
-        message: `Типы портов несовместимы: ${fromPort.type} → ${toPort.type}.`,
-      });
-    }
-
-    const key = `${connection.from}${fromPortId}`;
-    if (seen.has(key)) {
-      errors.push({ path: `${path}.fromPort`, message: `Дублирующийся выходной порт "${fromPortId}" узла "${connection.from}".` });
-    }
-    seen.add(key);
-  });
-}
-
-function validateConnectionPortId(value, path, errors) {
-  if (typeof value !== "string" || value.trim() === "") {
-    errors.push({ path, message: "fromPort/toPort должны быть непустыми строками." });
-    return null;
-  }
-  return value;
-}
-
-function validateAcyclic(schema, errors) {
-  const cycle = findCycle(schema);
-  if (cycle) {
-    errors.push({
-      path: "$.connections",
-      message: `Граф должен быть ациклическим (DAG). Обнаружен цикл: ${cycle.join(" → ")}.`,
-    });
-  }
-}
-
-function isRecord(value) {
+function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }

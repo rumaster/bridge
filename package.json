@@ -9,10 +9,10 @@
     "npm": ">=10.0.0"
   },
   "workspaces": [
+    "packages/*",
     "apps/*",
     "services/*",
-    "clients/*",
-    "packages/*"
+    "clients/*"
   ],
   "scripts": {
     "lint": "npm run lint --workspaces --if-present && tsc -p tsconfig.json",
