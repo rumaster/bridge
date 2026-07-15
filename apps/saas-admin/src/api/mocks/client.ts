@@ -24,6 +24,8 @@ import type {
   PatchUserRequest,
   CreateInvitationRequest,
   SaasAdminApiClient,
+  RegistrationStartRequest,
+  RegistrationVerifyRequest,
   SaveWorkflowDraftRequest,
   StartBroadcastRequest,
   TelegramLoginStartRequest,
@@ -137,6 +139,38 @@ export function createMockSaasAdminApiClient(
       async verifyTelegramLogin(request: TelegramLoginVerifyRequest) {
         if (!request.telegramUsername || !request.code) {
           throw new Error("telegramUsername and code are required");
+        }
+
+        currentSession = initialSession;
+        return initialSession;
+      },
+      async startRegistration(request: RegistrationStartRequest) {
+        if (!request.telegramUsername || !request.email || !request.organizationName) {
+          throw new Error("telegramUsername, email and organizationName are required");
+        }
+
+        // В моке /start у бота нажимать негде, поэтому заявка сразу code_sent.
+        return {
+          requestId: "00000000-0000-4000-8000-000000000501",
+          status: "code_sent" as const,
+          deepLink: "https://t.me/bridge_mock_bot?start=brr_mock",
+          botUsername: "bridge_mock_bot",
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          note: null
+        };
+      },
+      async getRegistrationStatus(requestId: string) {
+        return {
+          requestId,
+          status: "code_sent" as const,
+          codeExpiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          note: null
+        };
+      },
+      async verifyRegistration(request: RegistrationVerifyRequest) {
+        if (!request.requestId || !request.code) {
+          throw new Error("requestId and code are required");
         }
 
         currentSession = initialSession;

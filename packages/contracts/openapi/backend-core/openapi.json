@@ -1198,6 +1198,95 @@
         ]
       }
     },
+    "/api/v1/auth/register/start": {
+      "post": {
+        "operationId": "RegistrationController_startRegistration_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationStartDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationStartResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Start a self-service organization registration and return the bot deep link",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/register/status/{requestId}": {
+      "get": {
+        "operationId": "RegistrationController_getStatus_v1",
+        "parameters": [
+          {
+            "name": "requestId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "example": "00000000-0000-4000-8000-000000000501",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegistrationStatusResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Poll a registration request until the Telegram code is delivered",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/register/verify": {
+      "post": {
+        "operationId": "RegistrationController_verifyRegistration_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistrationVerifyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "Verify the registration code, create the organization and sign the administrator in",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/organizations/{id}": {
       "get": {
         "operationId": "OrganizationController_getOrganization_v1",
@@ -3964,9 +4053,131 @@
           "telegramUsername": {
             "type": "string",
             "example": "seeded_admin"
+          },
+          "organizationId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000101"
           }
         },
         "required": [
+          "code"
+        ]
+      },
+      "RegistrationStartDto": {
+        "type": "object",
+        "properties": {
+          "telegramUsername": {
+            "type": "string",
+            "example": "new_admin"
+          },
+          "email": {
+            "type": "string",
+            "example": "admin@example.com"
+          },
+          "organizationName": {
+            "type": "string",
+            "example": "Acme Support"
+          }
+        },
+        "required": [
+          "telegramUsername",
+          "email",
+          "organizationName"
+        ]
+      },
+      "RegistrationStartResponseDto": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000501"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "code_sent",
+              "completed"
+            ],
+            "example": "pending"
+          },
+          "deepLink": {
+            "type": "string",
+            "example": "https://t.me/bridge_auth_bot?start=brr_xxx",
+            "nullable": true
+          },
+          "botUsername": {
+            "type": "string",
+            "example": "bridge_auth_bot",
+            "nullable": true
+          },
+          "expiresAt": {
+            "type": "string",
+            "example": "2026-07-16T10:00:00.000Z"
+          },
+          "note": {
+            "type": "string",
+            "example": "telegram_bot_not_configured",
+            "nullable": true
+          }
+        },
+        "required": [
+          "requestId",
+          "status",
+          "expiresAt"
+        ]
+      },
+      "RegistrationStatusResponseDto": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000501"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "code_sent",
+              "completed"
+            ],
+            "example": "code_sent"
+          },
+          "codeExpiresAt": {
+            "type": "string",
+            "example": "2026-07-15T10:05:00.000Z",
+            "nullable": true
+          },
+          "expiresAt": {
+            "type": "string",
+            "example": "2026-07-16T10:00:00.000Z"
+          },
+          "note": {
+            "type": "string",
+            "example": "telegram_delivery_failed",
+            "nullable": true
+          }
+        },
+        "required": [
+          "requestId",
+          "status",
+          "expiresAt"
+        ]
+      },
+      "RegistrationVerifyDto": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "example": "00000000-0000-4000-8000-000000000501"
+          },
+          "code": {
+            "type": "string",
+            "example": "123456"
+          }
+        },
+        "required": [
+          "requestId",
           "code"
         ]
       },

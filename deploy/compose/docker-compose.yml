@@ -93,6 +93,13 @@ services:
       # код генерируется, но не отправляется (см. .env.example).
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-https://api.telegram.org}
+      # Самостоятельная регистрация организации: deep-link на бота + long polling
+      # /start, из которого backend узнаёт chat_id (см. .env.example).
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME:-}
+      TELEGRAM_REGISTRATION_POLLING: ${TELEGRAM_REGISTRATION_POLLING:-true}
+      REGISTRATION_START_RATE_LIMIT: ${REGISTRATION_START_RATE_LIMIT:-5}
+      REGISTRATION_VERIFY_RATE_LIMIT: ${REGISTRATION_VERIFY_RATE_LIMIT:-5}
+      REGISTRATION_RATE_LIMIT_WINDOW_SECONDS: ${REGISTRATION_RATE_LIMIT_WINDOW_SECONDS:-60}
       CHANNEL_SECRET_ENCRYPTION_KEY: ${CHANNEL_SECRET_ENCRYPTION_KEY:?укажите CHANNEL_SECRET_ENCRYPTION_KEY в .env, см. .env.example}
       CHANNEL_SECRET_KEY_ID: ${CHANNEL_SECRET_KEY_ID:-env:CHANNEL_SECRET_ENCRYPTION_KEY}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}

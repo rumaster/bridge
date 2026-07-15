@@ -63,9 +63,16 @@ interface LoginCodeRow {
   expires_at: Date | string;
   id: string;
   locked_until: Date | string | null;
+  login_request_id: null | string;
   organization_id: string;
   purpose: string;
   user_id: string;
+}
+
+/** Пара «код + его пользователь» — по одной на каждую организацию аккаунта. */
+interface LoginCandidate {
+  loginCode: LoginCodeRow;
+  user: TelegramUserRecord;
 }
 
 interface CreatedSession {
@@ -114,63 +121,79 @@ export class TelegramAuthService {
     const prepared = await this.database.withTenant(
       LOOKUP_ORGANIZATION_ID,
       async (client) => {
-        const user = await this.findUserByTelegramUsername(client, telegramUsername);
-        assertUserCanSignIn(user);
+        // Один Telegram-аккаунт может быть администратором нескольких организаций,
+        // поэтому кандидатов может быть несколько. Код выдаётся один на всех, а
+        // строка login_codes — на каждого (хеш кода привязан к user_id).
+        const users = await this.findUsersByTelegramUsername(client, telegramUsername);
+        const eligible = users.filter(canSignIn);
+
+        if (eligible.length === 0) {
+          assertUserCanSignIn(users[0] ?? null);
+        }
 
         const code = generateLoginCode();
-        const id = randomUUID();
+        const loginRequestId = randomUUID();
         const createdAt = new Date();
         const expiresAt = new Date(createdAt.getTime() + CODE_TTL_SECONDS * 1000);
 
-        await client.query(
-          `
-            INSERT INTO login_codes (
-              id,
-              user_id,
-              organization_id,
-              code_hash,
-              purpose,
-              expires_at,
-              consumed_at,
-              attempt_count,
-              locked_until,
-              created_at
-            )
-            VALUES ($1, $2, $3, $4, $5, $6::timestamptz, NULL, 0, NULL, $7::timestamptz)
-          `,
-          [
-            id,
-            user.userId,
-            user.organizationId,
-            hashLoginCode(user.userId, code),
-            TELEGRAM_LOGIN_PURPOSE,
-            expiresAt.toISOString(),
-            createdAt.toISOString(),
-          ],
-        );
+        for (const user of eligible) {
+          const id = randomUUID();
 
-        await this.audit.record(client, {
-          action: AUDIT_ACTIONS.loginStart,
-          actorUserId: user.userId,
-          ip: meta.ip ?? null,
-          metadata: {
-            authMethod: "telegram",
-            deliveryChannel: "telegram",
-            expiresAt: expiresAt.toISOString(),
-          },
-          objectId: id,
-          objectType: "login_code",
-          organizationId: user.organizationId,
-          requestId: id,
-        });
+          await client.query(
+            `
+              INSERT INTO login_codes (
+                id,
+                user_id,
+                organization_id,
+                code_hash,
+                purpose,
+                expires_at,
+                consumed_at,
+                attempt_count,
+                locked_until,
+                created_at,
+                login_request_id
+              )
+              VALUES ($1, $2, $3, $4, $5, $6::timestamptz, NULL, 0, NULL, $7::timestamptz, $8)
+            `,
+            [
+              id,
+              user.userId,
+              user.organizationId,
+              hashLoginCode(user.userId, code),
+              TELEGRAM_LOGIN_PURPOSE,
+              expiresAt.toISOString(),
+              createdAt.toISOString(),
+              loginRequestId,
+            ],
+          );
+
+          await this.audit.record(client, {
+            action: AUDIT_ACTIONS.loginStart,
+            actorUserId: user.userId,
+            ip: meta.ip ?? null,
+            metadata: {
+              authMethod: "telegram",
+              deliveryChannel: "telegram",
+              expiresAt: expiresAt.toISOString(),
+              organizationCandidates: eligible.length,
+            },
+            objectId: id,
+            objectType: "login_code",
+            organizationId: user.organizationId,
+            requestId: loginRequestId,
+          });
+        }
+
+        const [primary] = eligible;
 
         return {
           code,
           expiresAt: expiresAt.toISOString(),
-          requestId: id,
-          telegramId: user.telegramId,
-          telegramUsername: user.telegramUsername ?? telegramUsername,
-          userId: user.userId,
+          requestId: loginRequestId,
+          telegramId: primary.telegramId,
+          telegramUsername: primary.telegramUsername ?? telegramUsername,
+          userId: primary.userId,
         };
       },
       { isPlatformOperator: true },
@@ -212,28 +235,21 @@ export class TelegramAuthService {
     }
     this.assertVerifyRateLimit(payload.requestId, telegramUsername, meta);
 
-    // Locate the code + user in a read-only transaction. Failure-path mutations below
+    // Locate the codes + users in a read-only transaction. Failure-path mutations below
     // run in their own committed transactions, because withTenant() rolls back on throw
     // and lockout/attempt bookkeeping must survive the rejected request.
-    const located = await this.locateLoginCode(payload.requestId, telegramUsername);
-    if (!located) {
+    const candidates = await this.locateCandidates(payload.requestId, telegramUsername);
+    if (candidates.length === 0) {
       throw invalidCode("Telegram login code is invalid.");
     }
 
-    const { loginCode, user } = located;
     const now = new Date();
-
-    if (
-      user.userStatus !== "active" ||
-      user.organizationStatus !== "active" ||
-      user.roleCodes.length === 0
-    ) {
-      await this.commitFailureAudit(user, loginCode.id, "account_not_eligible", meta);
-      assertUserCanSignIn(user);
-    }
+    // Коды группы выпущены одной транзакцией, поэтому срок, расход и блокировка у
+    // них общие — достаточно проверить любой.
+    const [{ loginCode }] = candidates;
 
     if (loginCode.locked_until && new Date(loginCode.locked_until).getTime() > now.getTime()) {
-      await this.commitFailureAudit(user, loginCode.id, "code_locked", meta);
+      await this.commitFailureAudit(candidates, "code_locked", meta);
       throw tooManyRequests(
         "Telegram login code is locked after too many attempts.",
         Math.ceil((new Date(loginCode.locked_until).getTime() - now.getTime()) / 1000),
@@ -241,24 +257,30 @@ export class TelegramAuthService {
     }
 
     if (loginCode.consumed_at) {
-      await this.commitFailureAudit(user, loginCode.id, "code_consumed", meta);
+      await this.commitFailureAudit(candidates, "code_consumed", meta);
       throw invalidCode("Telegram login code has already been used.");
     }
 
     if (new Date(loginCode.expires_at).getTime() <= now.getTime()) {
-      await this.commitFailureAudit(user, loginCode.id, "code_expired", meta);
+      await this.commitFailureAudit(candidates, "code_expired", meta);
       throw invalidCode("Telegram login code has expired.");
     }
 
-    const expectedHash = hashLoginCode(user.userId, payload.code);
-    if (!secureEqual(expectedHash, loginCode.code_hash)) {
+    const matching = candidates.filter((candidate) =>
+      secureEqual(
+        hashLoginCode(candidate.user.userId, payload.code),
+        candidate.loginCode.code_hash,
+      ),
+    );
+
+    if (matching.length === 0) {
       const nextAttemptCount = loginCode.attempt_count + 1;
       const lockedUntil =
         nextAttemptCount >= MAX_VERIFY_ATTEMPTS
           ? new Date(now.getTime() + LOCKOUT_SECONDS * 1000).toISOString()
           : null;
 
-      await this.commitAttemptFailure(user, loginCode.id, nextAttemptCount, lockedUntil, meta);
+      await this.commitAttemptFailure(candidates, nextAttemptCount, lockedUntil, meta);
 
       if (lockedUntil) {
         throw tooManyRequests(
@@ -270,37 +292,66 @@ export class TelegramAuthService {
       throw invalidCode("Telegram login code is invalid.");
     }
 
+    const eligible = matching.filter((candidate) => canSignIn(candidate.user));
+    if (eligible.length === 0) {
+      await this.commitFailureAudit(matching, "account_not_eligible", meta);
+      assertUserCanSignIn(matching[0].user);
+    }
+
+    const selected = payload.organizationId
+      ? eligible.find((candidate) => candidate.user.organizationId === payload.organizationId)
+      : eligible.length === 1
+        ? eligible[0]
+        : undefined;
+
+    if (!selected) {
+      if (payload.organizationId) {
+        throw invalidCode("Selected organization is not available for this login code.");
+      }
+
+      // Код верный, но организаций несколько: не расходуем его и просим выбрать.
+      throw organizationSelectionRequired(eligible);
+    }
+
     // Success: consume the code and create the session atomically.
     return this.database.withTenant(
       LOOKUP_ORGANIZATION_ID,
       async (client) => {
-        const consumed = await client.query(
-          "UPDATE login_codes SET consumed_at = $2::timestamptz WHERE id = $1 AND consumed_at IS NULL RETURNING id",
-          [loginCode.id, now.toISOString()],
+        // Расходуется вся группа: один выданный код — одна сессия, даже если
+        // организаций у аккаунта несколько.
+        const consumed = await client.query<{ id: string }>(
+          `
+            UPDATE login_codes
+            SET consumed_at = $2::timestamptz
+            WHERE id = ANY($1::uuid[]) AND consumed_at IS NULL
+            RETURNING id
+          `,
+          [candidates.map((candidate) => candidate.loginCode.id), now.toISOString()],
         );
-        if (consumed.rowCount === 0) {
+        if (!consumed.rows.some((row) => row.id === selected.loginCode.id)) {
           throw invalidCode("Telegram login code has already been used.");
         }
 
-        const session = await this.createSessionForUser(client, user, meta);
+        const session = await this.createSessionForUser(client, selected.user, meta);
 
         await this.audit.record(client, {
           action: AUDIT_ACTIONS.loginSuccess,
-          actorUserId: user.userId,
+          actorUserId: selected.user.userId,
           ip: meta.ip ?? null,
           metadata: {
             authMethod: "telegram",
-            loginCodeId: loginCode.id,
-            roleCodes: user.roleCodes,
+            loginCodeId: selected.loginCode.id,
+            organizationCandidates: eligible.length,
+            roleCodes: selected.user.roleCodes,
             sessionExpiresAt: session.expiresAt,
           },
           objectId: session.id,
           objectType: "auth_session",
-          organizationId: user.organizationId,
-          requestId: loginCode.id,
+          organizationId: selected.user.organizationId,
+          requestId: selected.loginCode.login_request_id ?? selected.loginCode.id,
         });
 
-        return buildSessionResponse(user, session);
+        return buildSessionResponse(selected.user, session);
       },
       { isPlatformOperator: true },
     );
@@ -346,43 +397,48 @@ export class TelegramAuthService {
     }
   }
 
-  private async locateLoginCode(
+  /**
+   * Находит все коды, выданные одним запросом, вместе с их пользователями. При
+   * поиске по requestId группа определяется по login_request_id, при поиске по
+   * @username — берётся последняя группа среди кодов пользователя.
+   */
+  private async locateCandidates(
     requestId: string | undefined,
     telegramUsername: string | undefined,
-  ): Promise<{ loginCode: LoginCodeRow; user: TelegramUserRecord } | null> {
+  ): Promise<LoginCandidate[]> {
     return this.database.withTenant(
       LOOKUP_ORGANIZATION_ID,
       async (client) => {
-        let loginCode: LoginCodeRow | null = null;
+        let loginCodes: LoginCodeRow[] = [];
 
         if (requestId) {
-          loginCode = await this.findLoginCodeById(client, requestId);
+          loginCodes = await this.findLoginCodesByRequestId(client, requestId);
         } else if (telegramUsername) {
-          const user = await this.findUserByTelegramUsername(client, telegramUsername);
+          loginCodes = await this.findLatestLoginCodesByUsername(client, telegramUsername);
+        }
+
+        const candidates: LoginCandidate[] = [];
+
+        for (const loginCode of loginCodes) {
+          const user = await this.findUserById(
+            client,
+            loginCode.user_id,
+            loginCode.organization_id,
+          );
+
           if (user) {
-            loginCode = await this.findLatestLoginCodeByUser(client, user.userId);
+            candidates.push({ loginCode, user });
           }
         }
 
-        if (!loginCode) {
-          return null;
-        }
-
-        const user = await this.findUserById(
-          client,
-          loginCode.user_id,
-          loginCode.organization_id,
-        );
-
-        return user ? { loginCode, user } : null;
+        return candidates;
       },
       { isPlatformOperator: true },
     );
   }
 
   private async commitAttemptFailure(
-    user: TelegramUserRecord,
-    loginCodeId: string,
+    candidates: LoginCandidate[],
     nextAttemptCount: number,
     lockedUntil: string | null,
     meta: TelegramLoginRequestMeta,
@@ -391,30 +447,36 @@ export class TelegramAuthService {
       LOOKUP_ORGANIZATION_ID,
       async (client) => {
         await client.query(
-          "UPDATE login_codes SET attempt_count = $2, locked_until = $3::timestamptz WHERE id = $1",
-          [loginCodeId, nextAttemptCount, lockedUntil],
+          "UPDATE login_codes SET attempt_count = $2, locked_until = $3::timestamptz WHERE id = ANY($1::uuid[])",
+          [candidates.map((candidate) => candidate.loginCode.id), nextAttemptCount, lockedUntil],
         );
-        await this.recordFailure(
-          client,
-          user,
-          loginCodeId,
-          lockedUntil ? "code_locked" : "code_invalid",
-          meta,
-        );
+
+        for (const candidate of candidates) {
+          await this.recordFailure(
+            client,
+            candidate.user,
+            candidate.loginCode.id,
+            lockedUntil ? "code_locked" : "code_invalid",
+            meta,
+          );
+        }
       },
       { isPlatformOperator: true },
     );
   }
 
   private async commitFailureAudit(
-    user: TelegramUserRecord,
-    loginCodeId: string,
+    candidates: LoginCandidate[],
     reason: string,
     meta: TelegramLoginRequestMeta,
   ): Promise<void> {
     await this.database.withTenant(
       LOOKUP_ORGANIZATION_ID,
-      (client) => this.recordFailure(client, user, loginCodeId, reason, meta),
+      async (client) => {
+        for (const candidate of candidates) {
+          await this.recordFailure(client, candidate.user, candidate.loginCode.id, reason, meta);
+        }
+      },
       { isPlatformOperator: true },
     );
   }
@@ -484,16 +546,16 @@ export class TelegramAuthService {
     };
   }
 
-  private async findUserByTelegramUsername(
+  private async findUsersByTelegramUsername(
     client: Queryable,
     telegramUsername: string,
-  ): Promise<TelegramUserRecord | null> {
+  ): Promise<TelegramUserRecord[]> {
     const result = await client.query<UserJoinRow>(
-      `${userSelectSql} WHERE lower(u.telegram_username) = $1 GROUP BY u.id, o.id LIMIT 1`,
+      `${userSelectSql} WHERE lower(u.telegram_username) = $1 GROUP BY u.id, o.id ORDER BY o.created_at`,
       [telegramUsername],
     );
 
-    return result.rowCount === 0 ? null : mapUserRecord(result.rows[0]);
+    return result.rows.map(mapUserRecord);
   }
 
   private async findUserById(
@@ -509,34 +571,54 @@ export class TelegramAuthService {
     return result.rowCount === 0 ? null : mapUserRecord(result.rows[0]);
   }
 
-  private async findLoginCodeById(
+  /**
+   * Коды одной группы. Строки, выпущенные до появления login_request_id, группы
+   * не имеют, поэтому такой requestId трактуется как id самой строки.
+   */
+  private async findLoginCodesByRequestId(
     client: Queryable,
-    id: string,
-  ): Promise<LoginCodeRow | null> {
-    const result = await client.query<LoginCodeRow>(
-      `SELECT ${LOGIN_CODE_COLUMNS} FROM login_codes WHERE id = $1 AND purpose = $2 LIMIT 1`,
-      [id, TELEGRAM_LOGIN_PURPOSE],
-    );
-
-    return result.rowCount === 0 ? null : result.rows[0];
-  }
-
-  private async findLatestLoginCodeByUser(
-    client: Queryable,
-    userId: string,
-  ): Promise<LoginCodeRow | null> {
+    requestId: string,
+  ): Promise<LoginCodeRow[]> {
     const result = await client.query<LoginCodeRow>(
       `
         SELECT ${LOGIN_CODE_COLUMNS}
         FROM login_codes
-        WHERE user_id = $1 AND purpose = $2
-        ORDER BY created_at DESC
-        LIMIT 1
+        WHERE purpose = $2 AND (login_request_id = $1 OR (login_request_id IS NULL AND id = $1))
       `,
-      [userId, TELEGRAM_LOGIN_PURPOSE],
+      [requestId, TELEGRAM_LOGIN_PURPOSE],
     );
 
-    return result.rowCount === 0 ? null : result.rows[0];
+    return result.rows;
+  }
+
+  /** Последняя выданная группа кодов для @username по всем его организациям. */
+  private async findLatestLoginCodesByUsername(
+    client: Queryable,
+    telegramUsername: string,
+  ): Promise<LoginCodeRow[]> {
+    const result = await client.query<LoginCodeRow>(
+      `
+        WITH candidate_codes AS (
+          SELECT lc.*
+          FROM login_codes lc
+          JOIN users u ON u.id = lc.user_id AND u.organization_id = lc.organization_id
+          WHERE lower(u.telegram_username) = $1 AND lc.purpose = $2
+        ),
+        latest AS (
+          SELECT login_request_id, id, created_at
+          FROM candidate_codes
+          ORDER BY created_at DESC
+          LIMIT 1
+        )
+        SELECT c.*
+        FROM candidate_codes c, latest l
+        WHERE (l.login_request_id IS NOT NULL AND c.login_request_id = l.login_request_id)
+           OR (l.login_request_id IS NULL AND c.id = l.id)
+      `,
+      [telegramUsername, TELEGRAM_LOGIN_PURPOSE],
+    );
+
+    return result.rows;
   }
 }
 
@@ -554,7 +636,7 @@ interface UserJoinRow {
 }
 
 const LOGIN_CODE_COLUMNS =
-  "id, user_id, organization_id, code_hash, purpose, expires_at, consumed_at, attempt_count, locked_until";
+  "id, user_id, organization_id, code_hash, purpose, expires_at, consumed_at, attempt_count, locked_until, login_request_id";
 
 const userSelectSql = `
   SELECT
@@ -576,6 +658,14 @@ const userSelectSql = `
   LEFT JOIN user_roles ur ON ur.user_id = u.id AND ur.organization_id = u.organization_id
   LEFT JOIN roles r ON r.id = ur.role_id
 `;
+
+function canSignIn(user: TelegramUserRecord): boolean {
+  return (
+    user.userStatus === "active" &&
+    user.organizationStatus === "active" &&
+    user.roleCodes.length > 0
+  );
+}
 
 function assertUserCanSignIn(
   user: TelegramUserRecord | null,
@@ -690,6 +780,30 @@ function forbiddenLogin(description: string): UnauthorizedException {
     description,
     humanMessage: "Вход через Telegram недоступен для этого пользователя.",
   });
+}
+
+/**
+ * Код верен, но аккаунт администрирует несколько организаций. Клиент повторяет
+ * verify с organizationId из списка; код при этом не расходуется.
+ */
+function organizationSelectionRequired(candidates: LoginCandidate[]): HttpException {
+  return new HttpException(
+    {
+      code: "ORGANIZATION_SELECTION_REQUIRED",
+      description: "Telegram account administers several organizations; choose one.",
+      // Только diagnostics переживает ApiExceptionFilter: остальные поля тела
+      // исключения он отбрасывает, оставляя code/description/humanMessage.
+      diagnostics: {
+        organizations: candidates.map((candidate) => ({
+          id: candidate.user.organizationId,
+          name: candidate.user.organizationName,
+          role: primaryRole(candidate.user.roleCodes),
+        })),
+      },
+      humanMessage: "Выберите организацию для входа.",
+    },
+    HttpStatus.CONFLICT,
+  );
 }
 
 function invalidCode(description: string): UnauthorizedException {
