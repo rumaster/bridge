@@ -113,6 +113,19 @@ export function createOpenAiCompatibleLlm({
       return normalizeGeneration(parsed, prompt.context, name);
     },
 
+    /**
+     * Сырой вызов модели для узла «LLM» контракта Workflow 2.0: промпт уходит
+     * как есть, JSON-режим не включается и системного промпта нет — что сказать
+     * модели, решает автор схемы.
+     */
+    async complete({ prompt, params } = {}) {
+      const text = await chatCompletion({
+        user: String(prompt ?? ""),
+        overrides: pickGenerationParams(params),
+      });
+      return { text, model: chatModel };
+    },
+
     async interpretOnboarding({ prompt, organizationId, actions } = {}) {
       const allowed = Array.isArray(actions) && actions.length > 0 ? actions : ONBOARDING_ACTIONS;
       const system = [
@@ -144,14 +157,19 @@ export function createOpenAiCompatibleLlm({
     },
   };
 
-  async function chatCompletion({ system, user, jsonMode }) {
+  async function chatCompletion({ system = null, user, jsonMode = false, overrides = {} }) {
     const body: Record<string, unknown> = {
       model: chatModel,
       temperature,
+      // Системного сообщения может не быть вовсе (сырой completion узла «LLM»):
+      // пустое system-сообщение часть провайдеров отвергает.
       messages: [
-        { role: "system", content: system },
+        ...(typeof system === "string" && system.trim() !== ""
+          ? [{ role: "system", content: system }]
+          : []),
         { role: "user", content: user },
       ],
+      ...(overrides ?? {}),
     };
     if (jsonMode) {
       body.response_format = { type: "json_object" };
@@ -169,6 +187,38 @@ export function createOpenAiCompatibleLlm({
     }
     return content;
   }
+}
+
+/**
+ * Параметры генерации, которые узел «LLM» вправе задать. Белый список, а не
+ * прозрачная передача: `params` приходят из схемы, то есть их пишет автор схемы, а
+ * не разработчик. Без фильтра туда можно было бы положить `model` (обойдя выбор
+ * модели платформой), `messages` (подменив промпт целиком) или `stream` (сломав
+ * разбор ответа).
+ */
+const ALLOWED_GENERATION_PARAMS = new Set([
+  "temperature",
+  "top_p",
+  "max_tokens",
+  "presence_penalty",
+  "frequency_penalty",
+  "stop",
+  "seed",
+]);
+
+function pickGenerationParams(params: unknown): Record<string, unknown> {
+  if (params === null || typeof params !== "object" || Array.isArray(params)) {
+    return {};
+  }
+
+  const picked: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(params as Record<string, unknown>)) {
+    if (ALLOWED_GENERATION_PARAMS.has(key) && value !== undefined && value !== null) {
+      picked[key] = value;
+    }
+  }
+
+  return picked;
 }
 
 async function postJson(

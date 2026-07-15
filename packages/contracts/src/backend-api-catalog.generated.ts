@@ -23,6 +23,16 @@ export interface BackendApiOperation {
 
 export const BACKEND_API_OPERATIONS: readonly BackendApiOperation[] = Object.freeze([
   {
+    operation_id: "AiIntegrationController_completeLlm_v1",
+    method: "POST",
+    path: "/api/v1/ai/llm:complete",
+    summary: "Run a raw LLM completion (degrades to a safe fallback)",
+    tag: "ai-integration",
+    path_params: Object.freeze([]),
+    query_params: Object.freeze([]),
+    has_body: true,
+  },
+  {
     operation_id: "AiIntegrationController_createOnboardingCommand_v1",
     method: "POST",
     path: "/api/v1/ai/onboarding:command",

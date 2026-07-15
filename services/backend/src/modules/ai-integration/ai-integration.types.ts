@@ -23,6 +23,36 @@ export interface AiAssistantFacadeResponse {
   created_at: string;
 }
 
+/**
+ * Сырой вызов LLM для узла «LLM» контракта Workflow 2.0 (добавлен 2026-07-15).
+ * Ни `query`, ни базы знаний: промпт собирает схема, подставляя значения входных
+ * портов, — движок не должен зависеть от того, как AI строит промпт.
+ */
+export interface AiLlmCompletionFacadeRequest {
+  request_id: string;
+  organization_id: string;
+  prompt: string;
+  params: Record<string, unknown>;
+}
+
+export interface AiLlmCompletionFacadeResponse {
+  contract: "C4.LlmCompletionResponse";
+  version: "1.0.0";
+  request_id: string;
+  organization_id: string;
+  degraded: boolean;
+  /**
+   * Шире, чем у ассистента: SVC-AI различает открытый предохранитель и пустой
+   * ответ модели. Backend свои фолбэки размечает только `timeout`/`unavailable`.
+   */
+  fallback_reason: AiFacadeDegradationReason | "circuit_open" | "invalid_response" | null;
+  completion: {
+    text: string;
+    model: string | null;
+  };
+  created_at: string;
+}
+
 export interface AiOnboardingFacadeRequest {
   request_id: string;
   organization_id: string;

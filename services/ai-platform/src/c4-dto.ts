@@ -21,6 +21,19 @@ const ONBOARDING_FIELDS = new Set([
   "context",
 ]);
 
+/**
+ * Сырой вызов LLM для узла «LLM» контракта Workflow 2.0 (добавлен 2026-07-15).
+ * Ни `query`, ни `context`: базы знаний здесь нет, промпт задаёт схема целиком.
+ */
+const LLM_COMPLETION_FIELDS = new Set([
+  "contract",
+  "version",
+  "request_id",
+  "organization_id",
+  "prompt",
+  "params",
+]);
+
 const MESSAGE_CONTEXT_FIELDS = new Set([
   "message_id",
   "sender_type",
@@ -120,6 +133,52 @@ export function validateOnboardingCommandRequest(input) {
       context: input.context ?? {},
     },
   };
+}
+
+export function validateLlmCompletionRequest(input) {
+  const errors = [];
+
+  if (!isRecord(input)) {
+    return invalidPayload();
+  }
+
+  rejectUnknownFields(errors, input, LLM_COMPLETION_FIELDS);
+  expectConst(errors, input.contract, "C4.LlmCompletionRequest", "contract");
+  expectConst(errors, input.version, C4_VERSION, "version");
+  expectNonEmptyString(errors, input.request_id, "request_id");
+  expectNonEmptyString(errors, input.organization_id, "organization_id");
+  expectNonEmptyString(errors, input.prompt, "prompt");
+
+  if (Object.hasOwn(input, "params") && input.params !== null && !isRecord(input.params)) {
+    errors.push({
+      field: "params",
+      message: "params must be an object when provided.",
+    });
+  }
+
+  if (errors.length > 0) {
+    return {
+      ok: false,
+      errors,
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      ...input,
+      prompt: input.prompt.trim(),
+      params: isRecord(input.params) ? input.params : {},
+    },
+  };
+}
+
+export function assertLlmCompletionRequest(input) {
+  const result = validateLlmCompletionRequest(input);
+  if (!result.ok) {
+    throw new C4DtoValidationError(result.errors);
+  }
+  return result.value;
 }
 
 export function assertAssistantSuggestRequest(input) {

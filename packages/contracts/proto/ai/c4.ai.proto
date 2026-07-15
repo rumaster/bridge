@@ -5,6 +5,10 @@ package bridge.ai.v1;
 service AiPlatform {
   rpc SuggestAssistant(AssistantSuggestRequest) returns (JsonResponse);
   rpc CreateOnboardingCommand(OnboardingCommandRequest) returns (JsonResponse);
+  // Сырой вызов LLM для узла «LLM» контракта Workflow 2.0 (добавлен 2026-07-15).
+  // Отличается от SuggestAssistant тем, что НЕ ходит в базу знаний и не строит
+  // RAG-промпт с цитатами: схема сама решает, что подставить в промпт.
+  rpc CompleteLlm(LlmCompletionRequest) returns (JsonResponse);
   rpc Health(HealthRequest) returns (JsonResponse);
 }
 
@@ -14,6 +18,20 @@ message AssistantSuggestRequest {
   string request_id = 3;
   string organization_id = 4;
   string query = 5;
+}
+
+message LlmCompletionRequest {
+  string contract = 1;
+  string version = 2;
+  string request_id = 3;
+  string organization_id = 4;
+  // Готовый промпт: подстановки значений входных портов делает узел схемы, а не
+  // SVC-AI — движок не должен зависеть от того, как AI собирает промпт.
+  string prompt = 5;
+  // Параметры генерации (temperature и т.п.) в виде JSON-объекта. Строкой, а не
+  // map<string, string>: значения разнотипны (число, булево, массив стоп-слов), и
+  // map размазал бы типизацию по обеим сторонам.
+  string params_json = 6;
 }
 
 message OnboardingCommandRequest {

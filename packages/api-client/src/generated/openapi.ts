@@ -48,8 +48,8 @@ export const generatedOpenApiDocuments = [
     "openapi": "3.0.0",
     "title": "Bridge Backend Core API",
     "version": "1.0.0",
-    "pathCount": 69,
-    "operationCount": 82
+    "pathCount": 70,
+    "operationCount": 83
   },
   {
     "artifact": "packages/contracts/openapi/broadcasts/c8.broadcasts.openapi.json",
@@ -199,6 +199,17 @@ export const generatedOpenApiOperations = [
     "path": "/api/v1/ai/assistant:suggest",
     "operationId": "AiIntegrationController_suggestAssistant_v1",
     "summary": "Request an AI assistant suggestion (degrades to a safe fallback)",
+    "tags": [
+      "ai-integration"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "post",
+    "path": "/api/v1/ai/llm:complete",
+    "operationId": "AiIntegrationController_completeLlm_v1",
+    "summary": "Run a raw LLM completion (degrades to a safe fallback)",
     "tags": [
       "ai-integration"
     ]

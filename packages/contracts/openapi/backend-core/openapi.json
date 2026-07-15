@@ -63,6 +63,31 @@
         ]
       }
     },
+    "/api/v1/ai/llm:complete": {
+      "post": {
+        "operationId": "AiIntegrationController_completeLlm_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiLlmCompletionRequestDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "C4.LlmCompletionResponse"
+          }
+        },
+        "summary": "Run a raw LLM completion (degrades to a safe fallback)",
+        "tags": [
+          "ai-integration"
+        ]
+      }
+    },
     "/api/v1/ai/onboarding:command": {
       "post": {
         "operationId": "AiIntegrationController_createOnboardingCommand_v1",
@@ -2814,6 +2839,26 @@
         },
         "required": [
           "query"
+        ]
+      },
+      "AiLlmCompletionRequestDto": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "example": "Кратко перескажи обращение клиента одним предложением: ...",
+            "description": "Готовый промпт. Подстановки значений портов делает узел схемы."
+          },
+          "params": {
+            "type": "object",
+            "example": {
+              "temperature": 0.2
+            },
+            "description": "Параметры генерации. SVC-AI пропускает только белый список (temperature, top_p, max_tokens, stop и т.п.): выбор модели остаётся за платформой."
+          }
+        },
+        "required": [
+          "prompt"
         ]
       },
       "AiOnboardingCommandRequestDto": {

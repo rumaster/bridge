@@ -57,6 +57,7 @@ describe("AiIntegrationFacade", () => {
       created_at: "2026-07-02T16:30:00.000Z",
     };
     const upstream: AiUpstreamClient = {
+      completeLlm: jest.fn(),
       createOnboardingCommand: jest.fn(),
       suggestAssistant: jest.fn().mockResolvedValue(response),
     };
@@ -134,6 +135,90 @@ describe("AiIntegrationFacade", () => {
           requires_confirmation: false,
         },
       },
+    });
+  });
+
+  /**
+   * Сырой вызов LLM для узла «LLM» контракта Workflow 2.0. Деградация здесь важнее
+   * самого вызова: узел схемы не должен ни висеть на молчащем SVC-AI, ни принять
+   * заглушку за ответ модели.
+   */
+  it("passes through a successful LLM completion", async () => {
+    const facade = new AiIntegrationFacade();
+
+    await expect(
+      facade.completeLlm(
+        {
+          request_id: "req-llm-1",
+          organization_id: "org-1",
+          prompt: "Перескажи обращение одним предложением.",
+          params: { temperature: 0.2 },
+        },
+        {
+          call: async () => ({
+            contract: "C4.LlmCompletionResponse" as const,
+            version: "1.0.0" as const,
+            request_id: "req-llm-1",
+            organization_id: "org-1",
+            degraded: false,
+            fallback_reason: null,
+            completion: { text: "Клиент просит вернуть товар.", model: "gpt-4o-mini" },
+            created_at: "2026-07-02T16:30:00.000Z",
+          }),
+          now: fixedNow,
+        },
+      ),
+    ).resolves.toMatchObject({
+      degraded: false,
+      completion: { text: "Клиент просит вернуть товар.", model: "gpt-4o-mini" },
+    });
+  });
+
+  it("degrades the LLM completion on timeout instead of hanging the schema", async () => {
+    const facade = new AiIntegrationFacade();
+
+    await expect(
+      facade.completeLlm(
+        {
+          request_id: "req-llm-2",
+          organization_id: "org-1",
+          prompt: "Перескажи обращение одним предложением.",
+          params: {},
+        },
+        {
+          call: () => new Promise(() => undefined),
+          timeoutMs: 1,
+          now: fixedNow,
+        },
+      ),
+    ).resolves.toMatchObject({
+      degraded: true,
+      fallback_reason: "timeout",
+      // model = null отличает заглушку от ответа модели, а текст честно называет
+      // себя заглушкой: схема может ветвиться по ответу.
+      completion: { model: null },
+    });
+  });
+
+  it("degrades the LLM completion when SVC-AI is not wired at all", async () => {
+    // upstream = null: gRPC-канал не настроен. Узел обязан получить валидный ответ
+    // с degraded: true, а не исключение.
+    const facade = new AiIntegrationFacade();
+
+    await expect(
+      facade.completeLlm(
+        {
+          request_id: "req-llm-3",
+          organization_id: "org-1",
+          prompt: "Перескажи обращение одним предложением.",
+          params: {},
+        },
+        { now: fixedNow },
+      ),
+    ).resolves.toMatchObject({
+      contract: "C4.LlmCompletionResponse",
+      degraded: true,
+      fallback_reason: "unavailable",
     });
   });
 });

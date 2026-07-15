@@ -31,6 +31,26 @@ export const AI_ASSISTANT_SUGGEST_RESPONSE_SCHEMA = Object.freeze(
   ),
 );
 
+/**
+ * Сырой вызов LLM для узла «LLM» контракта Workflow 2.0 (добавлен 2026-07-15).
+ * База знаний здесь не участвует: промпт целиком задаёт схема.
+ */
+export const AI_LLM_COMPLETION_RESPONSE_SCHEMA = Object.freeze(
+  JSON.parse(
+    readFileSync(
+      new URL("../json-schema/c4-ai-llm-completion-response.schema.json", import.meta.url),
+      "utf8",
+    ),
+  ),
+);
+
+export const AI_LLM_COMPLETION_FALLBACK_REASONS = Object.freeze([
+  "unavailable",
+  "timeout",
+  "circuit_open",
+  "invalid_response",
+]);
+
 export const AI_ASSISTANT_SOURCE_TYPES = Object.freeze(["knowledge_chunk", "none"]);
 
 export const AI_ASSISTANT_SOURCE_STATUSES = Object.freeze([
@@ -73,6 +93,41 @@ export function createAssistantSuggestResponse({
 
 export function validateAssistantSuggestResponse(response) {
   return validateJsonSchema(response, AI_ASSISTANT_SUGGEST_RESPONSE_SCHEMA);
+}
+
+/**
+ * Build a frozen C4 LLM completion response (узел «LLM» контракта Workflow 2.0).
+ *
+ * `degraded` и `fallback_reason` обязательны и здесь: узел схемы должен уметь
+ * отличить настоящий ответ модели от заглушки, иначе ветвление по тексту ответа
+ * молча пойдёт по ветке, построенной на фолбэке.
+ */
+export function createLlmCompletionResponse({
+  requestId,
+  organizationId,
+  text,
+  model = null,
+  degraded = false,
+  fallbackReason = null,
+  now = () => new Date().toISOString(),
+}) {
+  return {
+    contract: "C4.LlmCompletionResponse",
+    version: C4_VERSION,
+    request_id: requestId,
+    organization_id: organizationId,
+    degraded,
+    fallback_reason: fallbackReason,
+    completion: {
+      text,
+      model,
+    },
+    created_at: now(),
+  };
+}
+
+export function validateLlmCompletionResponse(response) {
+  return validateJsonSchema(response, AI_LLM_COMPLETION_RESPONSE_SCHEMA);
 }
 
 export function createAiOnboardingCommand({

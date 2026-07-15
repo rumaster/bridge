@@ -21,9 +21,14 @@ import type { RequestWithRequestId } from "../../common/request-id.middleware";
 import { AiIntegrationFacade } from "./ai-integration.facade";
 import type {
   AiAssistantFacadeResponse,
+  AiLlmCompletionFacadeResponse,
   AiOnboardingFacadeResponse,
 } from "./ai-integration.facade";
-import { AiAssistantSuggestRequestDto, AiOnboardingCommandRequestDto } from "./ai-integration.dto";
+import {
+  AiAssistantSuggestRequestDto,
+  AiLlmCompletionRequestDto,
+  AiOnboardingCommandRequestDto,
+} from "./ai-integration.dto";
 import { AI_UPSTREAM_CLIENT } from "./ai-integration.upstream";
 import type { AiUpstreamClient } from "./ai-integration.upstream";
 
@@ -66,6 +71,40 @@ export class AiIntegrationController {
     return this.facade.suggestAssistant(facadeRequest, {
       call: this.upstream
         ? () => (this.upstream as AiUpstreamClient).suggestAssistant(facadeRequest)
+        : undefined,
+    });
+  }
+
+  /**
+   * Сырой вызов LLM для узла «LLM» контракта Workflow 2.0 (добавлен 2026-07-15).
+   *
+   * Роль `administrator`, а не `manager`: узел вызывает эндпоинт от имени
+   * технического пользователя схемы, а схемы редактирует администратор. Границей
+   * служит витрина `workflow_backend_api_allowlist` — операция закрыта, пока
+   * platform_operator её не откроет.
+   */
+  @Post("llm\\:complete")
+  @Version("1")
+  @Roles("administrator")
+  @ApiOperation({ summary: "Run a raw LLM completion (degrades to a safe fallback)" })
+  @ApiCreatedResponse({ description: "C4.LlmCompletionResponse" })
+  completeLlm(
+    @Body() body: AiLlmCompletionRequestDto,
+    @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: HeaderValue,
+    @Req() request: Request,
+  ): Promise<AiLlmCompletionFacadeResponse> {
+    const organizationId = getRequiredOrganizationId(organizationIdHeader);
+    const requestId = (request as RequestWithRequestId).requestId ?? "";
+    const facadeRequest = {
+      request_id: requestId,
+      organization_id: organizationId,
+      prompt: body.prompt,
+      params: body.params ?? {},
+    };
+
+    return this.facade.completeLlm(facadeRequest, {
+      call: this.upstream
+        ? () => (this.upstream as AiUpstreamClient).completeLlm(facadeRequest)
         : undefined,
     });
   }

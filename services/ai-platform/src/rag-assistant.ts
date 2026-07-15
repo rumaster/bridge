@@ -1,9 +1,11 @@
 import {
   createAssistantSuggestResponse,
+  createLlmCompletionResponse,
   validateAssistantSuggestResponse,
+  validateLlmCompletionResponse,
 } from "../../../packages/contracts/src/c4.js";
 
-import { assertAssistantSuggestRequest } from "./c4-dto.js";
+import { assertAssistantSuggestRequest, assertLlmCompletionRequest } from "./c4-dto.js";
 import { createDeterministicMockLlm, type LlmProvider } from "./llm.js";
 import { createResilientLlm } from "./llm-facade.js";
 import { createAiMetrics, type AiMetrics } from "./metrics.js";
@@ -138,6 +140,76 @@ export function createRagAssistant({
     }
   }
 
+  /**
+   * Сырой вызов LLM для узла «LLM» контракта Workflow 2.0 (добавлен 2026-07-15).
+   *
+   * Живёт рядом с ассистентом, потому что делит с ним всё, что делает вызов модели
+   * безопасным: выбор провайдера по организации (§12.9), устойчивый фасад
+   * (таймаут, предохранитель) и метрики стоимости (§24.4). Отдельный сервис завёл
+   * бы второй, неохраняемый путь к тем же провайдерам.
+   *
+   * Отличие от `suggestAssistant`: базы знаний нет — ни эмбеддинга запроса, ни
+   * поиска, ни цитат. Промпт целиком собирает схема.
+   */
+  async function completeLlm(payload) {
+    const request = assertLlmCompletionRequest(payload);
+    metrics.inc("llm_completion_total");
+
+    try {
+      const activeLlm = selectLlm(request.organization_id);
+
+      if (typeof activeLlm.complete !== "function") {
+        throw new TypeError("LLM provider does not support raw completion");
+      }
+
+      const result = await activeLlm.complete({
+        prompt: request.prompt,
+        params: request.params,
+        organizationId: request.organization_id,
+      });
+
+      if (typeof result?.text !== "string" || result.text.trim() === "") {
+        // Пустой ответ — это отказ, а не ответ: узел схемы иначе продолжил бы
+        // исполнение с пустой строкой и ветвление молча ушло бы не туда.
+        return assertValidCompletion(
+          buildCompletionFallback(request, "invalid_response"),
+        );
+      }
+
+      return assertValidCompletion(
+        createLlmCompletionResponse({
+          requestId: request.request_id,
+          organizationId: request.organization_id,
+          text: result.text,
+          model: result.model ?? activeLlm.model ?? null,
+          now,
+        }),
+      );
+    } catch (error) {
+      metrics.inc("llm_completion_degraded_total");
+      return assertValidCompletion(
+        buildCompletionFallback(request, completionFallbackReasonFor(error)),
+      );
+    }
+  }
+
+  /**
+   * Фолбэк сырого вызова. Текст честно называет себя заглушкой, а не притворяется
+   * ответом модели: схема может ветвиться по тексту, и тогда молчаливая подмена
+   * увела бы исполнение не туда. Формальный признак — `degraded: true`.
+   */
+  function buildCompletionFallback(request, fallbackReason) {
+    return createLlmCompletionResponse({
+      requestId: request.request_id,
+      organizationId: request.organization_id,
+      text: "LLM временно недоступна: ответ не получен.",
+      model: null,
+      degraded: true,
+      fallbackReason,
+      now,
+    });
+  }
+
   function buildFallback(request, error) {
     return createAssistantSuggestResponse({
       requestId: request.request_id,
@@ -159,6 +231,7 @@ export function createRagAssistant({
 
   return {
     suggestAssistant,
+    completeLlm,
 
     async createOnboardingCommand(payload) {
       return commander.createOnboardingCommand(payload);
@@ -202,6 +275,31 @@ function fallbackReasonFor(error) {
     return "timeout";
   }
   return "unavailable";
+}
+
+/**
+ * Причина деградации сырого вызова. Шире, чем у ассистента: предохранитель и
+ * пустой ответ модели — отдельные причины, иначе диагностика в трассе схемы
+ * сводилась бы к «unavailable» на все случаи.
+ */
+function completionFallbackReasonFor(error) {
+  if (error?.name === "CircuitOpenError") {
+    return "circuit_open";
+  }
+  if (error?.name === "AbortError" || error?.reason === "timeout") {
+    return "timeout";
+  }
+  return "unavailable";
+}
+
+function assertValidCompletion(response) {
+  const validation = validateLlmCompletionResponse(response);
+  if (!validation.valid) {
+    throw new Error(
+      `LLM completion produced an invalid C4 response: ${validation.errors.join("; ")}`,
+    );
+  }
+  return response;
 }
 
 function clampConfidence(value) {

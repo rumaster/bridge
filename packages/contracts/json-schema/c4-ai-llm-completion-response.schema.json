@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.bridge.local/c4-ai-llm-completion-response.schema.json",
+  "title": "C4 AI LLM Completion Response",
+  "description": "Сырой вызов LLM для узла «LLM» контракта Workflow 2.0. В отличие от C4.AssistantSuggestResponse не несёт цитат и источников: база знаний здесь не участвует — промпт целиком задаёт схема. Деградация описывается теми же полями degraded/fallback_reason, что и у ассистента: узел схемы обязан отличать реальный ответ модели от заглушки.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "request_id",
+    "organization_id",
+    "degraded",
+    "fallback_reason",
+    "completion",
+    "created_at"
+  ],
+  "properties": {
+    "contract": {
+      "const": "C4.LlmCompletionResponse"
+    },
+    "version": {
+      "const": "1.0.0"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "organization_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "degraded": {
+      "type": "boolean"
+    },
+    "fallback_reason": {
+      "type": ["string", "null"],
+      "enum": ["unavailable", "timeout", "circuit_open", "invalid_response", null]
+    },
+    "completion": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "model"],
+      "properties": {
+        "text": {
+          "type": "string"
+        },
+        "model": {
+          "type": ["string", "null"],
+          "description": "Модель, ответившая на запрос; null — когда ответ собран заглушкой."
+        }
+      }
+    },
+    "created_at": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

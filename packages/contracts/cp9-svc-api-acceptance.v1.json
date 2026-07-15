@@ -45,6 +45,12 @@
       "reason": "Поиск по базе знаний (docs/plan/workflow-2.0-redesign.md): добавлен маршрут POST /api/v1/knowledge/documents:search после заморозки, включён в опубликованную v1-поверхность согласно инварианту «every actual Nest /api/v1 route is published». Обслуживает узел «Поиск в Knowledge Base» контракта Workflow 2.0: вход — текстовые ключевые фразы и теги-предфильтр, эмбеддинг считает Backend той же моделью, которой эмбеддит документы при сохранении (LLM-провайдера у движка нет, §13.13-п.3). Внутренний C3.kb-маршрут POST /knowledge:search, добавленный тем же изменением, в счётчики НЕ входит: он вне префикса /api/v1 и исключён из OpenAPI как service-to-service (ср. internal/ingress/messages). Обновлены generated_operation_count 81→82 и generated_path_count 68→69; surface-записи не добавлялись (принятая M5-поверхность knowledge не менялась). Владелец контрактов: решение A (включить в v1).",
       "operation_count": "81 -> 82",
       "path_count": "68 -> 69"
+    },
+    {
+      "date": "2026-07-15",
+      "reason": "Узел «LLM» контракта Workflow 2.0 (docs/plan/workflow-2.0-redesign.md): добавлен маршрут POST /api/v1/ai/llm:complete после заморозки, включён в опубликованную v1-поверхность согласно инварианту «every actual Nest /api/v1 route is published». Сырой вызов модели: промпт целиком собирает схема, база знаний не участвует (в отличие от ai/assistant:suggest). Потребовал расширения контракта C4 — новый RPC CompleteLlm в proto/ai/c4.ai.proto и способность `complete` у провайдеров SVC-AI; раньше узел ходил в несуществующий /api/v1/ai/llm/completions и получал 404. Обновлены generated_operation_count 82→83 и generated_path_count 69→70; surface-записи не добавлялись (принятая M5-поверхность ai не менялась). Владелец контрактов: решение A (включить в v1).",
+      "operation_count": "82 -> 83",
+      "path_count": "69 -> 70"
     }
   ],
   "scope": {
@@ -75,8 +81,8 @@
       "base_path": "/api/v1",
       "openapi": {
         "artifact": "packages/contracts/openapi/backend-core/openapi.json",
-        "generated_operation_count": 82,
-        "generated_path_count": 69,
+        "generated_operation_count": 83,
+        "generated_path_count": 70,
         "metadata": {
           "x-contract-id": "C3",
           "x-owner": "SVC-API",

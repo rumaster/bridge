@@ -285,7 +285,18 @@ describe("Узел Branch: маршрутизация по exec-порту", () 
 
 describe("Узлы LLM и Knowledge Base: только через Backend (C3)", () => {
   it("LLM подставляет входы в промпт и шлёт POST к AI-фасаду с контекстом арендатора", async () => {
-    const client = capturingClient({ status_code: 200, headers: {}, body: { text: "Ответ" } });
+    // Путь берётся из каталога, сгенерированного из OpenAPI, а не из config.path:
+    // раньше дефолт /api/v1/ai/llm/completions в API отсутствовал и узел получал
+    // в бою 404.
+    const client = capturingClient({
+      status_code: 200,
+      headers: {},
+      body: {
+        contract: "C4.LlmCompletionResponse",
+        degraded: false,
+        completion: { text: "Ответ", model: "gpt-4o-mini" },
+      },
+    });
     const result = await llmNode.execute({
       node: { config: { prompt: "Ответь клиенту: {q}", outputs: [{ name: "text", type: "string" }] } },
       input: { q: "Привет" },
@@ -294,10 +305,58 @@ describe("Узлы LLM и Knowledge Base: только через Backend (C3)",
     });
     const request = client.calls[0];
     assert.equal(request.method, "POST");
-    assert.equal(request.path, "/api/v1/ai/llm/completions");
+    assert.equal(request.path, "/api/v1/ai/llm:complete");
     assert.equal(request.body.prompt, "Ответь клиенту: Привет");
     assert.equal(request.context.organization_id, ORG);
     assert.deepEqual(result.outputs, { text: "Ответ" });
+  });
+
+  it("LLM без объявленных портов отдаёт текст ответа, а не конверт C4", async () => {
+    // Ради текста узел и вызывают; конверт нужен только для ветвления по degraded.
+    const client = capturingClient({
+      status_code: 200,
+      headers: {},
+      body: { degraded: false, completion: { text: "Ответ", model: "m" } },
+    });
+    const result = await llmNode.execute({
+      node: { config: { prompt: "Привет" } },
+      input: {},
+      ctx: stubCtx(),
+      backendClient: client,
+    });
+    assert.deepEqual(result.outputs, { text: "Ответ" });
+  });
+
+  it("LLM выносит degraded в порт и в трассу — заглушку видно", async () => {
+    // Без этого признака схема, ветвящаяся по ответу модели, молча пошла бы по
+    // ветке, построенной на фолбэке.
+    const client = capturingClient({
+      status_code: 200,
+      headers: {},
+      body: {
+        degraded: true,
+        fallback_reason: "timeout",
+        completion: { text: "LLM временно недоступна: ответ не получен.", model: null },
+      },
+    });
+    const result = await llmNode.execute({
+      node: {
+        config: {
+          prompt: "Привет",
+          outputs: [
+            { name: "text", type: "string" },
+            { name: "degraded", type: "boolean" },
+            { name: "model", type: "string" },
+          ],
+        },
+      },
+      input: {},
+      ctx: stubCtx(),
+      backendClient: client,
+    });
+    assert.equal(result.outputs.degraded, true);
+    assert.equal(result.outputs.model, null);
+    assert.equal(result.log.degraded, true);
   });
 
   it("LLM оставляет неизвестный плейсхолдер как есть", async () => {
@@ -325,7 +384,9 @@ describe("Узлы LLM и Knowledge Base: только через Backend (C3)",
       backendClient: client,
     });
     const request = client.calls[0];
-    assert.equal(request.path, "/api/v1/ai/knowledge-base/search");
+    // Реальный маршрут из каталога: дефолт /api/v1/ai/knowledge-base/search в
+    // OpenAPI отсутствовал и давал в бою 404.
+    assert.equal(request.path, "/api/v1/knowledge/documents:search");
     assert.deepEqual(request.body, { keys: ["тариф", "цена"], tags: ["faq"], top_k: 3 });
     assert.equal(request.context.organization_id, ORG);
     assert.deepEqual(result.outputs, { documents: [{ id: "d1" }] });

@@ -1,6 +1,8 @@
 import type {
   AiAssistantFacadeRequest,
   AiAssistantFacadeResponse,
+  AiLlmCompletionFacadeRequest,
+  AiLlmCompletionFacadeResponse,
   AiOnboardingFacadeRequest,
   AiOnboardingFacadeResponse,
 } from "./ai-integration.types";
@@ -18,6 +20,8 @@ export interface AiUpstreamClient {
   createOnboardingCommand(
     request: AiOnboardingFacadeRequest,
   ): Promise<AiOnboardingFacadeResponse>;
+  /** Сырой вызов LLM для узла «LLM» контракта Workflow 2.0 (добавлен 2026-07-15). */
+  completeLlm(request: AiLlmCompletionFacadeRequest): Promise<AiLlmCompletionFacadeResponse>;
 }
 
 export const AI_UPSTREAM_CLIENT = "AI_UPSTREAM_CLIENT";

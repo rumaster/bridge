@@ -8,6 +8,8 @@ import type { OnModuleDestroy } from "@nestjs/common";
 import type {
   AiAssistantFacadeRequest,
   AiAssistantFacadeResponse,
+  AiLlmCompletionFacadeRequest,
+  AiLlmCompletionFacadeResponse,
   AiOnboardingFacadeRequest,
   AiOnboardingFacadeResponse,
 } from "./ai-integration.types";
@@ -28,6 +30,16 @@ interface OnboardingCommandGrpcRequest extends AiOnboardingFacadeRequest {
   version: "1.0.0";
 }
 
+/** `params` едут строкой: значения разнотипны, map<string,string> их не выражает. */
+interface LlmCompletionGrpcRequest {
+  contract: "C4.LlmCompletionRequest";
+  organization_id: string;
+  params_json: string;
+  prompt: string;
+  request_id: string;
+  version: "1.0.0";
+}
+
 interface AiPlatformGrpcClient extends grpc.Client {
   SuggestAssistant(
     request: AssistantSuggestGrpcRequest,
@@ -35,6 +47,10 @@ interface AiPlatformGrpcClient extends grpc.Client {
   ): void;
   CreateOnboardingCommand(
     request: OnboardingCommandGrpcRequest,
+    callback: (error: grpc.ServiceError | null, response?: JsonResponse) => void,
+  ): void;
+  CompleteLlm(
+    request: LlmCompletionGrpcRequest,
     callback: (error: grpc.ServiceError | null, response?: JsonResponse) => void,
   ): void;
   Health(
@@ -85,6 +101,17 @@ export class AiGrpcUpstreamClient implements AiUpstreamClient, OnModuleDestroy {
     });
   }
 
+  completeLlm(request: AiLlmCompletionFacadeRequest): Promise<AiLlmCompletionFacadeResponse> {
+    return this.call<AiLlmCompletionFacadeResponse>("CompleteLlm", {
+      contract: "C4.LlmCompletionRequest",
+      organization_id: request.organization_id,
+      params_json: JSON.stringify(request.params ?? {}),
+      prompt: request.prompt,
+      request_id: request.request_id,
+      version: "1.0.0",
+    });
+  }
+
   async getHealth(): Promise<Record<string, unknown>> {
     return this.call<Record<string, unknown>>("Health", {});
   }
@@ -94,10 +121,11 @@ export class AiGrpcUpstreamClient implements AiUpstreamClient, OnModuleDestroy {
   }
 
   private call<TResponse>(
-    method: "SuggestAssistant" | "CreateOnboardingCommand" | "Health",
+    method: "SuggestAssistant" | "CreateOnboardingCommand" | "CompleteLlm" | "Health",
     request:
       | AssistantSuggestGrpcRequest
       | OnboardingCommandGrpcRequest
+      | LlmCompletionGrpcRequest
       | Record<string, never>,
   ): Promise<TResponse> {
     return new Promise((resolveResponse, reject) => {

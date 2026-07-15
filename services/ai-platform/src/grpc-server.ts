@@ -74,9 +74,43 @@ export function createAiPlatformGrpcServer({
     SuggestAssistant: async (call, callback: UnaryCallback) => {
       await respond(callback, () => ai.suggestAssistant(call.request));
     },
+    // Сырой вызов LLM для узла «LLM» контракта Workflow 2.0 (добавлен 2026-07-15).
+    // `params` едут по проводу строкой (`params_json`): значения разнотипны, и
+    // map<string, string> размазал бы приведение типов по обеим сторонам.
+    CompleteLlm: async (call, callback: UnaryCallback) => {
+      await respond(callback, () =>
+        ai.completeLlm({
+          contract: call.request.contract,
+          version: call.request.version,
+          request_id: call.request.request_id,
+          organization_id: call.request.organization_id,
+          prompt: call.request.prompt,
+          params: parseParamsJson(call.request.params_json),
+        }),
+      );
+    },
   });
 
   return server;
+}
+
+/**
+ * `params_json` — необязательное поле; proto3 отдаёт незаданную строку как "".
+ * Битый JSON трактуется как «параметров нет», а не как ошибка: параметры
+ * генерации не обязательны, и ронять из-за них вызов модели незачем — DTO всё
+ * равно проверит форму.
+ */
+function parseParamsJson(value: unknown): Record<string, unknown> {
+  if (typeof value !== "string" || value.trim() === "") {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(value);
+    return parsed !== null && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 function loadAiPlatformService(protoPath?: string) {

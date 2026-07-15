@@ -1,6 +1,6 @@
+import { getBackendApiOperation } from "@bridge/contracts/backend-api-catalog";
 import { configPortRows } from "@bridge/contracts/c5-workflow";
-
-const DEFAULT_PATH = "/api/v1/ai/llm/completions";
+import { WorkflowExecutionError } from "../core/errors.js";
 
 /**
  * Узел вызова LLM (ТЗ §13.6, §13.13-п.1). Нейтрален и идёт ТОЛЬКО через Backend
@@ -8,9 +8,17 @@ const DEFAULT_PATH = "/api/v1/ai/llm/completions";
  * актор берутся из контекста экземпляра.
  *
  * Ревизия 2026-07-15: промпт задаётся в `config.prompt` как текст с
- * подстановками `{порт}` из входов, а не Transform-выражением. Выходы
- * раскладываются по объявленным портам (`raw` — ответ целиком).
+ * подстановками `{порт}` из входов, а не Transform-выражением.
+ *
+ * Ревизия 2026-07-15 (вторая): `config.path` удалён. Раньше путь был свободной
+ * строкой с проверкой «начинается с /api/v1», а дефолт `/api/v1/ai/llm/completions`
+ * в OpenAPI отсутствовал — то есть узел в бою получал 404. Теперь операция
+ * фиксирована каталогом, сгенерированным из OpenAPI: маршрут не может разъехаться
+ * с API молча, а витрина `workflow_backend_api_allowlist` решает, разрешён ли вызов
+ * схемам вообще.
  */
+const OPERATION_ID = "AiIntegrationController_completeLlm_v1";
+
 export const llmNode = {
   type: "llm",
 
@@ -18,29 +26,48 @@ export const llmNode = {
     if (typeof config?.prompt !== "string" || config.prompt.trim() === "") {
       errors.push({ path: `${path}.prompt`, message: "Узел llm требует непустой текст промпта." });
     }
-    validateApiPath(config?.path, `${path}.path`, errors);
   },
 
   async execute({ node, input, ctx, backendClient }) {
     const config = node.config ?? {};
-    const body = {
-      prompt: interpolate(config.prompt, input),
-      params: isRecord(config.params) ? config.params : {},
-    };
+    const operation = resolveOperation();
+
     const response = await backendClient.call({
-      method: "POST",
-      path: config.path ?? DEFAULT_PATH,
+      method: operation.method,
+      path: operation.path,
       query: {},
-      body,
+      body: {
+        prompt: interpolate(config.prompt, input),
+        params: isRecord(config.params) ? config.params : {},
+      },
       timeout_ms: config.timeout_ms ?? null,
       context: ctx.toCallContext(),
     });
+
     return {
       outputs: resolveOutputs(config, response),
-      log: { llm_path: config.path ?? DEFAULT_PATH, status_code: response?.status_code ?? null },
+      log: {
+        operation_id: operation.operation_id,
+        status_code: response?.status_code ?? null,
+        // Заглушку от настоящей генерации отличает только этот признак: без него в
+        // трассе не видно, ветвилась схема по ответу модели или по фолбэку.
+        degraded: readBody(response)?.degraded ?? null,
+      },
     };
   },
 };
+
+function resolveOperation() {
+  const operation = getBackendApiOperation(OPERATION_ID);
+  if (!operation) {
+    throw new WorkflowExecutionError(
+      "unknown_operation",
+      `Вызова "${OPERATION_ID}" нет в каталоге Backend API.`,
+      { nodeType: "llm" },
+    );
+  }
+  return operation;
+}
 
 /** Подстановка `{порт}` значениями входов; неизвестный порт остаётся как есть. */
 function interpolate(template, input) {
@@ -51,27 +78,52 @@ function interpolate(template, input) {
   });
 }
 
+/**
+ * Выходы раскладываются по объявленным портам. Без объявления — `text` (сам ответ
+ * модели): это то, ради чего узел и вызывают. `raw` отдаёт конверт C4 целиком — он
+ * нужен, когда схема ветвится по `degraded`.
+ */
 function resolveOutputs(config, response) {
+  const body = readBody(response);
   const rows = configPortRows(config.outputs);
-  const body = response?.body ?? response;
-  if (rows.length === 0) return { raw: body };
+  if (rows.length === 0) return { text: completionText(body) };
+
   const outputs: Record<string, unknown> = {};
   for (const row of rows) {
-    if (row.name === "raw") {
-      outputs.raw = body;
-      continue;
+    switch (row.name) {
+      case "raw":
+        outputs.raw = body;
+        break;
+      case "text":
+        outputs.text = completionText(body);
+        break;
+      case "model":
+        outputs.model = readCompletion(body)?.model ?? null;
+        break;
+      case "degraded":
+        outputs.degraded = body?.degraded ?? null;
+        break;
+      default:
+        outputs[row.name] =
+          body !== null && Object.hasOwn(body, row.name) ? body[row.name] : null;
     }
-    outputs[row.name] =
-      body !== null && typeof body === "object" && Object.hasOwn(body, row.name) ? body[row.name] : body;
   }
   return outputs;
 }
 
-function validateApiPath(value, path, errors) {
-  if (value === undefined) return;
-  if (typeof value !== "string" || (value !== "/api/v1" && !value.startsWith("/api/v1/"))) {
-    errors.push({ path, message: "path должен указывать на публичный Backend API под /api/v1." });
-  }
+function completionText(body) {
+  const text = readCompletion(body)?.text;
+  return typeof text === "string" ? text : "";
+}
+
+function readCompletion(body) {
+  const completion = body?.completion;
+  return completion !== null && typeof completion === "object" ? completion : null;
+}
+
+function readBody(response) {
+  const body = response?.body ?? response;
+  return body !== null && typeof body === "object" ? body : null;
 }
 
 function isRecord(value) {

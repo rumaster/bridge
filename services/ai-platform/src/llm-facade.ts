@@ -22,7 +22,7 @@ import type { LlmProvider } from "./llm.js";
  * throws so the caller runs its own graceful-degradation path (ТЗ §5.4).
  */
 
-const CAPABILITIES = Object.freeze(["embed", "generate", "interpretOnboarding"]);
+const CAPABILITIES = Object.freeze(["embed", "generate", "interpretOnboarding", "complete"]);
 const DEFAULT_TIMEOUT_MS = 5_000;
 const DEFAULT_MICROS_PER_1K_CHARS = 20;
 
@@ -182,6 +182,10 @@ function estimateChars(capability, args = [], result) {
     chars += textLength(result?.text);
   } else if (capability === "interpretOnboarding") {
     chars += textLength(input.prompt);
+  } else if (capability === "complete") {
+    // Сырой вызов узла «LLM»: платим и за промпт, и за сгенерированный текст.
+    chars += textLength(input.prompt);
+    chars += textLength(result?.text);
   }
 
   return chars;

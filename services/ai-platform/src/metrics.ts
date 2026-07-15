@@ -17,6 +17,8 @@ const COUNTER_KEYS = Object.freeze([
   "onboarding_command_rejected_total",
   "kb_search_total",
   "kb_search_failed_total",
+  "llm_completion_total",
+  "llm_completion_degraded_total",
   "llm_call_total",
   "llm_call_failed_total",
   "llm_timeout_total",
@@ -38,6 +40,9 @@ const METRIC_HELP = Object.freeze({
     "C4 onboarding drafts rejected by an SVC-AI safety barrier.",
   kb_search_total: "Knowledge Base searches issued to Backend (C3.kb).",
   kb_search_failed_total: "Knowledge Base searches that failed.",
+  llm_completion_total: "C4 raw LLM completions served to Workflow schema nodes.",
+  llm_completion_degraded_total:
+    "C4 raw LLM completions that fell back to the degraded stub.",
   llm_call_total: "LLM provider calls attempted through the resilient facade.",
   llm_call_failed_total: "LLM provider calls that errored or timed out.",
   llm_timeout_total: "LLM provider calls aborted by the facade timeout.",
@@ -65,6 +70,8 @@ export interface AiMetricsSnapshot {
   onboarding_command_rejected_total: number;
   kb_search_total: number;
   kb_search_failed_total: number;
+  llm_completion_total: number;
+  llm_completion_degraded_total: number;
   llm_call_total: number;
   llm_call_failed_total: number;
   llm_timeout_total: number;

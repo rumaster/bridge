@@ -46,6 +46,12 @@ export interface LlmProvider {
   embed?(text?: any): Promise<any>;
   generate?(args?: any): Promise<any>;
   interpretOnboarding?(args?: any): Promise<any>;
+  /**
+   * Сырой вызов модели для узла «LLM» контракта Workflow 2.0 (добавлен
+   * 2026-07-15). Отличается от `generate` тем, что не строит RAG-промпт и не
+   * возвращает цитат: промпт задан целиком вызывающей стороной.
+   */
+  complete?(args?: any): Promise<any>;
   getBreakerState?(): any;
 }
 
@@ -97,6 +103,10 @@ export function createDeterministicMockLlm({
     async interpretOnboarding({ prompt }) {
       return interpretOnboardingPrompt(prompt);
     },
+
+    async complete({ prompt }) {
+      return completePrompt(prompt, model);
+    },
   };
 }
 
@@ -123,6 +133,9 @@ export function createUnavailableLlm({
       fail();
     },
     async interpretOnboarding() {
+      fail();
+    },
+    async complete() {
       fail();
     },
   };
@@ -251,6 +264,28 @@ function extractTimezone(prompt) {
 
 function normalizeText(value) {
   return String(value ?? "").trim().toLowerCase();
+}
+
+/**
+ * Детерминированный сырой ответ модели (узел «LLM» контракта Workflow 2.0).
+ *
+ * Ни случайности, ни сети: один и тот же промпт всегда даёт один и тот же текст —
+ * иначе тест-прогон схемы был бы невоспроизводим, а ветвление по ответу LLM
+ * «плавало» бы от запуска к запуску.
+ *
+ * Ответ намеренно называет себя заглушкой: схема, ветвящаяся по тексту ответа, не
+ * должна принять его за настоящую генерацию. Формально это отмечено полем
+ * `degraded` в ответе C4, но текст обязан быть честным и сам по себе.
+ */
+function completePrompt(prompt, model) {
+  const trimmed = typeof prompt === "string" ? prompt.trim() : "";
+
+  return {
+    text:
+      "LLM-провайдер не настроен: это детерминированная заглушка. " +
+      `Промпт: «${summarize(trimmed)}»`,
+    model: model ?? null,
+  };
 }
 
 function generateAnswer({ query, chunks }) {

@@ -6,6 +6,8 @@ import type {
   AiAssistantFacadeRequest,
   AiAssistantFacadeResponse,
   AiFacadeDegradationReason,
+  AiLlmCompletionFacadeRequest,
+  AiLlmCompletionFacadeResponse,
   AiOnboardingFacadeRequest,
   AiOnboardingFacadeResponse,
 } from "./ai-integration.types";
@@ -16,6 +18,8 @@ export type {
   AiAssistantFacadeRequest,
   AiAssistantFacadeResponse,
   AiFacadeDegradationReason,
+  AiLlmCompletionFacadeRequest,
+  AiLlmCompletionFacadeResponse,
   AiOnboardingFacadeRequest,
   AiOnboardingFacadeResponse,
 } from "./ai-integration.types";
@@ -103,6 +107,56 @@ export class AiIntegrationFacade {
       toAiDegradationReason(result.reason),
       options.now,
     );
+  }
+
+  /**
+   * Сырой вызов LLM для узла «LLM» контракта Workflow 2.0 (добавлен 2026-07-15).
+   * Идёт через тот же охранник деградации, что и подсказки ассистента: узел схемы
+   * не должен вешать запрос, если SVC-AI молчит.
+   */
+  async completeLlm(
+    request: AiLlmCompletionFacadeRequest,
+    options: AiFacadeCallOptions<AiLlmCompletionFacadeResponse> = {},
+  ): Promise<AiLlmCompletionFacadeResponse> {
+    const call =
+      options.call ?? (this.upstream ? () => this.upstream!.completeLlm(request) : undefined);
+    const result = await this.degradationGuard.execute(call, {
+      timeoutMs: options.timeoutMs,
+    });
+    if (result.ok) {
+      return result.value;
+    }
+
+    return this.createLlmCompletionFallback(
+      request,
+      toAiDegradationReason(result.reason),
+      options.now,
+    );
+  }
+
+  /**
+   * Текст фолбэка честно называет себя заглушкой: схема может ветвиться по ответу
+   * модели, и заглушка, притворяющаяся ответом, увела бы исполнение не туда.
+   * Формальный признак — `degraded: true`.
+   */
+  private createLlmCompletionFallback(
+    request: AiLlmCompletionFacadeRequest,
+    reason: AiFacadeDegradationReason,
+    now = () => new Date().toISOString(),
+  ): AiLlmCompletionFacadeResponse {
+    return {
+      contract: "C4.LlmCompletionResponse",
+      version: C4_VERSION,
+      request_id: request.request_id,
+      organization_id: request.organization_id,
+      degraded: true,
+      fallback_reason: reason,
+      completion: {
+        text: "LLM is temporarily unavailable: no completion was produced.",
+        model: null,
+      },
+      created_at: now(),
+    };
   }
 
   private createAssistantFallback(
