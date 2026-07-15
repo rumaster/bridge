@@ -1,3 +1,4 @@
+import { FBP_NODE_TYPES } from "@bridge/contracts/c5-workflow";
 import { expect, test } from "@playwright/test";
 
 async function loginAsUser(
@@ -60,8 +61,10 @@ test("Оператор платформы правит Workflow: безопас�
   // а её имя отражается заголовком редактора.
   await expect(page.getByRole("heading", { name: "Автоответчик обращений" })).toBeVisible();
 
-  // Палитра ограничена каноническим набором узлов C5 с sub_schema-ссылкой этапа 4.
-  await expect(page.getByRole("button", { name: /^Добавить узел:/ })).toHaveCount(7);
+  // Палитра ограничена каноническим набором узлов C5. Число выводится из
+  // контракта, а не прибито: захардкоженный список 1.0 — это ровно тот дрейф
+  // копий, из-за которого Backend разошёлся с движком (дефект D8).
+  await expect(page.getByRole("button", { name: /^Добавить узел:/ })).toHaveCount(FBP_NODE_TYPES.length);
 
   // Узел вызова Backend API помечен как изменяющий данные (ТЗ §13.5).
   await page.getByRole("button", { name: "Узел Создать тикет" }).click();
