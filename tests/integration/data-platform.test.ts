@@ -539,6 +539,42 @@ async function assertSeededWorkflowCases(client) {
     const validation = validateWorkflowSchema(row.schema);
     assert.equal(validation.valid, true, JSON.stringify(validation.errors));
   }
+
+  await assertSeededBackendApiCallsAreAllowed(client, versions.rows);
+}
+
+/**
+ * Каждый вызов Backend API из сидовой схемы обязан быть открыт в витрине
+ * (`workflow_backend_api_allowlist`). Витрина закрыта по умолчанию и проверяется
+ * при КАЖДОМ сохранении, поэтому забытая операция не ломает сид (он пишет SQL
+ * напрямую), но делает сидовую схему непересохраняемой из редактора — витрина
+ * возможностей молча превратилась бы в витрину поломок.
+ */
+async function assertSeededBackendApiCallsAreAllowed(client, versionRows) {
+  const referenced = new Set();
+  for (const row of versionRows) {
+    for (const node of row.schema.nodes ?? []) {
+      if (node.type === "backend-api" && typeof node.config?.operation_id === "string") {
+        referenced.add(node.config.operation_id);
+      }
+    }
+  }
+  if (referenced.size === 0) return;
+
+  const allowed = await client.query(
+    `
+      SELECT operation_id
+      FROM workflow_backend_api_allowlist
+      WHERE enabled AND operation_id = ANY($1::text[])
+    `,
+    [[...referenced]],
+  );
+
+  assert.deepEqual(
+    allowed.rows.map((row) => row.operation_id).sort(),
+    [...referenced].sort(),
+    "все вызовы Backend API из сидовых схем открыты в витрине",
+  );
 }
 
 async function assertDataPlatformSchemaDropped(client) {

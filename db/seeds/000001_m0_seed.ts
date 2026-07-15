@@ -4,7 +4,10 @@ import {
   SEEDED_ADMIN_ROLE_BINDING_SEED,
   SEEDED_ADMIN_USER_SEED,
 } from "../../packages/testing/src/db/m0-seed-data.js";
-import { SEEDED_WORKFLOW_DEFINITIONS } from "./workflow-definitions/stage2-workflows.js";
+import {
+  SEEDED_WORKFLOW_BACKEND_API_ALLOWLIST,
+  SEEDED_WORKFLOW_DEFINITIONS,
+} from "./workflow-definitions/stage2-workflows.js";
 import { SEEDED_WORKFLOW_SUBSCHEMAS } from "./workflow-definitions/stage4-subschemas.js";
 
 export async function seed(client) {
@@ -117,6 +120,7 @@ export async function seed(client) {
       ],
     );
 
+    await seedWorkflowBackendApiAllowlist(client);
     await seedWorkflowSubschemas(client);
     await seedWorkflowDefinitions(client);
 
@@ -124,6 +128,29 @@ export async function seed(client) {
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;
+  }
+}
+
+/**
+ * Витрина вызовов Backend API (решение A3). Таблица глобальная и закрыта по
+ * умолчанию: `enabled` = false. Открываем РОВНО те операции, которые зовут
+ * сидовые схемы, — иначе витрина отвергла бы пересохранение сидовой схемы из
+ * редактора, и витрина возможностей оказалась бы нередактируемой.
+ *
+ * `enabled` намеренно НЕ перезаписывается при повторном сиде: если оператор
+ * осознанно закрыл операцию, сид не должен молча открывать её обратно.
+ */
+async function seedWorkflowBackendApiAllowlist(client) {
+  for (const operation of SEEDED_WORKFLOW_BACKEND_API_ALLOWLIST) {
+    await client.query(
+      `
+        INSERT INTO workflow_backend_api_allowlist (operation_id, enabled, curated_by, note)
+        VALUES ($1, true, NULL, $2)
+        ON CONFLICT (operation_id) DO UPDATE SET
+          note = EXCLUDED.note
+      `,
+      [operation.operation_id, operation.note],
+    );
   }
 }
 
