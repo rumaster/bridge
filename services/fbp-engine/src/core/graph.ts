@@ -1,95 +1,61 @@
-/**
- * Модель графа Workflow: узлы (Node) и соединения (Connection). Ядро исполнения
- * предметно-нейтрально (ТЗ §13.13-п.1) — это лишь топология: какие узлы есть и
- * какой узел исполняется следующим при данном выходном порту.
- *
- * Соединение: `{ from, fromPort, to, toPort }`. Большинство узлов эмитят порт
- * "out"; узел `branch` эмитит "true"/"false". `port` читается только как
- * legacy fallback для старых опубликованных схем до Этапа 1.
- */
-export const DEFAULT_PORT = "out";
+import { isExecPortId } from "@bridge/contracts/c5-workflow";
 
+/**
+ * Топология графа Workflow. Ядро предметно-нейтрально (ТЗ §13.13-п.1) — здесь
+ * только «какие узлы есть» и «кто с кем связан».
+ *
+ * Ревизия 2026-07-15: связи разделены на два класса, потому что модель стала
+ * гибридом push/pull. Exec-связи задают порядок исполнения и могут ветвиться
+ * (один выход → несколько целей: так начинаются параллельные потоки, которые
+ * потом сводит узел merge). Data-связи тянут значения: на один data-вход ведёт
+ * ровно одно ребро (проверяет контракт), поэтому источник у входа единственный.
+ *
+ * Прежняя карта `Map<from, Map<port, to>>` для новой модели непригодна: она
+ * физически вмещала лишь одну цель на порт.
+ */
 export function buildGraph(schema) {
   const nodeMap = new Map();
   for (const node of schema.nodes ?? []) {
     nodeMap.set(node.id, node);
   }
 
-  const connectionsFrom = new Map();
+  const execFrom = new Map();
+  const dataTo = new Map();
+
   for (const connection of schema.connections ?? []) {
-    const port = connection.fromPort ?? connection.port ?? DEFAULT_PORT;
-    if (!connectionsFrom.has(connection.from)) {
-      connectionsFrom.set(connection.from, new Map());
+    if (isExecPortId(connection.fromPort)) {
+      const list = execFrom.get(connection.from) ?? [];
+      list.push(connection);
+      execFrom.set(connection.from, list);
+      continue;
     }
-    connectionsFrom.get(connection.from).set(port, connection.to);
+    const list = dataTo.get(connection.to) ?? [];
+    list.push(connection);
+    dataTo.set(connection.to, list);
   }
 
   return {
-    entry: schema.entry,
     nodeMap,
     getNode(nodeId) {
       return nodeMap.get(nodeId) ?? null;
     },
-    /** Следующий узел из `fromNodeId` по выходному порту `port` (или null). */
-    next(fromNodeId, port = DEFAULT_PORT) {
-      const ports = connectionsFrom.get(fromNodeId);
-      if (!ports) {
-        return null;
-      }
-      return ports.get(port) ?? null;
+    /** Исходящие exec-связи узла (все порты). */
+    execConnectionsFrom(nodeId) {
+      return execFrom.get(nodeId) ?? [];
     },
-  };
-}
-
-/**
- * Найти цикл в графе переходов (обход в глубину). Возвращает массив id узлов
- * цикла или `null`. DAG обязателен на этапе сохранения схемы — это гарантирует
- * завершимость исполнения без «неограниченных циклов» (ТЗ §13.13-п.5).
- */
-export function findCycle(schema) {
-  const adjacency = new Map();
-  for (const node of schema.nodes ?? []) {
-    adjacency.set(node.id, []);
-  }
-  for (const connection of schema.connections ?? []) {
-    if (adjacency.has(connection.from) && adjacency.has(connection.to)) {
-      adjacency.get(connection.from).push(connection.to);
-    }
-  }
-
-  const WHITE = 0;
-  const GREY = 1;
-  const BLACK = 2;
-  const color = new Map([...adjacency.keys()].map((id) => [id, WHITE]));
-  const stack = [];
-
-  function visit(nodeId) {
-    color.set(nodeId, GREY);
-    stack.push(nodeId);
-    for (const next of adjacency.get(nodeId) ?? []) {
-      const state = color.get(next);
-      if (state === GREY) {
-        return [...stack.slice(stack.indexOf(next)), next];
-      }
-      if (state === WHITE) {
-        const cycle = visit(next);
-        if (cycle) {
-          return cycle;
+    /** Входящие data-связи узла: по одной на занятый вход. */
+    dataConnectionsTo(nodeId) {
+      return dataTo.get(nodeId) ?? [];
+    },
+    /** Сколько exec-потоков сходится в узел — размер барьера merge. */
+    incomingExecCount(nodeId) {
+      let count = 0;
+      for (const list of execFrom.values()) {
+        for (const connection of list) {
+          if (connection.to === nodeId) count += 1;
         }
       }
-    }
-    stack.pop();
-    color.set(nodeId, BLACK);
-    return null;
-  }
-
-  for (const nodeId of adjacency.keys()) {
-    if (color.get(nodeId) === WHITE) {
-      const cycle = visit(nodeId);
-      if (cycle) {
-        return cycle;
-      }
-    }
-  }
-  return null;
+      return count;
+    },
+  };
 }

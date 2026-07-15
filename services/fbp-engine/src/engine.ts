@@ -147,10 +147,12 @@ export function createFbpRuntime({
     publishVersion: (args) => versions.publishVersion(args),
     /** Переключить версию по умолчанию — конфигурацией (ТЗ §13.10). */
     setDefaultVersion: (args) => versions.setDefaultVersion(args),
-    /** Запустить экземпляр (version pinning на старте). */
+    /**
+     * Запустить экземпляр с узла «Ожидание события» (version pinning на старте).
+     * Ревизия 2026-07-15: `resume` удалён — событие запускает новый экземпляр, а
+     * не будит спящий (см. `runtime/instance-runtime.ts`).
+     */
     start: (args) => runtime.start(args),
-    /** Продолжить ожидающий экземпляр (stateless, возможно на другом узле). */
-    resume: (args) => runtime.resume(args),
     /** Снимок метрик исполнения Workflow (ТЗ §24.6). */
     getMetrics: () => metrics.snapshot(),
   };

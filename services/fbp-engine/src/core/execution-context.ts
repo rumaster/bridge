@@ -16,10 +16,13 @@ export interface ExecutionContextOptions {
   workflowVersionId?: string | null;
   input?: Record<string, unknown> | null;
   outputs?: Record<string, unknown> | null;
+  variables?: Record<string, unknown> | null;
   resolveSubSchema?: ResolveSubSchemaCallback | null;
   resolvedSubSchemas?: Record<string, unknown> | null;
   seq?: number;
   now?: () => string;
+  /** Монотонные часы для длительностей в трассе (инъекция ради тестов). */
+  monotonic?: () => number;
 }
 
 export type ResolveSubSchemaCallback = (args: {
@@ -53,10 +56,13 @@ export class ExecutionContext {
   #workflowVersionId;
   #params;
   #outputs = new Map();
+  #variables = new Map();
   #journal = [];
   #resolveSubSchema;
   #resolvedSubSchemas;
   #now;
+  #monotonic;
+  #startedAt;
   #seq = 0;
 
   constructor({
@@ -71,10 +77,12 @@ export class ExecutionContext {
     workflowVersionId,
     input = {},
     outputs = null,
+    variables = null,
     resolveSubSchema = null,
     resolvedSubSchemas = null,
     seq = 0,
     now = () => new Date().toISOString(),
+    monotonic = () => performance.now(),
   }: ExecutionContextOptions) {
     if (typeof organizationId !== "string" || organizationId.trim() === "") {
       throw new WorkflowExecutionError(
@@ -95,6 +103,13 @@ export class ExecutionContext {
     this.#resolveSubSchema = typeof resolveSubSchema === "function" ? resolveSubSchema : null;
     this.#resolvedSubSchemas = isRecord(resolvedSubSchemas) ? clone(resolvedSubSchemas) : {};
     this.#now = now;
+    this.#monotonic = monotonic;
+    this.#startedAt = monotonic();
+    if (isRecord(variables)) {
+      for (const [name, value] of Object.entries(variables)) {
+        if (!DANGEROUS_KEYS.has(name)) this.#variables.set(name, clone(value));
+      }
+    }
     // Восстановление результатов ранее исполненных узлов из внешнего состояния
     // (stateless executor, ТЗ §25.3): любой узел-исполнитель поднимает контекст
     // из `workflow_instance_state`, не полагаясь на память между шагами.
@@ -133,6 +148,7 @@ export class ExecutionContext {
       workflowVersionId: snapshot.workflow_version_id ?? null,
       input: snapshot.input ?? {},
       outputs: snapshot.outputs ?? null,
+      variables: snapshot.variables ?? null,
       resolvedSubSchemas: snapshot.resolved_subschemas ?? null,
       seq: snapshot.seq ?? 0,
       ...(now ? { now } : {}),
@@ -151,7 +167,12 @@ export class ExecutionContext {
     for (const [nodeId, value] of this.#outputs) {
       outputs[nodeId] = clone(value);
     }
+    const variables: Record<string, any> = {};
+    for (const [name, value] of this.#variables) {
+      variables[name] = clone(value);
+    }
     return {
+      variables,
       organization_id: this.#organizationId,
       actor_user_id: this.#actorUserId,
       trigger: this.#trigger,
@@ -180,8 +201,14 @@ export class ExecutionContext {
     return this.#params;
   }
 
+  /**
+   * Контекст субсхемы. Переменные родителя НЕ передаются: субсхема общается с
+   * вызывающим графом только через граничные порты start/end — иначе она молча
+   * зависела бы от переменных вызывающего и перестала быть переиспользуемой.
+   */
   createChild({ input = {} } = {}) {
     return new ExecutionContext({
+      monotonic: this.#monotonic,
       organizationId: this.#organizationId,
       actorUserId: this.#actorUserId,
       trigger: this.#trigger,
@@ -233,54 +260,28 @@ export class ExecutionContext {
   }
 
   /**
-   * Собрать `input` узла из объявленной «проводки» (ТЗ §13.4). Transform Node и
-   * прочие узлы видят ТОЛЬКО этот собранный объект, а не весь контекст —
-   * источники: параметры Workflow (`params`), результат другого узла (`node`)
-   * или константа схемы (`const`).
+   * Ревизия 2026-07-15: `assembleInput`/`resolveSource` удалены вместе с
+   * декларативной «проводкой» (`{ kind: "params"|"node"|"const" }`). Вход узла
+   * теперь собирает исполнитель по входящим data-связям графа. Изоляция §13.4
+   * сохранена: узел по-прежнему видит ТОЛЬКО собранный `input`, а не контекст.
    */
-  assembleInput(inputSpec) {
-    if (inputSpec === undefined || inputSpec === null) {
-      return {};
-    }
-    const result: Record<string, any> = {};
-    for (const [key, source] of Object.entries(inputSpec)) {
-      if (DANGEROUS_KEYS.has(key)) {
-        continue;
-      }
-      Object.defineProperty(result, key, {
-        value: this.resolveSource(source),
-        enumerable: true,
-        configurable: true,
-        writable: true,
-      });
-    }
-    return result;
+
+  /** Переменные экземпляра для узлов variable_read / variable_write. */
+  getVariable(name) {
+    if (typeof name !== "string" || DANGEROUS_KEYS.has(name)) return null;
+    return this.#variables.has(name) ? clone(this.#variables.get(name)) : null;
   }
 
-  resolveSource(source) {
-    if (!isRecord(source)) {
-      throw new WorkflowExecutionError("invalid_input_source", "Источник входа узла повреждён.");
+  setVariable(name, value) {
+    if (typeof name !== "string" || name.trim() === "" || DANGEROUS_KEYS.has(name)) {
+      throw new WorkflowExecutionError("invalid_variable_name", `Недопустимое имя переменной "${String(name)}".`);
     }
-    switch (source.kind) {
-      case "const":
-        return clone(source.value ?? null);
-      case "params":
-        return accessPath(this.#params, source.path ?? []);
-      case "node": {
-        if (!this.#outputs.has(source.node)) {
-          throw new WorkflowExecutionError(
-            "unknown_node_reference",
-            `Источник ссылается на неисполненный узел "${source.node}".`,
-          );
-        }
-        return accessPath(this.#outputs.get(source.node), source.path ?? []);
-      }
-      default:
-        throw new WorkflowExecutionError(
-          "invalid_input_source",
-          `Неизвестный тип источника входа "${source.kind}".`,
-        );
-    }
+    this.#variables.set(name, clone(value));
+  }
+
+  /** Монотонное время от старта контекста — для длительностей в трассе. */
+  elapsedMs() {
+    return Math.round(this.#monotonic() - this.#startedAt);
   }
 
   /**

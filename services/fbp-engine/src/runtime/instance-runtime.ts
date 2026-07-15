@@ -1,7 +1,6 @@
-import { TRANSFORM_DEFAULT_LIMITS } from "../../../../packages/contracts/src/c5.js";
+import { TRANSFORM_DEFAULT_LIMITS } from "@bridge/contracts/c5-workflow";
 import { ExecutionContext } from "../core/execution-context.js";
 import { WorkflowExecutionError, WorkflowStoreError } from "../core/errors.js";
-import { buildGraph, DEFAULT_PORT } from "../core/graph.js";
 import { runGraph } from "../core/executor.js";
 import { deterministicUuid } from "../core/ids.js";
 import type { BackendApiClient } from "../backend/client.js";
@@ -25,29 +24,24 @@ export interface StartInstanceOptions {
   input?: Record<string, unknown>;
   versionId?: string;
   instanceId?: string;
-}
-
-/** Аргументы продолжения экземпляра ({@link createInstanceRuntime} `resume`). */
-export interface ResumeInstanceOptions {
-  organizationId?: string;
-  instanceId?: string;
-  event?: unknown;
+  /** Узел «Ожидание события», на котором сработала подписка. */
+  startNodeId?: string;
 }
 
 /**
- * Оркестратор жизненного цикла экземпляров Workflow вехи M4 — связывает три
- * механизма поверх доменно-нейтрального ядра исполнения:
+ * Оркестратор жизненного цикла экземпляров Workflow.
  *
- *  - **version pinning** (ТЗ §13.10): `start` закрепляет экземпляр за версией
- *    (явной или версией по умолчанию) в `workflow_instances`; `resume` всегда
- *    поднимает СХЕМУ ЗАФИКСИРОВАННОЙ версии — публикация новой версии на идущий
- *    экземпляр не влияет;
- *  - **stateless executor** (ТЗ §25.3): при переходе в ожидание снимок состояния
- *    сохраняется в `workflow_instance_state`; продолжение (`resume`) поднимает
- *    контекст из хранилища — исполнителю не нужна память между шагами;
- *  - **горизонтальное масштабирование** (ТЗ §25.3): `resume` может выполнить
- *    ДРУГОЙ узел-исполнитель (другой `createInstanceRuntime` поверх того же
- *    хранилища) — любой узел обрабатывает любой экземпляр.
+ * **Version pinning** (ТЗ §13.10): `start` закрепляет экземпляр за версией
+ * (явной или версией по умолчанию) в `workflow_instances` — публикация новой
+ * версии на идущий экземпляр не влияет.
+ *
+ * Ревизия 2026-07-15: `resume` и статус `waiting` удалены. Узел «Ожидание
+ * события» перестал быть паузой посреди схемы и стал ТОЧКОЙ ВХОДА: событие не
+ * будит спящий экземпляр, а запускает новый — с того узла, чья подписка
+ * совпала (`startNodeId`). Вместе с ними ушли снимки в
+ * `workflow_instance_state`: исполнение стало сквозным, хранить нечего.
+ * Прежний resume и так был нерабочим — он не сверял ни тип события, ни
+ * корреляцию, а наружу не выставлялся вовсе.
  *
  * Инициатор Workflow — всегда Backend (§6.13): `context` с арендатором/актором
  * задаёт вызывающая сторона, движок сам экземпляры не запускает.
@@ -75,13 +69,22 @@ export function createInstanceRuntime({
   const effectiveLimits = Object.freeze({ ...TRANSFORM_DEFAULT_LIMITS, ...limits });
 
   /**
-   * Запустить экземпляр Workflow. Закрепляет версию (version pinning) и исполняет
-   * граф. Если экземпляр ушёл в ожидание — снимок состояния уходит в
-   * `workflow_instance_state`, статус `waiting`; при завершении — `completed`/`failed`.
+   * Запустить экземпляр Workflow с узла «Ожидание события», чья подписка
+   * совпала. Закрепляет версию (version pinning) и исполняет граф до конца:
+   * `completed` либо `failed`.
    */
-  async function start({ organizationId, workflowId, context, input = {}, versionId, instanceId }: StartInstanceOptions = {}) {
+  async function start({
+    organizationId,
+    workflowId,
+    context,
+    input = {},
+    versionId,
+    instanceId,
+    startNodeId,
+  }: StartInstanceOptions = {}) {
     const org = requireOrg(organizationId, context);
     requireId(workflowId, "workflow_id");
+    requireId(startNodeId, "start_node_id");
 
     // Version pinning: версия выбирается ОДИН РАЗ на старте и фиксируется.
     const version = versions.resolveVersion({ organizationId: org, workflowId, versionId });
@@ -99,59 +102,10 @@ export function createInstanceRuntime({
     metrics?.recordStart({ workflowId });
 
     const ctx = createContext({ context, org, version, input, instanceId: resolvedInstanceId });
-    return execute({ ctx, version, instanceId: resolvedInstanceId, organizationId: org });
+    return execute({ ctx, version, instanceId: resolvedInstanceId, organizationId: org, startNodeId });
   }
 
-  /**
-   * Продолжить ожидающий экземпляр после прихода события. Поднимает состояние из
-   * `workflow_instance_state` и схему ЗАФИКСИРОВАННОЙ версии — может выполняться
-   * на другом узле-исполнителе (stateless, §25.3).
-   */
-  async function resume({ organizationId, instanceId, event = null }: ResumeInstanceOptions = {}) {
-    requireId(organizationId, "organization_id");
-    requireId(instanceId, "instance_id");
-
-    const instance = instances.getInstance({ organizationId, instanceId });
-    if (instance.status !== "waiting") {
-      throw new WorkflowStoreError(
-        "instance_not_waiting",
-        `Экземпляр "${instanceId}" не в состоянии ожидания (статус "${instance.status}").`,
-      );
-    }
-
-    const snapshot = instances.loadState({ organizationId, instanceId });
-    if (!snapshot || !snapshot.cursor || typeof snapshot.cursor.waiting_node_id !== "string") {
-      throw new WorkflowStoreError(
-        "instance_state_missing",
-        `Для экземпляра "${instanceId}" нет снимка состояния для продолжения.`,
-      );
-    }
-
-    // Ключевой инвариант pinning: берём версию, ЗАКРЕПЛЁННУЮ за экземпляром, а не
-    // текущую версию по умолчанию — даже если опубликована новая.
-    const version = versions.getVersion({
-      organizationId,
-      workflowId: instance.workflow_id,
-      versionId: instance.version_id,
-    });
-
-    const ctx = ExecutionContext.fromSnapshot(snapshot, { now });
-    const waitingNodeId = snapshot.cursor.waiting_node_id;
-    // Событие разрешает ожидание: узел wait-event отдаёт наследникам данные события.
-    ctx.setNodeOutput(waitingNodeId, event);
-    const graph = buildGraph(version.schema);
-    const resumeFrom = graph.next(waitingNodeId, DEFAULT_PORT);
-
-    return execute({
-      ctx,
-      version,
-      instanceId,
-      organizationId,
-      resume: { startNodeId: resumeFrom, resumeOutput: event },
-    });
-  }
-
-  async function execute({ ctx, version, instanceId, organizationId, resume: resumeOpts = null }) {
+  async function execute({ ctx, version, instanceId, organizationId, startNodeId }) {
     let result;
     try {
       result = await runGraph({
@@ -159,9 +113,7 @@ export function createInstanceRuntime({
         ctx,
         backendClient,
         limits: effectiveLimits,
-        ...(resumeOpts
-          ? { resume: true, startNodeId: resumeOpts.startNodeId, resumeOutput: resumeOpts.resumeOutput }
-          : {}),
+        startNodeId,
       });
     } catch (error) {
       ctx.appendJournal("workflow.failed", {
@@ -188,25 +140,6 @@ export function createInstanceRuntime({
       };
     }
 
-    if (result.status === "waiting") {
-      // Stateless: снимок уходит во внешнее хранилище, исполнитель памяти не держит.
-      const snapshot = ctx.snapshot();
-      snapshot.cursor = { waiting_node_id: result.waitingNodeId, wait: result.wait ?? null };
-      instances.saveState({ organizationId, instanceId, state: snapshot });
-      instances.updateInstance({ organizationId, instanceId, status: "waiting" });
-      return {
-        instance_id: instanceId,
-        organization_id: organizationId,
-        version_id: version.id,
-        version_no: version.version_no,
-        status: "waiting",
-        output: result.output,
-        wait: result.wait ?? null,
-        waiting_node_id: result.waitingNodeId,
-        journal: ctx.journal,
-      };
-    }
-
     const finishedAt = now();
     instances.updateInstance({ organizationId, instanceId, status: "completed", finishedAt });
     instances.clearState({ organizationId, instanceId });
@@ -219,10 +152,11 @@ export function createInstanceRuntime({
       status: "completed",
       output: result.output,
       journal: ctx.journal,
+      trace: result.trace,
     };
   }
 
-  return { start, resume };
+  return { start };
 
   // Метрика §24.6: перевод экземпляра в терминальное состояние. Длительность —
   // разница меток `started_at`/`finished_at` (детерминирована при инъекции `now`).

@@ -1,51 +1,28 @@
-import { TRANSFORM_DEFAULT_LIMITS } from "../../../../packages/contracts/src/c5.js";
-import { evaluateTransform } from "../transform/evaluator.js";
-import { validateTransformExpression } from "../transform/validate-expression.js";
-
 /**
- * Узел ожидания внешнего события (ТЗ §13.4, §13.13-п.1). Переводит экземпляр в
- * состояние «waiting»: исполнение приостанавливается до прихода события нужного
- * типа. Инициировать Workflow движок НЕ может (§6.13) — узел лишь описывает,
- * какого события ждёт, а возобновление выполняет Backend.
+ * Узел «Ожидание события» (ТЗ §13.13, Ревизия 2026-07-15).
+ *
+ * Раньше он приостанавливал исполнение посреди схемы и переводил экземпляр в
+ * статус `waiting`. Теперь он — ИСТОЧНИК исполнения: exec-входа у него нет, а
+ * подписки на события регистрируются при сохранении схемы в рабочую версию.
+ * Событие не будит спящий экземпляр, а запускает новый — начиная с этого узла.
+ *
+ * Инициировать Workflow движок по-прежнему не может (§6.13): он лишь исполняет
+ * то, что запустил Backend по совпавшей подписке.
+ *
+ * Полезная нагрузка события приходит во входных параметрах экземпляра и
+ * выдаётся портом `data`.
  */
 export const waitEventNode = {
   type: "wait-event",
 
-  validate(config, { path, errors, limits = TRANSFORM_DEFAULT_LIMITS }) {
-    if (!isRecord(config) || typeof config.event_type !== "string" || config.event_type.trim() === "") {
-      errors.push({ path: `${path}.event_type`, message: "Узел wait-event требует непустой event_type." });
-    }
-    if (config.correlation !== undefined) {
-      const result = validateTransformExpression(config.correlation, { limits });
-      for (const error of result.errors) {
-        errors.push({ path: `${path}.correlation.${error.path}`, message: error.message });
-      }
-    }
-    if (config.timeout_ms !== undefined && (!Number.isInteger(config.timeout_ms) || config.timeout_ms < 1)) {
-      errors.push({ path: `${path}.timeout_ms`, message: "timeout_ms должен быть положительным целым числом." });
-    }
+  validate() {
+    // Тип события и корреляция проверены контрактом C5 на сохранении схемы.
   },
 
-  execute({ node, input, limits = TRANSFORM_DEFAULT_LIMITS }) {
-    const config = node.config;
-    const correlation = config.correlation === undefined
-      ? null
-      : evaluateTransform(config.correlation, input, limits);
-    const wait = {
-      event_type: config.event_type,
-      correlation,
-      ...(config.timeout_ms ? { timeout_ms: config.timeout_ms } : {}),
-    };
+  execute({ node, ctx }) {
     return {
-      output: input,
-      port: "out",
-      waiting: true,
-      wait,
-      log: { awaiting_event: config.event_type },
+      outputs: { data: ctx.params ?? {} },
+      log: { event_type: node.config?.event_type ?? null },
     };
   },
 };
-
-function isRecord(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}

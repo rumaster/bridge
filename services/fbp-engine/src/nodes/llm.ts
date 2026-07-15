@@ -1,35 +1,31 @@
-import { TRANSFORM_DEFAULT_LIMITS } from "../../../../packages/contracts/src/c5.js";
-import { evaluateTransform } from "../transform/evaluator.js";
-import { validateTransformExpression } from "../transform/validate-expression.js";
+import { configPortRows } from "@bridge/contracts/c5-workflow";
 
 const DEFAULT_PATH = "/api/v1/ai/llm/completions";
 
 /**
  * Узел вызова LLM (ТЗ §13.6, §13.13-п.1). Нейтрален и идёт ТОЛЬКО через Backend
- * (канал C3): прямого доступа к AI-сервису у движка нет (§13.13-п.3). Промпт и
- * параметры собираются безопасным Transform-вычислителем над `input`; арендатор
- * и актор берутся из контекста экземпляра.
+ * (канал C3): прямого доступа к AI-сервису у движка нет (§13.13-п.3). Арендатор и
+ * актор берутся из контекста экземпляра.
+ *
+ * Ревизия 2026-07-15: промпт задаётся в `config.prompt` как текст с
+ * подстановками `{порт}` из входов, а не Transform-выражением. Выходы
+ * раскладываются по объявленным портам (`raw` — ответ целиком).
  */
 export const llmNode = {
   type: "llm",
 
-  validate(config, { path, errors, limits = TRANSFORM_DEFAULT_LIMITS }) {
-    if (!isRecord(config) || config.prompt === undefined) {
-      errors.push({ path: `${path}.prompt`, message: "Узел llm требует поле prompt (Transform-выражение)." });
-      return;
+  validate(config, { path, errors }) {
+    if (typeof config?.prompt !== "string" || config.prompt.trim() === "") {
+      errors.push({ path: `${path}.prompt`, message: "Узел llm требует непустой текст промпта." });
     }
-    validateApiPath(config.path, `${path}.path`, errors);
-    pushTransformErrors(config.prompt, `${path}.prompt`, errors, limits);
-    if (config.params !== undefined) {
-      pushTransformErrors(config.params, `${path}.params`, errors, limits);
-    }
+    validateApiPath(config?.path, `${path}.path`, errors);
   },
 
-  async execute({ node, input, ctx, backendClient, limits = TRANSFORM_DEFAULT_LIMITS }) {
-    const config = node.config;
+  async execute({ node, input, ctx, backendClient }) {
+    const config = node.config ?? {};
     const body = {
-      prompt: evaluateTransform(config.prompt, input, limits),
-      params: config.params === undefined ? {} : evaluateTransform(config.params, input, limits),
+      prompt: interpolate(config.prompt, input),
+      params: isRecord(config.params) ? config.params : {},
     };
     const response = await backendClient.call({
       method: "POST",
@@ -40,26 +36,41 @@ export const llmNode = {
       context: ctx.toCallContext(),
     });
     return {
-      output: response,
-      port: "out",
+      outputs: resolveOutputs(config, response),
       log: { llm_path: config.path ?? DEFAULT_PATH, status_code: response?.status_code ?? null },
     };
   },
 };
 
-function validateApiPath(value, path, errors) {
-  if (value === undefined) {
-    return;
-  }
-  if (typeof value !== "string" || (value !== "/api/v1" && !value.startsWith("/api/v1/"))) {
-    errors.push({ path, message: "path должен указывать на публичный Backend API под /api/v1." });
-  }
+/** Подстановка `{порт}` значениями входов; неизвестный порт остаётся как есть. */
+function interpolate(template, input) {
+  return String(template ?? "").replace(/\{([A-Za-z0-9_]+)\}/g, (raw, key) => {
+    if (!Object.hasOwn(input, key)) return raw;
+    const value = input[key];
+    return typeof value === "string" ? value : JSON.stringify(value ?? null);
+  });
 }
 
-function pushTransformErrors(expression, path, errors, limits) {
-  const result = validateTransformExpression(expression, { limits });
-  for (const error of result.errors) {
-    errors.push({ path: `${path}.${error.path}`, message: error.message });
+function resolveOutputs(config, response) {
+  const rows = configPortRows(config.outputs);
+  const body = response?.body ?? response;
+  if (rows.length === 0) return { raw: body };
+  const outputs: Record<string, unknown> = {};
+  for (const row of rows) {
+    if (row.name === "raw") {
+      outputs.raw = body;
+      continue;
+    }
+    outputs[row.name] =
+      body !== null && typeof body === "object" && Object.hasOwn(body, row.name) ? body[row.name] : body;
+  }
+  return outputs;
+}
+
+function validateApiPath(value, path, errors) {
+  if (value === undefined) return;
+  if (typeof value !== "string" || (value !== "/api/v1" && !value.startsWith("/api/v1/"))) {
+    errors.push({ path, message: "path должен указывать на публичный Backend API под /api/v1." });
   }
 }
 

@@ -1,10 +1,13 @@
-import { FBP_NODE_TYPES } from "../../../../packages/contracts/src/c5.js";
+import { FBP_NODE_TYPES } from "@bridge/contracts/c5-workflow";
 import { backendApiNode } from "./backend-api.js";
+import { endNode, startNode } from "./boundary.js";
 import { branchNode } from "./branch.js";
 import { knowledgeBaseSearchNode } from "./knowledge-base-search.js";
 import { llmNode } from "./llm.js";
+import { mergeNode } from "./merge.js";
 import { subSchemaNode } from "./sub-schema.js";
 import { transformNode } from "./transform.js";
+import { variableReadNode, variableWriteNode } from "./variable.js";
 import { waitEventNode } from "./wait-event.js";
 
 interface NodeDefinition {
@@ -16,16 +19,22 @@ interface NodeDefinition {
 /**
  * Реестр предметно-нейтральных узлов (ТЗ §13.13-п.1). Единый источник истины —
  * каталог `FBP_NODE_TYPES` контракта C5; реестр обязан покрывать его полностью и
- * без «лишних» типов. Рассинхронизация ловится контрактным/юнит-тестом.
+ * без «лишних» типов. Рассинхронизация ловится прямо на импорте модуля, а не в
+ * рантайме на первой схеме, — и дополнительно контрактным тестом.
  */
 const DEFINITIONS: NodeDefinition[] = [
+  waitEventNode,
   backendApiNode,
   llmNode,
   knowledgeBaseSearchNode,
   branchNode,
   transformNode,
+  variableReadNode,
+  variableWriteNode,
+  mergeNode,
   subSchemaNode,
-  waitEventNode,
+  startNode,
+  endNode,
 ];
 
 const REGISTRY = new Map<string, NodeDefinition>(DEFINITIONS.map((node) => [node.type, node]));

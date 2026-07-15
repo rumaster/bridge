@@ -7,7 +7,6 @@ import {
   createWorkflowMetrics,
   renderWorkflowMetrics,
 } from "../../services/fbp-engine/src/engine.js";
-import { validateTransformExpression } from "../../services/fbp-engine/src/transform/validate-expression.js";
 
 /**
  * e2e вехи M5-10 (SVC-FBP), участие в регрессионном наборе ТЗ §26.6 (CP-9). Один

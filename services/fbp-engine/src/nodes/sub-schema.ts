@@ -8,20 +8,8 @@ import { WorkflowExecutionError } from "../core/errors.js";
 export const subSchemaNode = {
   type: "sub_schema",
 
-  validate(config, { path, errors }) {
-    if (!isRecord(config)) {
-      errors.push({ path, message: "Узел sub_schema требует объект config." });
-      return;
-    }
-    if (config.bodyGraph !== undefined) {
-      errors.push({
-        path: `${path}.bodyGraph`,
-        message: "Узел sub_schema хранит только ссылку subSchemaSlug; embedded bodyGraph запрещён.",
-      });
-    }
-    if (typeof config.subSchemaSlug !== "string" || config.subSchemaSlug.trim() === "") {
-      errors.push({ path: `${path}.subSchemaSlug`, message: "Узел sub_schema требует непустой subSchemaSlug." });
-    }
+  validate() {
+    // Наличие subSchemaSlug проверяет контракт C5 на сохранении схемы.
   },
 
   async execute({ node, input, runSubSchema }) {
@@ -49,14 +37,11 @@ export const subSchemaNode = {
       );
     }
 
+    // Выходы узла — граничные end-порты субсхемы: они уже разложены по портам
+    // её узлом end, поэтому отдаются как есть.
     return {
-      output: result.output ?? null,
-      port: "out",
+      outputs: result.output ?? {},
       log: { sub_schema_slug: slug.trim(), status: result.status },
     };
   },
 };
-
-function isRecord(value) {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}

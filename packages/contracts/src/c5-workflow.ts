@@ -15,33 +15,37 @@
 export const WORKFLOW_SCHEMA_VERSION = "2.0.0";
 
 /**
- * Ограничения ресурсов Transform Node (§13.4). Живут здесь, а не в `c5.ts`,
- * потому что `c5.ts` импортирует `node:fs` и `c4.ts` — его не может загрузить ни
- * браузер, ни CommonJS-сборка Backend, а лимиты нужны обеим сторонам.
+ * Ограничения ресурсов Transform Node (§13.4) — бюджеты JS-песочницы. Живут
+ * здесь, а не в `c5.ts`, потому что `c5.ts` импортирует `node:fs` и `c4.ts`: его
+ * не может загрузить ни браузер, ни CommonJS-сборка Backend, а лимиты нужны
+ * обеим сторонам.
+ *
+ * Ревизия 2026-07-15: лимиты AST-вычислителя (`maxSteps`, `maxAstNodes`,
+ * `maxAstDepth`, `maxStringLength`, `maxArrayLength`) убраны вместе с режимом
+ * `expression` — считать стало нечего.
  */
 export interface TransformDefaultLimits {
   codeMemoryMb: number;
   codeTimeoutMs: number;
-  maxArrayLength: number;
-  maxAstDepth: number;
-  maxAstNodes: number;
   maxCodeLength: number;
   maxResultBytes: number;
-  maxSteps: number;
-  maxStringLength: number;
 }
 
 export const TRANSFORM_DEFAULT_LIMITS: Readonly<TransformDefaultLimits> = Object.freeze({
   codeMemoryMb: 16,
   codeTimeoutMs: 200,
-  maxSteps: 100000,
-  maxAstNodes: 2000,
-  maxAstDepth: 64,
   maxCodeLength: 65536,
-  maxStringLength: 65536,
-  maxArrayLength: 100000,
   maxResultBytes: 262144,
 });
+
+/** HTTP-методы, доступные узлу Backend API (совпадают с DTO C5). */
+export const FBP_BACKEND_API_METHODS = Object.freeze([
+  "GET",
+  "POST",
+  "PUT",
+  "PATCH",
+  "DELETE",
+] as const);
 
 /** Тип данных/управления, который проходит через порт узла Workflow. */
 export const FBP_PORT_TYPES = Object.freeze([

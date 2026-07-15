@@ -1,30 +1,33 @@
-import { TRANSFORM_DEFAULT_LIMITS } from "../../../../packages/contracts/src/c5.js";
+import { TRANSFORM_DEFAULT_LIMITS, execInputPortIds } from "@bridge/contracts/c5-workflow";
 import { getNodeDefinition } from "../nodes/registry.js";
 import { WorkflowExecutionError } from "./errors.js";
-import { buildGraph, DEFAULT_PORT } from "./graph.js";
+import { buildGraph } from "./graph.js";
 
-// Предел числа шагов как защита «в глубину»: граф — DAG (проверено на сохранении),
-// поэтому реальная длина пути ограничена числом узлов, но лимит страхует от любых
-// патологий и гарантирует завершимость (ТЗ §13.13-п.5).
+// Предел числа шагов как защита «в глубину»: граф — DAG (проверено контрактом на
+// сохранении), поэтому реальная длина пути ограничена числом узлов, но лимит
+// страхует от любых патологий и гарантирует завершимость (ТЗ §13.13-п.5).
 const DEFAULT_MAX_NODE_STEPS = 10000;
+const DEFAULT_EXEC_PORT = "out";
 
 /**
- * Пошаговое исполнение графа Workflow (ТЗ §13.13-п.1). Ядро предметно-нейтрально:
- * начинает со стартового узла `schema.entry`, для каждого узла собирает `input`
- * из объявленной «проводки», исполняет его через определение из реестра, пишет в
- * журнал события `node.started`/`node.completed` и переходит по соединению,
- * соответствующему эмитированному порту. Останавливается, когда переходов нет
- * (успех) или узел перевёл экземпляр в состояние ожидания (`waiting`).
+ * Исполнение графа Workflow — гибрид push/pull (Ревизия 2026-07-15, решение A1).
  *
- * Возвращает `{ status, output, journal, wait?, waitingNodeId? }`. Ошибки времени
- * исполнения фиксируются событием `node.failed` и пробрасываются наверх — фасад
- * оборачивает их в `workflow.failed` и всегда возвращает журнал.
+ * Push: очередь FIFO идёт по exec-связям и задаёт порядок. Один exec-выход может
+ * вести в несколько узлов — так начинаются параллельные потоки; узел `merge` ждёт
+ * прихода всех своих входов и пропускает поток дальше ровно один раз.
  *
- * Для stateless-исполнителя (ТЗ §25.3) поддерживается ПРОДОЛЖЕНИЕ с произвольного
- * узла: если задан `startNodeId`, обход стартует не с `entry`, а с указанного
- * узла — контекст (`ctx`) при этом восстановлен из `workflow_instance_state`, так
- * что другой узел-исполнитель без памяти между шагами продолжает тот же экземпляр
- * на его зафиксированной версии.
+ * Pull: узлы-функции (`transform`, `variable_read`) exec-портов не имеют и в
+ * очередь не попадают вовсе. Их выход вычисляется лениво — в тот момент, когда
+ * значение понадобилось узлу ниже по data-связи, — и мемоизируется, чтобы два
+ * потребителя не считали одно и то же дважды.
+ *
+ * Точка входа: для схемы верхнего уровня — узел `wait-event`, на котором сработало
+ * событие (`startNodeId`); для субсхемы — её узел `start`. Прежний `schema.entry`
+ * упразднён.
+ *
+ * Возвращает `{ status, output, journal, trace }`. Трасса пишется по каждому узлу
+ * и различает `via: "flow" | "data"` — иначе постфактум не понять, почему
+ * pure-узел исполнился (или не исполнился вовсе).
  */
 export async function runGraph({
   schema,
@@ -33,53 +36,64 @@ export async function runGraph({
   limits = TRANSFORM_DEFAULT_LIMITS,
   maxNodeSteps = DEFAULT_MAX_NODE_STEPS,
   subSchemaStack = [],
-  resume = false,
   startNodeId = null,
-  resumeOutput = null,
+  nodePath = [],
+  depth = 0,
 }) {
   const graph = buildGraph(schema);
+  const results = new Map();
+  const trace = [];
+  const arrivals = new Map();
+  const resolving = new Set();
+  let steps = 0;
 
-  if (resume && startNodeId !== null && !graph.getNode(startNodeId)) {
-    throw new WorkflowExecutionError(
-      "unknown_node",
-      `Узел продолжения "${startNodeId}" отсутствует в графе зафиксированной версии.`,
-      { nodeId: startNodeId },
-    );
-  }
+  const startNodes = resolveStartNodes(schema, graph, startNodeId);
 
-  ctx.appendJournal(resume ? "workflow.resumed" : "workflow.started", {
+  ctx.appendJournal("workflow.started", {
     data: {
       workflow_id: schema.workflow_id ?? null,
       workflow_version_id: schema.workflow_version_id ?? null,
-      entry: graph.entry,
-      ...(resume ? { resume_from: startNodeId } : {}),
+      start: startNodes.map((node) => node.id),
     },
   });
 
-  // При продолжении (stateless resume, ТЗ §25.3) обход начинается с узла-преемника
-  // ожидавшего события. Если преемника нет, экземпляр завершается сразу, а итоговым
-  // выходом остаётся результат ожидания (`resumeOutput`).
-  let currentId = resume ? startNodeId : graph.entry;
-  let lastOutput = resume ? resumeOutput : null;
-  let steps = 0;
+  /**
+   * Выходы узла-источника для data-связи. Если источник — exec-узел, который ещё
+   * не отработал, вернётся null: значение просто не попадёт во вход потребителя.
+   * Если источник — pure-узел, он вычисляется здесь же (pull) и мемоизируется.
+   */
+  async function resolveSourceOutputs(nodeId) {
+    const memo = results.get(nodeId);
+    if (memo) return memo.outputs;
 
-  while (currentId) {
-    if (steps >= maxNodeSteps) {
+    const node = graph.getNode(nodeId);
+    if (!node) return null;
+    if (execInputPortIds(node, schema).length > 0) return null;
+
+    if (resolving.has(nodeId)) {
       throw new WorkflowExecutionError(
-        "step_budget_exceeded",
-        `Превышен бюджет шагов исполнения (${maxNodeSteps}) — исполнение остановлено.`,
-        { nodeId: currentId },
+        "data_cycle",
+        `Циклическая зависимость по данным около узла "${nodeId}".`,
+        { nodeId },
       );
     }
-    steps += 1;
+    const result = await executeNode(node, "data");
+    return result.outputs;
+  }
 
-    const node = graph.getNode(currentId);
-    if (!node) {
-      throw new WorkflowExecutionError("unknown_node", `Узел "${currentId}" отсутствует в графе.`, {
-        nodeId: currentId,
-      });
+  async function resolveNodeInputs(node) {
+    const inputs = {};
+    for (const connection of graph.dataConnectionsTo(node.id)) {
+      const sourceOutputs = await resolveSourceOutputs(connection.from);
+      if (sourceOutputs && Object.hasOwn(sourceOutputs, connection.fromPort)) {
+        // Ключ входа — имя ВХОДНОГО порта потребителя, а не выходного источника.
+        inputs[connection.toPort] = sourceOutputs[connection.fromPort];
+      }
     }
+    return inputs;
+  }
 
+  async function executeNode(node, via) {
     const definition = getNodeDefinition(node.type);
     if (!definition) {
       throw new WorkflowExecutionError("unknown_node_type", `Неизвестный тип узла "${node.type}".`, {
@@ -88,21 +102,51 @@ export async function runGraph({
       });
     }
 
-    const input = ctx.assembleInput(node.input);
-    ctx.appendJournal("node.started", { nodeId: node.id, data: { type: node.type } });
-
-    let result;
+    resolving.add(node.id);
+    let inputs;
     try {
-      result = await definition.execute({
+      inputs = await resolveNodeInputs(node);
+    } finally {
+      resolving.delete(node.id);
+    }
+
+    ctx.appendJournal("node.started", { nodeId: node.id, data: { type: node.type, via } });
+    const startedAt = ctx.elapsedMs();
+
+    let raw;
+    try {
+      raw = await definition.execute({
         node,
-        input,
+        input: inputs,
         ctx,
         backendClient,
         limits,
-        runSubSchema: (slug, subInput = input) =>
-          runSubSchema({ slug, input: subInput, ctx, backendClient, limits, maxNodeSteps, subSchemaStack }),
+        runSubSchema: (slug, subInput = inputs) =>
+          runSubSchema({
+            slug,
+            input: subInput,
+            ctx,
+            backendClient,
+            limits,
+            maxNodeSteps,
+            subSchemaStack,
+            nodePath: [...nodePath, node.id],
+            depth,
+          }),
       });
     } catch (error) {
+      trace.push({
+        nodeId: node.id,
+        type: node.type,
+        via,
+        durationMs: ctx.elapsedMs() - startedAt,
+        inputs,
+        outputs: null,
+        failed: true,
+        message: error?.message ?? String(error),
+        nodePath: [...nodePath, node.id],
+        depth,
+      });
       ctx.appendJournal("node.failed", {
         nodeId: node.id,
         data: { type: node.type, reason: error?.reason ?? "error", message: error?.message ?? String(error) },
@@ -110,38 +154,134 @@ export async function runGraph({
       throw decorateError(error, node);
     }
 
-    const output = result?.output ?? null;
-    const port = result?.port ?? DEFAULT_PORT;
-    ctx.setNodeOutput(node.id, output);
-    lastOutput = output;
+    const result = {
+      outputs: raw?.outputs ?? {},
+      execPort: raw?.execPort ?? DEFAULT_EXEC_PORT,
+    };
+    results.set(node.id, result);
+    ctx.setNodeOutput(node.id, result.outputs);
 
+    trace.push({
+      nodeId: node.id,
+      type: node.type,
+      via,
+      durationMs: ctx.elapsedMs() - startedAt,
+      inputs,
+      outputs: result.outputs,
+      failed: false,
+      nodePath: [...nodePath, node.id],
+      depth,
+    });
     ctx.appendJournal("node.completed", {
       nodeId: node.id,
-      data: { type: node.type, port, ...(result?.log !== undefined ? { log: result.log } : {}) },
+      data: {
+        type: node.type,
+        via,
+        port: result.execPort,
+        ...(raw?.log !== undefined ? { log: raw.log } : {}),
+      },
     });
 
-    if (result?.waiting) {
-      ctx.appendJournal("workflow.waiting", {
-        nodeId: node.id,
-        data: { wait: result.wait ?? null },
-      });
-      return {
-        status: "waiting",
-        output,
-        wait: result.wait ?? null,
-        waitingNodeId: node.id,
-        journal: ctx.journal,
-      };
+    return result;
+  }
+
+  const queue = startNodes.map((node) => node.id);
+  const executed = new Set();
+  let lastOutputs = null;
+
+  while (queue.length > 0) {
+    if (steps >= maxNodeSteps) {
+      throw new WorkflowExecutionError(
+        "step_budget_exceeded",
+        `Превышен бюджет шагов исполнения (${maxNodeSteps}) — исполнение остановлено.`,
+      );
     }
 
-    currentId = graph.next(node.id, port);
+    const nodeId = queue.shift();
+    if (executed.has(nodeId)) continue;
+
+    const node = graph.getNode(nodeId);
+    if (!node) {
+      throw new WorkflowExecutionError("unknown_node", `Узел "${nodeId}" отсутствует в графе.`, { nodeId });
+    }
+
+    // merge — барьер: пропускаем дальше только когда пришли ВСЕ входящие потоки.
+    if (node.type === "merge" && (arrivals.get(nodeId) ?? 0) < graph.incomingExecCount(nodeId)) {
+      continue;
+    }
+
+    steps += 1;
+    executed.add(nodeId);
+    const result = await executeNode(node, "flow");
+    lastOutputs = result.outputs;
+
+    for (const connection of graph.execConnectionsFrom(node.id)) {
+      // Ветвление продолжает исполнение только по выбранной ветке.
+      if (node.type === "branch" && connection.fromPort !== result.execPort) continue;
+      arrivals.set(connection.to, (arrivals.get(connection.to) ?? 0) + 1);
+      queue.push(connection.to);
+    }
   }
 
   ctx.appendJournal("workflow.completed", { data: { steps } });
-  return { status: "completed", output: lastOutput, journal: ctx.journal };
+  return {
+    status: "completed",
+    output: collectFinalOutput(schema, graph, results, lastOutputs),
+    journal: ctx.journal,
+    trace,
+  };
 }
 
-async function runSubSchema({ slug, input, ctx, backendClient, limits, maxNodeSteps, subSchemaStack }) {
+function resolveStartNodes(schema, graph, startNodeId) {
+  if (schema.kind === "subschema") {
+    const start = [...graph.nodeMap.values()].find((node) => node.type === "start");
+    if (!start) {
+      throw new WorkflowExecutionError("missing_start", "Субсхема обязана содержать узел start.");
+    }
+    return [start];
+  }
+
+  if (typeof startNodeId !== "string" || startNodeId === "") {
+    throw new WorkflowExecutionError(
+      "missing_start",
+      "Не указан узел «Ожидание события», с которого начинается исполнение.",
+    );
+  }
+
+  const node = graph.getNode(startNodeId);
+  if (!node) {
+    throw new WorkflowExecutionError("unknown_node", `Стартовый узел "${startNodeId}" отсутствует в графе.`, {
+      nodeId: startNodeId,
+    });
+  }
+  if (node.type !== "wait-event") {
+    throw new WorkflowExecutionError(
+      "invalid_start_node",
+      `Исполнение начинается только с узла «Ожидание события», получен "${node.type}".`,
+      { nodeId: startNodeId, nodeType: node.type },
+    );
+  }
+  return [node];
+}
+
+/** Итог субсхемы — входы её узла end; итог схемы верхнего уровня — выход последнего узла. */
+function collectFinalOutput(schema, graph, results, lastOutputs) {
+  if (schema.kind !== "subschema") return lastOutputs ?? null;
+  const end = [...graph.nodeMap.values()].find((node) => node.type === "end");
+  return end ? results.get(end.id)?.outputs ?? {} : {};
+}
+
+async function runSubSchema({
+  slug,
+  input,
+  ctx,
+  backendClient,
+  limits,
+  maxNodeSteps,
+  subSchemaStack,
+  nodePath,
+  depth,
+}) {
   const normalized = String(slug ?? "").trim();
   if (normalized === "") {
     throw new WorkflowExecutionError("invalid_subschema_ref", "Ссылка на субсхему должна быть непустой строкой.");
@@ -155,6 +295,8 @@ async function runSubSchema({ slug, input, ctx, backendClient, limits, maxNodeSt
   }
 
   const schema = await ctx.resolveSubSchema(normalized);
+  // Дочерний контекст изолирован: переменные родителя в субсхему не протекают —
+  // она общается с ним только через граничные порты start/end.
   const childCtx = ctx.createChild({ input });
   return runGraph({
     schema,
@@ -163,6 +305,8 @@ async function runSubSchema({ slug, input, ctx, backendClient, limits, maxNodeSt
     limits,
     maxNodeSteps,
     subSchemaStack: [...subSchemaStack, normalized],
+    nodePath,
+    depth: depth + 1,
   });
 }
 

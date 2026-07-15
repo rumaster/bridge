@@ -6,9 +6,6 @@ import {
   FBP_BRANCH_OPERATORS,
   FBP_NODE_TYPE_DEFINITIONS,
   FBP_NODE_TYPES,
-  TRANSFORM_ALLOWED_OPERATIONS,
-  TRANSFORM_FUNCTION_OPERATIONS,
-  TRANSFORM_STRUCTURAL_OPERATIONS,
   WORKFLOW_SCHEMA_VERSION,
   arePortTypesCompatible,
   canConnectPorts,
@@ -22,7 +19,6 @@ import {
   getNodeDefinition,
   listNodeTypes,
 } from "../../services/fbp-engine/src/nodes/registry.js";
-import { validateTransformExpression } from "../../services/fbp-engine/src/transform/validate-expression.js";
 
 function node(id: string, type: string, config: Record<string, unknown> = {}): WorkflowNode {
   return { id, type, position: { x: 0, y: 0 }, config };
@@ -42,14 +38,11 @@ const waitEvent = () => node("evt", "wait-event", { event_type: "message.created
  */
 describe("Контракт C5: каталог нейтральных узлов FBP", () => {
   it("реестр движка ТОЧНО совпадает с каталогом FBP_NODE_TYPES (в обе стороны)", () => {
-    // start/end — граничные маркеры субсхемы, исполняются ядром, а не узлом реестра.
-    const executable = FBP_NODE_TYPES.filter((type) => type !== "start" && type !== "end");
-    assert.deepEqual([...listNodeTypes()].sort(), [...executable].sort());
+    assert.deepEqual([...listNodeTypes()].sort(), [...FBP_NODE_TYPES].sort());
   });
 
-  it("каждый исполняемый тип каталога разрешается в определение с validate() и execute()", () => {
+  it("каждый тип каталога разрешается в определение с validate() и execute()", () => {
     for (const type of FBP_NODE_TYPES) {
-      if (type === "start" || type === "end") continue;
       const definition = getNodeDefinition(type);
       assert.ok(definition, `тип ${type} должен иметь определение`);
       assert.equal(definition.type, type);
@@ -309,46 +302,8 @@ describe("Контракт C5: проверка связи для редакто
   });
 });
 
-describe("Контракт C5: whitelist операций Transform Node (изоляция по построению)", () => {
-  it("whitelist = структурные + функциональные операции", () => {
-    assert.deepEqual(
-      [...TRANSFORM_ALLOWED_OPERATIONS].sort(),
-      [...TRANSFORM_STRUCTURAL_OPERATIONS, ...Object.keys(TRANSFORM_FUNCTION_OPERATIONS)].sort(),
-    );
-  });
-
-  it("НЕ содержит операций доступа к сети/ФС/окружению/секретам/системному времени/ГСЧ/произвольному коду", () => {
-    const forbidden = [
-      "now", "today", "random", "rand", "uuid",
-      "fetch", "http", "request", "net", "socket",
-      "read_file", "readfile", "write_file", "fs", "open",
-      "env", "getenv", "secret", "credentials",
-      "eval", "exec", "spawn", "require", "import", "process", "function",
-    ];
-    for (const op of forbidden) {
-      assert.ok(!TRANSFORM_ALLOWED_OPERATIONS.includes(op), `операция ${op} не должна быть в whitelist`);
-    }
-  });
-
-  it("валидатор принимает КАЖДУЮ операцию из whitelist и отвергает операцию вне него", () => {
-    // Любая допустимая функциональная операция с корректной арностью проходит валидацию.
-    for (const [op, spec] of Object.entries(TRANSFORM_FUNCTION_OPERATIONS)) {
-      const args = Array.from({ length: spec.minArgs }, () => ({ op: "lit", value: 1 }));
-      const result = validateTransformExpression({ op, args });
-      assert.equal(result.valid, true, `${op} должна валидироваться: ${JSON.stringify(result.errors)}`);
-    }
-    // Операция вне whitelist отвергается на этапе сохранения.
-    const rejected = validateTransformExpression({ op: "eval", args: [{ op: "lit", value: "code" }] });
-    assert.equal(rejected.valid, false);
-    assert.ok(rejected.errors.length > 0);
-  });
-
-  it("каждая функциональная операция объявляет корректную арность", () => {
-    for (const [op, spec] of Object.entries(TRANSFORM_FUNCTION_OPERATIONS)) {
-      assert.equal(typeof spec.minArgs, "number", `${op}.minArgs`);
-      assert.equal(typeof spec.maxArgs, "number", `${op}.maxArgs`);
-      assert.ok(spec.minArgs >= 0 && spec.maxArgs >= spec.minArgs, `${op}: minArgs<=maxArgs`);
-      assert.equal(typeof spec.category, "string", `${op}.category`);
-    }
-  });
-});
+/**
+ * Ревизия 2026-07-15: набор про whitelist операций Transform Node удалён вместе с
+ * режимом expression (решение A8). У transform остался только JS-текст, изоляция
+ * которого проверяется в services/fbp-engine/test/unit/transform-code-sandbox.test.ts.
+ */
