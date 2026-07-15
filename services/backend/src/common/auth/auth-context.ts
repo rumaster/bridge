@@ -3,6 +3,14 @@ import type { Request } from "express";
 export const AUTH_HASH_SECRET_ENV = "AUTH_HASH_SECRET";
 export const DEFAULT_AUTH_HASH_SECRET = "bridge-local-dev-auth-secret";
 
+/**
+ * Сервисный токен движка Workflow (дефект D4). Отвечает ТОЛЬКО на вопрос «кто ты»:
+ * права сервисного принципала берутся из его строки в `users`/`user_roles`, а не из
+ * токена. Значения по умолчанию нет намеренно — пока переменная не задана, ветка
+ * сервисной аутентификации не существует и весь `/api/v1` остаётся сессионным.
+ */
+export const FBP_SERVICE_TOKEN_ENV = "FBP_SERVICE_TOKEN";
+
 export type RoleCode = "platform_operator" | "administrator" | "manager";
 
 export interface RoleBinding {

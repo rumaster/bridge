@@ -845,3 +845,87 @@ export function getBackendApiOperation(operationId: string): BackendApiOperation
 export function isBackendApiOperationId(value: unknown): boolean {
   return typeof value === "string" && BY_ID.has(value);
 }
+
+/** Маршрут без плейсхолдеров — совпадение по точному ключу "METHOD /path". */
+const BY_ROUTE = new Map<string, BackendApiOperation>(
+  BACKEND_API_OPERATIONS.filter((operation) => operation.path_params.length === 0).map(
+    (operation) => [`${operation.method} ${operation.path}`, operation],
+  ),
+);
+
+interface TemplateRoute {
+  readonly operation: BackendApiOperation;
+  readonly segments: readonly string[];
+}
+
+/**
+ * Шаблонные маршруты, отсортированные так, чтобы статический сегмент побеждал
+ * плейсхолдер левее по пути. Без порядка запрос вида `/api/v1/a/b` мог бы
+ * разрешиться то в `/api/v1/a/{id}`, то в `/api/v1/{x}/b` в зависимости от порядка
+ * операций в OpenAPI — а от того, во что он разрешится, зависит проверка витрины.
+ */
+const TEMPLATE_ROUTES: readonly TemplateRoute[] = BACKEND_API_OPERATIONS.filter(
+  (operation) => operation.path_params.length > 0,
+)
+  .map((operation) => ({ operation, segments: splitPathSegments(operation.path) }))
+  .sort((left, right) => {
+    const length = Math.min(left.segments.length, right.segments.length);
+    for (let index = 0; index < length; index += 1) {
+      const leftDynamic = isPlaceholderSegment(left.segments[index]);
+      const rightDynamic = isPlaceholderSegment(right.segments[index]);
+      if (leftDynamic !== rightDynamic) return leftDynamic ? 1 : -1;
+    }
+    return left.operation.path.localeCompare(right.operation.path);
+  });
+
+function splitPathSegments(path: string): string[] {
+  return path.split("/").filter((segment) => segment !== "");
+}
+
+function isPlaceholderSegment(segment: string): boolean {
+  return segment.startsWith("{") && segment.endsWith("}");
+}
+
+/**
+ * Обратный резолв конкретного запроса в операцию каталога: `GET /api/v1/clients/42`
+ * → `ClientController_get_v1`. Нужен там, где на входе уже готовый HTTP-запрос, а
+ * решение принимается по `operation_id` — например, когда витрина
+ * `workflow_backend_api_allowlist` проверяется в рантайме, а не при сохранении схемы.
+ *
+ * Маршрут, которого нет в каталоге, возвращает `null`: вызывающая сторона обязана
+ * трактовать это как запрет, а не как «проверить нечего».
+ */
+export function resolveBackendApiOperation(
+  method: string,
+  path: string,
+): BackendApiOperation | null {
+  const normalizedMethod = String(method ?? "").toUpperCase();
+  // Query и фрагмент к выбору маршрута отношения не имеют; хвостовой слэш — тоже.
+  const normalizedPath = String(path ?? "")
+    .split("?")[0]
+    .split("#")[0]
+    .replace(/\/+$/, "");
+
+  if (normalizedPath === "") return null;
+
+  const exact = BY_ROUTE.get(`${normalizedMethod} ${normalizedPath}`);
+  if (exact) return exact;
+
+  const requestSegments = splitPathSegments(normalizedPath);
+
+  for (const route of TEMPLATE_ROUTES) {
+    if (route.operation.method !== normalizedMethod) continue;
+    if (route.segments.length !== requestSegments.length) continue;
+
+    const matches = route.segments.every((segment, index) => {
+      const requested = requestSegments[index];
+      // Плейсхолдер принимает любой НЕПУСТОЙ сегмент: пустой означал бы, что
+      // параметр не подставлен, а такой запрос до API всё равно не дойдёт.
+      return isPlaceholderSegment(segment) ? requested !== "" : segment === requested;
+    });
+
+    if (matches) return route.operation;
+  }
+
+  return null;
+}

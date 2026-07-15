@@ -92,6 +92,10 @@ services:
       # AUTH_HASH_SECRET, поэтому пробрасываем сюда значение из BRIDGE_AUTH_SECRET
       # (имя переменной в .env сохранено для обратной совместимости).
       AUTH_HASH_SECRET: ${BRIDGE_AUTH_SECRET:?укажите BRIDGE_AUTH_SECRET в .env, см. .env.example}
+      # Сервисный токен движка схем: по нему SessionAuthGuard опознаёт технического
+      # пользователя организации. Должен совпадать со значением у fbp-engine.
+      # Пустое значение выключает сервисную ветку целиком (см. .env.example).
+      FBP_SERVICE_TOKEN: ${FBP_SERVICE_TOKEN:-}
       # Токен Telegram-бота для доставки одноразовых кодов входа. Если пусто —
       # код генерируется, но не отправляется (см. .env.example).
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
@@ -431,6 +435,10 @@ services:
       PORT: ${FBP_ENGINE_PORT:-3095}
       FBP_GRPC_PORT: ${FBP_GRPC_PORT:-3105}
       FBP_BACKEND_API_URL: ${FBP_BACKEND_API_URL:-http://backend:3000}
+      # Должен совпадать со значением у backend, иначе узлы «Вызов Backend API»
+      # получают 401 (дефект D4). Дефолта нет намеренно: пустое значение выключает
+      # сервисную аутентификацию, а не открывает её.
+      FBP_SERVICE_TOKEN: ${FBP_SERVICE_TOKEN:-}
     ports:
       - "${FBP_ENGINE_PORT:-3095}:${FBP_ENGINE_PORT:-3095}"
       - "${FBP_GRPC_PORT:-3105}:${FBP_GRPC_PORT:-3105}"

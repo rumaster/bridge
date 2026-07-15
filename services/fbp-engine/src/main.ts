@@ -6,12 +6,14 @@ const port = Number.parseInt(process.env.PORT ?? "3095", 10);
 const grpcPort = Number.parseInt(process.env.FBP_GRPC_PORT ?? "3105", 10);
 const host = process.env.HOST ?? "0.0.0.0";
 const backendApiUrl = process.env.FBP_BACKEND_API_URL?.trim();
+const serviceToken = process.env.FBP_SERVICE_TOKEN?.trim();
 
 const server = createFbpEngineServer();
 const grpcHandle = await startFbpEngineGrpcServer({
-  backendClient: backendApiUrl
-    ? createHttpBackendApiClient({ baseUrl: backendApiUrl })
-    : createUnavailableBackendClient(),
+  backendClient:
+    backendApiUrl && serviceToken
+      ? createHttpBackendApiClient({ baseUrl: backendApiUrl, serviceToken })
+      : createUnavailableBackendClient(backendApiUrl, serviceToken),
   host,
   port: grpcPort,
 });
@@ -21,10 +23,25 @@ server.listen(port, host, () => {
   console.log(`FBP Engine gRPC listening on ${grpcHandle.address}`);
 });
 
-function createUnavailableBackendClient() {
+/**
+ * Узел «Вызов Backend API» требует и адрес, и сервисный токен: без токена Backend
+ * ответит 401 (дефект D4). Сообщение называет недостающее поимённо, иначе разбор
+ * упирался бы в безымянный 401 из чужого сервиса.
+ */
+function createUnavailableBackendClient(
+  backendApiUrl: string | undefined,
+  serviceToken: string | undefined,
+) {
+  const missing = [
+    backendApiUrl ? null : "FBP_BACKEND_API_URL",
+    serviceToken ? null : "FBP_SERVICE_TOKEN",
+  ].filter((name): name is string => name !== null);
+
   return {
     async call() {
-      throw new Error("FBP_BACKEND_API_URL is not configured for backend-api Workflow nodes.");
+      throw new Error(
+        `${missing.join(", ")} is not configured for backend-api Workflow nodes.`,
+      );
     },
   };
 }

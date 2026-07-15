@@ -3,6 +3,8 @@ import {
   ROLE_SEEDS,
   SEEDED_ADMIN_ROLE_BINDING_SEED,
   SEEDED_ADMIN_USER_SEED,
+  SEEDED_WORKFLOW_SERVICE_ROLE_BINDING_SEED,
+  SEEDED_WORKFLOW_SERVICE_USER_SEED,
 } from "../../packages/testing/src/db/m0-seed-data.js";
 import {
   SEEDED_WORKFLOW_BACKEND_API_ALLOWLIST,
@@ -69,56 +71,61 @@ export async function seed(client) {
       ],
     );
 
-    await client.query(
-      `
-        INSERT INTO users (
-          id,
-          organization_id,
-          telegram_username,
-          telegram_id,
-          email,
-          display_name,
-          status,
-          created_at,
-          updated_at
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $9::timestamptz)
-        ON CONFLICT (id) DO UPDATE SET
-          organization_id = EXCLUDED.organization_id,
-          telegram_username = EXCLUDED.telegram_username,
-          telegram_id = EXCLUDED.telegram_id,
-          email = EXCLUDED.email,
-          display_name = EXCLUDED.display_name,
-          status = EXCLUDED.status,
-          updated_at = EXCLUDED.updated_at
-      `,
-      [
-        SEEDED_ADMIN_USER_SEED.id,
-        SEEDED_ADMIN_USER_SEED.organization_id,
-        SEEDED_ADMIN_USER_SEED.telegram_username,
-        SEEDED_ADMIN_USER_SEED.telegram_id,
-        SEEDED_ADMIN_USER_SEED.email,
-        SEEDED_ADMIN_USER_SEED.display_name,
-        SEEDED_ADMIN_USER_SEED.status,
-        SEEDED_ADMIN_USER_SEED.created_at,
-        SEEDED_ADMIN_USER_SEED.updated_at,
-      ],
-    );
+    for (const user of [SEEDED_ADMIN_USER_SEED, SEEDED_WORKFLOW_SERVICE_USER_SEED]) {
+      await client.query(
+        `
+          INSERT INTO users (
+            id,
+            organization_id,
+            telegram_username,
+            telegram_id,
+            email,
+            display_name,
+            status,
+            is_service,
+            created_at,
+            updated_at
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::timestamptz, $10::timestamptz)
+          ON CONFLICT (id) DO UPDATE SET
+            organization_id = EXCLUDED.organization_id,
+            telegram_username = EXCLUDED.telegram_username,
+            telegram_id = EXCLUDED.telegram_id,
+            email = EXCLUDED.email,
+            display_name = EXCLUDED.display_name,
+            status = EXCLUDED.status,
+            is_service = EXCLUDED.is_service,
+            updated_at = EXCLUDED.updated_at
+        `,
+        [
+          user.id,
+          user.organization_id,
+          user.telegram_username,
+          user.telegram_id,
+          user.email,
+          user.display_name,
+          user.status,
+          user.is_service,
+          user.created_at,
+          user.updated_at,
+        ],
+      );
+    }
 
-    await client.query(
-      `
-        INSERT INTO user_roles (user_id, role_id, organization_id, created_at)
-        VALUES ($1, $2, $3, $4::timestamptz)
-        ON CONFLICT (user_id, role_id, organization_id) DO UPDATE SET
-          created_at = EXCLUDED.created_at
-      `,
-      [
-        SEEDED_ADMIN_ROLE_BINDING_SEED.user_id,
-        SEEDED_ADMIN_ROLE_BINDING_SEED.role_id,
-        SEEDED_ADMIN_ROLE_BINDING_SEED.organization_id,
-        SEEDED_ADMIN_ROLE_BINDING_SEED.created_at,
-      ],
-    );
+    for (const binding of [
+      SEEDED_ADMIN_ROLE_BINDING_SEED,
+      SEEDED_WORKFLOW_SERVICE_ROLE_BINDING_SEED,
+    ]) {
+      await client.query(
+        `
+          INSERT INTO user_roles (user_id, role_id, organization_id, created_at)
+          VALUES ($1, $2, $3, $4::timestamptz)
+          ON CONFLICT (user_id, role_id, organization_id) DO UPDATE SET
+            created_at = EXCLUDED.created_at
+        `,
+        [binding.user_id, binding.role_id, binding.organization_id, binding.created_at],
+      );
+    }
 
     await seedWorkflowBackendApiAllowlist(client);
     await seedWorkflowSubschemas(client);

@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 import {
   CanActivate,
@@ -9,11 +9,14 @@ import {
 } from "@nestjs/common";
 import type { Request } from "express";
 
+import { resolveBackendApiOperation } from "@bridge/contracts/backend-api-catalog";
+
 import { PgDatabase } from "../database/database.service";
 import {
   AUTH_HASH_SECRET_ENV,
   AuthSessionContext,
   DEFAULT_AUTH_HASH_SECRET,
+  FBP_SERVICE_TOKEN_ENV,
   RoleBinding,
   RoleCode,
   isRoleCode,
@@ -23,6 +26,13 @@ import {
 const ORGANIZATION_ID_HEADER = "x-organization-id";
 const LOOKUP_ORGANIZATION_ID = "00000000-0000-4000-8000-000000000000";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * У сервисного принципала нет строки в `auth_sessions`, а тип контекста требует
+ * сессию. Ставим заведомо не-UUID: любой запрос, который попробует найти такую
+ * сессию в базе, не найдёт ничего — вместо того чтобы случайно попасть в чужую.
+ */
+const SERVICE_SESSION_ID = "service-principal";
 
 interface SessionJoinRow {
   display_name: string;
@@ -36,6 +46,17 @@ interface SessionJoinRow {
   role_bindings: unknown;
   roles: string[];
   telegram_username: string | null;
+  user_id: string;
+  user_status: string;
+}
+
+interface ServicePrincipalRow {
+  display_name: string;
+  organization_id: string;
+  organization_name: string;
+  organization_status: string;
+  role_bindings: unknown;
+  roles: string[];
   user_id: string;
   user_status: string;
 }
@@ -62,6 +83,12 @@ export class SessionAuthGuard implements CanActivate {
         description: "Authentication is required.",
         humanMessage: "Необходима активная сессия.",
       });
+    }
+
+    // Сервисный токен опознаётся ДО обращения к auth_sessions: строки там для него
+    // нет, и сессионная ветка отвергла бы его как SESSION_INVALID.
+    if (isServiceToken(token)) {
+      return this.authenticateServicePrincipal(request);
     }
 
     const requestedTenant = requestedOrganizationId(request);
@@ -130,6 +157,157 @@ export class SessionAuthGuard implements CanActivate {
     }
 
     return toAuthContext(session, roles, token);
+  }
+
+  /**
+   * Аутентификация движка Workflow (дефект D4). Схему запускает событие, поэтому
+   * человека-инициатора у вызова нет — и сессии нет тоже. Токен отвечает «кто ты»,
+   * права берутся из строки техпользователя, а границей служит витрина
+   * `workflow_backend_api_allowlist`, проверяемая здесь же, в рантайме.
+   */
+  private async authenticateServicePrincipal(request: Request): Promise<AuthSessionContext> {
+    // Только заголовок: «организации по умолчанию» у сервисного принципала нет, а
+    // выводить арендатора из пути или тела значило бы позволить вызову самому
+    // выбирать, в какой организации он работает.
+    const organizationId = headerValue(request, ORGANIZATION_ID_HEADER);
+
+    if (!organizationId || !UUID_PATTERN.test(organizationId)) {
+      throw new UnauthorizedException({
+        code: "SERVICE_ORGANIZATION_REQUIRED",
+        description: `Service principal requires a valid ${ORGANIZATION_ID_HEADER} header.`,
+        humanMessage: "Сервисный вызов требует указания организации.",
+      });
+    }
+
+    const principal = await this.findServicePrincipal(organizationId);
+
+    if (!principal) {
+      throw new UnauthorizedException({
+        code: "SERVICE_PRINCIPAL_MISSING",
+        description: "Organization has no workflow service principal.",
+        humanMessage: "В организации нет технического пользователя движка схем.",
+      });
+    }
+
+    if (principal.user_status !== "active") {
+      throw new UnauthorizedException({
+        code: "USER_INACTIVE",
+        description: "Service principal is not active.",
+        humanMessage: "Технический пользователь не активен.",
+      });
+    }
+
+    if (principal.organization_status !== "active") {
+      throw new UnauthorizedException({
+        code: "ORGANIZATION_INACTIVE",
+        description: "Organization is not active.",
+        humanMessage: "Организация не активна.",
+      });
+    }
+
+    // platform_operator отбирается принудительно, даже если роль кому-то привязали:
+    // ею схема открыла бы себе в витрине что угодно, то есть сняла бы собственную
+    // границу.
+    const roles = normalizeRoles(principal.roles).filter((role) => role !== "platform_operator");
+
+    if (roles.length === 0) {
+      throw new UnauthorizedException({
+        code: "ROLE_BINDING_REQUIRED",
+        description: "Service principal has no active role binding.",
+        humanMessage: "У технического пользователя нет активной роли.",
+      });
+    }
+
+    await this.assertOperationAllowed(request);
+
+    return toServiceAuthContext(principal, roles);
+  }
+
+  /**
+   * Витрина как граница РАНТАЙМА, а не только сохранения схемы. До этого её читал
+   * лишь валидатор, то есть ограничением она не являлась: её обходила любая схема,
+   * попавшая в базу мимо валидатора, и любой баг валидатора.
+   *
+   * Проверка касается только сервисного принципала: витрина ограничивает схемы, а
+   * не сессии живых людей.
+   */
+  private async assertOperationAllowed(request: Request): Promise<void> {
+    const method = request.method;
+    const path = request.originalUrl ?? request.url;
+    const operation = resolveBackendApiOperation(method, path);
+
+    // Маршрута нет в каталоге — запрет: каталог генерируется из OpenAPI и покрывает
+    // весь /api/v1, поэтому промах означает, что вызов и не должен был случиться.
+    if (!operation) {
+      throw new ForbiddenException({
+        code: "BACKEND_API_OPERATION_FORBIDDEN",
+        description: `Route ${method} ${path} is not present in the generated Backend API catalog.`,
+        humanMessage: "Этот вызов недоступен схемам.",
+      });
+    }
+
+    // Витрина глобальная, без organization_id и без RLS, — читается вне арендатора.
+    const result = await this.database.query<{ enabled: boolean }>(
+      `SELECT enabled FROM workflow_backend_api_allowlist WHERE operation_id = $1`,
+      [operation.operation_id],
+    );
+
+    // Операция без строки запрещена — закрыто по умолчанию.
+    if (result.rowCount === 0 || !result.rows[0].enabled) {
+      throw new ForbiddenException({
+        code: "BACKEND_API_OPERATION_FORBIDDEN",
+        description: `Operation ${operation.operation_id} is not enabled in the workflow Backend API allowlist.`,
+        humanMessage: `Вызов «${operation.operation_id}» не разрешён схемам.`,
+      });
+    }
+  }
+
+  private async findServicePrincipal(
+    organizationId: string,
+  ): Promise<ServicePrincipalRow | null> {
+    const result = await this.database.withTenant(
+      organizationId,
+      (client) =>
+        client.query<ServicePrincipalRow>(
+          `
+            SELECT
+              u.id AS user_id,
+              u.organization_id,
+              u.display_name,
+              u.status AS user_status,
+              o.name AS organization_name,
+              o.status AS organization_status,
+              COALESCE(
+                array_agg(r.code ORDER BY r.code) FILTER (WHERE r.code IS NOT NULL),
+                '{}'::text[]
+              ) AS roles,
+              COALESCE(
+                jsonb_agg(
+                  jsonb_build_object(
+                    'role',
+                    r.code,
+                    'organizationId',
+                    ur.organization_id::text
+                  )
+                  ORDER BY r.code
+                ) FILTER (WHERE r.code IS NOT NULL),
+                '[]'::jsonb
+              ) AS role_bindings
+            FROM users u
+            JOIN organizations o ON o.id = u.organization_id
+            LEFT JOIN user_roles ur
+              ON ur.user_id = u.id AND ur.organization_id = u.organization_id
+            LEFT JOIN roles r ON r.id = ur.role_id
+            WHERE u.organization_id = $1 AND u.is_service
+            GROUP BY u.id, o.id
+            LIMIT 1
+          `,
+          [organizationId],
+        ),
+      { isPlatformOperator: true },
+    );
+
+    return result.rowCount === 0 ? null : result.rows[0];
   }
 
   private async findSessionByToken(
@@ -242,6 +420,31 @@ function organizationIdFromPath(request: Request): string | null {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
+/**
+ * Опознание сервисного токена движка (дефект D4).
+ *
+ * Сравнение timing-safe, и оба значения предварительно хешируются: `timingSafeEqual`
+ * бросает на буферах разной длины, а длина — тоже утечка. SHA-256 приводит их к
+ * фиксированным 32 байтам, поэтому сравнение всегда состоится и всегда за одно и
+ * то же время.
+ *
+ * Пустая или незаданная переменная не совпадает ни с чем: иначе стенд без
+ * `FBP_SERVICE_TOKEN` открыл бы весь `/api/v1` по пустому заголовку.
+ */
+export function isServiceToken(token: string): boolean {
+  const configured = process.env[FBP_SERVICE_TOKEN_ENV];
+
+  if (typeof configured !== "string" || configured === "") {
+    return false;
+  }
+
+  return timingSafeEqual(sha256(token), sha256(configured));
+}
+
+function sha256(value: string): Buffer {
+  return createHash("sha256").update(value, "utf8").digest();
+}
+
 export function hashSessionToken(token: string, secret = authHashSecret()): string {
   return `sha256:${createHmac("sha256", secret)
     .update(`auth_session:server:${token}`)
@@ -284,6 +487,50 @@ function toAuthContext(
       role: primaryRole(roles),
       status: session.user_status,
       telegramUsername: session.telegram_username,
+    },
+  };
+}
+
+/**
+ * Контекст сервисного принципала. Отличается от сессионного только тем, что сессии
+ * за ним нет: пользователь, организация и роли — настоящие строки из базы, поэтому
+ * RLS, `RolesGuard` и аудит работают поверх без изменений.
+ */
+function toServiceAuthContext(
+  principal: ServicePrincipalRow,
+  roles: RoleCode[],
+): AuthSessionContext {
+  const now = new Date().toISOString();
+
+  return {
+    authenticated: true,
+    expiresAt: now,
+    implementationStage: "M2",
+    organization: {
+      id: principal.organization_id,
+      name: principal.organization_name,
+      slug: slugify(principal.organization_name),
+      status: principal.organization_status,
+    },
+    roleBindings: normalizeRoleBindings(principal.role_bindings),
+    roles,
+    session: {
+      expiresAt: now,
+      id: SERVICE_SESSION_ID,
+      issuedAt: now,
+      mode: "server",
+      revokedAt: null,
+    },
+    // Заглушка: сервисный токен не кладётся в контекст, чтобы не растекаться по
+    // логам и ответам через `auth.token`.
+    token: "",
+    user: {
+      displayName: principal.display_name,
+      id: principal.user_id,
+      organizationId: principal.organization_id,
+      role: primaryRole(roles),
+      status: principal.user_status,
+      telegramUsername: null,
     },
   };
 }

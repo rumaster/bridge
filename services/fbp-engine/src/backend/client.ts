@@ -30,6 +30,11 @@ export interface BackendApiClient {
 /** Опции HTTP-клиента Backend API. */
 export interface HttpBackendApiClientOptions {
   baseUrl: string;
+  /**
+   * Сервисный токен движка (дефект D4). Backend опознаёт по нему технического
+   * пользователя организации и берёт права из его ролей.
+   */
+  serviceToken: string;
   fetchImpl?: typeof globalThis.fetch;
   defaultTimeoutMs?: number;
 }
@@ -40,11 +45,17 @@ export interface HttpBackendApiClientOptions {
  */
 export function createHttpBackendApiClient({
   baseUrl,
+  serviceToken,
   fetchImpl = globalThis.fetch,
   defaultTimeoutMs = 250,
 }: HttpBackendApiClientOptions) {
   if (typeof baseUrl !== "string" || baseUrl.trim() === "") {
     throw new TypeError("createHttpBackendApiClient требует непустой baseUrl.");
+  }
+  // Без токена каждый вызов узла «Вызов Backend API» получал бы 401 — ровно дефект
+  // D4. Падать здесь, на старте, честнее, чем в рантайме на каждой схеме.
+  if (typeof serviceToken !== "string" || serviceToken.trim() === "") {
+    throw new TypeError("createHttpBackendApiClient требует непустой serviceToken (FBP_SERVICE_TOKEN).");
   }
   if (typeof fetchImpl !== "function") {
     throw new TypeError("createHttpBackendApiClient требует доступный fetch.");
@@ -67,8 +78,11 @@ export function createHttpBackendApiClient({
           method,
           headers: {
             "content-type": "application/json",
-            // Арендатор и актор пробрасываются заголовками; итоговую авторизацию
-            // выполняет Backend по реальному принципалу (§13.5).
+            // Токен опознаёт сервисного принципала, но прав не несёт: Backend берёт
+            // их из ролей технического пользователя организации (§13.5).
+            authorization: `Bearer ${serviceToken}`,
+            // Арендатор задаётся ТОЛЬКО этим заголовком: у сервисного принципала
+            // «организации по умолчанию» нет.
             "x-organization-id": context.organization_id,
             "x-actor-user-id": context.actor_user_id ?? "",
           },
