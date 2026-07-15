@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { BACKEND_API_OPERATIONS } from "@bridge/contracts/backend-api-catalog";
+import { WORKFLOW_SCHEMA_VERSION } from "@bridge/contracts/c5-workflow";
 import { createTenantBackendApiMock } from "../../src/backend/client.js";
 import { createFbpRuntime, createWorkflowMetrics } from "../../src/engine.js";
 
 const ORG = "org-degrade";
 const fixedNow = () => "2026-07-04T00:00:00.000Z";
 const context = { organization_id: ORG, actor_user_id: "u1", trigger: "manual" };
+
+const POST_OP = BACKEND_API_OPERATIONS.find(
+  (op) => op.method === "POST" && op.path_params.length === 0 && op.has_body,
+)!;
 
 /**
  * Backend, который «недоступен»: любой вызов C3 падает. Моделирует деградацию
@@ -29,54 +35,84 @@ function createUnavailableBackend() {
   };
 }
 
+const evtNode = { id: "evt", type: "wait-event", position: { x: 0, y: 0 }, config: { event_type: "message.created" } };
+
+/** Схема, которой Backend необходим: событие → вызов Backend API. */
 function backendSchema() {
   return {
-    schema_version: "1.0.0",
+    schema_version: WORKFLOW_SCHEMA_VERSION,
+    kind: "workflow",
     workflow_id: "wf-backend",
-    entry: "create",
     nodes: [
+      evtNode,
       {
         id: "create",
         type: "backend-api",
-        input: { title: { kind: "params", path: ["title"] } },
-        config: { method: "POST", path: "/api/v1/records", body: { op: "input" } },
+        position: { x: 0, y: 0 },
+        config: { operation_id: POST_OP.operation_id, inputs: [{ name: "body", type: "object" }] },
       },
     ],
-    connections: [],
+    connections: [
+      { id: "c1", from: "evt", fromPort: "out", to: "create", toPort: "in" },
+      { id: "c2", from: "evt", fromPort: "data", to: "create", toPort: "body" },
+    ],
   };
 }
 
+/** Схема, которой Backend не нужен вовсе: событие → чистое вычисление → переменная. */
 function transformOnlySchema() {
   return {
-    schema_version: "1.0.0",
+    schema_version: WORKFLOW_SCHEMA_VERSION,
+    kind: "workflow",
     workflow_id: "wf-transform",
-    entry: "compute",
     nodes: [
+      evtNode,
       {
         id: "compute",
         type: "transform",
-        input: { n: { kind: "params", path: ["n"] } },
-        config: { expression: { op: "mul", args: [{ op: "get", object: { op: "input" }, path: ["n"] }, { op: "lit", value: 2 }] } },
+        position: { x: 0, y: 0 },
+        config: {
+          code: "return input.event.n * 2;",
+          inputs: [{ name: "event", type: "object" }],
+          outputs: [{ name: "value", type: "number" }],
+        },
       },
+      { id: "w", type: "variable_write", position: { x: 0, y: 0 }, config: { inputs: [{ name: "doubled", type: "number" }] } },
     ],
-    connections: [],
+    connections: [
+      { id: "c1", from: "evt", fromPort: "out", to: "w", toPort: "in" },
+      { id: "c2", from: "evt", fromPort: "data", to: "compute", toPort: "event" },
+      { id: "c3", from: "compute", fromPort: "value", to: "w", toPort: "doubled" },
+    ],
   };
+}
+
+/** Результат вычисления виден в трассе: variable_write наружу данных не отдаёт. */
+function tracedOutput(result: any, nodeId: string) {
+  return result.trace.find((entry: any) => entry.nodeId === nodeId)?.outputs;
+}
+
+function start(runtime: any, workflowId: string, input: Record<string, unknown>) {
+  return runtime.start({ organizationId: ORG, workflowId, context, input, startNodeId: "evt" });
 }
 
 describe("Деградация при недоступном Backend (ТЗ §5.4, §13.2)", () => {
   it("экземпляр с узлом Backend API падает штатно в failed с журналом, движок не рушится", async () => {
     const backend = createUnavailableBackend();
     const metrics = createWorkflowMetrics();
-    const runtime = createFbpRuntime({ backendClient: backend, metrics, now: fixedNow });
+    const runtime = createFbpRuntime({ backendClient: backend, metrics, now: fixedNow, limits: { codeTimeoutMs: 5000 } });
     runtime.publishVersion({ organizationId: ORG, workflowId: "wf-backend", schema: backendSchema() });
 
-    const res = await runtime.start({ organizationId: ORG, workflowId: "wf-backend", context, input: { title: "заявка" } });
+    const res = await start(runtime, "wf-backend", { title: "заявка" });
 
     assert.equal(res.status, "failed", "недоступный Backend → экземпляр failed, а не исключение наружу");
+    assert.equal(res.error.reason, "backend_unavailable", "причина сбоя доехала до вызывающей стороны");
+    assert.equal(res.error.node_id, "create");
     assert.equal(backend.calls, 1, "движок действительно попытался вызвать Backend");
     // Журнал сохраняется ВСЕГДА (для workflow_execution_logs, §13.9).
-    const eventsList = res.journal.map((e) => e.event);
+    const eventsList = res.journal.map((e: any) => e.event);
     assert.ok(eventsList.includes("workflow.failed"), "в журнале есть workflow.failed");
+    assert.ok(eventsList.includes("node.failed"));
 
     // Метрика §24.6 фиксирует ошибку.
     const snap = metrics.snapshot();
@@ -89,18 +125,19 @@ describe("Деградация при недоступном Backend (ТЗ §5.4
   it("после ошибки Backend движок продолжает исполнять transform-only Workflow (ядро не заблокировано)", async () => {
     const backend = createUnavailableBackend();
     const metrics = createWorkflowMetrics();
-    const runtime = createFbpRuntime({ backendClient: backend, metrics, now: fixedNow });
+    const runtime = createFbpRuntime({ backendClient: backend, metrics, now: fixedNow, limits: { codeTimeoutMs: 5000 } });
     runtime.publishVersion({ organizationId: ORG, workflowId: "wf-backend", schema: backendSchema() });
     runtime.publishVersion({ organizationId: ORG, workflowId: "wf-transform", schema: transformOnlySchema() });
 
     // Backend-workflow падает…
-    const failed = await runtime.start({ organizationId: ORG, workflowId: "wf-backend", context, input: { title: "x" } });
+    const failed = await start(runtime, "wf-backend", { title: "x" });
     assert.equal(failed.status, "failed");
 
-    // …но transform-only Workflow (не требующий Backend) исполняется как обычно.
-    const ok = await runtime.start({ organizationId: ORG, workflowId: "wf-transform", context, input: { n: 21 } });
+    // …но Workflow, которому Backend не нужен, исполняется как обычно.
+    const ok = await start(runtime, "wf-transform", { n: 21 });
     assert.equal(ok.status, "completed", "движок остаётся пригодным при недоступном Backend");
-    assert.equal(ok.output, 42);
+    assert.deepEqual(tracedOutput(ok, "compute"), { value: 42 });
+    assert.equal(backend.calls, 1, "transform-only схема к Backend не ходила вовсе");
 
     // Метрики отражают и ошибку, и успех.
     const snap = metrics.snapshot();
@@ -115,7 +152,7 @@ describe("Деградация при недоступном Backend (ТЗ §5.4
     const healthy = createTenantBackendApiMock({ now: fixedNow });
     let up = false;
     const flaky = {
-      async call(args) {
+      async call(args: any) {
         if (!up) {
           const error = new Error("Backend недоступен.");
           (error as any).reason = "backend_unavailable";
@@ -125,16 +162,16 @@ describe("Деградация при недоступном Backend (ТЗ §5.4
       },
     };
     const metrics = createWorkflowMetrics();
-    const runtime = createFbpRuntime({ backendClient: flaky, metrics, now: fixedNow });
+    const runtime = createFbpRuntime({ backendClient: flaky, metrics, now: fixedNow, limits: { codeTimeoutMs: 5000 } });
     runtime.publishVersion({ organizationId: ORG, workflowId: "wf-backend", schema: backendSchema() });
 
-    const down = await runtime.start({ organizationId: ORG, workflowId: "wf-backend", context, input: { title: "во время сбоя" } });
+    const down = await start(runtime, "wf-backend", { title: "во время сбоя" });
     assert.equal(down.status, "failed");
 
     up = true; // Backend восстановился.
-    const recovered = await runtime.start({ organizationId: ORG, workflowId: "wf-backend", context, input: { title: "после восстановления" } });
-    assert.equal(recovered.status, "completed");
-    assert.deepEqual(recovered.output.body.echo, { title: "после восстановления" });
+    const recovered = await start(runtime, "wf-backend", { title: "после восстановления" });
+    assert.equal(recovered.status, "completed", "движок не «залипает» в деградации после восстановления");
+    assert.deepEqual(recovered.output.response.body.echo, { title: "после восстановления" });
 
     const snap = metrics.snapshot();
     assert.equal(snap.total.errors, 1);

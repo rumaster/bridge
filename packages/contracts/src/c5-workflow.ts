@@ -703,6 +703,9 @@ type ErrorDetails = Record<string, unknown>;
 
 const VALIDATION_ERROR_MESSAGES: Record<string, (details: ErrorDetails) => string> = {
   invalid_graph_shape: () => "Граф схемы имеет некорректную форму",
+  // invalid_graph_kind недостижим: некорректный `kind` отвергает isWorkflowGraphShape
+  // раньше, как invalid_graph_shape. Оставлен как явное имя ошибки на случай, если
+  // проверку формы когда-нибудь разделят, — но на него нельзя опираться.
   invalid_graph_kind: ({ kind }) => `Недопустимый вид графа: ${String(kind)}`,
   unsupported_schema_version: ({ version }) =>
     `Неподдерживаемая версия схемы: ${String(version)} (нужна ${WORKFLOW_SCHEMA_VERSION})`,
@@ -831,9 +834,14 @@ export function validateWorkflowGraphContract(
   for (const node of graph.nodes) {
     if (ids.has(node.id)) throw contractError("duplicate_node_id", { nodeId: node.id });
     ids.add(node.id);
-    if (!isFbpNodeType(node.type)) throw contractError("unknown_node_type", { nodeType: node.type });
+    // nodeId в деталях обязателен: по нему редактор подсвечивает проблемный узел.
+    // Без него ошибка схлопывается в путь "$" — оператор видит «что-то не так со
+    // схемой» и не видит, где именно.
+    if (!isFbpNodeType(node.type)) {
+      throw contractError("unknown_node_type", { nodeId: node.id, nodeType: node.type });
+    }
     if (!isNodeTypeAllowedInKind(kind, node.type)) {
-      throw contractError("node_type_blocked", { nodeType: node.type, kind });
+      throw contractError("node_type_blocked", { nodeId: node.id, nodeType: node.type, kind });
     }
     validateNodeConfig(node, kind);
   }

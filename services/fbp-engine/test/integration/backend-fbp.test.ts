@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { BACKEND_API_OPERATIONS } from "@bridge/contracts/backend-api-catalog";
+import { WORKFLOW_SCHEMA_VERSION } from "@bridge/contracts/c5-workflow";
 import { createTenantBackendApiMock } from "../../src/backend/client.js";
 import { createFbpEngine } from "../../src/engine.js";
 
@@ -8,56 +10,95 @@ const ORG_A = "org-a";
 const ORG_B = "org-b";
 const fixedNow = () => "2026-07-03T13:00:00.000Z";
 
-function makeEngine(mock) {
-  return createFbpEngine({ backendClient: mock, now: fixedNow });
+/**
+ * Операции выводятся из каталога предикатом, а не хардкодом: каталог
+ * генерируется из OpenAPI и переезжает вместе с API.
+ *
+ * Для проверки изоляции арендаторов нужны GET и POST на ОДНОМ пути: мок Backend
+ * хранит записи по пути, поэтому «B записал → A прочитал тот же путь» иначе не
+ * выразить.
+ */
+function findMethodPair() {
+  const byPath = new Map<string, Record<string, any>>();
+  for (const op of BACKEND_API_OPERATIONS) {
+    if (op.path_params.length > 0) continue;
+    if (!byPath.has(op.path)) byPath.set(op.path, {});
+    byPath.get(op.path)![op.method] = op;
+  }
+  const pair = [...byPath.values()].find((ops) => ops.GET && ops.POST);
+  assert.ok(pair, "в каталоге нужны GET и POST на одном пути без плейсхолдеров");
+  return pair as { GET: any; POST: any };
 }
 
-function context(organizationId, actorUserId, trigger = "manual") {
+const { GET: GET_OP, POST: POST_OP } = findMethodPair();
+const PATH_PARAM_OP = BACKEND_API_OPERATIONS.find((op) => op.method === "GET" && op.path_params.length === 1)!;
+
+function makeEngine(mock: any, extra: Record<string, unknown> = {}) {
+  return createFbpEngine({ backendClient: mock, now: fixedNow, limits: { codeTimeoutMs: 5000 }, ...extra });
+}
+
+function context(organizationId: string, actorUserId: string, trigger = "manual") {
   return { organization_id: organizationId, actor_user_id: actorUserId, trigger };
 }
 
-function events(journal) {
+function events(journal: any[]) {
   return journal.map((entry) => entry.event);
 }
 
+const evtNode = { id: "evt", type: "wait-event", position: { x: 0, y: 0 }, config: { event_type: "message.created" } };
+
+/** Событие → вызов Backend API: нагрузка события уходит в тело портом `body`. */
+function callSchema(operationId: string) {
+  return {
+    schema_version: WORKFLOW_SCHEMA_VERSION,
+    kind: "workflow",
+    nodes: [
+      evtNode,
+      {
+        id: "create",
+        type: "backend-api",
+        position: { x: 0, y: 0 },
+        config: { operation_id: operationId, inputs: [{ name: "body", type: "object" }] },
+      },
+    ],
+    connections: [
+      { id: "c1", from: "evt", fromPort: "out", to: "create", toPort: "in" },
+      { id: "c2", from: "evt", fromPort: "data", to: "create", toPort: "body" },
+    ],
+  };
+}
+
 describe("Интеграция Backend↔FBP: узел Backend API через мок", () => {
-  it("CP-4: старт → узел Backend API → финал → журнал", async () => {
+  it("CP-4: событие → узел Backend API → финал → журнал", async () => {
     const mock = createTenantBackendApiMock({ now: fixedNow });
     const engine = makeEngine(mock);
-    const schema = {
-      schema_version: "1.0.0",
-      entry: "create",
-      nodes: [
-        {
-          id: "create",
-          type: "backend-api",
-          input: { title: { kind: "params", path: ["title"] } },
-          config: { method: "POST", path: "/api/v1/records", body: { op: "input" } },
-        },
-      ],
-      connections: [],
-    };
 
     const result = await engine.runWorkflow({
-      schema,
+      schema: callSchema(POST_OP.operation_id),
       context: context(ORG_A, "user-a"),
       input: { title: "Заявка A" },
+      startNodeId: "evt",
     });
 
     assert.equal(result.status, "completed");
     assert.equal(result.organization_id, ORG_A);
-    assert.equal(result.output.status_code, 201);
-    assert.deepEqual(result.output.body.echo, { title: "Заявка A" });
+    assert.equal(result.output.response.status_code, 201);
+    assert.deepEqual(result.output.response.body.echo, { title: "Заявка A" });
 
     // Вызов Backend получил КОНТЕКСТ арендатора/актора из ExecutionContext.
     assert.equal(mock.received.length, 1);
     assert.equal(mock.received[0].organization_id, ORG_A);
     assert.equal(mock.received[0].actor_user_id, "user-a");
+    assert.equal(mock.received[0].method, POST_OP.method);
+    assert.equal(mock.received[0].path, POST_OP.path, "путь пришёл из каталога, а не из конфига узла");
     assert.equal(mock.writesFor(ORG_A).length, 1);
 
-    // Журнал имеет форму workflow_execution_logs и полный жизненный цикл.
+    // Журнал имеет форму workflow_execution_logs и полный жизненный цикл: узел
+    // события теперь исполняется наравне с прочими, поэтому пар node.* — две.
     assert.deepEqual(events(result.journal), [
       "workflow.started",
+      "node.started",
+      "node.completed",
       "node.started",
       "node.completed",
       "workflow.completed",
@@ -69,160 +110,190 @@ describe("Интеграция Backend↔FBP: узел Backend API через м
     }
   });
 
-  it("передаёт данные между узлами (transform → backend-api)", async () => {
+  it("передаёт данные между узлами по data-связям (transform → backend-api)", async () => {
     const mock = createTenantBackendApiMock({ now: fixedNow });
     const engine = makeEngine(mock);
     const schema = {
-      schema_version: "1.0.0",
-      entry: "prepare",
+      schema_version: WORKFLOW_SCHEMA_VERSION,
+      kind: "workflow",
       nodes: [
+        evtNode,
         {
           id: "prepare",
           type: "transform",
-          input: { name: { kind: "params", path: ["name"] } },
-          config: { expression: { op: "merge", args: [{ op: "input" }, { op: "lit", value: { source: "wf" } }] } },
+          position: { x: 0, y: 0 },
+          config: {
+            code: "return { name: input.event.name, source: 'wf' };",
+            inputs: [{ name: "event", type: "object" }],
+            outputs: [{ name: "payload", type: "object" }],
+          },
         },
         {
           id: "create",
           type: "backend-api",
-          input: { payload: { kind: "node", node: "prepare", path: [] } },
-          config: { method: "POST", path: "/api/v1/records", body: { op: "get", object: { op: "input" }, path: ["payload"] } },
+          position: { x: 0, y: 0 },
+          config: { operation_id: POST_OP.operation_id, inputs: [{ name: "body", type: "object" }] },
         },
       ],
-      connections: [{ from: "prepare", fromPort: "out", to: "create", toPort: "in" }],
+      connections: [
+        { id: "c1", from: "evt", fromPort: "out", to: "create", toPort: "in" },
+        { id: "c2", from: "evt", fromPort: "data", to: "prepare", toPort: "event" },
+        { id: "c3", from: "prepare", fromPort: "payload", to: "create", toPort: "body" },
+      ],
     };
 
     const result = await engine.runWorkflow({
       schema,
       context: context(ORG_A, "user-a"),
       input: { name: "Иван" },
+      startNodeId: "evt",
     });
 
-    assert.equal(result.status, "completed");
+    assert.equal(result.status, "completed", JSON.stringify(result.error));
     assert.deepEqual(mock.received[0].body, { name: "Иван", source: "wf" });
     assert.equal(mock.received[0].organization_id, ORG_A);
   });
 
-  it("разрешает sub_schema по slug при старте экземпляра и берёт обновлённый граф из registry", async () => {
+  it("разрешает sub_schema по slug при старте и берёт обновлённый граф из registry", async () => {
     const mock = createTenantBackendApiMock({ now: fixedNow });
-    const registry = new Map<string, any>([
-      ["shared-normalize", subSchemaReturning("v1")],
-    ]);
-    const engine = createFbpEngine({
-      backendClient: mock,
-      now: fixedNow,
-      resolveSubSchema: ({ slug }) => registry.get(slug),
-    });
-    const schema = {
-      schema_version: "1.0.0",
-      entry: "reuse",
+    const registry = new Map<string, any>([["shared-normalize", subSchemaReturning("v1")]]);
+    const engine = makeEngine(mock, { resolveSubSchema: ({ slug }: any) => registry.get(slug) });
+    const schema: any = {
+      schema_version: WORKFLOW_SCHEMA_VERSION,
+      kind: "workflow",
       nodes: [
+        evtNode,
         {
           id: "reuse",
           type: "sub_schema",
-          input: { text: { kind: "params", path: ["text"] } },
-          config: { subSchemaSlug: "shared-normalize" },
+          position: { x: 0, y: 0 },
+          config: {
+            subSchemaSlug: "shared-normalize",
+            ports: { inputs: [{ id: "text", type: "string" }], outputs: [{ id: "result", type: "string" }] },
+          },
+        },
+        {
+          id: "pick",
+          type: "transform",
+          position: { x: 0, y: 0 },
+          config: {
+            code: "return input.event.text;",
+            inputs: [{ name: "event", type: "object" }],
+            outputs: [{ name: "text", type: "string" }],
+          },
         },
       ],
-      connections: [],
+      connections: [
+        { id: "c1", from: "evt", fromPort: "out", to: "reuse", toPort: "in" },
+        { id: "c2", from: "evt", fromPort: "data", to: "pick", toPort: "event" },
+        { id: "c3", from: "pick", fromPort: "text", to: "reuse", toPort: "text" },
+      ],
     };
 
     const first = await engine.runWorkflow({
       schema,
       context: context(ORG_A, "user-a"),
       input: { text: "запрос" },
+      startNodeId: "evt",
     });
+    // Субсхема резолвится ПРИ КАЖДОМ старте: обновлённый граф подхватывается без
+    // правки вызывающей схемы — в ней лежит только slug.
     registry.set("shared-normalize", subSchemaReturning("v2"));
     const second = await engine.runWorkflow({
       schema,
       context: context(ORG_A, "user-a"),
       input: { text: "запрос" },
+      startNodeId: "evt",
     });
 
-    assert.equal(first.status, "completed");
-    assert.equal(first.output, "v1:запрос");
-    assert.equal(second.status, "completed");
-    assert.equal(second.output, "v2:запрос");
-    assert.deepEqual(schema.nodes[0].config, { subSchemaSlug: "shared-normalize" });
+    assert.equal(first.status, "completed", JSON.stringify(first.error));
+    assert.equal(first.output.result, "v1:запрос");
+    assert.equal(second.status, "completed", JSON.stringify(second.error));
+    assert.equal(second.output.result, "v2:запрос");
+    assert.deepEqual(schema.nodes[1].config.subSchemaSlug, "shared-normalize");
   });
 
   it("МУЛЬТИАРЕНДНОСТЬ: org A не видит данные org B (§13.13-п.4, §22.6)", async () => {
     const mock = createTenantBackendApiMock({ now: fixedNow });
     const engine = makeEngine(mock);
-
-    const writeSchema = {
-      schema_version: "1.0.0",
-      entry: "create",
-      nodes: [
-        {
-          id: "create",
-          type: "backend-api",
-          input: { title: { kind: "params", path: ["title"] } },
-          config: { method: "POST", path: "/api/v1/records", body: { op: "input" } },
-        },
-      ],
-      connections: [],
-    };
+    const writeSchema = callSchema(POST_OP.operation_id);
     const readSchema = {
-      schema_version: "1.0.0",
-      entry: "read",
-      nodes: [{ id: "read", type: "backend-api", config: { method: "GET", path: "/api/v1/records" } }],
-      connections: [],
+      schema_version: WORKFLOW_SCHEMA_VERSION,
+      kind: "workflow",
+      nodes: [
+        evtNode,
+        { id: "read", type: "backend-api", position: { x: 0, y: 0 }, config: { operation_id: GET_OP.operation_id } },
+      ],
+      connections: [{ id: "c1", from: "evt", fromPort: "out", to: "read", toPort: "in" }],
     };
 
     // org B создаёт свою запись.
-    await engine.runWorkflow({ schema: writeSchema, context: context(ORG_B, "user-b"), input: { title: "Секрет B" } });
+    await engine.runWorkflow({
+      schema: writeSchema,
+      context: context(ORG_B, "user-b"),
+      input: { title: "Секрет B" },
+      startNodeId: "evt",
+    });
 
     // org A читает тот же путь — и НЕ ДОЛЖНА увидеть записи org B.
-    const readA = await engine.runWorkflow({ schema: readSchema, context: context(ORG_A, "user-a"), input: {} });
+    const readA = await engine.runWorkflow({
+      schema: readSchema,
+      context: context(ORG_A, "user-a"),
+      input: {},
+      startNodeId: "evt",
+    });
     assert.equal(readA.status, "completed");
-    assert.deepEqual(readA.output.body.records, []);
-    assert.equal(readA.output.body.organization_id, ORG_A);
+    assert.deepEqual(readA.output.response.body.records, []);
+    assert.equal(readA.output.response.body.organization_id, ORG_A);
 
     // org B читает и видит ТОЛЬКО свою запись.
-    const readB = await engine.runWorkflow({ schema: readSchema, context: context(ORG_B, "user-b"), input: {} });
-    assert.equal(readB.output.body.records.length, 1);
-    assert.equal(readB.output.body.records[0].body.title, "Секрет B");
+    const readB = await engine.runWorkflow({
+      schema: readSchema,
+      context: context(ORG_B, "user-b"),
+      input: {},
+      startNodeId: "evt",
+    });
+    assert.equal(readB.output.response.body.records.length, 1);
+    assert.equal(readB.output.response.body.records[0].body.title, "Секрет B");
 
     // Ни один вызов org A не унёс чужой organization_id.
-    const orgAReceived = mock.received.filter((call) => call.actor_user_id === "user-a");
-    assert.ok(orgAReceived.every((call) => call.organization_id === ORG_A));
-    assert.notEqual(JSON.stringify(readA.output.body.records), JSON.stringify(readB.output.body.records));
-  });
-
-  it("узел wait-event переводит экземпляр в состояние ожидания и не идёт дальше", async () => {
-    const mock = createTenantBackendApiMock({ now: fixedNow });
-    const engine = makeEngine(mock);
-    const schema = {
-      schema_version: "1.0.0",
-      entry: "wait",
-      nodes: [
-        { id: "wait", type: "wait-event", config: { event_type: "payment.confirmed" } },
-        { id: "after", type: "transform", config: { expression: { op: "lit", value: "done" } } },
-      ],
-      connections: [{ from: "wait", fromPort: "out", to: "after", toPort: "in" }],
-    };
-
-    const result: any = await engine.runWorkflow({ schema, context: context(ORG_A, "user-a"), input: { order: 1 } });
-
-    assert.equal(result.status, "waiting");
-    assert.equal(result.wait.event_type, "payment.confirmed");
-    assert.equal(result.waitingNodeId, "wait");
-    assert.ok(events(result.journal).includes("workflow.waiting"));
-    assert.ok(!result.journal.some((entry) => entry.node_id === "after"), "узел after не должен исполняться");
+    const orgAReceived = mock.received.filter((call: any) => call.actor_user_id === "user-a");
+    assert.ok(orgAReceived.every((call: any) => call.organization_id === ORG_A));
+    assert.notEqual(
+      JSON.stringify(readA.output.response.body.records),
+      JSON.stringify(readB.output.response.body.records),
+    );
   });
 
   it("ошибка узла фиксируется в журнале и возвращается как failed (журнал сохраняется)", async () => {
     const mock = createTenantBackendApiMock({ now: fixedNow });
     const engine = makeEngine(mock);
+    // Плейсхолдер пути объявлен портом (иначе схема не сохранилась бы), но ничем
+    // не запитан — значение не придёт, и узел обязан упасть ДО вызова Backend.
     const schema = {
-      schema_version: "1.0.0",
-      entry: "get",
-      nodes: [{ id: "get", type: "backend-api", config: { method: "GET", path: "/api/v1/records/{id}" } }],
-      connections: [],
+      schema_version: WORKFLOW_SCHEMA_VERSION,
+      kind: "workflow",
+      nodes: [
+        evtNode,
+        {
+          id: "get",
+          type: "backend-api",
+          position: { x: 0, y: 0 },
+          config: {
+            operation_id: PATH_PARAM_OP.operation_id,
+            inputs: PATH_PARAM_OP.path_params.map((name: string) => ({ name, type: "string" })),
+          },
+        },
+      ],
+      connections: [{ id: "c1", from: "evt", fromPort: "out", to: "get", toPort: "in" }],
     };
 
-    const result = await engine.runWorkflow({ schema, context: context(ORG_A, "user-a"), input: {} });
+    const result = await engine.runWorkflow({
+      schema,
+      context: context(ORG_A, "user-a"),
+      input: {},
+      startNodeId: "evt",
+    });
 
     assert.equal(result.status, "failed");
     assert.equal(result.error.reason, "invalid_path_parameter");
@@ -233,26 +304,29 @@ describe("Интеграция Backend↔FBP: узел Backend API через м
   });
 });
 
+/** Субсхема: принимает text через start, возвращает `${prefix}:${text}` через end. */
 function subSchemaReturning(prefix: string) {
   return {
-    schema_version: "1.0.0",
-    entry: "format",
+    schema_version: WORKFLOW_SCHEMA_VERSION,
+    kind: "subschema",
     nodes: [
+      { id: "s", type: "start", position: { x: 0, y: 0 }, config: { outputs: [{ id: "text", label: "Текст", type: "string" }] } },
       {
         id: "format",
         type: "transform",
-        input: { text: { kind: "params", path: ["text"] } },
+        position: { x: 0, y: 0 },
         config: {
-          expression: {
-            op: "concat",
-            args: [
-              { op: "lit", value: `${prefix}:` },
-              { op: "get", object: { op: "input" }, path: ["text"] },
-            ],
-          },
+          code: `return ${JSON.stringify(`${prefix}:`)} + input.text;`,
+          inputs: [{ name: "text", type: "string" }],
+          outputs: [{ name: "value", type: "string" }],
         },
       },
+      { id: "e", type: "end", position: { x: 0, y: 0 }, config: { inputs: [{ id: "result", label: "Результат", type: "string" }] } },
     ],
-    connections: [],
+    connections: [
+      { id: "c1", from: "s", fromPort: "out", to: "e", toPort: "in" },
+      { id: "c2", from: "s", fromPort: "text", to: "format", toPort: "text" },
+      { id: "c3", from: "format", fromPort: "value", to: "e", toPort: "result" },
+    ],
   };
 }
