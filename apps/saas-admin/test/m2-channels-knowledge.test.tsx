@@ -284,6 +284,9 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
       within(editor).getByLabelText(/Ключевые фразы/),
       "гарантия на технику{enter}срок гарантии"
     );
+    // Теги — предфильтр поиска (узел «Поиск в Knowledge Base»); в эмбеддинге не
+    // участвуют, поэтому это отдельное поле, а не ещё одни фразы.
+    await user.type(within(editor).getByLabelText(/Теги/), "гарантия{enter}сервис");
     await user.click(within(editor).getByRole("button", { name: "Добавить документ" }));
 
     expect(await screen.findByRole("button", { name: /Политика гарантий/ })).toBeInTheDocument();
@@ -292,7 +295,8 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
         organization_id: mockSession.organization.id,
         title: "Политика гарантий",
         content: "Гарантия на технику — 12 месяцев.",
-        embedding_sources: ["гарантия на технику", "срок гарантии"]
+        embedding_sources: ["гарантия на технику", "срок гарантии"],
+        tags: ["гарантия", "сервис"]
       })
     );
     // Созданный документ остаётся открытым — кнопка переключилась на обновление.
@@ -304,6 +308,7 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
     expect(within(editor).getByLabelText(/Ключевые фразы/)).toHaveValue(
       "возврат товара\nкак вернуть покупку\nденьги за возврат"
     );
+    expect(within(editor).getByLabelText(/Теги/)).toHaveValue("возвраты\nпродажи");
     const returnsTitle = within(editor).getByLabelText("Название документа");
     await user.clear(returnsTitle);
     await user.type(returnsTitle, "Политика возвратов v2");
@@ -314,7 +319,8 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
       "kb-doc-returns",
       expect.objectContaining({
         title: "Политика возвратов v2",
-        embedding_sources: ["возврат товара", "как вернуть покупку", "деньги за возврат"]
+        embedding_sources: ["возврат товара", "как вернуть покупку", "деньги за возврат"],
+        tags: ["возвраты", "продажи"]
       })
     );
 
@@ -342,6 +348,7 @@ describe("SaaS Administration M2 channels and Knowledge Base", () => {
     expect(within(editor).getByLabelText("Название документа")).toHaveValue("");
     expect(within(editor).getByLabelText(/Контент/)).toHaveValue("");
     expect(within(editor).getByLabelText(/Ключевые фразы/)).toHaveValue("");
+    expect(within(editor).getByLabelText(/Теги/)).toHaveValue("");
     expect(within(editor).getByRole("button", { name: "Добавить документ" })).toBeInTheDocument();
   });
 

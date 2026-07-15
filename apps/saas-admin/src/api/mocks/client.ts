@@ -442,6 +442,7 @@ export function createMockSaasAdminApiClient(
           title: request.title.trim(),
           content: request.content.trim(),
           embedding_sources: normalizeSources(request.embedding_sources),
+          tags: normalizeSources(request.tags),
           created_at: createdAt,
           updated_at: createdAt
         };
@@ -471,6 +472,7 @@ export function createMockSaasAdminApiClient(
               request.embedding_sources !== undefined
                 ? normalizeSources(request.embedding_sources)
                 : document.embedding_sources,
+            tags: request.tags !== undefined ? normalizeSources(request.tags) : document.tags,
             updated_at: "2026-07-03T10:32:00.000Z"
           };
           return updated;
@@ -1163,7 +1165,11 @@ function mockProblem(code: string, humanMessage: string): Error & { body: { code
 }
 
 function cloneKnowledgeDocument(document: KnowledgeDocument): KnowledgeDocument {
-  return { ...document, embedding_sources: [...(document.embedding_sources ?? [])] };
+  return {
+    ...document,
+    embedding_sources: [...(document.embedding_sources ?? [])],
+    tags: [...(document.tags ?? [])]
+  };
 }
 
 /** Тримминг, удаление пустых и дублей с сохранением порядка (как на бэкенде). */

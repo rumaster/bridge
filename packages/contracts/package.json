@@ -25,6 +25,12 @@
       "import": "./src/backend-api-catalog.generated.ts",
       "default": "./src/backend-api-catalog.generated.ts"
     },
+    "./c3-kb-payloads": {
+      "types": "./dist/cjs/c3-kb-payloads.d.ts",
+      "require": "./dist/cjs/c3-kb-payloads.js",
+      "import": "./src/c3-kb-payloads.ts",
+      "default": "./src/c3-kb-payloads.ts"
+    },
     "./c4": "./src/c4.ts",
     "./c6": "./src/c6.ts",
     "./c7": "./src/c7.ts",

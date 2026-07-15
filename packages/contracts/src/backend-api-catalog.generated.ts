@@ -403,6 +403,16 @@ export const BACKEND_API_OPERATIONS: readonly BackendApiOperation[] = Object.fre
     has_body: true,
   },
   {
+    operation_id: "KnowledgeSearchController_searchDocuments_v1",
+    method: "POST",
+    path: "/api/v1/knowledge/documents:search",
+    summary: "Search Knowledge Base documents by key phrases and tags",
+    tag: "knowledge",
+    path_params: Object.freeze([]),
+    query_params: Object.freeze([]),
+    has_body: true,
+  },
+  {
     operation_id: "MailController_orderMailbox_v1",
     method: "POST",
     path: "/api/v1/mail/mailboxes",

@@ -958,6 +958,38 @@
         ]
       }
     },
+    "/api/v1/knowledge/documents:search": {
+      "post": {
+        "operationId": "KnowledgeSearchController_searchDocuments_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchKnowledgeDocumentsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KnowledgeSearchResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Search Knowledge Base documents by key phrases and tags",
+        "tags": [
+          "knowledge"
+        ]
+      }
+    },
     "/api/v1/platform/organizations": {
       "post": {
         "operationId": "PlatformOrganizationsController_provisionOrganization_v1",
@@ -3699,6 +3731,16 @@
               "type": "string"
             }
           },
+          "tags": {
+            "example": [
+              "продажи",
+              "возвраты"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "created_at": {
             "type": "string",
             "example": "2026-07-04T10:01:00.000Z"
@@ -3714,6 +3756,7 @@
           "title",
           "content",
           "embedding_sources",
+          "tags",
           "created_at",
           "updated_at"
         ]
@@ -3738,6 +3781,16 @@
               "возврат товара",
               "как вернуть покупку",
               "деньги за возврат"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tags": {
+            "example": [
+              "продажи",
+              "возвраты"
             ],
             "type": "array",
             "items": {
@@ -3771,6 +3824,16 @@
             "items": {
               "type": "string"
             }
+          },
+          "tags": {
+            "example": [
+              "продажи",
+              "возвраты"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -3789,6 +3852,98 @@
         "required": [
           "deleted",
           "document_id"
+        ]
+      },
+      "SearchKnowledgeDocumentsDto": {
+        "type": "object",
+        "properties": {
+          "keys": {
+            "example": [
+              "как вернуть покупку"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tags": {
+            "example": [
+              "продажи",
+              "возвраты"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "top_k": {
+            "type": "number",
+            "example": 5,
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "keys"
+        ]
+      },
+      "KnowledgeSearchHitDto": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000701"
+          },
+          "title": {
+            "type": "string",
+            "example": "Политика возвратов"
+          },
+          "content": {
+            "type": "string",
+            "example": "Возврат товара возможен в течение 14 дней..."
+          },
+          "tags": {
+            "example": [
+              "продажи",
+              "возвраты"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "matched_key": {
+            "type": "string",
+            "example": "как вернуть покупку",
+            "description": "Ключевая фраза документа, давшая совпадение."
+          },
+          "distance": {
+            "type": "number",
+            "example": 0.1234,
+            "description": "L2-расстояние: меньше — ближе."
+          }
+        },
+        "required": [
+          "document_id",
+          "title",
+          "content",
+          "tags",
+          "matched_key",
+          "distance"
+        ]
+      },
+      "KnowledgeSearchResponseDto": {
+        "type": "object",
+        "properties": {
+          "documents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/KnowledgeSearchHitDto"
+            }
+          }
+        },
+        "required": [
+          "documents"
         ]
       },
       "ProvisionOrganizationDto": {

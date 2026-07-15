@@ -43,6 +43,9 @@ export function configureBackendApp(
       { path: "internal/broadcast/deliveries", method: RequestMethod.POST },
       { path: "internal/channels/secret", method: RequestMethod.GET },
       { path: "internal/channels", method: RequestMethod.GET },
+      // Внутренний семантический поиск C3.kb: SVC-AI зовёт его по
+      // документированному пути POST /knowledge:search (мастер-план §7.2).
+      { path: "knowledge:search", method: RequestMethod.POST },
     ],
   });
   app.enableVersioning({

@@ -48,8 +48,8 @@ export const generatedOpenApiDocuments = [
     "openapi": "3.0.0",
     "title": "Bridge Backend Core API",
     "version": "1.0.0",
-    "pathCount": 68,
-    "operationCount": 81
+    "pathCount": 69,
+    "operationCount": 82
   },
   {
     "artifact": "packages/contracts/openapi/broadcasts/c8.broadcasts.openapi.json",
@@ -606,6 +606,17 @@ export const generatedOpenApiOperations = [
     "path": "/api/v1/knowledge/documents",
     "operationId": "KnowledgeBaseController_createDocument_v1",
     "summary": "Create a Knowledge Base document and embed its content",
+    "tags": [
+      "knowledge"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "post",
+    "path": "/api/v1/knowledge/documents:search",
+    "operationId": "KnowledgeSearchController_searchDocuments_v1",
+    "summary": "Search Knowledge Base documents by key phrases and tags",
     "tags": [
       "knowledge"
     ]

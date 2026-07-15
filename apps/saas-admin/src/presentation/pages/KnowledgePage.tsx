@@ -16,6 +16,8 @@ interface DocumentDraft {
   content: string;
   /** Ключевые фразы, по одной на строку (в API уходит массивом). */
   sources: string;
+  /** Теги, по одному на строку (в API уходит массивом). */
+  tags: string;
 }
 
 type DraftFieldErrors = Partial<Record<keyof DocumentDraft, string>>;
@@ -29,7 +31,8 @@ type PendingSelection = { kind: "new" } | { kind: "document"; documentId: string
 const emptyDraft: DocumentDraft = {
   title: "",
   content: "",
-  sources: ""
+  sources: "",
+  tags: ""
 };
 
 /** Текстовое поле «по одной фразе на строку» ⇄ массив фраз API. */
@@ -189,7 +192,8 @@ export default function KnowledgePage() {
         const updated = await api.knowledge.updateDocument(selectedDocument.id, {
           title: draft.title.trim(),
           content: draft.content.trim(),
-          embedding_sources: splitLines(draft.sources)
+          embedding_sources: splitLines(draft.sources),
+          tags: splitLines(draft.tags)
         });
 
         setDocuments((current) => replaceDocument(current, updated));
@@ -201,7 +205,8 @@ export default function KnowledgePage() {
           organization_id: session.organization.id,
           title: draft.title.trim(),
           content: draft.content.trim(),
-          embedding_sources: splitLines(draft.sources)
+          embedding_sources: splitLines(draft.sources),
+          tags: splitLines(draft.tags)
         });
 
         setDocuments((current) => [created, ...current]);
@@ -384,6 +389,15 @@ export default function KnowledgePage() {
                 rows={5}
                 value={draft.sources}
               />
+              <TextAreaInput
+                error={errors.tags}
+                id="knowledge-tags"
+                label="Теги — по одному на строку (необязательно)"
+                onChange={(event) => updateField("tags", event.currentTarget.value)}
+                placeholder={"возвраты\nпродажи"}
+                rows={3}
+                value={draft.tags}
+              />
             </div>
 
             <div className="form-actions">
@@ -464,7 +478,10 @@ function formatUpdatedAt(value: string) {
 
 function isSameDraft(left: DocumentDraft, right: DocumentDraft) {
   return (
-    left.title === right.title && left.content === right.content && left.sources === right.sources
+    left.title === right.title &&
+    left.content === right.content &&
+    left.sources === right.sources &&
+    left.tags === right.tags
   );
 }
 
@@ -472,7 +489,8 @@ function toDraft(document: KnowledgeDocument): DocumentDraft {
   return {
     title: document.title,
     content: document.content,
-    sources: (document.embedding_sources ?? []).join("\n")
+    sources: (document.embedding_sources ?? []).join("\n"),
+    tags: (document.tags ?? []).join("\n")
   };
 }
 

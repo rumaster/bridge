@@ -559,6 +559,7 @@ export const handlers = [
       title: body.title?.trim() ?? "",
       content: body.content?.trim() ?? "",
       embedding_sources: normalizeKnowledgeSources(body.embedding_sources),
+      tags: normalizeKnowledgeSources(body.tags),
       created_at: createdAt,
       updated_at: createdAt
     };
@@ -587,6 +588,7 @@ export const handlers = [
         body.embedding_sources !== undefined
           ? normalizeKnowledgeSources(body.embedding_sources)
           : document.embedding_sources,
+      tags: body.tags !== undefined ? normalizeKnowledgeSources(body.tags) : document.tags,
       updated_at: "2026-07-03T10:32:00.000Z"
     };
     currentDocuments = currentDocuments.map((item) => (item.id === updated.id ? updated : item));
@@ -1458,7 +1460,11 @@ function cloneChannel(channel: Channel): Channel {
 }
 
 function cloneKnowledgeDocument(document: KnowledgeDocument): KnowledgeDocument {
-  return { ...document, embedding_sources: [...(document.embedding_sources ?? [])] };
+  return {
+    ...document,
+    embedding_sources: [...(document.embedding_sources ?? [])],
+    tags: [...(document.tags ?? [])]
+  };
 }
 
 /** Тримминг, удаление пустых и дублей с сохранением порядка (как на бэкенде). */

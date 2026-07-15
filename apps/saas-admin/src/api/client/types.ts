@@ -270,6 +270,12 @@ export interface KnowledgeDocument {
    * Пустой список — документ сохранён, но в семантическом поиске не участвует.
    */
   embedding_sources: string[];
+  /**
+   * Теги-предфильтр для поиска (узел «Поиск в Knowledge Base»). В эмбеддинге НЕ
+   * участвуют: тег сужает множество документов ДО векторного поиска, а не влияет
+   * на расстояния внутри него.
+   */
+  tags: string[];
   created_at: ISODateTime;
   updated_at: ISODateTime;
 }
@@ -279,12 +285,14 @@ export interface CreateKnowledgeDocumentRequest {
   title: string;
   content: string;
   embedding_sources?: string[];
+  tags?: string[];
 }
 
 export interface UpdateKnowledgeDocumentRequest {
   title?: string;
   content?: string;
   embedding_sources?: string[];
+  tags?: string[];
 }
 
 export interface DeleteKnowledgeDocumentResponse {

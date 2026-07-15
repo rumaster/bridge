@@ -19,6 +19,7 @@
   "files": [
     "src/c5-workflow.ts",
     "src/workflow-events.ts",
-    "src/backend-api-catalog.generated.ts"
+    "src/backend-api-catalog.generated.ts",
+    "src/c3-kb-payloads.ts"
   ]
 }

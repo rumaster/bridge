@@ -64,6 +64,17 @@ describe("SVC-API M5 OpenAPI contract", () => {
     // фиксированным путям без префикса `api`/версии (CORE_INGRESS_URL и т.п.),
     // поэтому они намеренно исключены из глобального префикса и не публикуются в
     // backend-core OpenAPI (тесты byte-for-byte и versioned-routes это подтверждают).
+    //
+    // POST /knowledge:search — внутренний семантический поиск C3.kb (ТЗ §12.10,
+    // добавлен 2026-07-15). SVC-AI зовёт его по этому документированному пути, тоже
+    // без префикса и версии. До его появления маршрута не существовало вовсе, и
+    // RAG-ассистент молча деградировал до заглушки на каждом запросе.
+    //
+    // Двоеточие здесь — ЛИТЕРАЛ, и это ровно то, что проверяет строка ниже: маршрут
+    // объявлен как `knowledge\\:search`, потому что без экранирования path-to-regexp
+    // Express 5 разбирает `:search` как параметр и маршрут начинает отвечать на
+    // `/knowledge<что угодно>`. Параметр отрендерился бы здесь как `/knowledge{search}`
+    // — именно так этот тест поймал ошибку в первой версии маршрута.
     expect(unversionedExpressOperations(app)).toEqual([
       "GET /health",
       "GET /internal/channels",
@@ -74,7 +85,29 @@ describe("SVC-API M5 OpenAPI contract", () => {
       "POST /internal/edge/tunnel/messages",
       "POST /internal/egress/messages",
       "POST /internal/ingress/messages",
+      "POST /knowledge:search",
     ]);
+  });
+
+  it("keeps every path parameter a whole segment, so `:verb` routes stay literal", () => {
+    // Ловит целый класс ошибок, который иначе проходит ВЕСЬ прогон зелёным.
+    //
+    // Маршруты-действия объявляются с экранированным двоеточием (`@Post("x\\:verb")`).
+    // Забыть `\\` легко, а последствия тихие: path-to-regexp Express 5 разбирает
+    // `:verb` как ПАРАМЕТР, и маршрут начинает отвечать на `/x<что угодно>`. При этом
+    // Swagger рендерит тот же `:verb` в `{verb}` — то есть и Express, и OpenAPI
+    // согласованно описывают неверный маршрут, и тест «publishes every actual
+    // versioned Nest route» их расхождения не видит (проверено: он остаётся зелёным).
+    //
+    // Отличие видно по форме. Параметр всегда ОТКРЫВАЕТ сегмент: `/documents/{id}`,
+    // `/broadcasts/{id}:start` (параметр плюс литеральный глагол — так и задумано).
+    // Забытое экранирование, наоборот, приклеивает параметр ПОСЛЕ текста:
+    // `/documents{search}`. Запрещается именно это.
+    const glued = Object.keys(generated.paths).filter((path) =>
+      path.split("/").some((segment) => segment.includes("{") && !segment.startsWith("{")),
+    );
+
+    expect(glued).toEqual([]);
   });
 
   it("documents C3 v1 compatibility and the no-breaking-change policy for CP-9", () => {
