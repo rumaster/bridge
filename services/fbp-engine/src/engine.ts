@@ -127,7 +127,7 @@ export function createFbpEngine({ backendClient, limits = {}, now, resolveSubSch
 export function createFbpRuntime({
   backendClient,
   now,
-  versions = createVersionRegistry({ ...(now ? { now } : {}) }),
+  versions: providedVersions,
   instances = createInstanceStore({ ...(now ? { now } : {}) }),
   metrics = createWorkflowMetrics(),
   limits = {},
@@ -138,6 +138,24 @@ export function createFbpRuntime({
       "createFbpRuntime требует backendClient с методом call — данные идут только через Backend API (C3).",
     );
   }
+
+  /**
+   * Лимиты обязаны дойти до валидации НА СОХРАНЕНИИ (ТЗ §13.13-п.5), иначе
+   * ужесточённый maxCodeLength действовал бы только на исполнении: реестр версий
+   * молча валидировал бы с пустыми опциями и публиковал схему, которую сам же
+   * потом отверг бы. Раньше реестр строился прямо в деструктуризации аргументов —
+   * до объявления `limits`, поэтому дотянуться до них было физически нельзя.
+   * Путь `createFbpEngine.runWorkflow` лимиты передавал, а этот — нет.
+   */
+  const effectiveLimits = Object.freeze({ ...TRANSFORM_DEFAULT_LIMITS, ...limits });
+  const versions =
+    providedVersions ??
+    createVersionRegistry({
+      ...(now ? { now } : {}),
+      validateSchema: (schema, options = {}) =>
+        validateWorkflowSchema(schema, { limits: effectiveLimits, ...options }),
+    });
+
   const runtime = createInstanceRuntime({
     backendClient,
     versions,

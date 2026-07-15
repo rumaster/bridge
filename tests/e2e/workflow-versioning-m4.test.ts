@@ -1,68 +1,93 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { BACKEND_API_OPERATIONS } from "@bridge/contracts/backend-api-catalog";
+import { WORKFLOW_SCHEMA_VERSION } from "@bridge/contracts/c5-workflow";
 import { createTenantBackendApiMock } from "../../services/fbp-engine/src/backend/client.js";
 import { createFbpRuntime } from "../../services/fbp-engine/src/engine.js";
 import { VersionImmutabilityError } from "../../services/fbp-engine/src/core/errors.js";
 
 /**
- * e2e вехи M4-10 (SVC-FBP): неизменяемые версии, version pinning и
- * stateless-масштабирование — на РЕАЛЬНОМ рантайме движка без Docker/БД.
+ * e2e вехи M4-10 (SVC-FBP): неизменяемые версии и version pinning — на РЕАЛЬНОМ
+ * рантайме движка без Docker/БД.
  *
- * Контрольный сценарий: экземпляры, запущенные до публикации новой версии,
- * доигрывают НА СВОЕЙ версии; новая версия влияет только на последующие старты,
- * а переключение версии по умолчанию делается конфигурацией (ТЗ §13.10, §25.3).
+ * Контрольный сценарий: экземпляр исполняется на ЗАКРЕПЛЁННОЙ версии; публикация
+ * новой версии и переключение default влияют только на последующие старты
+ * (ТЗ §13.10).
+ *
+ * Ревизия 2026-07-15: точки ожидания посреди схемы больше нет — исполнение
+ * сквозное, поэтому «стартовал до публикации, доиграл после» выражается через
+ * явное закрепление версии (`versionId`), а не через паузу между шагами.
  */
 
 const ORG = "10000000-0000-4000-8000-0000000000a1";
 const fixedNow = () => "2026-07-04T00:00:00.000Z";
-
 const context = { organization_id: ORG, actor_user_id: "manager-a", trigger: "manual" };
 
-// Схема двух шагов с точкой ожидания: version-маркер «зашит» в результат prepare,
-// поэтому по финальному выводу видно, на КАКОЙ версии доигран экземпляр.
-function approvalSchema(marker) {
+const POST_OP = BACKEND_API_OPERATIONS.find(
+  (op) => op.method === "POST" && op.path_params.length === 0 && op.has_body,
+)!;
+
+/** Маркер версии зашит в код transform — по записи в Backend видно, чья схема отработала. */
+function approvalSchema(marker: string) {
   return {
-    schema_version: "1.0.0",
+    schema_version: WORKFLOW_SCHEMA_VERSION,
+    kind: "workflow",
     workflow_id: "wf-orders",
-    entry: "prepare",
     nodes: [
+      { id: "evt", type: "wait-event", position: { x: 0, y: 0 }, config: { event_type: "message.created" } },
       {
         id: "prepare",
         type: "transform",
-        input: { title: { kind: "params", path: ["title"] } },
-        config: { expression: { op: "merge", args: [{ op: "input" }, { op: "lit", value: { engine_version: marker } }] } },
+        position: { x: 0, y: 0 },
+        config: {
+          code: `return { title: input.event.title, engine_version: ${JSON.stringify(marker)} };`,
+          inputs: [{ name: "event", type: "object" }],
+          outputs: [{ name: "payload", type: "object" }],
+        },
       },
-      { id: "await_approval", type: "wait-event", config: { event_type: "order.approved" } },
       {
         id: "create",
         type: "backend-api",
-        input: {
-          title: { kind: "node", node: "prepare", path: ["title"] },
-          engine_version: { kind: "node", node: "prepare", path: ["engine_version"] },
-          decision: { kind: "node", node: "await_approval", path: ["decision"] },
-        },
-        config: { method: "POST", path: "/api/v1/orders", body: { op: "input" } },
+        position: { x: 0, y: 0 },
+        config: { operation_id: POST_OP.operation_id, inputs: [{ name: "body", type: "object" }] },
       },
     ],
     connections: [
-      { from: "prepare", fromPort: "out", to: "await_approval", toPort: "in" },
-      { from: "await_approval", fromPort: "out", to: "create", toPort: "in" },
+      { id: "c1", from: "evt", fromPort: "out", to: "create", toPort: "in" },
+      { id: "c2", from: "evt", fromPort: "data", to: "prepare", toPort: "event" },
+      { id: "c3", from: "prepare", fromPort: "payload", to: "create", toPort: "body" },
     ],
   };
 }
 
-describe("M4-10 e2e: неизменяемые версии + pinning при публикации новой версии", () => {
-  it("старый экземпляр завершается на своей версии; новая версия — только для новых стартов", async () => {
-    const mock = createTenantBackendApiMock({ now: fixedNow });
-    const runtime = createFbpRuntime({ backendClient: mock, now: fixedNow });
+function makeRuntime() {
+  const mock = createTenantBackendApiMock({ now: fixedNow });
+  const runtime = createFbpRuntime({ backendClient: mock, now: fixedNow, limits: { codeTimeoutMs: 5000 } });
+  return { mock, runtime };
+}
 
-    // Публикуем v1 и запускаем экземпляр — он уходит в ожидание согласования.
+function start(runtime: any, title: string, versionId?: string) {
+  return runtime.start({
+    organizationId: ORG,
+    workflowId: "wf-orders",
+    context,
+    input: { title },
+    startNodeId: "evt",
+    ...(versionId ? { versionId } : {}),
+  });
+}
+
+describe("M4-10 e2e: неизменяемые версии + pinning при публикации новой версии", () => {
+  it("публикация новой версии не влияет на закреплённую: v1 доигрывает на v1, новые старты идут на v2", async () => {
+    const { mock, runtime } = makeRuntime();
+
     const v1 = runtime.publishVersion({ organizationId: ORG, workflowId: "wf-orders", schema: approvalSchema("v1") });
     assert.equal(v1.version_no, 1);
-    const oldInstance = await runtime.start({ organizationId: ORG, workflowId: "wf-orders", context, input: { title: "Заказ №1" } });
-    assert.equal(oldInstance.status, "waiting");
-    assert.equal(oldInstance.version_id, v1.id);
+    const onV1 = await start(runtime, "Заказ №1");
+    assert.equal(onV1.status, "completed");
+    assert.equal(onV1.version_id, v1.id);
+    assert.equal(onV1.output.response.body.echo.engine_version, "v1");
 
     // Admin публикует v2 (правка = НОВАЯ версия, не перезапись) и переключает default.
     const v2 = runtime.publishVersion({ organizationId: ORG, workflowId: "wf-orders", schema: approvalSchema("v2") });
@@ -71,44 +96,49 @@ describe("M4-10 e2e: неизменяемые версии + pinning при пу
     runtime.setDefaultVersion({ organizationId: ORG, workflowId: "wf-orders", versionId: v2.id });
 
     // Новый старт после публикации берёт v2 (default).
-    const newInstance = await runtime.start({ organizationId: ORG, workflowId: "wf-orders", context, input: { title: "Заказ №2" } });
-    assert.equal(newInstance.version_id, v2.id);
+    const onDefault = await start(runtime, "Заказ №2");
+    assert.equal(onDefault.version_id, v2.id);
+    assert.equal(onDefault.output.response.body.echo.engine_version, "v2");
 
-    // Старый экземпляр доигрывается — и делает это на ЗАКРЕПЛЁННОЙ v1.
-    const oldDone = await runtime.resume({ organizationId: ORG, instanceId: oldInstance.instance_id, event: { decision: "approve" } });
-    assert.equal(oldDone.status, "completed");
-    assert.equal(oldDone.version_id, v1.id);
-    assert.equal(oldDone.output.body.echo.engine_version, "v1", "старый экземпляр доигран на v1");
+    // Экземпляр, закреплённый за v1, исполняется на v1 ДАЖЕ после переключения default.
+    const pinnedToV1 = await start(runtime, "Заказ №3", v1.id);
+    assert.equal(pinnedToV1.version_id, v1.id);
+    assert.equal(pinnedToV1.output.response.body.echo.engine_version, "v1", "закреплённая версия не подменяется новой");
 
-    // Новый экземпляр доигрывается на v2.
-    const newDone = await runtime.resume({ organizationId: ORG, instanceId: newInstance.instance_id, event: { decision: "approve" } });
-    assert.equal(newDone.status, "completed");
-    assert.equal(newDone.output.body.echo.engine_version, "v2", "новый экземпляр доигран на v2");
+    // Уже созданный экземпляр остался закреплён за своей версией в хранилище.
+    const stored = runtime.instances.getInstance({ organizationId: ORG, instanceId: onV1.instance_id });
+    assert.equal(stored.version_id, v1.id);
 
-    // Backend увидел оба заказа с их версиями (writesFor изолирует по арендатору).
+    // Backend увидел все три заказа с их версиями (writesFor изолирует по арендатору).
     const writes = mock.writesFor(ORG);
-    assert.equal(writes.length, 2);
+    assert.equal(writes.length, 3);
     assert.deepEqual(
-      writes.map((w) => w.body.engine_version).sort(),
-      ["v1", "v2"],
+      writes.map((w: any) => w.body.engine_version).sort(),
+      ["v1", "v1", "v2"],
     );
     // Каждый вызов Backend ушёл от имени этого арендатора (§13.5).
-    assert.ok(mock.received.every((call) => call.organization_id === ORG));
+    assert.ok(mock.received.every((call: any) => call.organization_id === ORG));
   });
 
   it("попытка перезаписать существующую версию отклоняется (неизменяемость §13.10)", async () => {
-    const mock = createTenantBackendApiMock({ now: fixedNow });
-    const runtime = createFbpRuntime({ backendClient: mock, now: fixedNow });
+    const { runtime } = makeRuntime();
     const v1 = runtime.publishVersion({ organizationId: ORG, workflowId: "wf-orders", schema: approvalSchema("v1") });
 
     assert.throws(
-      () => runtime.publishVersion({ organizationId: ORG, workflowId: "wf-orders", schema: approvalSchema("hacked"), versionNo: 1 }),
+      () =>
+        runtime.publishVersion({
+          organizationId: ORG,
+          workflowId: "wf-orders",
+          schema: approvalSchema("hacked"),
+          versionNo: 1,
+        }),
       (error) => error instanceof VersionImmutabilityError && error.reason === "version_immutable",
     );
 
     // v1 осталась неизменной, а её схема заморожена.
     const stored = runtime.versions.getVersion({ organizationId: ORG, workflowId: "wf-orders", versionId: v1.id });
-    assert.equal(stored.schema.nodes[0].config.expression.args[1].value.engine_version, "v1");
+    const prepare = stored.schema.nodes.find((node: any) => node.id === "prepare");
+    assert.match(prepare.config.code, /"v1"/);
     assert.throws(() => {
       stored.schema.nodes.push({ id: "x" });
     }, TypeError);

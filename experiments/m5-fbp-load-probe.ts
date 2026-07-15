@@ -1,17 +1,22 @@
 /**
  * Нагрузочный пробник FBP Engine (ТЗ §25.11, §25.3) — «зафиксируй измерения»:
  * прогоняет N экземпляров Workflow через кластер из K stateless-узлов-исполнителей
- * (round-robin на старте и на продолжении), затем печатает измерения и снимок
- * метрик §24.6 (запуски/успехи/ошибки/среднее время/активные) в текстовом
- * формате Prometheus.
+ * (round-robin), затем печатает измерения и снимок метрик §24.6
+ * (запуски/успехи/ошибки/среднее время/активные) в текстовом формате Prometheus.
  *
- * Запуск: node experiments/m5-fbp-load-probe.ts [N] [K]
+ * Запуск: node --import tsx experiments/m5-fbp-load-probe.ts [N] [K]
+ *
+ * Ревизия 2026-07-15: фаз «старт → ожидание → продолжение» больше нет — узел
+ * «Ожидание события» стал точкой входа, `resume` удалён. Пробник меряет сквозное
+ * исполнение: событие → вызов Backend API.
  *
  * В отличие от детерминированного ядра, ЗДЕСЬ допустимо читать системное время
  * (`performance.now`) — это внешний измеритель, а не логика движка.
  */
 import { performance } from "node:perf_hooks";
 
+import { BACKEND_API_OPERATIONS } from "@bridge/contracts/backend-api-catalog";
+import { WORKFLOW_SCHEMA_VERSION } from "@bridge/contracts/c5-workflow";
 import { createTenantBackendApiMock } from "../services/fbp-engine/src/backend/client.js";
 import {
   createFbpRuntime,
@@ -26,37 +31,40 @@ const ORG = "org-load";
 // в снимке §24.6 при этом равна 0 (движок не читает системное время сам).
 const now = () => "2026-07-04T00:00:00.000Z";
 
+const POST_OP = BACKEND_API_OPERATIONS.find(
+  (op) => op.method === "POST" && op.path_params.length === 0 && op.has_body,
+);
+if (!POST_OP) {
+  throw new Error("В каталоге Backend API нет POST-операции без плейсхолдеров — пробник не собрать.");
+}
+
+/**
+ * Событие → вызов Backend API. Узел transform сознательно не используется: он
+ * исполняется в отдельном процессе-песочнице, и на N=200 пробник мерил бы
+ * стоимость спавна процессов, а не пропускную способность исполнителей.
+ */
 const schema = {
-  schema_version: "1.0.0",
+  schema_version: WORKFLOW_SCHEMA_VERSION,
+  kind: "workflow",
   workflow_id: "wf-load",
-  entry: "prepare",
   nodes: [
-    {
-      id: "prepare",
-      type: "transform",
-      input: { name: { kind: "params", path: ["name"] } },
-      config: { expression: { op: "merge", args: [{ op: "input" }, { op: "lit", value: { source: "probe" } }] } },
-    },
-    { id: "gate", type: "wait-event", config: { event_type: "approved" } },
+    { id: "evt", type: "wait-event", position: { x: 0, y: 0 }, config: { event_type: "message.created" } },
     {
       id: "persist",
       type: "backend-api",
-      input: {
-        name: { kind: "node", node: "prepare", path: ["name"] },
-        decision: { kind: "node", node: "gate", path: ["decision"] },
-      },
-      config: { method: "POST", path: "/api/v1/records", body: { op: "input" } },
+      position: { x: 0, y: 0 },
+      config: { operation_id: POST_OP.operation_id, inputs: [{ name: "body", type: "object" }] },
     },
   ],
   connections: [
-    { from: "prepare", to: "gate" },
-    { from: "gate", to: "persist" },
+    { id: "c1", from: "evt", fromPort: "out", to: "persist", toPort: "in" },
+    { id: "c2", from: "evt", fromPort: "data", to: "persist", toPort: "body" },
   ],
 };
 
 const context = { organization_id: ORG, actor_user_id: "u1", trigger: "manual" };
 
-// Общий кластер: реестр версий, хранилище состояния и коллектор метрик разделяются
+// Общий кластер: реестр версий, хранилище экземпляров и коллектор метрик разделяются
 // между K узлами-исполнителями (в бою — Backend по C3, §25.3).
 const mock = createTenantBackendApiMock({ now });
 const metrics = createWorkflowMetrics();
@@ -69,35 +77,24 @@ seed.publishVersion({ organizationId: ORG, workflowId: "wf-load", schema });
 
 console.log(`Нагрузочный пробник: N=${N} экземпляров, K=${K} stateless-узлов\n`);
 
-// Фаза 1: старт (round-robin) — каждый экземпляр уходит в ожидание.
+// Сквозное исполнение (round-robin по узлам кластера).
 const startAt = performance.now();
-const started = [];
-for (let i = 0; i < N; i += 1) {
-  const res = await nodes[i % K].start({ organizationId: ORG, workflowId: "wf-load", context, input: { name: `u${i}` } });
-  started.push(res);
-}
-const startMs = performance.now() - startAt;
-
-const afterStart = metrics.snapshot();
-console.log(`Фаза старта:      ${startMs.toFixed(1)} мс, ${(N / (startMs / 1000)).toFixed(0)} экз/с`);
-console.log(`  активны (waiting): ${afterStart.total.active} из ${afterStart.total.runs} запусков`);
-
-// Фаза 2: продолжение на ДРУГОМ узле (перебалансировка нагрузки между исполнителями).
-const resumeAt = performance.now();
 let completed = 0;
-for (let i = 0; i < started.length; i += 1) {
-  const res = await nodes[(i + Math.floor(K / 2)) % K].resume({
+for (let i = 0; i < N; i += 1) {
+  const res = await nodes[i % K].start({
     organizationId: ORG,
-    instanceId: started[i].instance_id,
-    event: { decision: "ok" },
+    workflowId: "wf-load",
+    context,
+    input: { name: `u${i}` },
+    startNodeId: "evt",
   });
   if (res.status === "completed") {
     completed += 1;
   }
 }
-const resumeMs = performance.now() - resumeAt;
+const elapsedMs = performance.now() - startAt;
 
-console.log(`Фаза продолжения: ${resumeMs.toFixed(1)} мс, ${(N / (resumeMs / 1000)).toFixed(0)} экз/с`);
+console.log(`Исполнение: ${elapsedMs.toFixed(1)} мс, ${(N / (elapsedMs / 1000)).toFixed(0)} экз/с`);
 console.log(`  завершено: ${completed} из ${N}`);
 
 const snap = metrics.snapshot();
@@ -112,7 +109,15 @@ console.log(`  записей в Backend: ${mock.writesFor(ORG).length}`);
 console.log(`\n--- /metrics (Prometheus, §24.3/§24.6) ---`);
 console.log(renderWorkflowMetrics(snap));
 
-// Инварианты пробника: все стартовали, все завершились успешно, активных не осталось.
-const ok = snap.total.runs === N && snap.total.successes === N && snap.total.errors === 0 && snap.total.active === 0;
+// Инварианты пробника: все стартовали, все завершились успешно, активных не осталось,
+// и каждая запись в Backend ушла от имени своего арендатора.
+const tenantClean = mock.received.every((call: any) => call.organization_id === ORG);
+const ok =
+  snap.total.runs === N &&
+  snap.total.successes === N &&
+  snap.total.errors === 0 &&
+  snap.total.active === 0 &&
+  mock.writesFor(ORG).length === N &&
+  tenantClean;
 console.log(ok ? "OK: все экземпляры завершены успешно, активных нет." : "FAIL: инварианты пробника нарушены.");
 process.exit(ok ? 0 : 1);

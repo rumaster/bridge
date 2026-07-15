@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { BACKEND_API_OPERATIONS } from "@bridge/contracts/backend-api-catalog";
+import { WORKFLOW_SCHEMA_VERSION } from "@bridge/contracts/c5-workflow";
 import { createTenantBackendApiMock } from "../../services/fbp-engine/src/backend/client.js";
+import { WorkflowStoreError } from "../../services/fbp-engine/src/core/errors.js";
 import {
   createFbpRuntime,
   createWorkflowMetrics,
@@ -10,63 +13,101 @@ import {
 
 /**
  * e2e вехи M5-10 (SVC-FBP), участие в регрессионном наборе ТЗ §26.6 (CP-9). Один
- * сквозной сценарий сводит три результата M5 на РЕАЛЬНОМ рантайме движка без
- * Docker/БД:
+ * сквозной сценарий сводит результаты M5 на РЕАЛЬНОМ рантайме движка без Docker/БД:
  *
- *  1. НАГРУЗКА/МАСШТАБИРОВАНИЕ (§25.3, §25.11): N экземпляров через кластер
- *     stateless-узлов, старт и продолжение на разных узлах.
- *  2. ХАРДЕНИНГ Transform Node (§13.4): попытки выхода из «песочницы» отвергаются
- *     на этапе ВАЛИДАЦИИ схемы, а не при исполнении.
+ *  1. НАГРУЗКА/МАСШТАБИРОВАНИЕ (§25.3, §25.11): N экземпляров двух арендаторов
+ *     через кластер stateless-узлов.
+ *  2. ХАРДЕНИНГ Transform Node (§13.4): контракт C5 отвергает опасный конфиг на
+ *     ВАЛИДАЦИИ, произвольный JS исполняется в песочнице без Node-глобалей.
  *  3. ПОЛНОТА ЖУРНАЛА / метрики Workflow (§13.9, §24.6): запуски, успехи, ошибки,
- *     среднее время, активные экземпляры.
+ *     активные экземпляры, отдача в формате Prometheus.
+ *
+ * Ревизия 2026-07-15: фазы «старт → ожидание → продолжение» больше нет —
+ * исполнение сквозное, `resume` удалён. Проверки whitelist Transform-выражений
+ * удалены вместе с режимом `expression` (решение A8): у узла остался только JS,
+ * и его держит песочница, а не список разрешённых операций.
  */
 
 const ORG_A = "10000000-0000-4000-8000-0000000000a1";
 const ORG_B = "10000000-0000-4000-8000-0000000000b2";
 const fixedNow = () => "2026-07-04T00:00:00.000Z";
 
-function approvalSchema() {
+const POST_OP = BACKEND_API_OPERATIONS.find(
+  (op) => op.method === "POST" && op.path_params.length === 0 && op.has_body,
+)!;
+
+const evtNode = { id: "evt", type: "wait-event", position: { x: 0, y: 0 }, config: { event_type: "message.created" } };
+
+/**
+ * Схема нагрузочной части: событие → вызов Backend API. Узел transform здесь
+ * сознательно не используется — он исполняется в отдельном процессе-песочнице, и
+ * на N экземплярах сценарий мерил бы стоимость спавна процессов, а не
+ * масштабирование исполнителей. Песочница проверяется отдельным тестом ниже.
+ */
+function orderSchema() {
   return {
-    schema_version: "1.0.0",
+    schema_version: WORKFLOW_SCHEMA_VERSION,
+    kind: "workflow",
     workflow_id: "wf-orders",
-    entry: "prepare",
     nodes: [
-      {
-        id: "prepare",
-        type: "transform",
-        input: { title: { kind: "params", path: ["title"] } },
-        config: { expression: { op: "merge", args: [{ op: "input" }, { op: "lit", value: { source: "wf" } }] } },
-      },
-      { id: "await_approval", type: "wait-event", config: { event_type: "order.approved" } },
+      evtNode,
       {
         id: "create",
         type: "backend-api",
-        input: {
-          title: { kind: "node", node: "prepare", path: ["title"] },
-          decision: { kind: "node", node: "await_approval", path: ["decision"] },
-        },
-        config: { method: "POST", path: "/api/v1/orders", body: { op: "input" } },
+        position: { x: 0, y: 0 },
+        config: { operation_id: POST_OP.operation_id, inputs: [{ name: "body", type: "object" }] },
       },
     ],
     connections: [
-      { from: "prepare", fromPort: "out", to: "await_approval", toPort: "in" },
-      { from: "await_approval", fromPort: "out", to: "create", toPort: "in" },
+      { id: "c1", from: "evt", fromPort: "out", to: "create", toPort: "in" },
+      { id: "c2", from: "evt", fromPort: "data", to: "create", toPort: "body" },
     ],
   };
 }
 
-function ctx(org, actor) {
+/** Схема с произвольным JS: результат наблюдаем в трассе (variable_write данных не отдаёт). */
+function codeSchema(workflowId: string, code: string) {
+  return {
+    schema_version: WORKFLOW_SCHEMA_VERSION,
+    kind: "workflow",
+    workflow_id: workflowId,
+    nodes: [
+      evtNode,
+      {
+        id: "code",
+        type: "transform",
+        position: { x: 0, y: 0 },
+        config: { code, inputs: [{ name: "event", type: "object" }], outputs: [{ name: "value", type: "any" }] },
+      },
+      { id: "w", type: "variable_write", position: { x: 0, y: 0 }, config: { inputs: [{ name: "payload", type: "any" }] } },
+    ],
+    connections: [
+      { id: "c1", from: "evt", fromPort: "out", to: "w", toPort: "in" },
+      { id: "c2", from: "evt", fromPort: "data", to: "code", toPort: "event" },
+      { id: "c3", from: "code", fromPort: "value", to: "w", toPort: "payload" },
+    ],
+  };
+}
+
+function ctx(org: string, actor: string) {
   return { organization_id: org, actor_user_id: actor, trigger: "manual" };
 }
 
-// Кластер из K stateless-узлов поверх общих реестра версий, хранилища состояния и
+// Кластер из K stateless-узлов поверх общих реестра версий, хранилища экземпляров и
 // коллектора метрик (в бою — Backend по C3, §25.3).
 function makeCluster({ nodeCount = 3 } = {}) {
   const mock = createTenantBackendApiMock({ now: fixedNow });
   const metrics = createWorkflowMetrics();
-  const seed = createFbpRuntime({ backendClient: mock, metrics, now: fixedNow });
+  const seed = createFbpRuntime({ backendClient: mock, metrics, now: fixedNow, limits: { codeTimeoutMs: 5000 } });
   const nodes = Array.from({ length: nodeCount }, () =>
-    createFbpRuntime({ backendClient: mock, versions: seed.versions, instances: seed.instances, metrics, now: fixedNow }),
+    createFbpRuntime({
+      backendClient: mock,
+      versions: seed.versions,
+      instances: seed.instances,
+      metrics,
+      now: fixedNow,
+      limits: { codeTimeoutMs: 5000 },
+    }),
   );
   return { mock, seed, nodes, metrics };
 }
@@ -75,32 +116,22 @@ describe("M5-10 e2e (CP-9): нагрузка + харденинг + полнот
   it("нагрузка на кластере: N экземпляров двух арендаторов проходят через разные узлы, метрики §24.6 полны", async () => {
     const N = 12; // по 6 на арендатора
     const { mock, seed, nodes, metrics } = makeCluster({ nodeCount: 3 });
-    seed.publishVersion({ organizationId: ORG_A, workflowId: "wf-orders", schema: approvalSchema() });
-    seed.publishVersion({ organizationId: ORG_B, workflowId: "wf-orders", schema: approvalSchema() });
+    seed.publishVersion({ organizationId: ORG_A, workflowId: "wf-orders", schema: orderSchema() });
+    seed.publishVersion({ organizationId: ORG_B, workflowId: "wf-orders", schema: orderSchema() });
 
-    const handles = [];
     for (let i = 0; i < N; i += 1) {
       const org = i % 2 === 0 ? ORG_A : ORG_B;
-      const started = await nodes[i % nodes.length].start({
+      const title = `Заказ №${i}`;
+      const done = await nodes[i % nodes.length].start({
         organizationId: org,
         workflowId: "wf-orders",
         context: ctx(org, `manager-${i}`),
-        input: { title: `Заказ №${i}` },
+        input: { title },
+        startNodeId: "evt",
       });
-      assert.equal(started.status, "waiting");
-      handles.push({ org, id: started.instance_id, title: `Заказ №${i}` });
-    }
-
-    // Все стартовали → все активны (waiting не терминален, §24.6).
-    assert.equal(metrics.snapshot().total.active, N);
-
-    // Продолжаем на ДРУГИХ узлах (перебалансировка нагрузки, §25.3).
-    for (let i = 0; i < handles.length; i += 1) {
-      const h = handles[i];
-      const done = await nodes[(i + 1) % nodes.length].resume({ organizationId: h.org, instanceId: h.id, event: { decision: "approve" } });
       assert.equal(done.status, "completed");
-      assert.equal(done.organization_id, h.org, "экземпляр завершён строго в своём арендаторе");
-      assert.equal(done.output.body.echo.title, h.title);
+      assert.equal(done.organization_id, org, "экземпляр завершён строго в своём арендаторе");
+      assert.equal(done.output.response.body.echo.title, title);
     }
 
     // Полнота журнала / метрики §24.6.
@@ -112,60 +143,57 @@ describe("M5-10 e2e (CP-9): нагрузка + харденинг + полнот
     // Изоляция арендаторов сохранена под нагрузкой: у каждого ровно свои записи.
     assert.equal(mock.writesFor(ORG_A).length, N / 2);
     assert.equal(mock.writesFor(ORG_B).length, N / 2);
-    assert.ok(mock.received.every((call) => call.organization_id === ORG_A || call.organization_id === ORG_B));
+    assert.ok(mock.received.every((call: any) => call.organization_id === ORG_A || call.organization_id === ORG_B));
 
-    // /metrics отдаётся в формате Prometheus и содержит ряды по арендатору-нейтральному Workflow.
+    // /metrics отдаётся в формате Prometheus и содержит ряды по Workflow.
     const text = renderWorkflowMetrics(snap);
     assert.match(text, /fbp_engine_workflow_runs_total 12/);
     assert.match(text, /fbp_engine_workflow_successes_total 12/);
   });
 
-  it("харденинг Transform Node: попытки выхода из песочницы отвергаются на ВАЛИДАЦИИ (§13.4)", () => {
-    // Явно вредоносные выражения: доступ к процессу/среде/сети/ФС/коду/времени/ГСЧ.
-    const attacks = [
-      { op: "eval", args: [{ op: "lit", value: "process.exit(1)" }] },
-      { op: "require", args: [{ op: "lit", value: "fs" }] },
-      { op: "constructor", args: [{ op: "input" }] }, // унаследованный ключ Object.prototype
-      { op: "toString", args: [{ op: "input" }] }, // унаследованный метод
-      { op: "process", args: [] },
-      { op: "readFile", args: [{ op: "lit", value: "/etc/passwd" }] },
-      { op: "fetch", args: [{ op: "lit", value: "http://evil" }] },
-      { op: "now", args: [] },
-      { op: "random", args: [] },
-    ];
-    for (const attack of attacks) {
-      const result = validateTransformExpression(attack);
-      assert.equal(result.valid, false, `Атака ${JSON.stringify(attack.op)} должна быть отклонена валидацией`);
-      assert.ok(result.errors.some((e) => /Недопустимая операция/.test(e.message)));
-    }
+  it("харденинг: опасный конфиг узла отвергается на ВАЛИДАЦИИ схемы, а не при исполнении (§13.4, §13.13)", () => {
+    const { seed } = makeCluster({ nodeCount: 1 });
 
-    // При этом легитимные декларативные выражения проходят валидацию.
-    const legit = { op: "merge", args: [{ op: "input" }, { op: "lit", value: { ok: true } }] };
-    assert.equal(validateTransformExpression(legit).valid, true);
+    // Подмена арендатора в конфиге узла Backend API (§13.13-п.4).
+    const spoof = orderSchema();
+    (spoof.nodes[1].config as any).organization_id = ORG_B;
+    assert.throws(
+      () => seed.publishVersion({ organizationId: ORG_A, workflowId: "wf-spoof", schema: spoof }),
+      (error) => error instanceof WorkflowStoreError && error.reason === "invalid_schema",
+      "узел не может подменить арендатора — версия не публикуется",
+    );
+
+    // Вызов вне каталога Backend API: произвольный путь задать нельзя (решение A3).
+    const offCatalog = orderSchema();
+    (offCatalog.nodes[1].config as any).operation_id = "НетТакойОперации";
+    assert.throws(
+      () => seed.publishVersion({ organizationId: ORG_A, workflowId: "wf-off-catalog", schema: offCatalog }),
+      (error) => error instanceof WorkflowStoreError && error.reason === "invalid_schema",
+    );
+
+    // Код сверх лимита песочницы (§13.13-п.5): ловится на сохранении, а не на первом запуске.
+    // Лимит именно дефолтный (65536): `createFbpRuntime({ limits })` до валидации
+    // при публикации НЕ доходит — см. отчёт, баг проводки лимитов в реестр версий.
+    assert.throws(
+      () =>
+        seed.publishVersion({
+          organizationId: ORG_A,
+          workflowId: "wf-huge-code",
+          schema: codeSchema("wf-huge-code", `return ${JSON.stringify("x".repeat(70000))};`),
+        }),
+      (error) => error instanceof WorkflowStoreError && error.reason === "invalid_schema",
+    );
   });
 
-  it("харденинг Transform Node code: произвольный JS исполняется в sandbox с runtime-блокировками (§13.4)", async () => {
+  it("харденинг Transform Node: произвольный JS исполняется в sandbox с runtime-блокировками (§13.4)", async () => {
     const { seed } = makeCluster({ nodeCount: 1 });
     seed.publishVersion({
       organizationId: ORG_A,
       workflowId: "wf-transform-code",
-      schema: {
-        schema_version: "1.0.0",
-        workflow_id: "wf-transform-code",
-        entry: "code",
-        nodes: [
-          {
-            id: "code",
-            type: "transform",
-            input: { amount: { kind: "params", path: ["amount"] } },
-            config: {
-              mode: "code",
-              code: "const doubled = input.amount * 2; return { doubled, processType: typeof process };",
-            },
-          },
-        ],
-        connections: [],
-      },
+      schema: codeSchema(
+        "wf-transform-code",
+        "const doubled = input.event.amount * 2; return { doubled, processType: typeof process };",
+      ),
     });
 
     const ok = await seed.start({
@@ -173,29 +201,18 @@ describe("M5-10 e2e (CP-9): нагрузка + харденинг + полнот
       workflowId: "wf-transform-code",
       context: ctx(ORG_A, "operator"),
       input: { amount: 21 },
+      startNodeId: "evt",
     });
     assert.equal(ok.status, "completed");
-    assert.deepEqual(ok.output, { doubled: 42, processType: "undefined" });
+    // Node-глобалей в песочнице нет: код видит только свой input.
+    assert.deepEqual(ok.trace.find((entry: any) => entry.nodeId === "code").outputs, {
+      value: { doubled: 42, processType: "undefined" },
+    });
 
     seed.publishVersion({
       organizationId: ORG_A,
       workflowId: "wf-transform-code-attack",
-      schema: {
-        schema_version: "1.0.0",
-        workflow_id: "wf-transform-code-attack",
-        entry: "attack",
-        nodes: [
-          {
-            id: "attack",
-            type: "transform",
-            config: {
-              mode: "code",
-              code: 'return globalThis.constructor.constructor("return process")();',
-            },
-          },
-        ],
-        connections: [],
-      },
+      schema: codeSchema("wf-transform-code-attack", 'return globalThis.constructor.constructor("return process")();'),
     });
 
     const failed = await seed.start({
@@ -203,9 +220,11 @@ describe("M5-10 e2e (CP-9): нагрузка + харденинг + полнот
       workflowId: "wf-transform-code-attack",
       context: ctx(ORG_A, "operator"),
       input: {},
+      startNodeId: "evt",
     });
     assert.equal(failed.status, "failed");
     assert.equal(failed.error.reason, "code_execution_failed");
+    assert.equal(failed.error.node_id, "code");
     assert.match(failed.error.message, /Code generation from strings disallowed|process is not defined/);
   });
 
@@ -213,7 +232,7 @@ describe("M5-10 e2e (CP-9): нагрузка + харденинг + полнот
     let backendUp = false;
     const healthy = createTenantBackendApiMock({ now: fixedNow });
     const flaky = {
-      async call(args) {
+      async call(args: any) {
         if (!backendUp) {
           const error = new Error("Backend недоступен.");
           (error as any).reason = "backend_unavailable";
@@ -224,21 +243,29 @@ describe("M5-10 e2e (CP-9): нагрузка + харденинг + полнот
     };
     const metrics = createWorkflowMetrics();
     const runtime = createFbpRuntime({ backendClient: flaky, metrics, now: fixedNow });
-    runtime.publishVersion({ organizationId: ORG_A, workflowId: "wf-orders", schema: approvalSchema() });
+    runtime.publishVersion({ organizationId: ORG_A, workflowId: "wf-orders", schema: orderSchema() });
 
-    // Экземпляр стартует и уходит в ожидание (transform+wait не требуют Backend).
-    const started = await runtime.start({ organizationId: ORG_A, workflowId: "wf-orders", context: ctx(ORG_A, "m"), input: { title: "Заказ" } });
-    assert.equal(started.status, "waiting");
-
-    // Backend недоступен → продолжение падает штатно в failed с журналом.
-    const failed = await runtime.resume({ organizationId: ORG_A, instanceId: started.instance_id, event: { decision: "approve" } });
+    // Backend недоступен → экземпляр падает штатно в failed с журналом.
+    const failed = await runtime.start({
+      organizationId: ORG_A,
+      workflowId: "wf-orders",
+      context: ctx(ORG_A, "m"),
+      input: { title: "Заказ" },
+      startNodeId: "evt",
+    });
     assert.equal(failed.status, "failed");
-    assert.ok(failed.journal.map((e) => e.event).includes("workflow.failed"));
+    assert.equal(failed.error.reason, "backend_unavailable");
+    assert.ok(failed.journal.map((e: any) => e.event).includes("workflow.failed"));
 
     // Backend восстановился → НОВЫЙ экземпляр проходит до конца тем же движком.
     backendUp = true;
-    const ok = await runtime.start({ organizationId: ORG_A, workflowId: "wf-orders", context: ctx(ORG_A, "m"), input: { title: "Заказ-2" } });
-    const okDone = await runtime.resume({ organizationId: ORG_A, instanceId: ok.instance_id, event: { decision: "approve" } });
+    const okDone = await runtime.start({
+      organizationId: ORG_A,
+      workflowId: "wf-orders",
+      context: ctx(ORG_A, "m"),
+      input: { title: "Заказ-2" },
+      startNodeId: "evt",
+    });
     assert.equal(okDone.status, "completed");
 
     const snap = metrics.snapshot();
