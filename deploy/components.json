@@ -1,0 +1,96 @@
+{
+  "$comment": [
+    "Реестр компонентов для ручного покомпонентного деплоя (.github/workflows/deploy.yml,",
+    "migrate.yml). Единственный источник правды: workflow читает этот файл через jq, и",
+    "здесь же документируется соответствие сервис -> образ -> Dockerfile.",
+    "",
+    "Модель тегов: образ собирается на раннере GitHub и пушится в GHCR как",
+    "<registry>/<image>:<sha>. На стенде compose берёт образ через per-image переменную",
+    "tag_var (BRIDGE_TAG_*), которую деплой пишет в env_file стенда. Переменная на КАЖДЫЙ",
+    "образ (а не одна общая) — иначе нельзя держать сервисы на разных версиях, что и есть",
+    "смысл покомпонентного деплоя.",
+    "",
+    "ВАЖНО: несколько сервисов делят один образ (см. одинаковый image):",
+    "  edge-gateway <- app/c7-ws, app/edge-vpn-app, edge-rf/edge-gateway",
+    "  awg          <- app/awg-server, edge-rf/awg-client",
+    "  db-tools     <- app/migrate, app/seed, edge-rf/migrate-rf",
+    "Они различаются только command/окружением, поэтому образ общий. Следствие: деплой",
+    "одного из них двигает tag_var общего образа, и соседний сервис при следующем",
+    "`up -d` подхватит ту же версию. Деплойте их вместе, если менялся общий код."
+  ],
+  "registry": "ghcr.io/rumaster/bridge",
+  "tag_var_prefix": "BRIDGE_TAG_",
+  "images": {
+    "backend": { "dockerfile": "deploy/docker/backend/Dockerfile", "tag_var": "BRIDGE_TAG_BACKEND" },
+    "ai-platform": { "dockerfile": "deploy/docker/ai-platform/Dockerfile", "tag_var": "BRIDGE_TAG_AI_PLATFORM" },
+    "integration-platform": { "dockerfile": "deploy/docker/integration-platform/Dockerfile", "tag_var": "BRIDGE_TAG_INTEGRATION_PLATFORM" },
+    "broadcast-platform": { "dockerfile": "deploy/docker/broadcast-platform/Dockerfile", "tag_var": "BRIDGE_TAG_BROADCAST_PLATFORM" },
+    "notification-platform": { "dockerfile": "deploy/docker/notification-platform/Dockerfile", "tag_var": "BRIDGE_TAG_NOTIFICATION_PLATFORM" },
+    "mobile-api": { "dockerfile": "deploy/docker/mobile-api/Dockerfile", "tag_var": "BRIDGE_TAG_MOBILE_API" },
+    "fbp-engine": { "dockerfile": "deploy/docker/fbp-engine/Dockerfile", "tag_var": "BRIDGE_TAG_FBP_ENGINE" },
+    "edge-gateway": { "dockerfile": "deploy/docker/edge-gateway/Dockerfile", "tag_var": "BRIDGE_TAG_EDGE_GATEWAY" },
+    "saas-admin": { "dockerfile": "deploy/docker/saas-admin/Dockerfile", "tag_var": "BRIDGE_TAG_SAAS_ADMIN" },
+    "manager-workspace": { "dockerfile": "deploy/docker/manager-workspace/Dockerfile", "tag_var": "BRIDGE_TAG_MANAGER_WORKSPACE" },
+    "web-chat": { "dockerfile": "deploy/docker/web-chat/Dockerfile", "tag_var": "BRIDGE_TAG_WEB_CHAT" },
+    "web-chat-edge": { "dockerfile": "deploy/docker/web-chat-edge/Dockerfile", "tag_var": "BRIDGE_TAG_WEB_CHAT_EDGE" },
+    "telegram-console": { "dockerfile": "deploy/docker/telegram-console/Dockerfile", "tag_var": "BRIDGE_TAG_TELEGRAM_CONSOLE" },
+    "mail-provision": { "dockerfile": "deploy/docker/mail-provision/Dockerfile", "tag_var": "BRIDGE_TAG_MAIL_PROVISION" },
+    "db-tools": { "dockerfile": "deploy/docker/db-tools/Dockerfile", "tag_var": "BRIDGE_TAG_DB_TOOLS" },
+    "awg": {
+      "dockerfile": "deploy/docker/awg/Dockerfile",
+      "tag_var": "BRIDGE_TAG_AWG",
+      "build_args": ["AWG_GO_REF", "AWG_TOOLS_REF"],
+      "$note": "Собирается из upstream amnezia-vpn по AWG_GO_REF/AWG_TOOLS_REF (по умолчанию master). Тег образа — sha ЭТОГО репозитория, поэтому один и тот же тег может содержать разный upstream. Пинуйте реф репо-переменными AWG_GO_REF/AWG_TOOLS_REF."
+    }
+  },
+  "stacks": {
+    "app": {
+      "$comment": "Application Cluster, docker-compose.yml, проект bridge-saas.",
+      "host_secret": "APP_HOST",
+      "known_hosts_secret": "APP_SSH_KNOWN_HOSTS",
+      "user": "root",
+      "workdir": "/root/git/bridge",
+      "compose_file": "deploy/compose/docker-compose.yml",
+      "env_file": ".env",
+      "project": "bridge-saas",
+      "migrate": { "service": "migrate", "image": "db-tools", "migrate_target": "app" },
+      "components": {
+        "backend": { "image": "backend" },
+        "ai-platform": { "image": "ai-platform" },
+        "integration-platform": { "image": "integration-platform" },
+        "broadcast-platform": { "image": "broadcast-platform" },
+        "notification-platform": { "image": "notification-platform" },
+        "mobile-api": { "image": "mobile-api" },
+        "fbp-engine": { "image": "fbp-engine" },
+        "saas-admin": { "image": "saas-admin" },
+        "manager-workspace": { "image": "manager-workspace" },
+        "web-chat": { "image": "web-chat" },
+        "c7-ws": { "image": "edge-gateway" },
+        "edge-vpn-app": { "image": "edge-gateway" },
+        "awg-server": { "image": "awg", "profile": "tunnel" },
+        "telegram-console": { "image": "telegram-console", "profile": "tools" }
+      }
+    },
+    "edge-rf": {
+      "$comment": "RF Edge Cluster (152-ФЗ), docker-compose.rf.yml, проект bridge-edge-rf. Хост ~908 МБ RAM: сборка на стенде ЗАПРЕЩЕНА (OOM), только pull готового образа.",
+      "host_secret": "RF_HOST",
+      "known_hosts_secret": "RF_SSH_KNOWN_HOSTS",
+      "user": "ubuntu",
+      "workdir": "/home/ubuntu/git/bridge",
+      "compose_file": "deploy/compose/docker-compose.rf.yml",
+      "env_file": ".env.rf",
+      "project": "bridge-edge-rf",
+      "migrate": { "service": "migrate-rf", "image": "db-tools", "migrate_target": "rf" },
+      "components": {
+        "edge-gateway": { "image": "edge-gateway" },
+        "web-chat": { "image": "web-chat-edge", "profile": "webchat" },
+        "awg-client": { "image": "awg", "profile": "tunnel" },
+        "mail-provision": {
+          "image": "mail-provision",
+          "profile": "mail",
+          "$warning": "ТЕХДОЛГ: на стенде mail-provision сейчас поднят STANDALONE-контейнером bridge-mail-provision (не через compose-профиль mail) — обход OOM при развёртывании профиля mail. Деплой этого компонента поднимет ВТОРОЙ контейнер и подерётся за порт 3300. Перед использованием погасите standalone: docker rm -f bridge-mail-provision."
+        }
+      }
+    }
+  }
+}

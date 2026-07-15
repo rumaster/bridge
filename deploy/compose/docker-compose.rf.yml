@@ -42,6 +42,7 @@ services:
       retries: 10
 
   migrate-rf:
+    image: ghcr.io/rumaster/bridge/db-tools:${BRIDGE_TAG_DB_TOOLS:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/db-tools/Dockerfile
@@ -54,6 +55,7 @@ services:
     command: ["node", "--import", "tsx", "scripts/db-migrate.ts", "up", "rf"]
 
   edge-gateway:
+    image: ghcr.io/rumaster/bridge/edge-gateway:${BRIDGE_TAG_EDGE_GATEWAY:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/edge-gateway/Dockerfile
@@ -157,6 +159,7 @@ services:
   # туннеля (тогда EDGE_VPN_APP_TCP_URL указывает на App по сети, как раньше).
   awg-client:
     profiles: ["tunnel"]
+    image: ghcr.io/rumaster/bridge/awg:${BRIDGE_TAG_AWG:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/awg/Dockerfile
@@ -207,6 +210,7 @@ services:
   # образ и запускается с `--no-build`.
   web-chat:
     profiles: ["webchat"]
+    image: ghcr.io/rumaster/bridge/web-chat-edge:${BRIDGE_TAG_WEB_CHAT_EDGE:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/web-chat-edge/Dockerfile
@@ -295,6 +299,7 @@ services:
   # MAIL_PROVISION_ALLOW_OPEN=1.
   mail-provision:
     profiles: ["mail"]
+    image: ghcr.io/rumaster/bridge/mail-provision:${BRIDGE_TAG_MAIL_PROVISION:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/mail-provision/Dockerfile

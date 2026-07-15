@@ -54,6 +54,7 @@ services:
       retries: 10
 
   migrate:
+    image: ghcr.io/rumaster/bridge/db-tools:${BRIDGE_TAG_DB_TOOLS:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/db-tools/Dockerfile
@@ -67,6 +68,7 @@ services:
 
   seed:
     profiles: ["seed"]
+    image: ghcr.io/rumaster/bridge/db-tools:${BRIDGE_TAG_DB_TOOLS:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/db-tools/Dockerfile
@@ -78,6 +80,7 @@ services:
     command: ["node", "--import", "tsx", "scripts/db-seed.ts"]
 
   backend:
+    image: ghcr.io/rumaster/bridge/backend:${BRIDGE_TAG_BACKEND:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/backend/Dockerfile
@@ -158,6 +161,7 @@ services:
         condition: service_healthy
 
   ai-platform:
+    image: ghcr.io/rumaster/bridge/ai-platform:${BRIDGE_TAG_AI_PLATFORM:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/ai-platform/Dockerfile
@@ -187,6 +191,7 @@ services:
         condition: service_started
 
   integration-platform:
+    image: ghcr.io/rumaster/bridge/integration-platform:${BRIDGE_TAG_INTEGRATION_PLATFORM:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/integration-platform/Dockerfile
@@ -219,6 +224,7 @@ services:
         condition: service_started
 
   broadcast-platform:
+    image: ghcr.io/rumaster/bridge/broadcast-platform:${BRIDGE_TAG_BROADCAST_PLATFORM:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/broadcast-platform/Dockerfile
@@ -234,6 +240,7 @@ services:
         condition: service_started
 
   notification-platform:
+    image: ghcr.io/rumaster/bridge/notification-platform:${BRIDGE_TAG_NOTIFICATION_PLATFORM:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/notification-platform/Dockerfile
@@ -257,6 +264,7 @@ services:
         condition: service_healthy
 
   mobile-api:
+    image: ghcr.io/rumaster/bridge/mobile-api:${BRIDGE_TAG_MOBILE_API:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/mobile-api/Dockerfile
@@ -273,6 +281,7 @@ services:
         condition: service_started
 
   edge-vpn-app:
+    image: ghcr.io/rumaster/bridge/edge-gateway:${BRIDGE_TAG_EDGE_GATEWAY:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/edge-gateway/Dockerfile
@@ -335,6 +344,7 @@ services:
   # чтобы App-кластер поднимался и без туннеля.
   awg-server:
     profiles: ["tunnel"]
+    image: ghcr.io/rumaster/bridge/awg:${BRIDGE_TAG_AWG:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/awg/Dockerfile
@@ -412,6 +422,7 @@ services:
         condition: service_started
 
   fbp-engine:
+    image: ghcr.io/rumaster/bridge/fbp-engine:${BRIDGE_TAG_FBP_ENGINE:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/fbp-engine/Dockerfile
@@ -428,6 +439,7 @@ services:
         condition: service_started
 
   saas-admin:
+    image: ghcr.io/rumaster/bridge/saas-admin:${BRIDGE_TAG_SAAS_ADMIN:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/saas-admin/Dockerfile
@@ -450,6 +462,7 @@ services:
   # App- и Edge-потребители воровали бы события друг у друга. Порт наружу не
   # публикуем — manager-workspace ходит по docker-DNS (c7-ws:3000).
   c7-ws:
+    image: ghcr.io/rumaster/bridge/edge-gateway:${BRIDGE_TAG_EDGE_GATEWAY:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/edge-gateway/Dockerfile
@@ -466,6 +479,7 @@ services:
         condition: service_healthy
 
   manager-workspace:
+    image: ghcr.io/rumaster/bridge/manager-workspace:${BRIDGE_TAG_MANAGER_WORKSPACE:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/manager-workspace/Dockerfile
@@ -484,6 +498,7 @@ services:
         condition: service_started
 
   web-chat:
+    image: ghcr.io/rumaster/bridge/web-chat:${BRIDGE_TAG_WEB_CHAT:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/web-chat/Dockerfile
@@ -498,6 +513,7 @@ services:
 
   telegram-console:
     profiles: ["tools"]
+    image: ghcr.io/rumaster/bridge/telegram-console:${BRIDGE_TAG_TELEGRAM_CONSOLE:-local}
     build:
       context: ../..
       dockerfile: deploy/docker/telegram-console/Dockerfile
