@@ -24,6 +24,13 @@ export interface RunWorkflowOptions {
   context?: any;
   input?: Record<string, unknown>;
   instanceId?: string;
+  /**
+   * Узел «Ожидание события», с которого начинается исполнение. Обязателен для
+   * схемы верхнего уровня: с ревизии 2026-07-15 точка входа — сработавшая
+   * подписка, а не `schema.entry`. Для субсхемы не нужен — там старт с узла
+   * `start`.
+   */
+  startNodeId?: string;
 }
 
 /** Опции сборки рантайма {@link createFbpRuntime}. */
@@ -72,7 +79,7 @@ export function createFbpEngine({ backendClient, limits = {}, now, resolveSubSch
      * как `status:"failed"` — журнал возвращается ВСЕГДА, чтобы Backend мог его
      * сохранить в `workflow_execution_logs`.
      */
-    async runWorkflow({ schema, context, input = {}, instanceId }: RunWorkflowOptions = {}) {
+    async runWorkflow({ schema, context, input = {}, instanceId, startNodeId }: RunWorkflowOptions = {}) {
       assertWorkflowSchema(schema, { limits: effectiveLimits });
       const resolvedInstanceId = resolveInstanceId(instanceId, context, schema, input);
       const ctx = createContext({ context, schema, input, instanceId: resolvedInstanceId, now, resolveSubSchema });
@@ -83,6 +90,7 @@ export function createFbpEngine({ backendClient, limits = {}, now, resolveSubSch
           ctx,
           backendClient,
           limits: effectiveLimits,
+          startNodeId,
         });
         return { instance_id: resolvedInstanceId, organization_id: ctx.organizationId, ...result };
       } catch (error) {

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { BACKEND_API_OPERATIONS } from "@bridge/contracts/backend-api-catalog";
 import { FBP_NODE_TYPES, TRANSFORM_DEFAULT_LIMITS } from "@bridge/contracts/c5-workflow";
 import { backendApiNode } from "../../src/nodes/backend-api.js";
 import { endNode, startNode } from "../../src/nodes/boundary.js";
@@ -53,11 +54,32 @@ function validateConfig(definition: any, config: any, limits: any = TRANSFORM_DE
   return errors;
 }
 
+/**
+ * Ревизия 2026-07-15 (решение A3): method/path больше не задаются конфигом — узел
+ * хранит `operation_id`, а глагол и путь приходят из каталога, сгенерированного из
+ * OpenAPI Backend. Операции берутся из каталога по признакам, а не по
+ * захардкоженному id: каталог перегенерируется вместе с API.
+ */
+function pickOperation(predicate: (op: any) => boolean, what: string) {
+  const operation = BACKEND_API_OPERATIONS.find(predicate);
+  assert.ok(operation, `в каталоге Backend API не нашлось операции: ${what}`);
+  return operation;
+}
+
 describe("Узел Backend API: формирование вызова с контекстом арендатора", () => {
-  it("передаёт метод/путь/тело и КОНТЕКСТ арендатора из ExecutionContext", async () => {
+  const POST_OP = pickOperation(
+    (op) => op.method === "POST" && op.path_params.length === 0 && op.has_body,
+    "POST без плейсхолдеров с телом",
+  );
+  const GET_OP = pickOperation(
+    (op) => op.method === "GET" && op.path_params.length === 1,
+    "GET c одним плейсхолдером пути",
+  );
+
+  it("берёт метод и путь из каталога и передаёт КОНТЕКСТ арендатора из ExecutionContext", async () => {
     const client = capturingClient({ status_code: 201, headers: {}, body: { id: "r1" } });
     const result = await backendApiNode.execute({
-      node: { id: "call", type: "backend-api", config: { method: "POST", path: "/api/v1/records" } },
+      node: { id: "call", type: "backend-api", config: { operation_id: POST_OP.operation_id } },
       input: { title: "Заявка" },
       ctx: stubCtx(),
       backendClient: client,
@@ -65,8 +87,8 @@ describe("Узел Backend API: формирование вызова с кон�
 
     assert.equal(client.calls.length, 1);
     const request = client.calls[0];
-    assert.equal(request.method, "POST");
-    assert.equal(request.path, "/api/v1/records");
+    assert.equal(request.method, POST_OP.method);
+    assert.equal(request.path, POST_OP.path);
     assert.deepEqual(request.body, { title: "Заявка" }, "неслужебные входы складываются в тело");
     assert.deepEqual(request.context, {
       organization_id: ORG,
@@ -75,7 +97,7 @@ describe("Узел Backend API: формирование вызова с кон�
       roles: [],
     });
     assert.deepEqual(result.outputs, { response: { status_code: 201, headers: {}, body: { id: "r1" } } });
-    assert.deepEqual(result.log.backend_request, { method: "POST", path: "/api/v1/records" });
+    assert.equal(result.log.operation_id, POST_OP.operation_id);
   });
 
   it("арендатор берётся из контекста, даже если config пытается его подменить", async () => {
@@ -86,7 +108,7 @@ describe("Узел Backend API: формирование вызова с кон�
       node: {
         id: "call",
         type: "backend-api",
-        config: { method: "POST", path: "/api/v1/x", organization_id: "org-чужая", actor_user_id: "root" },
+        config: { operation_id: POST_OP.operation_id, organization_id: "org-чужая", actor_user_id: "root" },
       },
       input: {},
       ctx: stubCtx(),
@@ -96,28 +118,59 @@ describe("Узел Backend API: формирование вызова с кон�
     assert.equal(client.calls[0].context.actor_user_id, "user-1");
   });
 
+  it("вызов вне каталога отклоняется — путь нельзя задать произвольно", async () => {
+    await assert.rejects(
+      () =>
+        backendApiNode.execute({
+          node: { id: "call", type: "backend-api", config: { operation_id: "НетТакойОперации", path: "/etc/passwd" } },
+          input: {},
+          ctx: stubCtx(),
+          backendClient: capturingClient(),
+        }),
+      (error: any) => error.reason === "unknown_operation",
+    );
+  });
+
   it("подставляет плейсхолдеры пути из входа и не шлёт тело для GET", async () => {
     const client = capturingClient();
+    const param = GET_OP.path_params[0];
     await backendApiNode.execute({
-      node: { id: "call", type: "backend-api", config: { method: "GET", path: "/api/v1/records/{id}" } },
-      input: { id: "42/7" },
+      node: { id: "call", type: "backend-api", config: { operation_id: GET_OP.operation_id } },
+      input: { [param]: "42/7" },
       ctx: stubCtx(),
       backendClient: client,
     });
-    assert.equal(client.calls[0].path, "/api/v1/records/42%2F7", "значение экранируется, а не склеивается сырым");
+    assert.equal(
+      client.calls[0].path,
+      GET_OP.path.replace(`{${param}}`, "42%2F7"),
+      "значение экранируется, а не склеивается сырым",
+    );
     assert.equal(client.calls[0].body, null);
   });
 
   it("порт body задаёт тело целиком, порт query — параметры строки запроса", async () => {
     const client = capturingClient();
     await backendApiNode.execute({
-      node: { id: "call", type: "backend-api", config: { method: "POST", path: "/api/v1/records" } },
+      node: { id: "call", type: "backend-api", config: { operation_id: POST_OP.operation_id } },
       input: { body: { explicit: true }, query: { page: 2 }, ignored: "не в теле" },
       ctx: stubCtx(),
       backendClient: client,
     });
     assert.deepEqual(client.calls[0].body, { explicit: true });
     assert.deepEqual(client.calls[0].query, { page: 2 });
+  });
+
+  it("неskалярный query-параметр отклоняется", async () => {
+    await assert.rejects(
+      () =>
+        backendApiNode.execute({
+          node: { id: "call", type: "backend-api", config: { operation_id: POST_OP.operation_id } },
+          input: { query: { nested: { a: 1 } } },
+          ctx: stubCtx(),
+          backendClient: capturingClient(),
+        }),
+      (error: any) => error.reason === "invalid_query",
+    );
   });
 
   it("выходы раскладываются по объявленным портам", async () => {
@@ -127,8 +180,7 @@ describe("Узел Backend API: формирование вызова с кон�
         id: "call",
         type: "backend-api",
         config: {
-          method: "POST",
-          path: "/api/v1/records",
+          operation_id: POST_OP.operation_id,
           outputs: [{ name: "id", type: "string" }, { name: "status_code", type: "number" }],
         },
       },
@@ -140,30 +192,23 @@ describe("Узел Backend API: формирование вызова с кон�
   });
 
   it("непригодное значение плейсхолдера роняет узел, а не уходит в путь", async () => {
+    const param = GET_OP.path_params[0];
     await assert.rejects(
       () =>
         backendApiNode.execute({
-          node: { id: "call", type: "backend-api", config: { method: "GET", path: "/api/v1/records/{id}" } },
-          input: { id: { object: true } },
+          node: { id: "call", type: "backend-api", config: { operation_id: GET_OP.operation_id } },
+          input: { [param]: { object: true } },
           ctx: stubCtx(),
           backendClient: capturingClient(),
         }),
-      /Плейсхолдер \{id\}/,
+      (error: any) => error.reason === "invalid_path_parameter",
     );
   });
 
-  it("validate отвергает недопустимый метод и путь вне /api/v1", () => {
-    assert.ok(validateConfig(backendApiNode, { method: "TRACE", path: "/api/v1/x" }).some((e) => e.path.endsWith(".method")));
-    assert.ok(validateConfig(backendApiNode, { method: "GET", path: "/etc/passwd" }).some((e) => e.path.endsWith(".path")));
-  });
-
-  it("validate требует входной порт под каждый плейсхолдер пути", () => {
-    const errors = validateConfig(backendApiNode, { method: "GET", path: "/api/v1/records/{id}" });
-    assert.ok(errors.some((e) => e.path.endsWith(".inputs")), "плейсхолдер без порта гарантированно упал бы в рантайме");
-    assert.deepEqual(
-      validateConfig(backendApiNode, { method: "GET", path: "/api/v1/records/{id}", inputs: [{ name: "id", type: "string" }] }),
-      [],
-    );
+  it("validate отвергает недопустимый timeout_ms", () => {
+    assert.ok(validateConfig(backendApiNode, { timeout_ms: 0 }).some((e) => e.path.endsWith(".timeout_ms")));
+    assert.ok(validateConfig(backendApiNode, { timeout_ms: 30001 }).some((e) => e.path.endsWith(".timeout_ms")));
+    assert.deepEqual(validateConfig(backendApiNode, { timeout_ms: 5000 }), []);
   });
 });
 
@@ -194,7 +239,7 @@ describe("Узел Transform: pure-функция в песочнице", () => 
       limits: { ...TRANSFORM_DEFAULT_LIMITS, codeTimeoutMs: 2000 },
     });
     assert.equal(result.outputs.name, "иван");
-    assert.equal(result.outputs.first, "b" === result.outputs.first ? "b" : "a", "индекс массива читается по пути");
+    assert.equal(result.outputs.first, "a", "индекс массива читается по пути result.tags.0");
     assert.deepEqual(result.outputs.whole, { user: { name: "иван" }, tags: ["a", "b"] }, "без path — весь возврат");
   });
 

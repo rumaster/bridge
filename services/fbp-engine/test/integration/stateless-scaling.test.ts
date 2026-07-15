@@ -1,135 +1,186 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
+import { BACKEND_API_OPERATIONS } from "@bridge/contracts/backend-api-catalog";
+import { WORKFLOW_SCHEMA_VERSION } from "@bridge/contracts/c5-workflow";
 import { createTenantBackendApiMock } from "../../src/backend/client.js";
 import { createFbpRuntime } from "../../src/engine.js";
+import { WorkflowStoreError } from "../../src/core/errors.js";
 
 const ORG = "org-a";
 const fixedNow = () => "2026-07-04T00:00:00.000Z";
 
-// Общий кластер: реестр версий и хранилище экземпляров/состояния разделяются
-// между узлами-исполнителями (в бою — Backend по C3). Каждый `createFbpRuntime`
-// поверх этого хранилища моделирует ОТДЕЛЬНЫЙ stateless-узел (ТЗ §25.3).
+const POST_OP = BACKEND_API_OPERATIONS.find(
+  (op) => op.method === "POST" && op.path_params.length === 0 && op.has_body,
+)!;
+
+/**
+ * Ревизия 2026-07-15: `resume` и снимки в `workflow_instance_state` удалены —
+ * исполнение стало сквозным, между шагами хранить нечего, и прежний сценарий
+ * «узел A довёл до ожидания, узел B продолжил» смысла больше не имеет.
+ *
+ * Что от §25.3 осталось проверять: узлы-исполнители не держат состояния САМИ —
+ * источником правды остаётся общее хранилище (в бою — Backend по C3). Поэтому
+ * любой узел кластера стартует любой экземпляр, закреплённая версия соблюдается
+ * независимо от узла, а детерминированный instance_id не даёт двум узлам завести
+ * дубль одного экземпляра.
+ *
+ * Общий кластер: реестр версий и хранилище экземпляров разделяются между узлами;
+ * каждый `createFbpRuntime` поверх них моделирует ОТДЕЛЬНЫЙ stateless-узел.
+ */
 function makeCluster() {
   const mock = createTenantBackendApiMock({ now: fixedNow });
-  const seed = createFbpRuntime({ backendClient: mock, now: fixedNow });
+  const seed = createFbpRuntime({ backendClient: mock, now: fixedNow, limits: { codeTimeoutMs: 5000 } });
   const node = () =>
     createFbpRuntime({
       backendClient: mock,
       versions: seed.versions,
       instances: seed.instances,
       now: fixedNow,
+      limits: { codeTimeoutMs: 5000 },
     });
   return { mock, seed, node };
 }
 
-function twoStepSchema(marker) {
+/** Маркер версии вшит в transform — по ответу Backend видно, чья схема исполнилась. */
+function markerSchema(marker: string) {
   return {
-    schema_version: "1.0.0",
+    schema_version: WORKFLOW_SCHEMA_VERSION,
+    kind: "workflow",
     workflow_id: "wf-1",
-    entry: "prepare",
     nodes: [
+      { id: "evt", type: "wait-event", position: { x: 0, y: 0 }, config: { event_type: "message.created" } },
       {
-        id: "prepare",
+        id: "mark",
         type: "transform",
-        input: { name: { kind: "params", path: ["name"] } },
-        config: { expression: { op: "merge", args: [{ op: "input" }, { op: "lit", value: { version: marker } }] } },
+        position: { x: 0, y: 0 },
+        config: {
+          code: `return { version: ${JSON.stringify(marker)}, name: input.event.name };`,
+          inputs: [{ name: "event", type: "object" }],
+          outputs: [
+            { name: "version", type: "string", path: "result.version" },
+            { name: "name", type: "string", path: "result.name" },
+          ],
+        },
       },
-      { id: "gate", type: "wait-event", config: { event_type: "approved" } },
       {
         id: "persist",
         type: "backend-api",
-        input: {
-          name: { kind: "node", node: "prepare", path: ["name"] },
-          version: { kind: "node", node: "prepare", path: ["version"] },
-          decision: { kind: "node", node: "gate", path: ["decision"] },
+        position: { x: 0, y: 0 },
+        config: {
+          operation_id: POST_OP.operation_id,
+          inputs: [
+            { name: "version", type: "string" },
+            { name: "name", type: "string" },
+          ],
         },
-        config: { method: "POST", path: "/api/v1/records", body: { op: "input" } },
       },
     ],
     connections: [
-      { from: "prepare", fromPort: "out", to: "gate", toPort: "in" },
-      { from: "gate", fromPort: "out", to: "persist", toPort: "in" },
+      { id: "c1", from: "evt", fromPort: "out", to: "persist", toPort: "in" },
+      { id: "c2", from: "evt", fromPort: "data", to: "mark", toPort: "event" },
+      { id: "c3", from: "mark", fromPort: "version", to: "persist", toPort: "version" },
+      { id: "c4", from: "mark", fromPort: "name", to: "persist", toPort: "name" },
     ],
   };
 }
 
 const context = { organization_id: ORG, actor_user_id: "u1", trigger: "manual" };
 
-describe("Stateless executor: продолжение экземпляра другим узлом (ТЗ §25.3)", () => {
-  it("узел A стартует до ожидания, узел B продолжает по workflow_instance_state", async () => {
+function start(runtime: any, name: string) {
+  return runtime.start({
+    organizationId: ORG,
+    workflowId: "wf-1",
+    context,
+    input: { name },
+    startNodeId: "evt",
+  });
+}
+
+describe("Stateless executor: узлы кластера не держат состояния сами (ТЗ §25.3)", () => {
+  it("схема, опубликованная на одном узле, исполняется другим — без общей памяти", async () => {
     const { seed, node } = makeCluster();
-    seed.publishVersion({ organizationId: ORG, workflowId: "wf-1", schema: twoStepSchema("v1") });
+    // Публикует ОДИН узел, исполняет СОВЕРШЕННО ДРУГОЙ: версия берётся из общего
+    // реестра, а не из памяти опубликовавшего.
+    seed.publishVersion({ organizationId: ORG, workflowId: "wf-1", schema: markerSchema("v1") });
 
-    // Узел A: старт → ожидание. Состояние externalized в хранилище.
-    const nodeA = node();
-    const started = await nodeA.start({ organizationId: ORG, workflowId: "wf-1", context, input: { name: "Иван" } });
-    assert.equal(started.status, "waiting");
-
-    // Узел B — совершенно другой инстанс исполнителя без общей памяти с A —
-    // поднимает состояние из хранилища и доводит экземпляр до конца.
-    const nodeB = node();
-    const resumed = await nodeB.resume({
-      organizationId: ORG,
-      instanceId: started.instance_id,
-      event: { decision: "approve" },
-    });
-
-    assert.equal(resumed.status, "completed");
-    // persist получил результат `prepare`, исполненного ЕЩЁ на узле A.
-    assert.deepEqual(resumed.output.body.echo, { name: "Иван", version: "v1", decision: "approve" });
+    const result = await start(node(), "Иван");
+    assert.equal(result.status, "completed");
+    assert.deepEqual(result.output.response.body.echo, { version: "v1", name: "Иван" });
   });
 
-  it("несколько экземпляров можно продолжать на разных узлах в разном порядке", async () => {
+  it("два разных узла исполняют одну схему одинаково", async () => {
     const { seed, node } = makeCluster();
-    seed.publishVersion({ organizationId: ORG, workflowId: "wf-1", schema: twoStepSchema("v1") });
+    seed.publishVersion({ organizationId: ORG, workflowId: "wf-1", schema: markerSchema("v1") });
 
-    const nodeA = node();
-    const i1 = await nodeA.start({ organizationId: ORG, workflowId: "wf-1", context, input: { name: "A" } });
-    const i2 = await nodeA.start({ organizationId: ORG, workflowId: "wf-1", context, input: { name: "B" } });
-    assert.notEqual(i1.instance_id, i2.instance_id);
+    const fromA = await start(node(), "A");
+    const fromB = await start(node(), "B");
 
-    // Продолжаем во «встречном» порядке на разных узлах.
-    const r2 = await node().resume({ organizationId: ORG, instanceId: i2.instance_id, event: { decision: "no" } });
-    const r1 = await node().resume({ organizationId: ORG, instanceId: i1.instance_id, event: { decision: "yes" } });
+    assert.equal(fromA.status, "completed");
+    assert.equal(fromB.status, "completed");
+    assert.equal(fromA.version_id, fromB.version_id, "оба узла закрепили одну и ту же версию");
+    assert.deepEqual(fromA.output.response.body.echo, { version: "v1", name: "A" });
+    assert.deepEqual(fromB.output.response.body.echo, { version: "v1", name: "B" });
+  });
 
-    assert.equal(r1.output.body.echo.name, "A");
-    assert.equal(r1.output.body.echo.decision, "yes");
-    assert.equal(r2.output.body.echo.name, "B");
-    assert.equal(r2.output.body.echo.decision, "no");
+  it("экземпляр, заведённый одним узлом, виден другому через общее хранилище", async () => {
+    const { seed, node } = makeCluster();
+    seed.publishVersion({ organizationId: ORG, workflowId: "wf-1", schema: markerSchema("v1") });
+
+    const started = await start(node(), "Иван");
+    // Другой узел читает экземпляр по идентификатору — память стартовавшего узла не нужна.
+    const seenByOther = node().instances.getInstance({ organizationId: ORG, instanceId: started.instance_id });
+    assert.equal(seenByOther.status, "completed");
+    assert.equal(seenByOther.version_id, started.version_id);
+  });
+
+  it("детерминированный instance_id не даёт двум узлам завести дубль экземпляра", async () => {
+    const { seed, node } = makeCluster();
+    seed.publishVersion({ organizationId: ORG, workflowId: "wf-1", schema: markerSchema("v1") });
+
+    await start(node(), "Иван");
+    // Тот же арендатор/схема/версия/вход на ДРУГОМ узле → тот же instance_id, и
+    // общее хранилище отвергает повторное создание: защита от дублей — в store,
+    // а не в памяти узла.
+    await assert.rejects(
+      () => start(node(), "Иван"),
+      (error) => error instanceof WorkflowStoreError && error.reason === "instance_exists",
+    );
   });
 });
 
 describe("Version pinning совместим с масштабированием (ТЗ §13.10, §25.3)", () => {
-  it("экземпляр завершается на своей версии, даже если default переключён между узлами", async () => {
+  it("переключение default между узлами не трогает закреплённую версию идущих запусков", async () => {
     const { seed, node } = makeCluster();
-    const v1 = seed.publishVersion({ organizationId: ORG, workflowId: "wf-1", schema: twoStepSchema("v1") });
+    const v1 = seed.publishVersion({ organizationId: ORG, workflowId: "wf-1", schema: markerSchema("v1") });
 
-    // Узел A стартует на v1 → ожидание.
-    const started = await node().start({ organizationId: ORG, workflowId: "wf-1", context, input: { name: "Иван" } });
-    assert.equal(started.version_id, v1.id);
+    const onV1 = await start(node(), "Иван");
+    assert.equal(onV1.version_id, v1.id);
+    assert.equal(onV1.output.response.body.echo.version, "v1");
 
-    // Между шагами публикуется v2 и делается версией по умолчанию.
-    const v2 = seed.publishVersion({ organizationId: ORG, workflowId: "wf-1", schema: twoStepSchema("v2") });
+    // Публикуется v2 и делается версией по умолчанию — на другом узле кластера.
+    const v2 = seed.publishVersion({ organizationId: ORG, workflowId: "wf-1", schema: markerSchema("v2") });
     seed.setDefaultVersion({ organizationId: ORG, workflowId: "wf-1", versionId: v2.id });
 
-    // Узел B продолжает — ДОЛЖЕН доиграть на ЗАКРЕПЛЁННОЙ v1, а не на новой v2.
-    const resumed = await node().resume({
+    // Явно закреплённая v1 доигрывается на v1, даже если default уже v2.
+    const pinned = await node().start({
       organizationId: ORG,
-      instanceId: started.instance_id,
-      event: { decision: "approve" },
+      workflowId: "wf-1",
+      context,
+      input: { name: "Пётр" },
+      startNodeId: "evt",
+      versionId: v1.id,
     });
-    assert.equal(resumed.version_id, v1.id);
-    assert.equal(resumed.output.body.echo.version, "v1", "экземпляр доигран на закреплённой версии");
+    assert.equal(pinned.version_id, v1.id);
+    assert.equal(pinned.output.response.body.echo.version, "v1", "закреплённая версия не подменяется новой");
 
-    // А НОВЫЙ старт уходит уже на v2 (default), не затрагивая идущий экземпляр.
-    const fresh = await node().start({ organizationId: ORG, workflowId: "wf-1", context, input: { name: "Пётр" } });
+    // А новый старт без явной версии уходит уже на v2 — на любом узле кластера.
+    const fresh = await start(node(), "Мария");
     assert.equal(fresh.version_id, v2.id);
-    const freshResumed = await node().resume({
-      organizationId: ORG,
-      instanceId: fresh.instance_id,
-      event: { decision: "ok" },
-    });
-    assert.equal(freshResumed.output.body.echo.version, "v2");
+    assert.equal(fresh.output.response.body.echo.version, "v2");
+
+    // Уже созданный экземпляр остался закреплён за своей версией.
+    const stored = node().instances.getInstance({ organizationId: ORG, instanceId: onV1.instance_id });
+    assert.equal(stored.version_id, v1.id);
   });
 });
