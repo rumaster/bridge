@@ -48,8 +48,8 @@ export const generatedOpenApiDocuments = [
     "openapi": "3.0.0",
     "title": "Bridge Backend Core API",
     "version": "1.0.0",
-    "pathCount": 71,
-    "operationCount": 84
+    "pathCount": 72,
+    "operationCount": 86
   },
   {
     "artifact": "packages/contracts/openapi/broadcasts/c8.broadcasts.openapi.json",
@@ -958,6 +958,28 @@ export const generatedOpenApiOperations = [
     "path": "/api/v1/workflow-subschemas",
     "operationId": "WorkflowSubschemaController_listSubschemas_v1",
     "summary": "List reusable Workflow subschemas",
+    "tags": [
+      "workflow-subschemas"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "post",
+    "path": "/api/v1/workflow-subschemas",
+    "operationId": "WorkflowSubschemaController_createSubschema_v1",
+    "summary": "Create a reusable Workflow subschema",
+    "tags": [
+      "workflow-subschemas"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "patch",
+    "path": "/api/v1/workflow-subschemas/{subschemaId}",
+    "operationId": "WorkflowSubschemaController_updateSubschema_v1",
+    "summary": "Update a reusable Workflow subschema",
     "tags": [
       "workflow-subschemas"
     ]

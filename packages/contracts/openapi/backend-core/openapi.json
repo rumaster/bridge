@@ -2444,6 +2444,77 @@
         "tags": [
           "workflow-subschemas"
         ]
+      },
+      "post": {
+        "operationId": "WorkflowSubschemaController_createSubschema_v1",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWorkflowSubschemaDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowSubschemaResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Create a reusable Workflow subschema",
+        "tags": [
+          "workflow-subschemas"
+        ]
+      }
+    },
+    "/api/v1/workflow-subschemas/{subschemaId}": {
+      "patch": {
+        "operationId": "WorkflowSubschemaController_updateSubschema_v1",
+        "parameters": [
+          {
+            "name": "subschemaId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWorkflowSubschemaDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowSubschemaResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Update a reusable Workflow subschema",
+        "tags": [
+          "workflow-subschemas"
+        ]
       }
     },
     "/api/v1/workflow-backend-api-allowlist": {
@@ -5849,6 +5920,43 @@
           "created_at",
           "updated_at"
         ]
+      },
+      "CreateWorkflowSubschemaDto": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "example": "support-common-context",
+            "description": "Идентификатор для ссылки из узла sub_schema. Меняться не должен."
+          },
+          "name": {
+            "type": "string",
+            "example": "Общий контекст поддержки"
+          }
+        },
+        "required": [
+          "slug",
+          "name"
+        ]
+      },
+      "UpdateWorkflowSubschemaDto": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "example": "Общий контекст поддержки"
+          },
+          "schema": {
+            "type": "object"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "active"
+            ]
+          }
+        }
       },
       "BackendApiAllowlistEntryDto": {
         "type": "object",

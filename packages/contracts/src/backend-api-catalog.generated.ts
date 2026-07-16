@@ -853,6 +853,16 @@ export const BACKEND_API_OPERATIONS: readonly BackendApiOperation[] = Object.fre
     has_body: true,
   },
   {
+    operation_id: "WorkflowSubschemaController_createSubschema_v1",
+    method: "POST",
+    path: "/api/v1/workflow-subschemas",
+    summary: "Create a reusable Workflow subschema",
+    tag: "workflow-subschemas",
+    path_params: Object.freeze([]),
+    query_params: Object.freeze([]),
+    has_body: true,
+  },
+  {
     operation_id: "WorkflowSubschemaController_listSubschemas_v1",
     method: "GET",
     path: "/api/v1/workflow-subschemas",
@@ -861,6 +871,16 @@ export const BACKEND_API_OPERATIONS: readonly BackendApiOperation[] = Object.fre
     path_params: Object.freeze([]),
     query_params: Object.freeze([]),
     has_body: false,
+  },
+  {
+    operation_id: "WorkflowSubschemaController_updateSubschema_v1",
+    method: "PATCH",
+    path: "/api/v1/workflow-subschemas/{subschemaId}",
+    summary: "Update a reusable Workflow subschema",
+    tag: "workflow-subschemas",
+    path_params: Object.freeze(["subschemaId"]),
+    query_params: Object.freeze([]),
+    has_body: true,
   },
 ] as const);
 

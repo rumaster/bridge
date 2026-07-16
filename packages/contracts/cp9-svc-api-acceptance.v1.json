@@ -57,6 +57,12 @@
       "reason": "Тест-прогон драфта (docs/plan/workflow-2.0-redesign.md, дефект D5): добавлен маршрут POST /api/v1/workflows/{workflowId}/draft:test после заморозки, включён в опубликованную v1-поверхность согласно инварианту «every actual Nest /api/v1 route is published». Драфт исполняется настоящим движком, но экземпляра не создаёт — ни записи в workflow_instances, ни журнала: только так его можно гонять над недостроенной схемой, потому что журнал исполнения ссылается на инстанс внешним ключом. Потребовал расширения контракта C5 — новый RPC TestWorkflowDraft в proto/fbp/c5.fbp.proto; до этого «тестовый прогон» ничего не исполнял и печатал completed для каждого узла в порядке массива. Обновлены generated_operation_count 83→84 и generated_path_count 70→71; surface-записи не добавлялись (маршруты workflows платформенные, в принятую M5-поверхность не входят). Владелец контрактов: решение A (включить в v1).",
       "operation_count": "83 -> 84",
       "path_count": "70 -> 71"
+    },
+    {
+      "date": "2026-07-15",
+      "reason": "Write-эндпоинты субсхем (docs/plan/workflow-2.0-redesign.md, дефект D3): добавлены POST /api/v1/workflow-subschemas и PATCH /api/v1/workflow-subschemas/{subschemaId} после заморозки, включены в опубликованную v1-поверхность согласно инварианту «every actual Nest /api/v1 route is published». Редактор звал оба маршрута с самого начала, но контроллер реализовывал только GET — в проде 404, работало лишь против MSW-моков. Граф субсхемы проверяется ПОЛНОСТЬЮ (послабление A10 для драфтов неприменимо: у субсхемы нет драфта и промоута, узел sub_schema подхватывает актуальный граф по slug, то есть любое сохранение сразу боевое). Обновлены generated_operation_count 84→86 и generated_path_count 71→72; surface-записи не добавлялись (GET /api/v1/workflow-subschemas уже опубликован в surface, новые маршруты платформенные). Владелец контрактов: решение A (включить в v1).",
+      "operation_count": "84 -> 86",
+      "path_count": "71 -> 72"
     }
   ],
   "scope": {
@@ -87,8 +93,8 @@
       "base_path": "/api/v1",
       "openapi": {
         "artifact": "packages/contracts/openapi/backend-core/openapi.json",
-        "generated_operation_count": 84,
-        "generated_path_count": 71,
+        "generated_operation_count": 86,
+        "generated_path_count": 72,
         "metadata": {
           "x-contract-id": "C3",
           "x-owner": "SVC-API",

@@ -1,5 +1,14 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
-import { IsBoolean, IsIn, IsObject, IsOptional, IsString, IsUUID } from "class-validator";
+import {
+  IsBoolean,
+  IsIn,
+  IsObject,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Matches,
+  MaxLength,
+} from "class-validator";
 
 export const WORKFLOW_STATUSES = ["draft", "active", "archived"] as const;
 export type WorkflowStatus = (typeof WORKFLOW_STATUSES)[number];
@@ -22,6 +31,13 @@ export type WorkflowNodeType = (typeof WORKFLOW_NODE_TYPES)[number];
 
 export const WORKFLOW_SUBSCHEMA_STATUSES = ["draft", "active"] as const;
 export type WorkflowSubschemaStatus = (typeof WORKFLOW_SUBSCHEMA_STATUSES)[number];
+
+/**
+ * Slug субсхемы — то, чем на неё ссылается `config.subSchemaSlug` узла sub_schema.
+ * Ограничен строго: он попадает в схемы, которые живут дольше редактора, и
+ * переименование сломало бы все ссылающиеся графы.
+ */
+const SUBSCHEMA_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export type WorkflowInstanceStatus =
   | "callback_recorded"
@@ -311,6 +327,52 @@ export class WorkflowImportResponseDto {
 
   @ApiPropertyOptional({ type: WorkflowVersionResponseDto })
   version?: WorkflowVersionResponseDto;
+}
+
+/**
+ * Создание субсхемы (дефект D3: UI звал POST /workflow-subschemas, а контроллер имел
+ * только GET — в проде 404, работало лишь против MSW-моков).
+ *
+ * Схема в теле не передаётся: новая субсхема заводится пустой заготовкой и
+ * наполняется редактором через PATCH. Так у неё с первой секунды тот же жизненный
+ * цикл, что и у остальных, — редактируется графом, а не JSON-ом в запросе.
+ */
+export class CreateWorkflowSubschemaDto {
+  @ApiProperty({
+    example: "support-common-context",
+    description: "Идентификатор для ссылки из узла sub_schema. Меняться не должен.",
+  })
+  @IsString()
+  @Matches(SUBSCHEMA_SLUG_PATTERN, {
+    message: "slug должен состоять из строчных латинских букв, цифр и дефисов",
+  })
+  @MaxLength(100)
+  slug!: string;
+
+  @ApiProperty({ example: "Общий контекст поддержки" })
+  @IsString()
+  @Matches(/\S/)
+  @MaxLength(300)
+  name!: string;
+}
+
+export class UpdateWorkflowSubschemaDto {
+  @ApiPropertyOptional({ example: "Общий контекст поддержки" })
+  @IsString()
+  @Matches(/\S/)
+  @MaxLength(300)
+  @IsOptional()
+  name?: string;
+
+  @ApiPropertyOptional({ type: Object })
+  @IsObject()
+  @IsOptional()
+  schema?: Record<string, unknown>;
+
+  @ApiPropertyOptional({ enum: WORKFLOW_SUBSCHEMA_STATUSES })
+  @IsIn(WORKFLOW_SUBSCHEMA_STATUSES)
+  @IsOptional()
+  status?: WorkflowSubschemaStatus;
 }
 
 export class WorkflowSubschemaResponseDto {
