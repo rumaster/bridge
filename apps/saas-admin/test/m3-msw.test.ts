@@ -3,20 +3,26 @@ import { describe, expect, it } from "vitest";
 import { createSaasAdminApiClient } from "../src/api/client/http";
 import type { WorkflowSchema } from "../src/api/client/types";
 
+// Валидный граф 2.0: реальное событие из реестра и backend-api с operation_id из
+// каталога, а не свободный `path`. Прежняя фикстура несла форму 1.0 (событие
+// `channel.message_received`, которого нет, и `config.path`) — контракт её теперь
+// справедливо отвергает: это и был дефект D2.
 const editedSchema: WorkflowSchema = {
+  schema_version: "2.0.0",
+  kind: "workflow",
   nodes: [
     {
       id: "node-wait-event-1",
       type: "wait-event",
       label: "Входящее сообщение",
-      config: { event_type: "channel.message_received" },
+      config: { event_type: "message.created" },
       position: { x: 40, y: 40 }
     },
     {
       id: "node-backend-api-1",
       type: "backend-api",
-      label: "Создать тикет",
-      config: { path: "/api/v1/tickets" },
+      label: "Создать сообщение",
+      config: { operation_id: "MessageController_createMessage_v1" },
       position: { x: 260, y: 40 }
     }
   ],
@@ -58,7 +64,7 @@ describe("SaaS Administration MSW mocks — M3 Workflow (C5)", () => {
 
     await expect(
       api.workflows.createVersion("wf-support-autoresponder", {
-        schema: { nodes: [], connections: [] },
+        schema: { schema_version: "2.0.0", kind: "workflow", nodes: [], connections: [] },
         activate: false
       })
     ).rejects.toThrow("Request payload does not match C5 workflow version DTO.");

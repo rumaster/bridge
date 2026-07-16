@@ -130,20 +130,12 @@ exports[`SaaS Administration M5 acceptance and accessibility > фиксируе�
       "name": "Автоответчик обращений",
     },
     {
-      "level": 3,
-      "name": "Информация о схеме",
+      "level": 2,
+      "name": "Палитра",
     },
     {
-      "level": 3,
-      "name": "Палитра узлов",
-    },
-    {
-      "level": 3,
-      "name": "Свойства узла",
-    },
-    {
-      "level": 3,
-      "name": "Связи узлов",
+      "level": 2,
+      "name": "Тестовый прогон",
     },
   ],
 }

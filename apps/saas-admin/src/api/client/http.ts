@@ -1,8 +1,12 @@
 import { createJsonApiClient } from "@bridge/api-client";
 import type {
   AdminSession,
+  BackendApiAllowlistEntry,
   BroadcastStatsResponse,
   Channel,
+  SetBackendApiAllowlistRequest,
+  TestWorkflowDraftRequest,
+  WorkflowDraftTestResult,
   ChannelCapabilityDescriptor,
   ChannelTestResult,
   ConnectChannelRequest,
@@ -232,6 +236,14 @@ export function createSaasAdminApiClient(options: SaasAdminApiClientOptions = {}
           method: "POST",
           body: JSON.stringify({})
         }),
+      // Тест-прогон гоняет СОХРАНЁННЫЙ драфт: схема в теле не передаётся, редактор
+      // автосохраняет её перед прогоном — так исключается расхождение
+      // «протестировали одно, сохранили другое».
+      testDraft: (workflowId: string, request: TestWorkflowDraftRequest) =>
+        requestJson<WorkflowDraftTestResult>(`/workflows/${workflowId}/draft:test`, {
+          method: "POST",
+          body: JSON.stringify(request)
+        }),
       resetDraft: (workflowId: string) =>
         requestJson<WorkflowDraft>(`/workflows/${workflowId}/draft`, {
           method: "DELETE"
@@ -256,7 +268,19 @@ export function createSaasAdminApiClient(options: SaasAdminApiClientOptions = {}
       listInstances: (workflowId: string) =>
         requestJson<WorkflowInstance[]>(`/workflows/${workflowId}/instances`),
       getInstance: (workflowId: string, instanceId: string) =>
-        requestJson<WorkflowInstanceDetail>(`/workflows/${workflowId}/instances/${instanceId}`)
+        requestJson<WorkflowInstanceDetail>(`/workflows/${workflowId}/instances/${instanceId}`),
+      // Витрина вызовов: список строится ОТ каталога, поэтому приходит целиком —
+      // и разрешённые операции, и запрещённые.
+      listBackendApiAllowlist: () =>
+        requestJson<BackendApiAllowlistEntry[]>("/workflow-backend-api-allowlist"),
+      setBackendApiAllowlist: (operationId: string, request: SetBackendApiAllowlistRequest) =>
+        requestJson<BackendApiAllowlistEntry>(
+          `/workflow-backend-api-allowlist/${encodeURIComponent(operationId)}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify(request)
+          }
+        )
     },
     onboarding: {
       createCommand: (request: OnboardingCommandRequest) =>

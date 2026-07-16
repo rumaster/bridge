@@ -1,16 +1,30 @@
-import { FBP_NODE_TYPES } from "@bridge/contracts/c5-workflow";
+import { FBP_NODE_TYPES, WORKFLOW_SCHEMA_VERSION } from "@bridge/contracts/c5-workflow";
 import { describe, expect, it } from "vitest";
 
-import type { WorkflowNode, WorkflowNodeType, WorkflowSchema } from "../src/api/client/types";
+import type { WorkflowNode, WorkflowSchema } from "../src/api/client/types";
 import {
-  SAFE_WORKFLOW_NODE_TYPES,
   createWorkflowConnection,
   createWorkflowNode,
+  createWorkflowSchema,
   isSafeWorkflowNodeType,
   validateWorkflowSchema,
   workflowNodeMutatesData,
+  workflowNodePalette,
   workflowNodePrimaryField
 } from "../src/shared/workflow";
+
+/**
+ * Ревизия 2026-07-15 (этап 7). Тесты перенесены на контракт 2.0.
+ *
+ * Что ушло и почему: проверки `bodyGraph` — концепт удалён целиком (дефект D6),
+ * его не «починили», а признали мёртвым: фронт его создавал и валидировал,
+ * бэкенд молча пропускал, движок игнорировал.
+ *
+ * Что осталось: намерения, которые в силе, — палитра ограничена каноническим
+ * набором, данные меняет только backend-api, схема проверяется до сохранения.
+ * Проверки формы графа больше не дублируются здесь: их делает контракт, и
+ * `validateWorkflowSchema` теперь тонкая обёртка над ним.
+ */
 
 function node(overrides: Partial<WorkflowNode> & { id: string }): WorkflowNode {
   return {
@@ -22,18 +36,37 @@ function node(overrides: Partial<WorkflowNode> & { id: string }): WorkflowNode {
   };
 }
 
-describe("safe workflow node set (ТЗ §13.13)", () => {
-  // Список сверяется с каталогом контракта, а не переписывается сюда руками:
-  // именно расхождение копий каталога и породило дефект D8. Каталог 2.0 добавил
-  // variable_read/variable_write/merge и границы субсхем start/end.
-  it("ограничивает палитру каноническими типами C5", () => {
-    expect(SAFE_WORKFLOW_NODE_TYPES).toEqual([...FBP_NODE_TYPES]);
-    expect(SAFE_WORKFLOW_NODE_TYPES).toContain("wait-event");
-    expect(SAFE_WORKFLOW_NODE_TYPES).not.toContain("db_write");
+function schema(nodes: WorkflowNode[], connections: WorkflowSchema["connections"] = []): WorkflowSchema {
+  return { schema_version: WORKFLOW_SCHEMA_VERSION, kind: "workflow", nodes, connections };
+}
+
+describe("палитра узлов (ТЗ §13.13)", () => {
+  it("предлагает канонические типы C5 и ничего сверх них", () => {
+    const palette = workflowNodePalette("workflow").map((definition) => definition.type);
+
+    expect(palette).toContain("wait-event");
+    expect(palette).not.toContain("db_write");
+    expect(palette.every((type) => FBP_NODE_TYPES.includes(type as never))).toBe(true);
+  });
+
+  it("не предлагает start/end в обычной схеме — они только для субсхем", () => {
+    // Раньше палитра была плоским списком всех типов и звала добавить границы
+    // субсхемы в Workflow, где контракт их отвергает.
+    const workflow = workflowNodePalette("workflow").map((definition) => definition.type);
+    const subschema = workflowNodePalette("subschema").map((definition) => definition.type);
+
+    expect(workflow).not.toContain("start");
+    expect(workflow).not.toContain("end");
+    expect(subschema).toContain("start");
+    expect(subschema).toContain("end");
+  });
+
+  it("не предлагает wait-event в субсхеме: событий там нет", () => {
+    expect(workflowNodePalette("subschema").map((d) => d.type)).not.toContain("wait-event");
   });
 
   it("считает узел изменяющим данные только для вызова Backend API (ТЗ §13.5)", () => {
-    const mutating = SAFE_WORKFLOW_NODE_TYPES.filter((type) => workflowNodeMutatesData(type));
+    const mutating = FBP_NODE_TYPES.filter((type) => workflowNodeMutatesData(type as never));
     expect(mutating).toEqual(["backend-api"]);
   });
 
@@ -44,6 +77,18 @@ describe("safe workflow node set (ТЗ §13.13)", () => {
   });
 });
 
+describe("createWorkflowSchema", () => {
+  it("создаёт пустой граф с обязательными schema_version и kind", () => {
+    // В 2.0 kind обязателен: от него зависят палитра и правила валидации.
+    expect(createWorkflowSchema("workflow")).toEqual({
+      schema_version: WORKFLOW_SCHEMA_VERSION,
+      kind: "workflow",
+      nodes: [],
+      connections: []
+    });
+  });
+});
+
 describe("createWorkflowNode / createWorkflowConnection", () => {
   it("создаёт узел с детерминированным id и пустым основным полем", () => {
     const created = createWorkflowNode("knowledge-base-search", []);
@@ -51,8 +96,8 @@ describe("createWorkflowNode / createWorkflowConnection", () => {
 
     expect(created.id).toBe("node-knowledge-base-search-1");
     expect(created.type).toBe("knowledge-base-search");
-    expect(created.config).toEqual({ [primary.key]: "" });
-    expect(created.label.trim().length).toBeGreaterThan(0);
+    expect(created.config).toEqual({ [primary!.key]: "" });
+    expect((created.label ?? "").trim().length).toBeGreaterThan(0);
   });
 
   it("гарантирует уникальность id при совпадении префикса", () => {
@@ -62,140 +107,83 @@ describe("createWorkflowNode / createWorkflowConnection", () => {
     expect(created.id).toBe("node-branch-2");
   });
 
-  it("создаёт связь с детерминированным id", () => {
-    const first = createWorkflowConnection("a", "b", []);
-    const second = createWorkflowConnection("b", "c", [first]);
+  it("создаёт связь с ЗАДАННЫМИ портами: дефолтов out/in больше нет (D2)", () => {
+    // Регрессия D2: раньше порты подставлялись константами `out`/`in`, потому что
+    // в 1.0 они были у всех узлов. В 2.0 состав портов зависит от узла и графа —
+    // угаданный порт контракт отвергает.
+    const first = createWorkflowConnection("check", "false", "cold", "in", []);
+    const second = createWorkflowConnection("check", "true", "hot", "in", [first]);
 
-    expect(first).toEqual({ id: "conn-1", from: "a", fromPort: "out", to: "b", toPort: "in" });
+    expect(first).toEqual({ id: "conn-1", from: "check", fromPort: "false", to: "cold", toPort: "in" });
     expect(second.id).toBe("conn-2");
   });
 
-  it("создаёт sub_schema как ссылку без embedded bodyGraph", () => {
+  it("создаёт sub_schema как ссылку на slug", () => {
     const created = createWorkflowNode("sub_schema", []);
 
     expect(created.id).toBe("node-sub_schema-1");
     expect(created.config).toEqual({ subSchemaSlug: "" });
-    expect(created.config.bodyGraph).toBeUndefined();
   });
 });
 
-describe("validateWorkflowSchema", () => {
-  const valid: WorkflowSchema = {
-    nodes: [
-      node({ id: "n1", type: "wait-event", label: "Событие" }),
-      node({ id: "n2", type: "backend-api", label: "Вызов API" })
-    ],
-    connections: [{ id: "conn-1", from: "n1", fromPort: "out", to: "n2", toPort: "in" }]
-  };
-
-  it("принимает корректную схему из безопасных узлов", () => {
-    const result = validateWorkflowSchema(valid);
-    expect(result).toEqual({ valid: true, errors: [] });
-  });
-
-  it("проверяет bodyGraph внутри узла, если он явно задан", () => {
-    const result = validateWorkflowSchema({
-      nodes: [
+describe("validateWorkflowSchema — обёртка над контрактом", () => {
+  it("принимает корректную схему", () => {
+    const valid = schema(
+      [
+        node({ id: "n1", type: "wait-event", label: "Событие", config: { event_type: "message.created" } }),
         node({
-          id: "sub",
-          type: "transform",
-          label: "Трансформация",
-          config: { bodyGraph: { nodes: [], connections: [] } }
+          id: "n2",
+          type: "variable_write",
+          label: "Запись",
+          config: { name: "seen", inputs: [{ name: "value", type: "any" }] }
         })
       ],
-      connections: []
-    });
+      [{ id: "conn-1", from: "n1", fromPort: "out", to: "n2", toPort: "in" }]
+    );
 
-    expect(result.valid).toBe(false);
-    expect(result.errors).toContain("bodyGraph узла «Трансформация»: Схема должна содержать хотя бы один узел.");
+    expect(validateWorkflowSchema(valid).valid).toBe(true);
   });
 
-  it("отвергает embedded bodyGraph у sub_schema", () => {
-    const result = validateWorkflowSchema({
-      nodes: [
-        node({
-          id: "sub",
-          type: "sub_schema",
-          label: "Переиспользуемая схема",
-          config: {
-            subSchemaSlug: "support-common-context",
-            bodyGraph: { nodes: [], connections: [] }
-          }
-        })
-      ],
-      connections: []
-    });
+  it("отвергает запрещённый тип узла и называет проблемный узел", () => {
+    // nodeId в ответе обязателен: по нему холст подсвечивает, ГДЕ ошибка.
+    const result = validateWorkflowSchema(
+      schema([node({ id: "n1", type: "db_write", label: "Прямая запись" })])
+    );
 
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain("Узел «Переиспользуемая схема» хранит только ссылку на субсхему без bodyGraph.");
-  });
-
-  it("требует хотя бы один узел", () => {
-    const result = validateWorkflowSchema({ nodes: [], connections: [] });
-    expect(result.valid).toBe(false);
-    expect(result.errors).toContain("Схема должна содержать хотя бы один узел.");
+    expect(result.nodeIds).toContain("n1");
   });
 
   it("отвергает дублирующиеся идентификаторы узлов", () => {
-    const result = validateWorkflowSchema({
-      nodes: [node({ id: "dup", label: "A" }), node({ id: "dup", label: "B" })],
-      connections: [{ id: "conn-1", from: "dup", fromPort: "out", to: "dup", toPort: "in" }]
-    });
-    expect(result.valid).toBe(false);
-    expect(result.errors).toContain("Обнаружены дублирующиеся идентификаторы узлов.");
-  });
+    // Конфиг узлов валиден намеренно: контракт бросает на ПЕРВОЙ ошибке, и с
+    // пустым config.event_type тест поймал бы её, а не дубликат.
+    const event = { event_type: "message.created" };
+    const result = validateWorkflowSchema(
+      schema([node({ id: "dup", label: "A", config: event }), node({ id: "dup", label: "B", config: event })])
+    );
 
-  it("отвергает запрещённый тип узла (вне безопасного набора)", () => {
-    const result = validateWorkflowSchema({
-      nodes: [node({ id: "n1", type: "db_write" as WorkflowNodeType, label: "Прямая запись" })],
-      connections: []
-    });
     expect(result.valid).toBe(false);
-    expect(result.errors.some((error) => error.includes("безопасный набор"))).toBe(true);
-  });
-
-  it("требует непустую метку узла", () => {
-    const result = validateWorkflowSchema({
-      nodes: [node({ id: "n1", label: "  " })],
-      connections: []
-    });
-    expect(result.valid).toBe(false);
-    expect(result.errors.some((error) => error.includes("метка"))).toBe(true);
-  });
-
-  it("запрещает связь узла на самого себя", () => {
-    const result = validateWorkflowSchema({
-      nodes: [node({ id: "n1", label: "A" }), node({ id: "n2", label: "B" })],
-      connections: [{ id: "conn-1", from: "n1", fromPort: "out", to: "n1", toPort: "in" }]
-    });
-    expect(result.valid).toBe(false);
-    expect(result.errors).toContain("Узел не может ссылаться сам на себя.");
+    expect(result.errors.join(" ")).toMatch(/[Дд]убл/);
   });
 
   it("отвергает связь на несуществующий узел", () => {
-    const result = validateWorkflowSchema({
-      nodes: [node({ id: "n1", label: "A" }), node({ id: "n2", label: "B" })],
-      connections: [{ id: "conn-1", from: "n1", fromPort: "out", to: "ghost", toPort: "in" }]
-    });
+    const result = validateWorkflowSchema(
+      schema(
+        [node({ id: "n1", label: "A", config: { event_type: "message.created" } })],
+        [{ id: "conn-1", from: "n1", fromPort: "out", to: "ghost", toPort: "in" }]
+      )
+    );
+
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain("Связь ссылается на несуществующий узел.");
   });
 
-  it("требует fromPort/toPort у связи", () => {
+  it("отвергает схему с чужой версией", () => {
     const result = validateWorkflowSchema({
-      nodes: [node({ id: "n1", label: "A" }), node({ id: "n2", label: "B" })],
-      connections: [{ id: "conn-1", from: "n1", to: "n2" } as WorkflowSchema["connections"][number]]
+      ...schema([node({ id: "n1", label: "A" })]),
+      schema_version: "1.0.0"
     });
-    expect(result.valid).toBe(false);
-    expect(result.errors).toContain("Связь должна указывать fromPort и toPort.");
-  });
 
-  it("требует связь при наличии нескольких узлов", () => {
-    const result = validateWorkflowSchema({
-      nodes: [node({ id: "n1", label: "A" }), node({ id: "n2", label: "B" })],
-      connections: []
-    });
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain("Соедините узлы хотя бы одной связью.");
+    expect(result.errors.join(" ")).toContain("2.0.0");
   });
 });

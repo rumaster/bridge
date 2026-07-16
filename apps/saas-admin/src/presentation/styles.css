@@ -2258,3 +2258,350 @@ div.broadcast-stats {
   font-weight: 700;
   word-break: break-all;
 }
+
+/* ── Редактор схем Workflow 2.0 (этап 7) ───────────────────────────────── */
+
+.wf-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+}
+
+.wf-topbar {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.wf-topbar-status {
+  display: flex;
+  gap: 8px;
+  margin-right: auto;
+}
+
+.wf-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr) 360px;
+  gap: 12px;
+  min-height: 620px;
+}
+
+.wf-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wf-palette-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid #d7dee8;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+}
+
+.wf-palette-item:hover {
+  border-color: #7aa7d9;
+}
+
+.wf-palette-mutates,
+.wf-node-mutates {
+  font-size: 11px;
+  color: #a4442c;
+}
+
+.wf-canvas {
+  min-height: 620px;
+  border: 1px solid #d7dee8;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fbfcfe;
+}
+
+.wf-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  max-height: 720px;
+}
+
+/* Узел */
+
+.wf-node {
+  min-width: 190px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: #fff;
+  font-size: 12px;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 8%);
+}
+
+.wf-node-selected {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgb(37 99 235 / 25%);
+}
+
+/* Пройденные узлы теста и место обрыва различаются цветом, а не только списком. */
+.wf-node-visited {
+  border-color: #34a853;
+}
+
+.wf-node-failed {
+  border-color: #d93025;
+  box-shadow: 0 0 0 2px rgb(217 48 37 / 25%);
+}
+
+.wf-node-header {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.wf-node-title {
+  font-weight: 600;
+}
+
+.wf-node-type {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.wf-node-ports {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 8px 0;
+}
+
+.wf-ports {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.wf-ports-output {
+  align-items: flex-end;
+}
+
+.wf-port-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wf-port-label {
+  font-size: 11px;
+  color: #334155;
+}
+
+/* Хэндл в потоке, а не абсолютом: кружок выносится за край отрицательным полем. */
+.wf-handle {
+  position: static;
+  transform: none;
+  width: 10px;
+  height: 10px;
+  border: 2px solid;
+  border-radius: 50%;
+}
+
+.wf-ports-input .wf-handle {
+  margin-left: -5px;
+}
+
+.wf-ports-output .wf-handle {
+  margin-right: -5px;
+}
+
+/* Панель свойств */
+
+.wf-properties {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wf-properties-head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.wf-hint {
+  font-size: 12px;
+  color: #64748b;
+  margin: 0;
+}
+
+.wf-error {
+  font-size: 12px;
+  color: #a4442c;
+  margin: 0;
+}
+
+.wf-notice {
+  font-size: 12px;
+  color: #0f4c40;
+  margin: 0;
+}
+
+.wf-validation {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #a4442c;
+}
+
+/* Редактор строк портов */
+
+.wf-ports-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.wf-ports-editor-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.wf-ports-editor-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wf-ports-editor-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wf-port-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+
+/* Подпись поля дублирует шапку группы — скрываем визуально, оставляя скринридеру. */
+.wf-port-field label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Редактор кода: слой подсветки под прозрачной textarea */
+
+.wf-code-area {
+  position: relative;
+  border: 1px solid #d7dee8;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.wf-code-highlight,
+.wf-code-input {
+  margin: 0;
+  padding: 8px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 0;
+}
+
+.wf-code-highlight {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  pointer-events: none;
+}
+
+/* Текст прозрачен: видно нижний слой, но каретка и выделение — родные. */
+.wf-code-input {
+  position: relative;
+  width: 100%;
+  background: transparent;
+  color: transparent;
+  caret-color: #0f172a;
+  resize: vertical;
+}
+
+.wf-code-input:focus {
+  outline: 2px solid #2563eb;
+  outline-offset: -2px;
+}
+
+.wf-code-ports {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin: 4px 0;
+}
+
+.wf-code-port-chip {
+  font-size: 11px;
+  padding: 2px 6px;
+  border: 1px solid #d7dee8;
+  border-radius: 999px;
+  background: #f8fafc;
+  cursor: pointer;
+}
+
+.js-token-comment { color: #64748b; font-style: italic; }
+.js-token-string { color: #b45309; }
+.js-token-number { color: #0f766e; }
+.js-token-keyword { color: #7c3aed; font-weight: 600; }
+.js-token-literal { color: #2563eb; }
+
+/* Трасса теста */
+
+.wf-trace-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.wf-trace-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.wf-trace-table th,
+.wf-trace-table td {
+  text-align: left;
+  padding: 4px 6px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.wf-trace-table tbody tr {
+  cursor: pointer;
+}
+
+.wf-trace-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.wf-trace-row-failed {
+  color: #a4442c;
+}

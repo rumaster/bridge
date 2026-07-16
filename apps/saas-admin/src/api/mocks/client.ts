@@ -1,3 +1,5 @@
+import { BACKEND_API_OPERATIONS } from "@bridge/contracts/backend-api-catalog";
+
 import type {
   AdminSession,
   BroadcastCampaign,
@@ -39,12 +41,16 @@ import type {
   Workflow,
   WorkflowDraft,
   WorkflowInstance,
+  WorkflowSchema,
   WorkflowSubschema,
-  WorkflowVersion
+  WorkflowVersion,
+  BackendApiAllowlistEntry,
+  SetBackendApiAllowlistRequest,
+  TestWorkflowDraftRequest
 } from "../client/types";
 import { createMockC7RealtimeClient } from "../client/realtime";
 import type { C7RealtimeClient } from "../client/realtime";
-import { validateWorkflowSchema } from "../../shared/workflow";
+import { isWorkflowGraphShapeValid, validateWorkflowSchema } from "../../shared/workflow";
 import {
   applyOnboardingCommand,
   cloneBroadcast,
@@ -98,6 +104,21 @@ export function createMockSaasAdminApiClient(
   let currentVersions: WorkflowVersion[] = mockWorkflowVersions.map(cloneWorkflowVersion);
   let currentSubschemas: WorkflowSubschema[] = mockWorkflowSubschemas.map(cloneWorkflowSubschema);
   let currentWorkflowDrafts: Record<string, WorkflowDraft> = {};
+  // Витрина строится ОТ каталога: операция без строки считается запрещённой, поэтому
+  // мок отдаёт весь каталог с enabled по умолчанию false — закрыто по умолчанию.
+  let currentBackendApiAllowlist: BackendApiAllowlistEntry[] = BACKEND_API_OPERATIONS.map(
+    (operation) => ({
+      operation_id: operation.operation_id,
+      method: operation.method,
+      path: operation.path,
+      summary: operation.summary,
+      tag: operation.tag,
+      mutates: operation.method !== "GET",
+      enabled: false,
+      curated_at: null,
+      note: null
+    })
+  );
   let currentInstances: WorkflowInstance[] = mockWorkflowInstances.map(cloneWorkflowInstance);
   let currentBroadcasts: BroadcastCampaign[] = mockBroadcasts.map(cloneBroadcast);
   let currentBroadcastStats: Record<string, BroadcastStats> = cloneMockBroadcastStats();
@@ -535,7 +556,8 @@ export function createMockSaasAdminApiClient(
         if (!subschema) {
           throw new Error("Workflow subschema not found");
         }
-        validateWorkflowDraftRequest({ schema: request.schema });
+        // У субсхемы нет драфта и промоута — граф сразу боевой, проверяем полностью.
+        validateWorkflowSchemaFull(request.schema);
 
         const updated: WorkflowSubschema = {
           ...subschema,
@@ -641,7 +663,12 @@ export function createMockSaasAdminApiClient(
         if (request.contract !== "C5.WorkflowSchemaExport" || request.version !== "1.0.0") {
           throw new Error("Workflow import JSON is invalid");
         }
-        validateWorkflowDraftRequest({ schema: request.schema });
+        // Импорт в версию сразу боевой (полная проверка); в драфт — только форма.
+        if (request.target === "version") {
+          validateWorkflowSchemaFull(request.schema);
+        } else {
+          validateWorkflowDraftRequest({ schema: request.schema });
+        }
 
         if (request.target === "version") {
           const versionNo =
@@ -764,6 +791,60 @@ export function createMockSaasAdminApiClient(
           ...instance,
           logs: mockWorkflowInstanceLogs[instanceId] ?? []
         });
+      },
+      /**
+       * Тест-прогон в моке НЕ имитирует исполнение: считать граф — работа движка,
+       * и подделка здесь вернула бы прежний дефект D5 (трасса, нарисованная
+       * клиентом, а не полученная от движка). Мок отдаёт трассу ровно по узлам,
+       * достижимым по exec от стартового, и честно помечает это ограничение.
+       */
+      async testDraft(workflowId: string, request: TestWorkflowDraftRequest) {
+        const draft = currentWorkflowDrafts[workflowId]?.schema;
+        if (!draft) {
+          throw new Error("Workflow draft not found");
+        }
+
+        return {
+          organization_id: currentOrganization.id,
+          workflow_id: workflowId,
+          status: "completed" as const,
+          output: null,
+          error: null,
+          trace: reachableByExec(draft, request.node_id).map((nodeId, index) => ({
+            nodeId,
+            type: draft.nodes.find((node) => node.id === nodeId)?.type ?? "unknown",
+            via: (index === 0 ? "flow" : "flow") as "flow" | "data",
+            durationMs: 1,
+            inputs: {},
+            outputs: {},
+            failed: false,
+            nodePath: [nodeId],
+            depth: 0
+          })),
+          created_at: "2026-07-15T10:00:00.000Z"
+        };
+      },
+      async listBackendApiAllowlist() {
+        return currentBackendApiAllowlist.map((entry) => ({ ...entry }));
+      },
+      async setBackendApiAllowlist(operationId: string, request: SetBackendApiAllowlistRequest) {
+        const index = currentBackendApiAllowlist.findIndex(
+          (entry) => entry.operation_id === operationId
+        );
+        if (index === -1) {
+          throw new Error("Backend API operation is not present in the catalog");
+        }
+
+        const updated = {
+          ...currentBackendApiAllowlist[index],
+          enabled: request.enabled,
+          note: request.note ?? null,
+          curated_at: "2026-07-15T10:00:00.000Z"
+        };
+        currentBackendApiAllowlist = currentBackendApiAllowlist.map((entry, position) =>
+          position === index ? updated : entry
+        );
+        return { ...updated };
       }
     },
     onboarding: {
@@ -1051,10 +1132,22 @@ function emptyWorkflowDraft(workflow: Workflow): WorkflowDraft {
   };
 }
 
+/**
+ * Драфт валидируется ТОЛЬКО по форме графа (решение A10) — как на бэкенде. Мок,
+ * который строже боевого сервиса, скрывал бы недостроенные драфты, которые в бою
+ * сохраняются; именно расхождение мока с реальностью и породило D2/D3.
+ */
 function validateWorkflowDraftRequest(request: SaveWorkflowDraftRequest): void {
-  const validation = validateWorkflowSchema(request.schema);
+  if (!isWorkflowGraphShapeValid(request.schema)) {
+    throw new Error("Workflow draft schema is malformed");
+  }
+}
+
+/** Полная проверка контракта — для версии и субсхемы, где граф сразу боевой. */
+function validateWorkflowSchemaFull(schema: WorkflowSchema): void {
+  const validation = validateWorkflowSchema(schema);
   if (!validation.valid) {
-    throw new Error("Workflow draft schema is invalid");
+    throw new Error("Workflow schema is invalid");
   }
 }
 
@@ -1067,18 +1160,45 @@ function validateWorkflowSubschemaSlug(slug: string): void {
 }
 
 /** Стартовая схема новой субсхемы: один transform-узел (безопасный набор, ТЗ §13.13). */
-function createWorkflowSubschemaSeed(slug: string) {
-  return {
-    schema_version: "1.0.0",
-    entry: `${slug}-entry`,
-    nodes: [
-      {
-        id: `${slug}-entry`,
-        type: "transform" as const,
-        label: "Подготовить контекст",
-        config: { expression: "payload" },
-        position: { x: 40, y: 40 }
+/**
+ * Заготовка субсхемы — ровно та, что создаёт Backend (`emptySubschemaGraph`).
+ * Мок обязан отвечать как настоящий сервис: именно расхождение мока с реальностью
+ * и скрывало дефект D3 — редактор годами звал маршруты, которых на бэкенде не
+ * было, а тесты были зелёными.
+ */
+/**
+ * Узлы, достижимые по exec от стартового. Мок НЕ исполняет граф: считать его —
+ * работа движка, и подделка вернула бы дефект D5 (трасса, нарисованная клиентом).
+ * Ветвление здесь не разрешается — обе ветки попадут в трассу.
+ */
+function reachableByExec(graph: WorkflowSchema, startNodeId: string): string[] {
+  const execPorts = new Set(["out", "true", "false"]);
+  const visited: string[] = [];
+  const queue = [startNodeId];
+
+  while (queue.length > 0) {
+    const nodeId = queue.shift() as string;
+    if (visited.includes(nodeId)) continue;
+    if (!graph.nodes.some((node) => node.id === nodeId)) continue;
+    visited.push(nodeId);
+
+    for (const connection of graph.connections) {
+      if (connection.from === nodeId && execPorts.has(connection.fromPort)) {
+        queue.push(connection.to);
       }
+    }
+  }
+
+  return visited;
+}
+
+function createWorkflowSubschemaSeed(_slug: string): WorkflowSchema {
+  return {
+    schema_version: "2.0.0",
+    kind: "subschema",
+    nodes: [
+      { id: "start", type: "start", position: { x: 80, y: 160 }, config: { outputs: [] } },
+      { id: "end", type: "end", position: { x: 480, y: 160 }, config: { inputs: [] } }
     ],
     connections: []
   };

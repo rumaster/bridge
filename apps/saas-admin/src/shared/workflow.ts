@@ -1,233 +1,195 @@
 import {
   FBP_NODE_TYPE_DEFINITIONS,
-  FBP_NODE_TYPES,
+  WorkflowContractError,
   WORKFLOW_SCHEMA_VERSION,
-  arePortTypesCompatible,
-  getFbpNodePortDefinition
+  canConnectPorts,
+  getNodePaletteForKind,
+  isFbpNodeType,
+  isWorkflowGraphShape,
+  validateWorkflowGraphContract,
 } from "@bridge/contracts/c5-workflow";
 import type {
+  FbpGraphKind,
   FbpNodeTypeDefinition,
-  WorkflowNode as ContractWorkflowNode,
-  WorkflowSchema as ContractWorkflowSchema
+  WorkflowConnection,
+  WorkflowNode,
+  WorkflowSchema,
 } from "@bridge/contracts/c5-workflow";
 
-import type {
-  WorkflowConnection,
-  WorkflowInstanceStatus,
-  WorkflowNode,
-  WorkflowNodeType,
-  WorkflowSchema,
-  WorkflowStatus
-} from "../api/client/types";
+import type { WorkflowInstanceStatus, WorkflowNodeType, WorkflowStatus } from "../api/client/types";
 
 /**
- * Безопасный набор узлов FBP (ТЗ §13.13). Визуальный редактор ограничивает
- * палитру только этими типами. Изменение данных допустимо исключительно через
- * узел вызова Backend API (ТЗ §13.5) — остальные узлы не мутируют состояние.
- * Это UX-ограничение: авторитетную проверку безопасности выполняет Backend/FBP.
+ * Редактор и контракт C5.
+ *
+ * Ревизия 2026-07-15 (решение A4, дефекты D2/D6/D8). Здесь жила ТРЕТЬЯ копия
+ * валидации схемы — после Backend и движка. Она разошлась с ними ровно так, как
+ * и должна была: `createWorkflowConnection` жёстко ставила `fromPort="out"` и
+ * `toPort="in"`, потому что в 1.0 у всех узлов были ровно эти порты. В 2.0 порты
+ * считает `getNodePortDefinitions` по узлу и графу, и редактор собирал связи,
+ * которые сам же и отвергал (дефект D2).
+ *
+ * Теперь проверку целиком выполняет контракт. Здесь остаются только вещи уровня
+ * UI: подписи статусов и фабрики узлов/связей с уникальными id.
  */
-export const SAFE_WORKFLOW_NODE_TYPES: WorkflowNodeType[] = [...FBP_NODE_TYPES];
-
-export const WORKFLOW_BODY_GRAPH_CONFIG_KEY = "bodyGraph";
 
 const WORKFLOW_NODE_TYPE_META = {} as Record<WorkflowNodeType, FbpNodeTypeDefinition>;
 FBP_NODE_TYPE_DEFINITIONS.forEach((definition) => {
   WORKFLOW_NODE_TYPE_META[definition.type as WorkflowNodeType] = definition;
 });
 
+/**
+ * Палитра узлов для вида графа. Раньше здесь был плоский список всех типов, и
+ * редактор предлагал `start`/`end` внутри обычного Workflow — узлы, допустимые
+ * только в субсхеме. Контракт знает это сам (`kinds` у определения типа).
+ */
+export function workflowNodePalette(kind: FbpGraphKind): readonly FbpNodeTypeDefinition[] {
+  return getNodePaletteForKind(kind);
+}
+
 export function workflowNodeTypeLabel(type: WorkflowNodeType): string {
-  return WORKFLOW_NODE_TYPE_META[type].label;
+  return WORKFLOW_NODE_TYPE_META[type]?.label ?? type;
 }
 
 export function workflowNodeTypeDescription(type: WorkflowNodeType): string {
-  return WORKFLOW_NODE_TYPE_META[type].description;
+  return WORKFLOW_NODE_TYPE_META[type]?.description ?? "";
 }
 
 export function workflowNodePrimaryField(type: WorkflowNodeType) {
-  return WORKFLOW_NODE_TYPE_META[type].primaryField;
+  return WORKFLOW_NODE_TYPE_META[type]?.primaryField ?? null;
 }
 
 /** Узел изменяет данные только если это вызов Backend API (ТЗ §13.5). */
 export function workflowNodeMutatesData(type: WorkflowNodeType): boolean {
-  return WORKFLOW_NODE_TYPE_META[type].mutatesData;
+  return WORKFLOW_NODE_TYPE_META[type]?.mutatesData ?? false;
 }
 
 export function isSafeWorkflowNodeType(type: string): type is WorkflowNodeType {
-  return SAFE_WORKFLOW_NODE_TYPES.includes(type as WorkflowNodeType);
+  return isFbpNodeType(type);
+}
+
+/** Пустой граф нужного вида: `kind` обязателен с 2.0 и задаёт палитру и правила. */
+export function createWorkflowSchema(kind: FbpGraphKind): WorkflowSchema {
+  return {
+    schema_version: WORKFLOW_SCHEMA_VERSION,
+    kind,
+    nodes: [],
+    connections: [],
+  };
 }
 
 /**
- * Создаёт узел безопасного типа с уникальным id и авторасстановкой на холсте.
- * Детерминированно (без Math.random) — id вычисляется из уже существующих узлов.
+ * Создаёт узел с уникальным id и авторасстановкой на холсте. Детерминированно
+ * (без Math.random) — id вычисляется из уже существующих узлов.
  */
 export function createWorkflowNode(
   type: WorkflowNodeType,
   existingNodes: WorkflowNode[],
-  position?: WorkflowNode["position"]
+  position?: WorkflowNode["position"],
 ): WorkflowNode {
   const id = nextUniqueId(`node-${type}`, existingNodes.map((node) => node.id));
   const index = existingNodes.length;
-  const primary = WORKFLOW_NODE_TYPE_META[type].primaryField;
-  const config: Record<string, unknown> = { [primary.key]: "" };
+  const definition = WORKFLOW_NODE_TYPE_META[type];
+  // Первичное поле заводится пустым: узел рождается недостроенным намеренно —
+  // драфт валиден по форме графа (решение A10), а не по готовности.
+  const config: Record<string, unknown> = definition?.primaryField
+    ? { [definition.primaryField.key]: "" }
+    : {};
 
   return {
     id,
     type,
-    label: WORKFLOW_NODE_TYPE_META[type].label,
+    label: definition?.label ?? type,
     config,
     position: position ?? {
       x: 40 + (index % 3) * 220,
-      y: 40 + Math.floor(index / 3) * 150
-    }
+      y: 40 + Math.floor(index / 3) * 150,
+    },
   };
 }
 
-export function createWorkflowBodyGraph(ownerNodeId: string): WorkflowSchema {
-  const entryNodeId = `${ownerNodeId}-body-transform`;
-  return {
-    schema_version: WORKFLOW_SCHEMA_VERSION,
-    entry: entryNodeId,
-    nodes: [
-      {
-        id: entryNodeId,
-        type: "transform",
-        label: "Подготовить контекст",
-        config: { expression: "payload" },
-        position: { x: 40, y: 40 }
-      }
-    ],
-    connections: []
-  };
-}
-
-export function workflowNodeSupportsBodyGraph(type: WorkflowNodeType): boolean {
-  return type === "branch" || type === "transform";
-}
-
-export function isWorkflowSchema(value: unknown): value is WorkflowSchema {
-  if (!isRecord(value)) {
-    return false;
-  }
-
-  return Array.isArray(value.nodes) && Array.isArray(value.connections);
-}
-
+/**
+ * Создаёт связь. Порты ОБЯЗАТЕЛЬНЫ и приходят от холста — дефолтов `out`/`in`
+ * здесь больше нет (дефект D2): в 2.0 их состав зависит от узла и графа, поэтому
+ * угадать порт нельзя, а угаданный неверно отвергнет контракт.
+ */
 export function createWorkflowConnection(
   from: string,
+  fromPort: string,
   to: string,
+  toPort: string,
   existingConnections: WorkflowConnection[],
-  fromPort = "out",
-  toPort = "in"
 ): WorkflowConnection {
   return {
     id: nextUniqueId("conn", existingConnections.map((connection) => connection.id)),
     from,
     fromPort,
     to,
-    toPort
+    toPort,
   };
+}
+
+export function isWorkflowSchema(value: unknown): value is WorkflowSchema {
+  if (typeof value !== "object" || value === null) return false;
+  const candidate = value as Partial<WorkflowSchema>;
+  return Array.isArray(candidate.nodes) && Array.isArray(candidate.connections);
+}
+
+/**
+ * Проверка драфта ТОЛЬКО по форме графа (решение A10) — та же граница, что на
+ * бэкенде (`validateWorkflowSchemaShape`). Драфт сохраняется недостроенным: у узла
+ * может быть не выбрано событие, порт висит. Полная проверка контракта — при
+ * promote. Держать мок строже бэкенда нельзя: именно расхождение мока с
+ * реальностью годами скрывало дефекты D2/D3.
+ */
+export function isWorkflowGraphShapeValid(value: unknown): boolean {
+  return isWorkflowGraphShape(value);
 }
 
 export interface WorkflowSchemaValidation {
   valid: boolean;
   errors: string[];
+  /** Узлы, к которым относится ошибка: по ним холст подсвечивает проблему. */
+  nodeIds: string[];
 }
 
 /**
- * Проверяет схему перед сохранением новой версии (ТЗ §13.10). UI-валидация —
- * подсказка редактору; окончательную проверку безопасности выполняет FBP.
+ * Проверяет схему контрактом C5 — тем же кодом, что Backend и движок.
+ *
+ * Контракт бросает на ПЕРВОЙ ошибке, а не собирает список: он писался для
+ * рантайма, где важно не пропустить невалидный граф, а не перечислить всё. Для
+ * редактора этого достаточно — оператор чинит по одной.
  */
 export function validateWorkflowSchema(schema: WorkflowSchema): WorkflowSchemaValidation {
-  const errors: string[] = [];
-  const nodes = schema.nodes ?? [];
-  const connections = schema.connections ?? [];
-
-  if (nodes.length === 0) {
-    errors.push("Схема должна содержать хотя бы один узел.");
+  try {
+    validateWorkflowGraphContract(schema);
+    return { valid: true, errors: [], nodeIds: [] };
+  } catch (error) {
+    if (error instanceof WorkflowContractError) {
+      const nodeId = error.details?.nodeId;
+      return {
+        valid: false,
+        errors: [error.message],
+        nodeIds: typeof nodeId === "string" ? [nodeId] : [],
+      };
+    }
+    return {
+      valid: false,
+      errors: [error instanceof Error ? error.message : "Схема не прошла проверку"],
+      nodeIds: [],
+    };
   }
+}
 
-  const seenIds = new Set<string>();
-  for (const node of nodes) {
-    if (seenIds.has(node.id)) {
-      errors.push("Обнаружены дублирующиеся идентификаторы узлов.");
-    }
-    seenIds.add(node.id);
-
-    if (!isSafeWorkflowNodeType(node.type)) {
-      errors.push(`Узел «${node.label || node.id}» имеет запрещённый тип и не входит в безопасный набор.`);
-    }
-
-    if (!node.label.trim()) {
-      errors.push(`У узла «${node.id}» должна быть заполнена метка.`);
-    }
-
-    if (node.type === "sub_schema") {
-      const slug = node.config.subSchemaSlug;
-      if (typeof slug !== "string" || slug.trim() === "") {
-        errors.push(`Узел «${node.label || node.id}» должен ссылаться на субсхему.`);
-      }
-      if (node.config[WORKFLOW_BODY_GRAPH_CONFIG_KEY] !== undefined) {
-        errors.push(`Узел «${node.label || node.id}» хранит только ссылку на субсхему без bodyGraph.`);
-      }
-    }
-
-    const bodyGraph = node.config[WORKFLOW_BODY_GRAPH_CONFIG_KEY];
-    if (bodyGraph !== undefined) {
-      if (!isWorkflowSchema(bodyGraph)) {
-        errors.push(`bodyGraph узла «${node.label || node.id}» должен быть схемой Workflow.`);
-      } else {
-        const bodyGraphValidation = validateWorkflowSchema(bodyGraph);
-        for (const error of bodyGraphValidation.errors) {
-          errors.push(`bodyGraph узла «${node.label || node.id}»: ${error}`);
-        }
-      }
-    }
-  }
-
-  const nodeIds = new Set(nodes.map((node) => node.id));
-  const nodesById = new Map(nodes.map((node) => [node.id, node]));
-  for (const connection of connections) {
-    if (connection.from === connection.to) {
-      errors.push("Узел не может ссылаться сам на себя.");
-    }
-
-    if (!nodeIds.has(connection.from) || !nodeIds.has(connection.to)) {
-      errors.push("Связь ссылается на несуществующий узел.");
-      continue;
-    }
-
-    if (!connection.fromPort?.trim() || !connection.toPort?.trim()) {
-      errors.push("Связь должна указывать fromPort и toPort.");
-      continue;
-    }
-
-    const fromNode = nodesById.get(connection.from);
-    const toNode = nodesById.get(connection.to);
-    // Порты считает контракт: с 2.0.0 они зависят от узла и графа (config
-    // transform, границы субсхемы, динамические входы merge), а не от типа узла.
-    const graph = schema as unknown as ContractWorkflowSchema;
-    const fromPort = fromNode
-      ? getFbpNodePortDefinition(fromNode as unknown as ContractWorkflowNode, "output", connection.fromPort, graph)
-      : null;
-    const toPort = toNode
-      ? getFbpNodePortDefinition(toNode as unknown as ContractWorkflowNode, "input", connection.toPort, graph)
-      : null;
-
-    if (!fromPort || !toPort) {
-      errors.push("Связь ссылается на несуществующий порт.");
-      continue;
-    }
-
-    if (!arePortTypesCompatible(fromPort.type, toPort.type)) {
-      errors.push("Типы портов связи несовместимы.");
-    }
-  }
-
-  if (nodes.length > 1 && connections.length === 0) {
-    errors.push("Соедините узлы хотя бы одной связью.");
-  }
-
-  return { valid: errors.length === 0, errors: dedupe(errors) };
+/**
+ * Можно ли соединить порты. Обёртка над контрактом: холст зовёт её и в
+ * `isValidConnection` (подсветить недопустимую цель во время перетаскивания), и
+ * в `onConnect` (объяснить отказ текстом).
+ */
+export function canConnectWorkflowPorts(
+  schema: WorkflowSchema,
+  attempt: { source: string | null; sourceHandle: string | null; target: string | null; targetHandle: string | null },
+): { valid: boolean; reason?: string } {
+  return canConnectPorts(schema, attempt);
 }
 
 export function workflowStatusLabel(status: WorkflowStatus): string {
@@ -276,7 +238,7 @@ export function workflowInstanceStatusLabel(status: WorkflowInstanceStatus): str
 }
 
 export function workflowInstanceStatusTone(
-  status: WorkflowInstanceStatus
+  status: WorkflowInstanceStatus,
 ): "neutral" | "success" | "warning" {
   switch (status) {
     case "completed":
@@ -299,12 +261,4 @@ function nextUniqueId(prefix: string, existing: string[]): string {
     candidate = `${prefix}-${index}`;
   }
   return candidate;
-}
-
-function dedupe(values: string[]): string[] {
-  return [...new Set(values)];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }

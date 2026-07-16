@@ -1,4 +1,9 @@
-import type { FbpNodeType } from "@bridge/contracts/c5-workflow";
+import type {
+  FbpNodeType,
+  WorkflowConnection,
+  WorkflowNode,
+  WorkflowSchema,
+} from "@bridge/contracts/c5-workflow";
 
 export type ISODateTime = string;
 
@@ -310,33 +315,19 @@ export type WorkflowStatus = "draft" | "active" | "archived";
 
 export type WorkflowNodeType = FbpNodeType;
 
+/**
+ * Форма графа берётся ИЗ КОНТРАКТА, а не описывается здесь заново.
+ *
+ * Своя копия этих типов уже разъезжалась: в 2.0 `schema.entry` упразднён (точки
+ * входа — узлы «Ожидание события»), появился обязательный `kind`, а у связи нет
+ * поля `label`. Пока форма описана дважды, редактор может собрать граф, который
+ * контракт отвергнет, — ровно этим и был дефект D2.
+ */
+export type { WorkflowConnection, WorkflowNode, WorkflowSchema };
+
 export interface WorkflowNodePosition {
   x: number;
   y: number;
-}
-
-export interface WorkflowNode {
-  id: string;
-  type: WorkflowNodeType;
-  label: string;
-  config: Record<string, unknown>;
-  position: WorkflowNodePosition;
-}
-
-export interface WorkflowConnection {
-  id: string;
-  from: string;
-  fromPort: string;
-  to: string;
-  toPort: string;
-  label?: string;
-}
-
-export interface WorkflowSchema {
-  schema_version?: string;
-  entry?: string;
-  nodes: WorkflowNode[];
-  connections: WorkflowConnection[];
 }
 
 export interface Workflow {
@@ -378,6 +369,62 @@ export interface WorkflowDraft {
   has_draft: boolean;
   schema: WorkflowSchema | null;
   draft_updated_at: ISODateTime | null;
+}
+
+/**
+ * Витрина вызовов Backend API (решение A3). Каталог отвечает «что вообще
+ * существует», витрина — «что platform_operator разрешил дёргать из схемы».
+ * Операция без строки запрещена: закрыто по умолчанию.
+ */
+export interface BackendApiAllowlistEntry {
+  operation_id: string;
+  method: string;
+  path: string;
+  summary: string;
+  tag: string;
+  /** Не-GET: узел backend-api — единственный способ схемы менять данные (§13.5). */
+  mutates: boolean;
+  enabled: boolean;
+  curated_at: ISODateTime | null;
+  note: string | null;
+}
+
+export interface SetBackendApiAllowlistRequest {
+  enabled: boolean;
+  note?: string;
+}
+
+/** Тест-прогон драфта (дефект D5, решения A5/A6). */
+export interface TestWorkflowDraftRequest {
+  /** Узел «Ожидание события», с которого начинается прогон: точка входа схемы 2.0. */
+  node_id: string;
+  event_payload?: Record<string, unknown>;
+}
+
+/** Один шаг трассы: чем узел был вызван, что получил и что отдал. */
+export interface WorkflowDraftTestTraceEntry {
+  nodeId: string;
+  type: string;
+  /** flow — по exec-связи; data — вычислен лениво по требованию потребителя. */
+  via: "flow" | "data";
+  durationMs: number;
+  inputs: Record<string, unknown>;
+  outputs: Record<string, unknown> | null;
+  failed: boolean;
+  message?: string;
+  nodePath: string[];
+  depth: number;
+}
+
+export interface WorkflowDraftTestResult {
+  organization_id: string;
+  workflow_id: string;
+  status: "completed" | "failed";
+  output: Record<string, unknown> | null;
+  error: Record<string, unknown> | null;
+  /** Приходит и при падении — по ней видно, до какого узла дошли. */
+  trace: WorkflowDraftTestTraceEntry[];
+  created_at: ISODateTime;
 }
 
 export type WorkflowInstanceStatus =
@@ -912,6 +959,10 @@ export interface SaasAdminApiClient {
       request: SaveWorkflowDraftRequest
     ) => Promise<WorkflowDraft>;
     promoteDraft: (workflowId: string) => Promise<WorkflowVersion>;
+    testDraft: (
+      workflowId: string,
+      request: TestWorkflowDraftRequest
+    ) => Promise<WorkflowDraftTestResult>;
     resetDraft: (workflowId: string) => Promise<WorkflowDraft>;
     exportWorkflow: (workflowId: string) => Promise<WorkflowSchemaExport>;
     importWorkflow: (
@@ -925,6 +976,11 @@ export interface SaasAdminApiClient {
     updateWorkflow: (workflowId: string, request: UpdateWorkflowRequest) => Promise<Workflow>;
     listInstances: (workflowId: string) => Promise<WorkflowInstance[]>;
     getInstance: (workflowId: string, instanceId: string) => Promise<WorkflowInstanceDetail>;
+    listBackendApiAllowlist: () => Promise<BackendApiAllowlistEntry[]>;
+    setBackendApiAllowlist: (
+      operationId: string,
+      request: SetBackendApiAllowlistRequest
+    ) => Promise<BackendApiAllowlistEntry>;
   };
   onboarding: {
     createCommand: (request: OnboardingCommandRequest) => Promise<OnboardingCommandResponse>;

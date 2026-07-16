@@ -1,3 +1,4 @@
+import { BACKEND_API_OPERATIONS } from "@bridge/contracts/backend-api-catalog";
 import { HttpResponse, http } from "msw";
 
 import {
@@ -35,6 +36,7 @@ import {
 } from "./fixtures";
 import type {
   AdminSession,
+  BackendApiAllowlistEntry,
   BroadcastCampaign,
   BroadcastStats,
   BroadcastTemplate,
@@ -114,6 +116,20 @@ let currentWorkflows: Workflow[] = mockWorkflows.map(cloneWorkflow);
 let currentVersions: WorkflowVersion[] = mockWorkflowVersions.map(cloneWorkflowVersion);
 let currentSubschemas: WorkflowSubschema[] = mockWorkflowSubschemas.map(cloneWorkflowSubschema);
 let currentWorkflowDrafts: Record<string, WorkflowDraft> = {};
+// Витрина строится ОТ каталога: enabled по умолчанию false — закрыто по умолчанию.
+let currentBackendApiAllowlist: BackendApiAllowlistEntry[] = BACKEND_API_OPERATIONS.map(
+  (operation) => ({
+    operation_id: operation.operation_id,
+    method: operation.method,
+    path: operation.path,
+    summary: operation.summary,
+    tag: operation.tag,
+    mutates: operation.method !== "GET",
+    enabled: false,
+    curated_at: null,
+    note: null
+  })
+);
 let currentInstances: WorkflowInstance[] = mockWorkflowInstances.map(cloneWorkflowInstance);
 let currentBroadcasts: BroadcastCampaign[] = mockBroadcasts.map(cloneBroadcast);
 let currentBroadcastStats: Record<string, BroadcastStats> = cloneBroadcastStatsMap(mockBroadcastStats);
@@ -617,6 +633,37 @@ export const handlers = [
     return HttpResponse.json(currentSubschemas.map(cloneWorkflowSubschema));
   }),
 
+  /**
+   * Витрина вызовов Backend API (решение A3). Список строится ОТ каталога, а не от
+   * таблицы: операция без строки считается запрещённой — закрыто по умолчанию.
+   */
+  http.get(`${API_PREFIX}/workflow-backend-api-allowlist`, () => {
+    return HttpResponse.json(currentBackendApiAllowlist.map((entry) => ({ ...entry })));
+  }),
+
+  http.patch(`${API_PREFIX}/workflow-backend-api-allowlist/:operationId`, async ({ params, request }) => {
+    const operationId = String(params.operationId);
+    const index = currentBackendApiAllowlist.findIndex((entry) => entry.operation_id === operationId);
+    if (index === -1) {
+      // Разрешать можно только то, что реально существует в API: иначе витрина
+      // копила бы записи про исчезнувшие маршруты.
+      return problem(400, "Bad Request", `Operation ${operationId} is not present in the catalog.`);
+    }
+
+    const body = (await request.json()) as { enabled?: boolean; note?: string };
+    const updated = {
+      ...currentBackendApiAllowlist[index],
+      enabled: Boolean(body.enabled),
+      note: body.note ?? null,
+      curated_at: "2026-07-15T10:00:00.000Z"
+    };
+    currentBackendApiAllowlist = currentBackendApiAllowlist.map((entry, position) =>
+      position === index ? updated : entry
+    );
+
+    return HttpResponse.json({ ...updated });
+  }),
+
   http.post(`${API_PREFIX}/workflow-subschemas`, async ({ request }) => {
     const body = (await request.json()) as Partial<CreateWorkflowSubschemaRequest>;
     const slug = typeof body.slug === "string" ? body.slug.trim() : "";
@@ -635,24 +682,20 @@ export const handlers = [
       return problem(409, "Conflict", "Workflow subschema slug already exists.");
     }
 
-    const entryId = `${slug}-entry`;
     const subschema: WorkflowSubschema = {
       id: `wfs-created-${nextWorkflowSubschemaNumber++}`,
       organization_id: currentOrganization.id,
       slug,
       name,
       status: "draft",
+      // Та же заготовка, что у Backend: границы start/end обязательны, иначе
+      // субсхема не пройдёт валидацию при первом сохранении.
       schema: {
-        schema_version: "1.0.0",
-        entry: entryId,
+        schema_version: "2.0.0",
+        kind: "subschema",
         nodes: [
-          {
-            id: entryId,
-            type: "transform",
-            label: "Подготовить контекст",
-            config: { expression: "payload" },
-            position: { x: 40, y: 40 }
-          }
+          { id: "start", type: "start", position: { x: 80, y: 160 }, config: { outputs: [] } },
+          { id: "end", type: "end", position: { x: 480, y: 160 }, config: { inputs: [] } }
         ],
         connections: []
       },
@@ -824,6 +867,71 @@ export const handlers = [
     delete currentWorkflowDrafts[workflow.id];
 
     return HttpResponse.json(cloneWorkflowVersion(version), { status: 201 });
+  }),
+
+  /**
+   * Тест-прогон драфта (дефект D5). Мок НЕ исполняет граф: считать его — работа
+   * движка, и подделка здесь вернула бы тот самый дефект, ради которого этап 6 и
+   * делался (трасса, нарисованная клиентом). Отдаётся трасса по узлам, достижимым
+   * по exec от стартового; ветвление не разрешается.
+   */
+  http.post(/\/api\/v1\/workflows\/([^/]+)\/draft:test$/, async ({ request }) => {
+    const workflowId = getLastPathMatch(request.url, /\/workflows\/([^/]+)\/draft:test$/);
+    const workflow = currentWorkflows.find((item) => item.id === workflowId);
+    if (!workflow) {
+      return problem(404, "Not Found", "Workflow not found.");
+    }
+    const draft = currentWorkflowDrafts[workflow.id];
+    if (!draft?.schema) {
+      return validationProblem(
+        [{ field: "draft", message: "Черновик Workflow отсутствует." }],
+        "Workflow draft is missing."
+      );
+    }
+
+    const body = (await request.json()) as { node_id?: string };
+    const startNodeId = body.node_id ?? "";
+    if (startNodeId === "") {
+      return validationProblem(
+        [{ field: "node_id", message: "Укажите узел «Ожидание события»." }],
+        "Draft test run requires the wait-event node to start from."
+      );
+    }
+
+    const execPorts = new Set(["out", "true", "false"]);
+    const visited: string[] = [];
+    const queue = [startNodeId];
+    while (queue.length > 0) {
+      const nodeId = queue.shift() as string;
+      if (visited.includes(nodeId)) continue;
+      if (!draft.schema.nodes.some((node) => node.id === nodeId)) continue;
+      visited.push(nodeId);
+      for (const connection of draft.schema.connections) {
+        if (connection.from === nodeId && execPorts.has(connection.fromPort)) {
+          queue.push(connection.to);
+        }
+      }
+    }
+
+    return HttpResponse.json({
+      organization_id: workflow.organization_id,
+      workflow_id: workflow.id,
+      status: "completed",
+      output: null,
+      error: null,
+      trace: visited.map((nodeId) => ({
+        nodeId,
+        type: draft.schema?.nodes.find((node) => node.id === nodeId)?.type ?? "unknown",
+        via: "flow",
+        durationMs: 1,
+        inputs: {},
+        outputs: {},
+        failed: false,
+        nodePath: [nodeId],
+        depth: 0
+      })),
+      created_at: "2026-07-15T10:00:00.000Z"
+    });
   }),
 
   http.delete(`${API_PREFIX}/workflows/:workflowId/draft`, ({ params }) => {

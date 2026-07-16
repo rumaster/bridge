@@ -243,12 +243,14 @@ export const mockWorkflowVersions: WorkflowVersion[] = [
     created_by: "Демо Администратор",
     created_at: "2026-07-02T12:00:00.000Z",
     schema: {
+      schema_version: "2.0.0",
+      kind: "workflow",
       nodes: [
         {
           id: "node-wait-event-1",
           type: "wait-event",
           label: "Входящее сообщение",
-          config: { event_type: "channel.message_received" },
+          config: { event_type: "message.created" },
           position: { x: 40, y: 40 }
         },
         {
@@ -270,19 +272,21 @@ export const mockWorkflowVersions: WorkflowVersion[] = [
     created_by: "Демо Администратор",
     created_at: "2026-07-03T09:20:00.000Z",
     schema: {
+      schema_version: "2.0.0",
+      kind: "workflow",
       nodes: [
         {
           id: "node-wait-event-1",
           type: "wait-event",
           label: "Входящее сообщение",
-          config: { event_type: "channel.message_received" },
+          config: { event_type: "message.created" },
           position: { x: 40, y: 40 }
         },
         {
           id: "node-knowledge-base-search-1",
           type: "knowledge-base-search",
           label: "Поиск в базе знаний",
-          config: { query: "{{message.text}}" },
+          config: { top_k: 5 },
           position: { x: 260, y: 40 }
         },
         {
@@ -293,25 +297,17 @@ export const mockWorkflowVersions: WorkflowVersion[] = [
           position: { x: 700, y: 40 }
         },
         {
-          id: "node-transform-1",
-          type: "transform",
-          label: "Собрать тело ответа",
-          config: { expression: "payload" },
-          position: { x: 480, y: 40 }
-        },
-        {
           id: "node-backend-api-1",
           type: "backend-api",
-          label: "Создать тикет",
-          config: { path: "/api/v1/tickets" },
-          position: { x: 700, y: 190 }
+          label: "Создать сообщение",
+          config: { operation_id: "MessageController_createMessage_v1" },
+          position: { x: 940, y: 40 }
         }
       ],
       connections: [
         { id: "conn-1", from: "node-wait-event-1", fromPort: "out", to: "node-knowledge-base-search-1", toPort: "in" },
-        { id: "conn-2", from: "node-knowledge-base-search-1", fromPort: "out", to: "node-transform-1", toPort: "in" },
-        { id: "conn-3", from: "node-transform-1", fromPort: "out", to: "node-llm-1", toPort: "in" },
-        { id: "conn-4", from: "node-llm-1", fromPort: "out", to: "node-backend-api-1", toPort: "in" }
+        { id: "conn-2", from: "node-knowledge-base-search-1", fromPort: "out", to: "node-llm-1", toPort: "in" },
+        { id: "conn-3", from: "node-llm-1", fromPort: "out", to: "node-backend-api-1", toPort: "in" }
       ]
     }
   },
@@ -323,26 +319,28 @@ export const mockWorkflowVersions: WorkflowVersion[] = [
     created_by: "Демо Администратор",
     created_at: "2026-07-02T13:30:00.000Z",
     schema: {
+      schema_version: "2.0.0",
+      kind: "workflow",
       nodes: [
         {
           id: "node-wait-event-1",
           type: "wait-event",
           label: "Новый лид",
-          config: { event_type: "channel.message_received" },
+          config: { event_type: "message.created" },
           position: { x: 40, y: 40 }
         },
         {
           id: "node-branch-1",
           type: "branch",
           label: "Оценка бюджета",
-          config: { condition: "{{lead.budget}} > 1000" },
+          config: { operator: "gt", right: 1000 },
           position: { x: 260, y: 40 }
         },
         {
           id: "node-backend-api-1",
           type: "backend-api",
-          label: "Создать сделку",
-          config: { path: "/api/v1/deals" },
+          label: "Создать сообщение",
+          config: { operation_id: "MessageController_createMessage_v1" },
           position: { x: 480, y: 40 }
         }
       ],
@@ -364,16 +362,25 @@ export const mockWorkflowSubschemas: WorkflowSubschema[] = [
     created_at: "2026-07-08T12:00:00.000Z",
     updated_at: "2026-07-08T12:00:00.000Z",
     schema: {
+      schema_version: "2.0.0",
+      kind: "subschema",
       nodes: [
         {
-          id: "node-normalize-support-context",
-          type: "transform",
-          label: "Нормализовать общий контекст",
-          config: { expression: "payload" },
-          position: { x: 40, y: 40 }
+          id: "start",
+          type: "start",
+          label: "Вход субсхемы",
+          config: { outputs: [{ id: "message", type: "object" }] },
+          position: { x: 40, y: 160 }
+        },
+        {
+          id: "end",
+          type: "end",
+          label: "Выход субсхемы",
+          config: { inputs: [{ id: "context", type: "object" }] },
+          position: { x: 480, y: 160 }
         }
       ],
-      connections: []
+      connections: [{ id: "conn-1", from: "start", fromPort: "out", to: "end", toPort: "in" }]
     }
   }
 ];
