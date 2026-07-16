@@ -4,11 +4,14 @@ import { BadRequestException, Injectable, NotFoundException } from "@nestjs/comm
 
 import { PgDatabase } from "../../common/database/database.service";
 import type { Queryable } from "../../common/database/database.service";
+import { FbpIntegrationFacade } from "../fbp-integration/fbp-integration.facade";
 import {
   CreateWorkflowVersionDto,
   ImportWorkflowSchemaDto,
   SaveWorkflowDraftDto,
+  TestWorkflowDraftDto,
   UpdateWorkflowDto,
+  WorkflowDraftTestResponseDto,
   WorkflowExportRow,
   WorkflowDraftResponseDto,
   WorkflowDraftRow,
@@ -46,7 +49,72 @@ export class WorkflowService {
   constructor(
     private readonly database: PgDatabase,
     private readonly subschemas: WorkflowSubschemaService,
+    private readonly fbp: FbpIntegrationFacade,
   ) {}
+
+  /**
+   * Тест-прогон драфта (дефект D5, решения A5/A6).
+   *
+   * До этого «тестовый прогон» ничего не исполнял: печатал `completed` для каждого
+   * узла в порядке массива — без ветвлений и без движка. Теперь драфт исполняет
+   * настоящий движок, но экземпляра не создаёт: ни записи в `workflow_instances`,
+   * ни журнала. Это и позволяет гонять недостроенную схему — журнал исполнения
+   * ссылается на инстанс внешним ключом, а тестового инстанса нет.
+   *
+   * Драфт валиден только по форме графа (решение A10), поэтому прогон может упасть
+   * на полпути — это нормальный исход, а не ошибка вызова: трасса покажет, где.
+   */
+  async testDraft(
+    organizationId: string,
+    workflowId: string,
+    payload: TestWorkflowDraftDto,
+    actorUserId: string | undefined,
+    requestId: string,
+  ): Promise<WorkflowDraftTestResponseDto> {
+    const nodeId = payload.node_id.trim();
+    if (nodeId === "") {
+      throw new BadRequestException({
+        code: "WORKFLOW_TEST_NODE_REQUIRED",
+        description: "Draft test run requires the wait-event node to start from.",
+        humanMessage: "Укажите узел «Ожидание события», с которого начать прогон.",
+      });
+    }
+
+    // Полная проверка контракта ДО обращения к движку — та же, что при promote.
+    //
+    // Драфт сохраняется валидным только по форме графа (решение A10), а движок
+    // исполняет лишь полностью валидную схему и на невалидной бросает. Без этой
+    // проверки такой драфт дошёл бы до gRPC, вернулся ошибкой, и фасад отрапортовал
+    // бы «движок недоступен» — то есть соврал: движок исправен, это схема не готова.
+    // Оператор должен получить точный список того, что не так, а не диагноз чужого
+    // сервиса.
+    await this.database.withTenant(organizationId, async (client) => {
+      const workflow = await this.readWorkflowDraft(client, organizationId, workflowId);
+      if (!workflow.draft_schema) {
+        throw workflowDraftMissing(workflowId);
+      }
+      await this.assertWorkflowSchemaPersistable(client, organizationId, workflow.draft_schema);
+    });
+
+    const response = await this.fbp.testWorkflowDraft({
+      actor_user_id: actorUserId ?? "",
+      event_payload: payload.event_payload ?? {},
+      organization_id: organizationId,
+      request_id: requestId,
+      start_node_id: nodeId,
+      workflow_id: workflowId,
+    });
+
+    return {
+      created_at: response.created_at,
+      error: response.error,
+      organization_id: organizationId,
+      output: response.output,
+      status: response.status,
+      trace: response.trace,
+      workflow_id: workflowId,
+    };
+  }
 
   async listWorkflows(organizationId: string): Promise<WorkflowResponseDto[]> {
     return this.database.withTenant(organizationId, async (client) => {

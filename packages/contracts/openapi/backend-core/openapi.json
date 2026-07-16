@@ -2235,6 +2235,47 @@
         ]
       }
     },
+    "/api/v1/workflows/{workflowId}/draft:test": {
+      "post": {
+        "operationId": "WorkflowController_testDraft_v1",
+        "parameters": [
+          {
+            "name": "workflowId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestWorkflowDraftDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkflowDraftTestResponseDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Test-run the Workflow draft without creating an instance",
+        "tags": [
+          "workflows"
+        ]
+      }
+    },
     "/api/v1/workflows/{workflowId}/draft:promote": {
       "post": {
         "operationId": "WorkflowController_promoteDraft_v1",
@@ -5438,6 +5479,138 @@
         },
         "required": [
           "schema"
+        ]
+      },
+      "TestWorkflowDraftDto": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "string",
+            "example": "wait-message",
+            "description": "Узел «Ожидание события», с которого начинается прогон. Точка входа схемы 2.0 — сработавший wait-event, поэтому узел выбирает оператор."
+          },
+          "event_payload": {
+            "type": "object",
+            "description": "Полезная нагрузка события. Редактор предзаполняет пример из реестра событий и даёт его править — иначе ветвления на разных данных не проверить (решение A6)."
+          }
+        },
+        "required": [
+          "node_id"
+        ]
+      },
+      "WorkflowDraftTestTraceEntryDto": {
+        "type": "object",
+        "properties": {
+          "nodeId": {
+            "type": "string",
+            "example": "wait-message"
+          },
+          "type": {
+            "type": "string",
+            "example": "wait-event"
+          },
+          "via": {
+            "type": "string",
+            "enum": [
+              "flow",
+              "data"
+            ],
+            "example": "flow",
+            "description": "flow — узел вызван по exec-связи; data — вычислен лениво, когда его выход понадобился потребителю."
+          },
+          "durationMs": {
+            "type": "number",
+            "example": 12
+          },
+          "inputs": {
+            "type": "object"
+          },
+          "outputs": {
+            "type": "object",
+            "nullable": true
+          },
+          "failed": {
+            "type": "boolean",
+            "example": false
+          },
+          "message": {
+            "type": "string",
+            "example": "Деление на ноль"
+          },
+          "nodePath": {
+            "example": [
+              "wait-message"
+            ],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "depth": {
+            "type": "number",
+            "example": 0
+          }
+        },
+        "required": [
+          "nodeId",
+          "type",
+          "via",
+          "durationMs",
+          "inputs",
+          "outputs",
+          "failed",
+          "nodePath",
+          "depth"
+        ]
+      },
+      "WorkflowDraftTestResponseDto": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000101"
+          },
+          "workflow_id": {
+            "type": "string",
+            "example": "30000000-0000-4000-8000-000000000801"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "failed"
+            ],
+            "example": "completed"
+          },
+          "output": {
+            "type": "object",
+            "nullable": true
+          },
+          "error": {
+            "type": "object",
+            "nullable": true,
+            "description": "Причина обрыва: reason, message, node_id, node_type. null при успехе."
+          },
+          "trace": {
+            "description": "Трасса по узлам. Приходит и при падении — по ней видно, до какого узла дошли.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/WorkflowDraftTestTraceEntryDto"
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "example": "2026-07-15T10:04:00.000Z"
+          }
+        },
+        "required": [
+          "organization_id",
+          "workflow_id",
+          "status",
+          "output",
+          "error",
+          "trace",
+          "created_at"
         ]
       },
       "CreateWorkflowVersionDto": {

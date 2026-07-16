@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, ServiceUnavailableException } from "@nestjs/common";
 
 import { FacadeResilience } from "../../common/resilience/resilience";
 import type {
@@ -35,6 +35,49 @@ export interface FbpStartWorkflowFacadeResponse {
   created_at: string;
 }
 
+/**
+ * Тест-прогон драфта (дефект D5, решение A5). Экземпляра не создаёт: ни
+ * `workflow_version_id` (версии ещё нет), ни `instance_id` — драфт живёт только в
+ * редакторе.
+ */
+export interface FbpTestDraftFacadeRequest {
+  request_id: string;
+  organization_id: string;
+  workflow_id: string;
+  actor_user_id: string;
+  /** Точка входа схемы 2.0 — узел «Ожидание события». */
+  start_node_id: string;
+  event_payload?: Record<string, unknown>;
+}
+
+/** Один шаг трассы: чем узел был вызван, что получил и что отдал. */
+export interface FbpTestDraftTraceEntry {
+  nodeId: string;
+  type: string;
+  /** `flow` — по exec-связи, `data` — вычислен лениво по требованию потребителя. */
+  via: "flow" | "data";
+  durationMs: number;
+  inputs: Record<string, unknown>;
+  outputs: Record<string, unknown> | null;
+  failed: boolean;
+  message?: string;
+  nodePath: string[];
+  depth: number;
+}
+
+export interface FbpTestDraftFacadeResponse {
+  contract: "C5.TestWorkflowDraftResponse";
+  version: "1.0.0";
+  request_id: string;
+  organization_id: string;
+  workflow_id: string;
+  status: "completed" | "failed";
+  output: Record<string, unknown> | null;
+  error: Record<string, unknown> | null;
+  trace: FbpTestDraftTraceEntry[];
+  created_at: string;
+}
+
 export interface FbpFacadeCallOptions<TResponse> {
   call?: () => Promise<TResponse>;
   timeoutMs?: number;
@@ -43,6 +86,13 @@ export interface FbpFacadeCallOptions<TResponse> {
 
 const C5_VERSION = "1.0.0";
 const DEFAULT_FBP_TIMEOUT_MS = 250;
+
+/**
+ * Тест-прогон идёт по настоящему движку и потому дольше боевого старта: узел
+ * `backend-api` ходит в HTTP, `llm` — в модель. Дефолт фасада в 250 мс здесь
+ * означал бы таймаут на любой осмысленной схеме.
+ */
+const DEFAULT_DRAFT_TEST_TIMEOUT_MS = 30_000;
 
 @Injectable()
 export class FbpIntegrationFacade {
@@ -82,6 +132,40 @@ export class FbpIntegrationFacade {
     }
 
     return this.createStartFallback(request, toDegradationReason(result.reason), options.now);
+  }
+
+  /**
+   * Тест-прогон драфта (дефект D5, решение A5).
+   *
+   * ЕДИНСТВЕННЫЙ вызов фасада, который НЕ деградирует. Боевой старт подменяет
+   * недоступный движок заглушкой, чтобы сообщения продолжали ходить (§5.4), — но
+   * тест-прогон существует ровно затем, чтобы сказать оператору правду о схеме.
+   * Заглушка со `status` здесь означала бы «схема работает», хотя её никто не
+   * исполнял. Поэтому недоступность движка — это ошибка вызова, а не результат:
+   * пусть редактор скажет «движок недоступен», а не «схема прошла».
+   */
+  async testWorkflowDraft(
+    request: FbpTestDraftFacadeRequest,
+    options: FbpFacadeCallOptions<FbpTestDraftFacadeResponse> = {},
+  ): Promise<FbpTestDraftFacadeResponse> {
+    const call =
+      options.call ?? (this.upstream ? () => this.upstream!.testWorkflowDraft(request) : undefined);
+    const result = await this.resilience.execute(call, {
+      timeoutMs: options.timeoutMs ?? DEFAULT_DRAFT_TEST_TIMEOUT_MS,
+    });
+
+    if (result.ok) {
+      return result.value;
+    }
+
+    throw new ServiceUnavailableException({
+      code: "WORKFLOW_ENGINE_UNAVAILABLE",
+      description: `Workflow engine did not answer the draft test run (${result.reason}).`,
+      humanMessage:
+        result.reason === "timeout"
+          ? "Движок схем не ответил вовремя — тестовый прогон не выполнен."
+          : "Движок схем недоступен — тестовый прогон не выполнен.",
+    });
   }
 
   private createStartFallback(

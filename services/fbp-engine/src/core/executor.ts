@@ -189,38 +189,48 @@ export async function runGraph({
   const executed = new Set();
   let lastOutputs = null;
 
-  while (queue.length > 0) {
-    if (steps >= maxNodeSteps) {
-      throw new WorkflowExecutionError(
-        "step_budget_exceeded",
-        `Превышен бюджет шагов исполнения (${maxNodeSteps}) — исполнение остановлено.`,
-      );
+  try {
+    while (queue.length > 0) {
+      if (steps >= maxNodeSteps) {
+        throw new WorkflowExecutionError(
+          "step_budget_exceeded",
+          `Превышен бюджет шагов исполнения (${maxNodeSteps}) — исполнение остановлено.`,
+        );
+      }
+
+      const nodeId = queue.shift();
+      if (executed.has(nodeId)) continue;
+
+      const node = graph.getNode(nodeId);
+      if (!node) {
+        throw new WorkflowExecutionError("unknown_node", `Узел "${nodeId}" отсутствует в графе.`, { nodeId });
+      }
+
+      // merge — барьер: пропускаем дальше только когда пришли ВСЕ входящие потоки.
+      if (node.type === "merge" && (arrivals.get(nodeId) ?? 0) < graph.incomingExecCount(nodeId)) {
+        continue;
+      }
+
+      steps += 1;
+      executed.add(nodeId);
+      const result = await executeNode(node, "flow");
+      lastOutputs = result.outputs;
+
+      for (const connection of graph.execConnectionsFrom(node.id)) {
+        // Ветвление продолжает исполнение только по выбранной ветке.
+        if (node.type === "branch" && connection.fromPort !== result.execPort) continue;
+        arrivals.set(connection.to, (arrivals.get(connection.to) ?? 0) + 1);
+        queue.push(connection.to);
+      }
     }
-
-    const nodeId = queue.shift();
-    if (executed.has(nodeId)) continue;
-
-    const node = graph.getNode(nodeId);
-    if (!node) {
-      throw new WorkflowExecutionError("unknown_node", `Узел "${nodeId}" отсутствует в графе.`, { nodeId });
-    }
-
-    // merge — барьер: пропускаем дальше только когда пришли ВСЕ входящие потоки.
-    if (node.type === "merge" && (arrivals.get(nodeId) ?? 0) < graph.incomingExecCount(nodeId)) {
-      continue;
-    }
-
-    steps += 1;
-    executed.add(nodeId);
-    const result = await executeNode(node, "flow");
-    lastOutputs = result.outputs;
-
-    for (const connection of graph.execConnectionsFrom(node.id)) {
-      // Ветвление продолжает исполнение только по выбранной ветке.
-      if (node.type === "branch" && connection.fromPort !== result.execPort) continue;
-      arrivals.set(connection.to, (arrivals.get(connection.to) ?? 0) + 1);
-      queue.push(connection.to);
-    }
+  } catch (error) {
+    // Трасса — локальный массив, поэтому при выбросе она пропадала вместе с кадром
+    // стека: вызывающий получал ошибку без единого шага исполнения. Именно на
+    // падении трасса и нужнее всего — тест-прогон должен показать, ДО какого узла
+    // схема дошла и с какими входами упала. Прикрепляем её к ошибке и бросаем
+    // дальше: семантика для существующих вызывающих не меняется.
+    attachTrace(error, trace);
+    throw error;
   }
 
   ctx.appendJournal("workflow.completed", { data: { steps } });
@@ -230,6 +240,30 @@ export async function runGraph({
     journal: ctx.journal,
     trace,
   };
+}
+
+/**
+ * Прикрепить трассу к ошибке.
+ *
+ * Вложенность разрешается в пользу ВНЕШНЕЙ трассы: субсхема бросает первой и
+ * прикрепляет свою, но внешний `runGraph` ловит ту же ошибку выше по стеку и
+ * перекрывает её. Это не потеря, а согласованность — на успешном прогоне трасса
+ * субсхемы тоже не всплывает наверх (узел `sub_schema` читает только `output`), и
+ * падение не должно возвращать трассу другой формы, чем успех. Сама субсхема в
+ * трассе родителя присутствует — своим узлом с `failed: true` и сообщением.
+ *
+ * Поле неперечислимое: ошибка сериализуется в журнал и в ответ C5, и трасса не
+ * должна попадать туда вторым, несогласованным экземпляром.
+ */
+function attachTrace(error, trace) {
+  if (!error || typeof error !== "object") return;
+
+  Object.defineProperty(error, "trace", {
+    configurable: true,
+    enumerable: false,
+    value: [...trace],
+    writable: true,
+  });
 }
 
 function resolveStartNodes(schema, graph, startNodeId) {

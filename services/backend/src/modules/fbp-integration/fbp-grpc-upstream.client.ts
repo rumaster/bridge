@@ -11,6 +11,8 @@ import { collectWorkflowSubSchemaSlugs } from "../workflow/workflow-schema.valid
 import type {
   FbpStartWorkflowFacadeRequest,
   FbpStartWorkflowFacadeResponse,
+  FbpTestDraftFacadeRequest,
+  FbpTestDraftFacadeResponse,
 } from "./fbp-integration.facade";
 import type { FbpUpstreamClient } from "./fbp-integration.upstream";
 
@@ -31,9 +33,27 @@ interface StartWorkflowInstanceGrpcRequest {
   workflow_version_id: string;
 }
 
+/** У прогона нет ни `workflow_version_id`, ни `input_json`: версии нет, а входом служит полезная нагрузка события. */
+interface TestWorkflowDraftGrpcRequest {
+  actor_user_id: string;
+  context_json: string;
+  contract: "C5.TestWorkflowDraftRequest";
+  event_payload_json: string;
+  organization_id: string;
+  request_id: string;
+  schema_json: string;
+  start_node_id: string;
+  version: "1.0.0";
+  workflow_id: string;
+}
+
 interface FbpEngineGrpcClient extends grpc.Client {
   StartWorkflowInstance(
     request: StartWorkflowInstanceGrpcRequest,
+    callback: (error: grpc.ServiceError | null, response?: JsonResponse) => void,
+  ): void;
+  TestWorkflowDraft(
+    request: TestWorkflowDraftGrpcRequest,
     callback: (error: grpc.ServiceError | null, response?: JsonResponse) => void,
   ): void;
   Health(
@@ -70,6 +90,8 @@ export interface FbpPersistStartResultRecord {
 
 export interface FbpWorkflowPersistence {
   loadStartContext(request: FbpStartWorkflowFacadeRequest): Promise<FbpWorkflowStartContext>;
+  /** Схема драфта для тест-прогона: источник — workflows.draft_schema, версии ещё нет. */
+  loadDraftContext(request: FbpTestDraftFacadeRequest): Promise<FbpWorkflowStartContext>;
   persistStartResult(record: FbpPersistStartResultRecord): Promise<void>;
 }
 
@@ -85,6 +107,13 @@ interface FbpGrpcStartWorkflowPayload extends FbpStartWorkflowFacadeResponse {
 }
 
 const C5_VERSION = "1.0.0";
+
+/**
+ * Дедлайн gRPC для тест-прогона. Держится чуть НИЖЕ таймаута фасада (30 с), чтобы
+ * первым сработал он: тогда движок узнаёт об отмене и прекращает работу, а не
+ * продолжает жечь вызовы в Backend после того, как ответ уже никому не нужен.
+ */
+const DRAFT_TEST_DEADLINE_MS = 29_000;
 
 export class FbpGrpcUpstreamClient implements FbpUpstreamClient, OnModuleDestroy {
   private readonly client: FbpEngineGrpcClient;
@@ -128,6 +157,39 @@ export class FbpGrpcUpstreamClient implements FbpUpstreamClient, OnModuleDestroy
     return response;
   }
 
+  /**
+   * Тест-прогон драфта (дефект D5). Симметрии с `startWorkflowInstance` здесь нет
+   * намеренно: ни `persistStartResult`, ни журнала, ни события смены состояния —
+   * прогон ничего не сохраняет. Это и позволяет гонять его над недостроенной
+   * схемой: журнал исполнения ссылается на `workflow_instances` внешним ключом, а
+   * тестового инстанса не существует.
+   */
+  async testWorkflowDraft(
+    request: FbpTestDraftFacadeRequest,
+  ): Promise<FbpTestDraftFacadeResponse> {
+    const draftContext = await this.persistence.loadDraftContext(request);
+
+    return this.call<FbpTestDraftFacadeResponse>(
+      "TestWorkflowDraft",
+      {
+        actor_user_id: request.actor_user_id,
+        context_json: JSON.stringify(draftContext.context),
+        contract: "C5.TestWorkflowDraftRequest",
+        event_payload_json: JSON.stringify(request.event_payload ?? {}),
+        organization_id: request.organization_id,
+        request_id: request.request_id,
+        schema_json: JSON.stringify(draftContext.schema),
+        start_node_id: request.start_node_id,
+        version: C5_VERSION,
+        workflow_id: request.workflow_id,
+      },
+      // Прогон идёт по настоящему движку: узел backend-api ходит в HTTP, llm — в
+      // модель. Общий дедлайн в 5 с обрубал бы любую осмысленную схему раньше, чем
+      // она успеет отработать.
+      DRAFT_TEST_DEADLINE_MS,
+    );
+  }
+
   async getHealth(): Promise<Record<string, unknown>> {
     return this.call<Record<string, unknown>>("Health", {});
   }
@@ -137,8 +199,12 @@ export class FbpGrpcUpstreamClient implements FbpUpstreamClient, OnModuleDestroy
   }
 
   private call<TResponse>(
-    method: "StartWorkflowInstance" | "Health",
-    request: StartWorkflowInstanceGrpcRequest | Record<string, never>,
+    method: "StartWorkflowInstance" | "TestWorkflowDraft" | "Health",
+    request:
+      | StartWorkflowInstanceGrpcRequest
+      | TestWorkflowDraftGrpcRequest
+      | Record<string, never>,
+    deadlineMs: number = this.deadlineMs,
   ): Promise<TResponse> {
     return new Promise((resolveResponse, reject) => {
       const unary = this.client[method].bind(this.client) as unknown as (
@@ -147,7 +213,7 @@ export class FbpGrpcUpstreamClient implements FbpUpstreamClient, OnModuleDestroy
         options: grpc.CallOptions,
         callback: (error: grpc.ServiceError | null, response?: JsonResponse) => void,
       ) => void;
-      const deadline = new Date(Date.now() + this.deadlineMs);
+      const deadline = new Date(Date.now() + deadlineMs);
 
       unary(request, new grpc.Metadata(), { deadline }, (error, response) => {
         if (error) {
@@ -224,6 +290,65 @@ export class PgFbpWorkflowPersistence implements FbpWorkflowPersistence {
         schema: Object.keys(resolvedSubSchemas).length > 0
           ? { ...schema, __resolved_subschemas: resolvedSubSchemas }
           : schema,
+      };
+    });
+  }
+
+  /**
+   * Схема ДРАФТА для тест-прогона (дефект D5).
+   *
+   * Отличие от `loadStartContext` — источник и то, чего здесь нет. Схема берётся из
+   * `workflows.draft_schema`, а не из `workflow_versions`: версии у драфта ещё нет и
+   * может не появиться никогда. Ничего не сохраняется: ни инстанса, ни журнала —
+   * прогон не оставляет следов в боевых таблицах.
+   *
+   * `workflow_version_id` в схему не подставляется — его нет, и подсунуть сюда
+   * идентификатор рабочей версии значило бы соврать журналу узлов о том, что
+   * исполнялось.
+   *
+   * Субсхемы подставляются те же и тем же способом: тест обязан исполнять то же,
+   * что исполнит бой, иначе он не тест.
+   */
+  async loadDraftContext(
+    request: FbpTestDraftFacadeRequest,
+  ): Promise<FbpWorkflowStartContext> {
+    return this.database.withTenant(request.organization_id, async (client) => {
+      const result = await client.query<{ draft_schema: Record<string, unknown> | null }>(
+        `
+          SELECT draft_schema
+          FROM workflows
+          WHERE organization_id = $1 AND id = $2
+          LIMIT 1
+        `,
+        [request.organization_id, request.workflow_id],
+      );
+
+      if (result.rowCount === 0) {
+        throw new Error(`Workflow ${request.workflow_id} was not found.`);
+      }
+
+      const draftSchema = result.rows[0].draft_schema;
+      if (draftSchema === null || typeof draftSchema !== "object") {
+        throw new Error(`Workflow ${request.workflow_id} has no draft schema to test.`);
+      }
+
+      const schema = { ...draftSchema, workflow_id: request.workflow_id };
+      const resolvedSubSchemas = await loadActiveWorkflowSubschemas(
+        client,
+        request.organization_id,
+        schema,
+      );
+
+      return {
+        context: {
+          actor_user_id: request.actor_user_id,
+          organization_id: request.organization_id,
+          trigger: "draft_test",
+        },
+        schema:
+          Object.keys(resolvedSubSchemas).length > 0
+            ? { ...schema, __resolved_subschemas: resolvedSubSchemas }
+            : schema,
       };
     });
   }

@@ -51,6 +51,12 @@
       "reason": "Узел «LLM» контракта Workflow 2.0 (docs/plan/workflow-2.0-redesign.md): добавлен маршрут POST /api/v1/ai/llm:complete после заморозки, включён в опубликованную v1-поверхность согласно инварианту «every actual Nest /api/v1 route is published». Сырой вызов модели: промпт целиком собирает схема, база знаний не участвует (в отличие от ai/assistant:suggest). Потребовал расширения контракта C4 — новый RPC CompleteLlm в proto/ai/c4.ai.proto и способность `complete` у провайдеров SVC-AI; раньше узел ходил в несуществующий /api/v1/ai/llm/completions и получал 404. Обновлены generated_operation_count 82→83 и generated_path_count 69→70; surface-записи не добавлялись (принятая M5-поверхность ai не менялась). Владелец контрактов: решение A (включить в v1).",
       "operation_count": "82 -> 83",
       "path_count": "69 -> 70"
+    },
+    {
+      "date": "2026-07-15",
+      "reason": "Тест-прогон драфта (docs/plan/workflow-2.0-redesign.md, дефект D5): добавлен маршрут POST /api/v1/workflows/{workflowId}/draft:test после заморозки, включён в опубликованную v1-поверхность согласно инварианту «every actual Nest /api/v1 route is published». Драфт исполняется настоящим движком, но экземпляра не создаёт — ни записи в workflow_instances, ни журнала: только так его можно гонять над недостроенной схемой, потому что журнал исполнения ссылается на инстанс внешним ключом. Потребовал расширения контракта C5 — новый RPC TestWorkflowDraft в proto/fbp/c5.fbp.proto; до этого «тестовый прогон» ничего не исполнял и печатал completed для каждого узла в порядке массива. Обновлены generated_operation_count 83→84 и generated_path_count 70→71; surface-записи не добавлялись (маршруты workflows платформенные, в принятую M5-поверхность не входят). Владелец контрактов: решение A (включить в v1).",
+      "operation_count": "83 -> 84",
+      "path_count": "70 -> 71"
     }
   ],
   "scope": {
@@ -81,8 +87,8 @@
       "base_path": "/api/v1",
       "openapi": {
         "artifact": "packages/contracts/openapi/backend-core/openapi.json",
-        "generated_operation_count": 83,
-        "generated_path_count": 70,
+        "generated_operation_count": 84,
+        "generated_path_count": 71,
         "metadata": {
           "x-contract-id": "C3",
           "x-owner": "SVC-API",

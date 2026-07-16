@@ -1,6 +1,8 @@
 import type {
   FbpStartWorkflowFacadeRequest,
   FbpStartWorkflowFacadeResponse,
+  FbpTestDraftFacadeRequest,
+  FbpTestDraftFacadeResponse,
 } from "./fbp-integration.facade";
 
 /**
@@ -15,6 +17,11 @@ export interface FbpUpstreamClient {
   startWorkflowInstance(
     request: FbpStartWorkflowFacadeRequest,
   ): Promise<FbpStartWorkflowFacadeResponse>;
+  /**
+   * Тест-прогон драфта (дефект D5). В отличие от старта экземпляра НИЧЕГО не
+   * сохраняет: ни версии, ни инстанса, ни журнала — драфт живёт только в редакторе.
+   */
+  testWorkflowDraft(request: FbpTestDraftFacadeRequest): Promise<FbpTestDraftFacadeResponse>;
 }
 
 export const FBP_UPSTREAM_CLIENT = "FBP_UPSTREAM_CLIENT";

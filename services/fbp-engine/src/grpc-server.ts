@@ -73,6 +73,61 @@ export function createFbpEngineGrpcServer({
         status: "ok",
       }));
     },
+    /**
+     * Тест-прогон драфта (дефект D5, решение A5).
+     *
+     * Драфт исполняется НАСТОЯЩИМ движком, но экземпляра не создаёт: ни записи в
+     * `workflow_instances`, ни события смены состояния. Это и позволяет гонять его
+     * над недостроенной схемой — журнал исполнения ссылается на инстанс внешним
+     * ключом, а тестового инстанса нет.
+     *
+     * Возвращается трасса по узлам, а не журнал: журнал Backend сохраняет, а трасса
+     * нужна редактору, чтобы подсветить пройденный путь. Трасса приходит и при
+     * падении — именно тогда она и нужна.
+     */
+    TestWorkflowDraft: async (call, callback: UnaryCallback) => {
+      await respond(callback, async () => {
+        const request = call.request ?? {};
+        const schema = parseJsonObjectField(request.schema_json, "schema_json");
+        const context = parseJsonObjectField(request.context_json || "{}", "context_json");
+        const eventPayload = parseJsonObjectField(
+          request.event_payload_json || "{}",
+          "event_payload_json",
+        );
+        const startNodeId = String(request.start_node_id ?? "").trim();
+
+        if (startNodeId === "") {
+          throw new Error(
+            "TestWorkflowDraft требует start_node_id — точка входа схемы 2.0 — узел «Ожидание события».",
+          );
+        }
+
+        const result = await engine.runWorkflow({
+          context: { ...context, organization_id: request.organization_id },
+          // Полезная нагрузка события — это вход прогона: узел «Ожидание события»
+          // отдаёт её портом data.
+          input: eventPayload,
+          schema,
+          startNodeId,
+          // Идентификатор фиктивный и в базу не попадает; он нужен только контексту
+          // исполнения. Префикс делает его отличимым в логах от боевого.
+          instanceId: `draft-test:${request.request_id}`,
+        });
+
+        return {
+          contract: "C5.TestWorkflowDraftResponse",
+          version: C5_VERSION,
+          request_id: request.request_id,
+          organization_id: request.organization_id,
+          workflow_id: request.workflow_id,
+          status: result.status ?? "failed",
+          output: result.output ?? null,
+          error: result.error ?? null,
+          trace: result.trace ?? [],
+          created_at: now(),
+        };
+      });
+    },
     StartWorkflowInstance: async (call, callback: UnaryCallback) => {
       await respond(callback, async () => {
         const request = call.request ?? {};

@@ -48,8 +48,8 @@ export const generatedOpenApiDocuments = [
     "openapi": "3.0.0",
     "title": "Bridge Backend Core API",
     "version": "1.0.0",
-    "pathCount": 70,
-    "operationCount": 83
+    "pathCount": 71,
+    "operationCount": 84
   },
   {
     "artifact": "packages/contracts/openapi/broadcasts/c8.broadcasts.openapi.json",
@@ -1024,6 +1024,17 @@ export const generatedOpenApiOperations = [
     "path": "/api/v1/workflows/{workflowId}/draft:promote",
     "operationId": "WorkflowController_promoteDraft_v1",
     "summary": "Promote Workflow draft to a new active immutable version",
+    "tags": [
+      "workflows"
+    ]
+  },
+  {
+    "artifact": "packages/contracts/openapi/backend-core/openapi.json",
+    "contractId": "C3",
+    "method": "post",
+    "path": "/api/v1/workflows/{workflowId}/draft:test",
+    "operationId": "WorkflowController_testDraft_v1",
+    "summary": "Test-run the Workflow draft without creating an instance",
     "tags": [
       "workflows"
     ]

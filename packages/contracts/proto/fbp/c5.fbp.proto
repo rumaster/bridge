@@ -4,6 +4,12 @@ package bridge.fbp.v1;
 
 service FbpEngine {
   rpc StartWorkflowInstance(StartWorkflowInstanceRequest) returns (JsonResponse);
+  // Тест-прогон драфта (добавлен 2026-07-15, дефект D5). Отдельная операция, а не
+  // флаг у StartWorkflowInstance: у прогона нет экземпляра — ни идентификатора, ни
+  // записи в workflow_instances, ни события смены состояния, — и он возвращает
+  // трассу по узлам вместо журнала для сохранения. Флаг заставил бы половину полей
+  // ответа быть «иногда осмысленными».
+  rpc TestWorkflowDraft(TestWorkflowDraftRequest) returns (JsonResponse);
   rpc Health(HealthRequest) returns (JsonResponse);
 }
 
@@ -17,6 +23,23 @@ message StartWorkflowInstanceRequest {
   string actor_user_id = 7;
   string input_json = 8;
   string schema_json = 9;
+  string context_json = 10;
+}
+
+message TestWorkflowDraftRequest {
+  string contract = 1;
+  string version = 2;
+  string request_id = 3;
+  string organization_id = 4;
+  string workflow_id = 5;
+  string actor_user_id = 6;
+  // Драфт целиком: у прогона нет workflow_version_id — версии ещё нет, схема
+  // существует только в редакторе.
+  string schema_json = 7;
+  // Узел «Ожидание события», с которого начинается прогон: точка входа схемы 2.0.
+  string start_node_id = 8;
+  // Полезная нагрузка события, редактируемая в редакторе (решение A6).
+  string event_payload_json = 9;
   string context_json = 10;
 }
 

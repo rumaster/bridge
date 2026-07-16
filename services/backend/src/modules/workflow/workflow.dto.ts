@@ -51,6 +51,100 @@ export class SaveWorkflowDraftDto {
   schema!: Record<string, unknown>;
 }
 
+/**
+ * Тест-прогон драфта (дефект D5, решения A5/A6).
+ *
+ * Схема в теле не передаётся: гоняется сохранённый драфт. Редактор автосохраняет
+ * его перед прогоном, и так исключается расхождение «протестировали одно, сохранили
+ * другое».
+ */
+export class TestWorkflowDraftDto {
+  @ApiProperty({
+    example: "wait-message",
+    description:
+      "Узел «Ожидание события», с которого начинается прогон. Точка входа схемы 2.0 — сработавший wait-event, поэтому узел выбирает оператор.",
+  })
+  @IsString()
+  node_id!: string;
+
+  @ApiPropertyOptional({
+    type: Object,
+    description:
+      "Полезная нагрузка события. Редактор предзаполняет пример из реестра событий и даёт его править — иначе ветвления на разных данных не проверить (решение A6).",
+  })
+  @IsObject()
+  @IsOptional()
+  event_payload?: Record<string, unknown>;
+}
+
+/** Один шаг трассы: чем узел был вызван, что получил и что отдал. */
+export class WorkflowDraftTestTraceEntryDto {
+  @ApiProperty({ example: "wait-message" })
+  nodeId!: string;
+
+  @ApiProperty({ example: "wait-event" })
+  type!: string;
+
+  @ApiProperty({
+    enum: ["flow", "data"],
+    example: "flow",
+    description:
+      "flow — узел вызван по exec-связи; data — вычислен лениво, когда его выход понадобился потребителю.",
+  })
+  via!: "flow" | "data";
+
+  @ApiProperty({ example: 12 })
+  durationMs!: number;
+
+  @ApiProperty({ type: Object })
+  inputs!: Record<string, unknown>;
+
+  @ApiProperty({ nullable: true, type: Object })
+  outputs!: null | Record<string, unknown>;
+
+  @ApiProperty({ example: false })
+  failed!: boolean;
+
+  @ApiPropertyOptional({ example: "Деление на ноль" })
+  message?: string;
+
+  @ApiProperty({ example: ["wait-message"], type: [String] })
+  nodePath!: string[];
+
+  @ApiProperty({ example: 0 })
+  depth!: number;
+}
+
+export class WorkflowDraftTestResponseDto {
+  @ApiProperty({ example: "30000000-0000-4000-8000-000000000101" })
+  organization_id!: string;
+
+  @ApiProperty({ example: "30000000-0000-4000-8000-000000000801" })
+  workflow_id!: string;
+
+  @ApiProperty({ enum: ["completed", "failed"], example: "completed" })
+  status!: "completed" | "failed";
+
+  @ApiProperty({ nullable: true, type: Object })
+  output!: null | Record<string, unknown>;
+
+  @ApiProperty({
+    nullable: true,
+    type: Object,
+    description: "Причина обрыва: reason, message, node_id, node_type. null при успехе.",
+  })
+  error!: null | Record<string, unknown>;
+
+  @ApiProperty({
+    type: [WorkflowDraftTestTraceEntryDto],
+    description: "Трасса по узлам. Приходит и при падении — по ней видно, до какого узла дошли.",
+  })
+  trace!: WorkflowDraftTestTraceEntryDto[];
+
+  @ApiProperty({ example: "2026-07-15T10:04:00.000Z" })
+  created_at!: string;
+}
+
 export class WorkflowSchemaExportWorkflowDto {
   @ApiProperty({ example: "30000000-0000-4000-8000-000000000801" })
   id!: string;

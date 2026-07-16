@@ -833,6 +833,16 @@ export const BACKEND_API_OPERATIONS: readonly BackendApiOperation[] = Object.fre
     has_body: true,
   },
   {
+    operation_id: "WorkflowController_testDraft_v1",
+    method: "POST",
+    path: "/api/v1/workflows/{workflowId}/draft:test",
+    summary: "Test-run the Workflow draft without creating an instance",
+    tag: "workflows",
+    path_params: Object.freeze(["workflowId"]),
+    query_params: Object.freeze([]),
+    has_body: true,
+  },
+  {
     operation_id: "WorkflowController_updateWorkflow_v1",
     method: "PATCH",
     path: "/api/v1/workflows/{workflowId}",

@@ -9,6 +9,7 @@ import { GenericContainer, Wait } from "testcontainers";
 import type { StartedTestContainer } from "testcontainers";
 
 import { PgDatabase } from "../../src/common/database/database.service";
+import { FbpIntegrationFacade } from "../../src/modules/fbp-integration/fbp-integration.facade";
 import { WorkflowSubschemaService } from "../../src/modules/workflow/workflow-subschema.service";
 import { WorkflowService } from "../../src/modules/workflow/workflow.service";
 
@@ -66,7 +67,13 @@ describe("WorkflowService createVersion validation", () => {
     runRootScript("scripts/db-migrate.ts", ["up"], databaseUrl);
     await seedWorkflow(databaseUrl);
     database = new PgDatabase();
-    service = new WorkflowService(database, new WorkflowSubschemaService(database));
+    // Фасад SVC-FBP нужен только тест-прогону драфта; эта спека проверяет
+    // валидацию версий и до движка не доходит — поэтому upstream не задан.
+    service = new WorkflowService(
+      database,
+      new WorkflowSubschemaService(database),
+      new FbpIntegrationFacade(),
+    );
   });
 
   afterAll(async () => {

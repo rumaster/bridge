@@ -110,6 +110,10 @@ export function createFbpEngine({ backendClient, limits = {}, now, resolveSubSch
             node_type: error?.nodeType ?? null,
           },
           journal: ctx.journal,
+          // Трасса нужнее всего именно здесь: без неё не видно, до какого узла
+          // схема дошла и с какими входами упала. Пустой массив, а не undefined —
+          // форма ответа не должна зависеть от исхода.
+          trace: Array.isArray(error?.trace) ? error.trace : [],
         };
       }
     },

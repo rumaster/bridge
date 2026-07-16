@@ -361,4 +361,63 @@ describe("executor 2.0: трасса", () => {
     assert.deepEqual(byId.w.inputs, { v: "x" });
     assert.equal(typeof byId.t.durationMs, "number");
   });
+
+  it("трасса переживает падение: видно, до какого узла дошли и где упали", async () => {
+    // Трасса — локальный массив runGraph, и при выбросе она пропадала вместе с
+    // кадром стека: вызывающий получал ошибку без единого шага. Именно на падении
+    // она и нужна — тест-прогон схемы обязан показать место обрыва.
+    const schema = workflow(
+      [
+        evt(),
+        node("ok", "variable_write", { inputs: [{ name: "payload", type: "object" }] }),
+        node("boom", "transform", { code: "throw new Error('взорвалось');" }),
+        node("after", "variable_write", { inputs: [{ name: "v", type: "string" }] }),
+      ],
+      [
+        link("c1", "evt", "out", "ok", "in"),
+        link("c2", "evt", "data", "ok", "payload"),
+        link("c3", "ok", "out", "after", "in"),
+        link("c4", "boom", "v", "after", "v"),
+      ],
+    );
+
+    const error = await runGraph({ schema, ctx: makeCtx(), backendClient, startNodeId: "evt" }).then(
+      () => null,
+      (caught: any) => caught,
+    );
+
+    assert.ok(error, "прогон обязан упасть");
+    assert.ok(Array.isArray(error.trace), "трасса прикреплена к ошибке");
+
+    const visited = error.trace.map((entry: any) => entry.nodeId);
+    // Дошли: evt и ok отработали до обрыва.
+    assert.deepEqual(visited.slice(0, 2), ["evt", "ok"]);
+
+    const failed = error.trace.find((entry: any) => entry.failed);
+    assert.equal(failed.nodeId, "boom");
+    assert.equal(failed.outputs, null);
+    assert.match(failed.message, /взорвалось/);
+    // Узел за местом обрыва не исполнялся и в трассе его нет.
+    assert.equal(visited.includes("after"), false);
+  });
+
+  it("трасса не сериализуется вместе с ошибкой в журнал", async () => {
+    // Ошибка уходит в журнал и в ответ C5; трасса возвращается отдельным полем и не
+    // должна попасть туда вторым, несогласованным экземпляром.
+    const schema = workflow(
+      [evt(), node("boom", "transform", { code: "throw new Error('bang');" }), node("after", "variable_write", { inputs: [{ name: "v", type: "string" }] })],
+      [link("c1", "evt", "out", "after", "in"), link("c2", "boom", "v", "after", "v")],
+    );
+
+    const error = await runGraph({ schema, ctx: makeCtx(), backendClient, startNodeId: "evt" }).then(
+      () => null,
+      (caught: any) => caught,
+    );
+
+    assert.ok(Array.isArray(error.trace));
+    assert.equal(Object.keys(error).includes("trace"), false, "поле неперечислимо");
+    // Собственные поля ошибки (nodeId, reason) остаются — они и должны попадать в
+    // журнал. Не должна попадать только трасса.
+    assert.equal(JSON.stringify({ ...error }).includes("trace"), false);
+  });
 });

@@ -4,6 +4,8 @@ import {
   Delete,
   Get,
   Headers,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -24,8 +26,10 @@ import {
   CreateWorkflowVersionDto,
   ImportWorkflowSchemaDto,
   SaveWorkflowDraftDto,
+  TestWorkflowDraftDto,
   UpdateWorkflowDto,
   WorkflowDraftResponseDto,
+  WorkflowDraftTestResponseDto,
   WorkflowImportResponseDto,
   WorkflowInstanceDetailResponseDto,
   WorkflowInstanceResponseDto,
@@ -122,6 +126,31 @@ export class WorkflowController {
       getRequiredOrganizationId(organizationIdHeader),
       workflowId,
       body,
+    );
+  }
+
+  /**
+   * Тест-прогон драфта (дефект D5). Гоняется СОХРАНЁННЫЙ драфт: схема в теле не
+   * передаётся, редактор автосохраняет её перед прогоном — так исключается
+   * расхождение «протестировали одно, сохранили другое».
+   */
+  @Post(":workflowId/draft\\:test")
+  @Version("1")
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: "Test-run the Workflow draft without creating an instance" })
+  @ApiOkResponse({ type: WorkflowDraftTestResponseDto })
+  testDraft(
+    @Headers(ORGANIZATION_ID_HEADER) organizationIdHeader: HeaderValue,
+    @Param("workflowId", new ParseUUIDPipe({ version: "4" })) workflowId: string,
+    @Body() body: TestWorkflowDraftDto,
+    @Req() request: AuthenticatedRequest,
+  ): Promise<WorkflowDraftTestResponseDto> {
+    return this.workflows.testDraft(
+      getRequiredOrganizationId(organizationIdHeader),
+      workflowId,
+      body,
+      request.auth?.user.id,
+      (request as AuthenticatedRequest & { requestId?: string }).requestId ?? "",
     );
   }
 
