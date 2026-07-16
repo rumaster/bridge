@@ -57,11 +57,13 @@ export default function WorkflowPage() {
     let cancelled = false;
 
     void (async () => {
-      const [loadedWorkflows, loadedSubschemas, loadedAllowlist] = await Promise.all([
-        api.workflows.listWorkflows(),
-        api.workflows.listSubschemas(),
-        api.workflows.listBackendApiAllowlist(),
-      ]);
+      const loadedWorkflows = await api.workflows.listWorkflows();
+      // Субсхемы и витрина — вспомогательные: без них редактор всё равно должен
+      // открыться (просто селектбоксы sub_schema/backend-api покажут «пусто»).
+      // Ронять из-за них весь экран нельзя — тем более что витрина появилась
+      // позже и на бэкенде без неё ответит 404.
+      const loadedSubschemas = await api.workflows.listSubschemas().catch(() => []);
+      const loadedAllowlist = await api.workflows.listBackendApiAllowlist().catch(() => []);
       if (cancelled) return;
       setWorkflows(loadedWorkflows);
       setSubschemas(loadedSubschemas);
